@@ -541,9 +541,33 @@ function saveTokens(data){
   store.set('cg_token_expiry',  String(_tokenExpiry));
   if(data.id_token){
     const c = parseJwt(data.id_token);
-    currentUser = {name:c.name||c.preferred_username||'User', username:c.preferred_username||c.email||''};
+    // Try all possible name claims in order of preference
+    const name = c.name || c.given_name && c.family_name ? (c.given_name+' '+c.family_name).trim()
+      : c.given_name || c.unique_name || c.preferred_username || c.upn || c.email || '';
+    const username = c.preferred_username || c.upn || c.unique_name || c.email || '';
+    currentUser = {name: name||username, username};
     store.set('cg_user', JSON.stringify(currentUser));
   }
+}
+
+// Called after initApp to fetch real display name from Graph /me
+async function fetchUserProfile(){
+  try {
+    const token = await getToken();
+    const r = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,userPrincipalName,givenName,surname',{
+      headers:{'Authorization':'Bearer '+token}
+    });
+    if(!r.ok) return;
+    const me = await r.json();
+    const name = me.displayName || (me.givenName&&me.surname ? me.givenName+' '+me.surname : '') || me.userPrincipalName || 'User';
+    currentUser = {name, username: me.userPrincipalName||''};
+    store.set('cg_user', JSON.stringify(currentUser));
+    // Update UI
+    const ini = name.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+    document.getElementById('user-av').textContent   = ini;
+    document.getElementById('user-name').textContent  = name;
+    document.getElementById('user-email').textContent = me.userPrincipalName||'';
+  } catch(e){ /* non-critical, silently ignore */ }
 }
 
 async function signIn(){
@@ -636,6 +660,8 @@ async function initApp(){
   document.getElementById('user-email').textContent = currentUser ? (currentUser.username||'') : '';
   try {
     await resolveSite();
+    // Fetch real display name from Graph in background
+    fetchUserProfile();
     await loadDashboard();
   } catch(e){
     toast('Error loading data: '+e.message,'error');
