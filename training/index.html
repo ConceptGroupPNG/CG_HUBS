@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CG Training Management System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1a2744;--navy2:#243358;--teal:#0e9f6e;--teal-l:#d1fae5;--teal-d:#065f46;
+  --amber:#f59e0b;--amber-l:#fef3c7;--red:#ef4444;--red-l:#fee2e2;
+  --blue:#3b82f6;--blue-l:#eff6ff;--purple:#8b5cf6;--purple-l:#ede9fe;
+  --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;
+  --g500:#6b7280;--g700:#374151;--g900:#111827;--white:#fff;
+  --r:8px;--rl:12px;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--g100);color:var(--g900);font-size:14px;line-height:1.5}
+
+/* Login */
+#login-screen{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:20px}
+#login-screen.hidden{display:none}
+.login-box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:var(--rl);padding:40px 48px;text-align:center;max-width:400px;width:100%}
+.login-logo{font-size:28px;font-weight:700;color:#fff;margin-bottom:6px}
+.login-sub{color:rgba(255,255,255,.5);font-size:13px;margin-bottom:28px}
+.ms-btn{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#1a1a1a;border:none;border-radius:var(--r);padding:12px 24px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.ms-btn:hover{opacity:.9}
+.ms-btn svg{width:20px;height:20px}
+.login-err{color:#fca5a5;font-size:12px;margin-top:12px}
+
+/* App shell */
+#app{display:flex;min-height:100vh}
+#app.hidden{display:none}
+.sidebar{width:240px;background:var(--navy);flex-shrink:0;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto}
+.sidebar-logo{padding:20px 20px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+.brand{color:#fff;font-size:15px;font-weight:700}
+.brand-sub{color:rgba(255,255,255,.4);font-size:11px;margin-top:2px}
+.nav-section{padding:10px 16px 3px;color:rgba(255,255,255,.3);font-size:10px;font-weight:700;letter-spacing:.9px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;color:rgba(255,255,255,.62);cursor:pointer;transition:all .15s;font-size:13px;border-right:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav-item.active{background:rgba(14,159,110,.2);color:#4ade80;border-right-color:var(--teal)}
+.nav-item i{font-size:17px;flex-shrink:0}
+.sidebar-footer{padding:14px 20px;border-top:1px solid rgba(255,255,255,.1);margin-top:auto}
+.user-row{display:flex;align-items:center;gap:10px}
+.user-av{width:32px;height:32px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0}
+.user-info .uname{color:rgba(255,255,255,.85);font-size:12px;font-weight:600}
+.user-info .uemail{color:rgba(255,255,255,.4);font-size:10px}
+.logout-btn{margin-left:auto;background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:16px;padding:4px}
+.logout-btn:hover{color:#fff}
+
+/* Main */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column}
+.topbar{background:var(--white);border-bottom:1px solid var(--g200);padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.topbar h1{font-size:17px;font-weight:700}
+.topbar p{font-size:11px;color:var(--g500);margin-top:1px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.content{padding:22px 28px;flex:1}
+.page{display:none}.page.active{display:block}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s;background:none}
+.btn-primary{background:var(--teal);color:#fff;border-color:var(--teal)}.btn-primary:hover{background:var(--teal-d)}
+.btn-outline{background:#fff;color:var(--g700);border-color:var(--g200)}.btn-outline:hover{background:var(--g50)}
+.btn-danger{background:var(--red);color:#fff;border-color:var(--red)}.btn-danger:hover{opacity:.88}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{width:30px;height:30px;padding:0;justify-content:center;border-radius:var(--r);border:1px solid var(--g200);background:#fff;color:var(--g500);cursor:pointer;font-size:15px;display:inline-flex;align-items:center}
+.btn-icon:hover{background:var(--g50);color:var(--g900)}
+.btn-icon.danger:hover{background:var(--red-l);color:var(--red);border-color:var(--red)}
+
+/* Metrics */
+.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.metric-card{background:var(--white);border-radius:var(--rl);padding:16px 18px;border:1px solid var(--g200)}
+.mc-label{font-size:11px;color:var(--g500);font-weight:600;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.mc-value{font-size:24px;font-weight:700}
+.mc-delta{font-size:11px;color:var(--g500);margin-top:3px}
+.mc-icon{width:28px;height:28px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.ic-t{background:var(--teal-l);color:var(--teal-d)}
+.ic-b{background:var(--blue-l);color:#1e40af}
+.ic-a{background:var(--amber-l);color:#92400e}
+.ic-p{background:var(--purple-l);color:#5b21b6}
+.ic-r{background:var(--red-l);color:#b91c1c}
+
+/* Cards */
+.card{background:var(--white);border-radius:var(--rl);border:1px solid var(--g200);overflow:hidden;margin-bottom:20px}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between}
+.card-header h2{font-size:14px;font-weight:700}
+.card-body{padding:18px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+.chart-row{display:grid;grid-template-columns:3fr 2fr;gap:18px;margin-bottom:20px}
+
+/* Table */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:var(--g50)}
+th{padding:9px 13px;text-align:left;font-weight:700;font-size:11px;color:var(--g500);border-bottom:1px solid var(--g200);white-space:nowrap;text-transform:uppercase;letter-spacing:.4px}
+td{padding:9px 13px;border-bottom:1px solid var(--g100);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--g50)}
+.td-bold{font-weight:600}
+.td-actions{display:flex;gap:5px;align-items:center}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.bg{background:var(--teal-l);color:var(--teal-d)}
+.ba{background:var(--amber-l);color:#78350f}
+.br{background:var(--red-l);color:#991b1b}
+.bb{background:var(--blue-l);color:#1e3a8a}
+.bp{background:var(--purple-l);color:#4c1d95}
+.bgr{background:var(--g100);color:var(--g500)}
+
+/* Progress */
+.prog{background:var(--g200);border-radius:4px;height:5px;overflow:hidden}
+.prog-fill{height:100%;border-radius:4px}
+.pf-t{background:var(--teal)}.pf-a{background:var(--amber)}.pf-r{background:var(--red)}.pf-b{background:var(--blue)}
+
+/* Filter bar */
+.filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.search-wrap{display:flex;align-items:center;gap:7px;background:var(--white);border:1px solid var(--g200);border-radius:var(--r);padding:6px 11px;min-width:200px}
+.search-wrap i{color:var(--g400);font-size:15px}
+.search-wrap input{border:none;outline:none;font-size:13px;color:var(--g900);background:transparent;width:100%}
+select{padding:6px 9px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g700);background:var(--white);cursor:pointer;outline:none}
+select:focus{border-color:var(--teal)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:300;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--white);border-radius:var(--rl);width:100%;max-width:640px;box-shadow:0 24px 64px rgba(0,0,0,.22)}
+.modal-header{padding:18px 22px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:15px;font-weight:700}
+.modal-close{width:30px;height:30px;border-radius:var(--r);border:1px solid var(--g200);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--g500);background:transparent;font-size:17px}
+.modal-close:hover{background:var(--g50)}
+.modal-body{padding:18px 22px}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--g200);display:flex;align-items:center;justify-content:flex-end;gap:8px;background:var(--g50);border-radius:0 0 var(--rl) var(--rl)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg.full{grid-column:1/-1}
+.fg label{font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px}
+.fg input,.fg select,.fg textarea{padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g900);outline:none;transition:border-color .15s;background:#fff}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--teal)}
+.fg textarea{resize:vertical;min-height:70px}
+
+/* Confirm modal */
+.confirm-modal{max-width:400px}
+.confirm-body{padding:24px 22px;text-align:center}
+.confirm-icon{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px}
+.ci-danger{background:var(--red-l);color:var(--red)}
+.ci-success{background:var(--teal-l);color:var(--teal-d)}
+
+/* Toast */
+.toast-container{position:fixed;bottom:24px;right:24px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--g900);color:#fff;padding:12px 18px;border-radius:var(--r);font-size:13px;display:flex;align-items:center;gap:10px;min-width:240px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:slideIn .2s ease}
+.toast.success{background:var(--teal-d)}
+.toast.error{background:#991b1b}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* Loading */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--g500);gap:10px;font-size:13px}
+.spinner{width:20px;height:20px;border:2px solid var(--g200);border-top-color:var(--teal);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:40px 20px;color:var(--g500)}
+.empty-state i{font-size:36px;opacity:.3;display:block;margin-bottom:10px}
+.empty-state p{font-size:13px}
+
+/* Avatar */
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.av-b{background:var(--blue-l);color:#1e40af}
+.av-t{background:var(--teal-l);color:var(--teal-d)}
+.av-p{background:var(--purple-l);color:#4c1d95}
+
+/* Attendee card in run view */
+.att-card{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--g100)}
+.att-card:last-child{border-bottom:none}
+
+/* Section divider */
+.section-divider{font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.6px;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--g200)}
+
+@media print{.sidebar,.topbar,.filter-bar,.td-actions,.btn,.toast-container{display:none!important}.main{margin:0}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div style="font-size:36px;color:var(--teal)"><i class="ti ti-certificate"></i></div>
+    <div style="color:#fff;font-size:22px;font-weight:700;margin:10px 0 4px">CG Training System</div>
+    <div class="login-sub">Concept Group — Training Administration</div>
+    <button class="ms-btn" id="signin-btn" onclick="signIn()">
+      <svg viewBox="0 0 21 21" fill="none" style="width:20px;height:20px">
+        <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Sign in with Microsoft
+    </button>
+    <div id="login-err" class="login-err"></div>
+    <div id="login-status" style="color:rgba(255,255,255,.5);font-size:12px;margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand"><i class="ti ti-certificate" style="font-size:16px;vertical-align:-2px;margin-right:6px;color:var(--teal)"></i>CG Training</div>
+      <div class="brand-sub">Training Management System</div>
+    </div>
+    <nav style="padding:10px 0;flex:1">
+      <div class="nav-section">Overview</div>
+      <div class="nav-item active" onclick="nav('dashboard')"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
+      <div class="nav-section">Manage</div>
+      <div class="nav-item" onclick="nav('courses')"><i class="ti ti-books"></i>Courses</div>
+      <div class="nav-item" onclick="nav('runs')"><i class="ti ti-calendar-event"></i>Course Runs</div>
+      <div class="nav-item" onclick="nav('organisations')"><i class="ti ti-building"></i>Organisations</div>
+      <div class="nav-item" onclick="nav('attendees')"><i class="ti ti-users"></i>Attendees</div>
+      <div class="nav-section">Finance</div>
+      <div class="nav-item" onclick="nav('invoices')"><i class="ti ti-file-invoice"></i>Invoices</div>
+      <div class="nav-item" onclick="nav('payments')"><i class="ti ti-cash"></i>Payments</div>
+      <div class="nav-section">Admin</div>
+      <div class="nav-item" onclick="nav('trainers')"><i class="ti ti-user-star"></i>Trainers</div>
+      <div class="nav-item" onclick="nav('certificates')"><i class="ti ti-award"></i>Certificates</div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <div class="user-av" id="user-av">?</div>
+        <div class="user-info">
+          <div class="uname" id="user-name">Loading...</div>
+          <div class="uemail" id="user-email"></div>
+        </div>
+        <button class="logout-btn" onclick="signOut()" title="Sign out"><i class="ti ti-logout"></i></button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-sub">2026 Training Year — Live data from SharePoint</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-outline btn-sm" onclick="refreshPage()"><i class="ti ti-refresh"></i>Refresh</button>
+        <button class="btn btn-primary btn-sm" id="topbar-add-btn" onclick="openAddModal()"><i class="ti ti-plus"></i><span id="topbar-add-label">Add</span></button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page active">
+        <div class="metrics-grid" id="dash-metrics">
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-b"><i class="ti ti-books"></i></span>Course Runs</div><div class="mc-value" id="dm-runs">—</div><div class="mc-delta">Total scheduled 2026</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-users"></i></span>Attendees</div><div class="mc-value" id="dm-att">—</div><div class="mc-delta">Registered this year</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-currency-kina"></i></span>Revenue (PGK)</div><div class="mc-value" id="dm-rev">—</div><div class="mc-delta">Total invoiced</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-a"><i class="ti ti-clock"></i></span>Outstanding</div><div class="mc-value" id="dm-out" style="color:var(--amber)">—</div><div class="mc-delta">Awaiting payment</div></div>
+        </div>
+        <div class="chart-row">
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>Revenue by Course Category (PGK)</h2></div>
+            <div class="card-body"><div style="position:relative;height:220px"><canvas id="revChart" role="img" aria-label="Revenue by category bar chart">Revenue chart.</canvas></div></div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>Payment Status</h2></div>
+            <div class="card-body"><div style="position:relative;height:220px"><canvas id="statusChart" role="img" aria-label="Payment status donut chart">Status chart.</canvas></div></div>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:18px">
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>Attendance by Course</h2></div>
+            <div class="card-body" id="dash-att-bars"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>Recent Registrations</h2></div>
+            <div class="card-body" style="padding:0 18px" id="dash-recent"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COURSES -->
+      <div id="page-courses" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search courses..." id="course-q" oninput="filterTable('courses')"></div>
+          <select id="course-cat" onchange="filterTable('courses')">
+            <option value="">All categories</option>
+            <option>Payroll</option><option>HR</option><option>Safety</option><option>Other</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="courses-count">Courses</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Course Name</th><th>Category</th><th>Fee (PGK excl. GST)</th><th>GST Rate</th><th>Runs</th><th>Actions</th></tr></thead>
+            <tbody id="courses-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- COURSE RUNS -->
+      <div id="page-runs" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search runs..." id="runs-q" oninput="filterTable('runs')"></div>
+          <select id="runs-status" onchange="filterTable('runs')">
+            <option value="">All statuses</option>
+            <option>Scheduled</option><option>Active</option><option>Completed</option><option>Postponed</option>
+          </select>
+          <select id="runs-course" onchange="filterTable('runs')"><option value="">All courses</option></select>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="runs-count">Course Runs</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Course</th><th>Start</th><th>End</th><th>Trainer</th><th>Venue</th><th>Capacity</th><th>Enrolled</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="runs-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ORGANISATIONS -->
+      <div id="page-organisations" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search organisations..." id="orgs-q" oninput="filterTable('organisations')"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="orgs-count">Organisations</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Organisation</th><th>Contact Person</th><th>Position</th><th>Email</th><th>Phone</th><th>Attendees</th><th>Actions</th></tr></thead>
+            <tbody id="orgs-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ATTENDEES -->
+      <div id="page-attendees" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search attendees..." id="att-q" oninput="filterTable('attendees')"></div>
+          <select id="att-run" onchange="filterTable('attendees')"><option value="">All course runs</option></select>
+          <select id="att-org" onchange="filterTable('attendees')"><option value="">All organisations</option></select>
+          <select id="att-status" onchange="filterTable('attendees')">
+            <option value="">All statuses</option>
+            <option>Registered</option><option>Attended</option><option>Completed</option><option>No-show</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="att-count">Attendees</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Name</th><th>Organisation</th><th>Course Run</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="att-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- INVOICES -->
+      <div id="page-invoices" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search invoices..." id="inv-q" oninput="filterTable('invoices')"></div>
+          <select id="inv-status" onchange="filterTable('invoices')">
+            <option value="">All statuses</option><option>Paid</option><option>Partial</option><option>Pending</option>
+          </select>
+        </div>
+        <div class="metrics-grid" style="margin-bottom:16px">
+          <div class="metric-card"><div class="mc-label">Total Invoiced</div><div class="mc-value" id="inv-m1" style="font-size:18px">—</div></div>
+          <div class="metric-card"><div class="mc-label">Total Paid</div><div class="mc-value" style="color:var(--teal);font-size:18px" id="inv-m2">—</div></div>
+          <div class="metric-card"><div class="mc-label">Outstanding</div><div class="mc-value" style="color:var(--red);font-size:18px" id="inv-m3">—</div></div>
+          <div class="metric-card"><div class="mc-label">Invoice Count</div><div class="mc-value" style="font-size:18px" id="inv-m4">—</div></div>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Invoice Date</th><th>Quote Ref</th><th>Actions</th></tr></thead>
+            <tbody id="inv-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAYMENTS -->
+      <div id="page-payments" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search payments..." id="pay-q" oninput="filterTable('payments')"></div>
+          <select id="pay-status" onchange="filterTable('payments')">
+            <option value="">All</option><option>Paid</option><option>Partial</option><option>Pending</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="pay-count">Payments</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Invoice #</th><th>Amount Paid</th><th>Date Paid</th><th>Remittance Ref</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="pay-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRAINERS -->
+      <div id="page-trainers" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search trainers..." id="tr-q" oninput="filterTable('trainers')"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="tr-count">Trainers</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Specialisation</th><th>Courses Delivered</th><th>Actions</th></tr></thead>
+            <tbody id="tr-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CERTIFICATES -->
+      <div id="page-certificates" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search certificates..." id="cert-q" oninput="filterTable('certificates')"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="cert-count">Certificates</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Certificate #</th><th>Attendee</th><th>Course Run</th><th>Issue Date</th><th>Actions</th></tr></thead>
+            <tbody id="cert-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- MODALS -->
+<div id="entity-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header"><h3 id="modal-title">Add Record</h3><button class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-save-btn" onclick="saveModal()"><i class="ti ti-check"></i><span id="modal-save-label">Save</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-modal" class="modal-overlay">
+  <div class="modal confirm-modal">
+    <div class="confirm-body">
+      <div class="confirm-icon ci-danger"><i class="ti ti-trash"></i></div>
+      <h3 style="font-size:15px;margin-bottom:6px" id="confirm-title">Delete this record?</h3>
+      <p style="font-size:13px;color:var(--g500)" id="confirm-msg">This action cannot be undone.</p>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+        <button class="btn btn-outline" onclick="document.getElementById('confirm-modal').classList.remove('open')">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok-btn"><i class="ti ti-trash"></i>Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+// ============================================================
+// APP CONFIGURATION — update these values if anything changes
+// ============================================================
+const CLIENT_ID = 'd5aef866-584f-4226-ab11-c941888fb519'; // Azure AD App Registration Client ID
+const TENANT_ID = 'ea9e105c-2df6-47ef-a8e3-b4aa1d788423'; // Azure AD Directory (Tenant) ID
+const SP_SITE   = 'conceptcompg.sharepoint.com';           // SharePoint hostname
+const SP_PATH   = '/sites/training.admin';                 // SharePoint site path
+const SITE_URL  = `https://${SP_SITE}${SP_PATH}`;
+
+// REDIRECT_URI is auto-detected from the browser URL — no manual config needed.
+// After deploying to Azure Blob Static Website, add the Azure URL as a
+// Single-page application (SPA) Redirect URI in the Azure App Registration.
+// Example: https://cgtrainingapp.z26.web.core.windows.net
+// ============================================================
+
+const LISTS = {
+  courses:      'CG_Courses',
+  runs:         'CG_CourseRuns',
+  organisations:'CG_Organisations',
+  attendees:    'CG_Attendees',
+  invoices:     'CG_Invoices',
+  payments:     'CG_Payments',
+  trainers:     'CG_Trainers',
+  certificates: 'CG_Certificates',
+};
+
+const SCOPES       = 'https://graph.microsoft.com/Sites.ReadWrite.All User.Read offline_access';
+const REDIRECT_URI  = window.location.href.split('?')[0].split('#')[0];
+const AUTH_ENDPOINT = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0`;
+const STORE_KEY     = 'cg_training_auth';
+let currentUser = null;
+let siteId = null;
+let listIds = {};
+let cache = {};
+let currentPage = 'dashboard';
+let editingId = null;
+let editingEntity = null;
+let revChart = null;
+let statusChart = null;
+
+// ============================================================
+// AUTH — OAuth2 PKCE full-page redirect (standalone browser, no iframe)
+// ============================================================
+
+let _accessToken  = null;
+let _tokenExpiry  = 0;
+let _refreshToken = null;
+
+// Storage wrapper — tries localStorage, falls back to memory
+const store = {
+  _m:{},
+  set(k,v){ try{localStorage.setItem(k,v);}catch{this._m[k]=v;} },
+  get(k){   try{return localStorage.getItem(k);}catch{return this._m[k]||null;} },
+  del(k){   try{localStorage.removeItem(k);}catch{delete this._m[k];} },
+  clear(){
+    ['cg_access_token','cg_refresh_token','cg_token_expiry','cg_user',
+     'cg_pkce_verifier','cg_pkce_state'].forEach(k=>{
+      try{localStorage.removeItem(k);}catch{}
+      delete this._m[k];
+    });
+  }
+};
+
+function b64url(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+async function pkceChallenge(){
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  const verifier = b64url(arr);
+  const digest   = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
+  return {verifier, challenge:b64url(digest)};
+}
+function parseJwt(t){
+  try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));}
+  catch{return {};}
+}
+function saveTokens(data){
+  _accessToken  = data.access_token;
+  _refreshToken = data.refresh_token || _refreshToken;
+  _tokenExpiry  = Date.now() + (+(data.expires_in)||3600)*1000;
+  store.set('cg_access_token',  _accessToken);
+  store.set('cg_refresh_token', _refreshToken||'');
+  store.set('cg_token_expiry',  String(_tokenExpiry));
+  if(data.id_token){
+    const c = parseJwt(data.id_token);
+    currentUser = {name:c.name||c.preferred_username||'User', username:c.preferred_username||c.email||''};
+    store.set('cg_user', JSON.stringify(currentUser));
+  }
+}
+
+async function signIn(){
+  const errEl    = document.getElementById('login-err');
+  const statusEl = document.getElementById('login-status');
+  errEl.textContent = '';
+  statusEl.textContent = 'Redirecting to Microsoft login...';
+  document.getElementById('signin-btn').disabled = true;
+  try {
+    const {verifier, challenge} = await pkceChallenge();
+    const stArr = new Uint8Array(16);
+    crypto.getRandomValues(stArr);
+    const state = b64url(stArr);
+    store.set('cg_pkce_verifier', verifier);
+    store.set('cg_pkce_state',    state);
+    const params = new URLSearchParams({
+      client_id:CLIENT_ID, response_type:'code', redirect_uri:REDIRECT_URI,
+      scope:SCOPES, response_mode:'query', state,
+      code_challenge:challenge, code_challenge_method:'S256', prompt:'select_account',
+    });
+    window.location.href = AUTH_ENDPOINT + '/authorize?' + params.toString();
+  } catch(e){
+    errEl.textContent = e.message||'Sign-in failed.';
+    statusEl.textContent = '';
+    document.getElementById('signin-btn').disabled = false;
+  }
+}
+
+async function exchangeCode(code, verifier){
+  const body = new URLSearchParams({
+    client_id:CLIENT_ID, grant_type:'authorization_code',
+    code, redirect_uri:REDIRECT_URI, code_verifier:verifier, scope:SCOPES,
+  });
+  const r = await fetch(AUTH_ENDPOINT+'/token',{
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()
+  });
+  const data = await r.json();
+  if(data.error) throw new Error(data.error_description||data.error);
+  return data;
+}
+
+async function getToken(){
+  if(_accessToken && Date.now() < _tokenExpiry - 60000) return _accessToken;
+  const refresh = _refreshToken || store.get('cg_refresh_token');
+  if(!refresh){ handleExpired(); throw new Error('Session expired'); }
+  const body = new URLSearchParams({
+    client_id:CLIENT_ID, grant_type:'refresh_token', refresh_token:refresh, scope:SCOPES,
+  });
+  const r = await fetch(AUTH_ENDPOINT+'/token',{
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()
+  });
+  const data = await r.json();
+  if(data.error){ handleExpired(); throw new Error('Session expired — please sign in again.'); }
+  saveTokens(data);
+  return _accessToken;
+}
+
+function handleExpired(){
+  store.clear();
+  _accessToken=null;_refreshToken=null;_tokenExpiry=0;
+  currentUser=null;cache={};siteId=null;
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-err').textContent='Your session has expired — please sign in again.';
+  document.getElementById('signin-btn').disabled=false;
+  document.getElementById('login-status').textContent='';
+}
+
+function signOut(){
+  const hint = currentUser ? currentUser.username : '';
+  store.clear();
+  _accessToken=null;_refreshToken=null;_tokenExpiry=0;
+  currentUser=null;cache={};siteId=null;
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-err').textContent='';
+  document.getElementById('signin-btn').disabled=false;
+  document.getElementById('login-status').textContent='';
+  window.location.href = AUTH_ENDPOINT+'/logout?post_logout_redirect_uri='
+    +encodeURIComponent(REDIRECT_URI)+(hint?'&logout_hint='+encodeURIComponent(hint):'');
+}
+
+async function initApp(){
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  const name = currentUser ? (currentUser.name||currentUser.username||'User') : 'User';
+  const ini  = name.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-av').textContent   = ini;
+  document.getElementById('user-name').textContent  = name;
+  document.getElementById('user-email').textContent = currentUser ? (currentUser.username||'') : '';
+  try {
+    await resolveSite();
+    await loadDashboard();
+  } catch(e){
+    toast('Error loading data: '+e.message,'error');
+  }
+}
+
+window.addEventListener('load', async()=>{
+  const params   = new URLSearchParams(window.location.search);
+  const code     = params.get('code');
+  const state    = params.get('state');
+  const errParam = params.get('error');
+
+  // Returning from Microsoft login
+  if(code || errParam){
+    window.history.replaceState({},document.title,REDIRECT_URI);
+    if(errParam){
+      document.getElementById('login-err').textContent = params.get('error_description')||errParam;
+      return;
+    }
+    const savedState    = store.get('cg_pkce_state');
+    const savedVerifier = store.get('cg_pkce_verifier');
+    store.del('cg_pkce_state');
+    store.del('cg_pkce_verifier');
+    if(!savedState || state !== savedState){
+      document.getElementById('login-err').textContent='State mismatch — please try again.';
+      return;
+    }
+    document.getElementById('login-status').textContent='Completing sign-in...';
+    try {
+      const tokens = await exchangeCode(code, savedVerifier);
+      saveTokens(tokens);
+      await initApp();
+    } catch(e){
+      document.getElementById('login-err').textContent='Sign-in failed: '+e.message;
+      document.getElementById('login-status').textContent='';
+    }
+    return;
+  }
+
+  // Restore existing session
+  const storedToken   = store.get('cg_access_token');
+  const storedRefresh = store.get('cg_refresh_token');
+  const storedExpiry  = +(store.get('cg_token_expiry'))||0;
+  const storedUser    = store.get('cg_user');
+
+  if(storedToken && storedExpiry > Date.now()){
+    _accessToken=storedToken; _refreshToken=storedRefresh; _tokenExpiry=storedExpiry;
+    currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
+    await initApp();
+    return;
+  }
+  if(storedRefresh){
+    _refreshToken = storedRefresh;
+    try {
+      await getToken();
+      currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
+      await initApp();
+      return;
+    } catch(e){}
+  }
+  // No session — login screen already visible
+});
+
+// ============================================================
+// GRAPH API// ============================================================
+// GRAPH API// ============================================================
+// GRAPH API// ============================================================
+// GRAPH API
+// ============================================================
+async function graph(path, method='GET', body=null){
+  const token = await getToken();
+  const opts = {method, headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'}};
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch('https://graph.microsoft.com/v1.0'+path, opts);
+  if(!r.ok){
+    const err = await r.json().catch(()=>({}));
+    throw new Error(err.error?.message || `HTTP ${r.status}`);
+  }
+  if(r.status===204) return null;
+  return r.json();
+}
+
+async function resolveSite(){
+  if(siteId) return;
+  const data = await graph(`/sites/${SP_SITE}:${SP_PATH}`);
+  siteId = data.id;
+  // resolve list IDs
+  const lists = await graph(`/sites/${siteId}/lists?$select=id,name`);
+  lists.value.forEach(l=>{
+    Object.entries(LISTS).forEach(([key,spName])=>{
+      if(l.name.toLowerCase()===spName.toLowerCase()) listIds[key]=l.id;
+    });
+  });
+}
+
+async function getItems(entity, query=''){
+  const lid = listIds[entity];
+  if(!lid){console.warn('List not found for',entity);return [];}
+  const url = `/sites/${siteId}/lists/${lid}/items?expand=fields${query?'&'+query:''}`;
+  const data = await graph(url);
+  return (data.value||[]).map(i=>({id:i.id,...i.fields}));
+}
+
+async function createItem(entity, fields){
+  const lid = listIds[entity];
+  if(!lid) throw new Error('List not found: '+entity);
+  return graph(`/sites/${siteId}/lists/${lid}/items`,'POST',{fields});
+}
+
+async function updateItem(entity, itemId, fields){
+  const lid = listIds[entity];
+  if(!lid) throw new Error('List not found: '+entity);
+  return graph(`/sites/${siteId}/lists/${lid}/items/${itemId}/fields`,'PATCH',fields);
+}
+
+async function deleteItem(entity, itemId){
+  const lid = listIds[entity];
+  if(!lid) throw new Error('List not found: '+entity);
+  return graph(`/sites/${siteId}/lists/${lid}/items/${itemId}`,'DELETE');
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function fmt(n){
+  if(n==null||n===''||n===undefined) return '—';
+  return 'K '+Number(n).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtDate(s){
+  if(!s) return '—';
+  try{return new Date(s).toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}
+}
+function initials(n){
+  if(!n) return '?';
+  return n.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+}
+function statusBadge(s){
+  const map={Paid:'bg',Partial:'ba',Pending:'br',Active:'bb',Completed:'bg',Scheduled:'bp',Postponed:'br',Registered:'bb',Attended:'ba','No-show':'br'};
+  return `<span class="badge ${map[s]||'bgr'}">${s||'—'}</span>`;
+}
+function payStatus(fee,gst,paid){
+  const total=(+fee||0)+(+gst||0);
+  if(!total) return 'N/A';
+  if((+paid||0)>=total) return 'Paid';
+  if((+paid||0)>0) return 'Partial';
+  return 'Pending';
+}
+function toast(msg, type='success'){
+  const c=document.getElementById('toast-container');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<i class="ti ti-${type==='success'?'check':'alert-circle'}"></i>${msg}`;
+  c.appendChild(t);
+  setTimeout(()=>t.remove(),3500);
+}
+function loading(tbodyId){
+  document.getElementById(tbodyId).innerHTML=`<tr><td colspan="20"><div class="loading"><div class="spinner"></div>Loading from SharePoint...</div></td></tr>`;
+}
+function emptyState(tbodyId, msg='No records found'){
+  document.getElementById(tbodyId).innerHTML=`<tr><td colspan="20"><div class="empty-state"><i class="ti ti-inbox"></i><p>${msg}</p></div></td></tr>`;
+}
+function closeModal(){
+  document.getElementById('entity-modal').classList.remove('open');
+  editingId=null; editingEntity=null;
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+const PAGE_CONFIG = {
+  dashboard:     {title:'Dashboard',        sub:'Live data from SharePoint',                       addLabel:null},
+  courses:       {title:'Courses',           sub:'Course catalogue — add, edit, delete courses',   addLabel:'Add Course'},
+  runs:          {title:'Course Runs',       sub:'Scheduled and completed course runs',            addLabel:'Add Course Run'},
+  organisations: {title:'Organisations',     sub:'Client organisations and contact details',       addLabel:'Add Organisation'},
+  attendees:     {title:'Attendees',         sub:'Registered participants across all courses',     addLabel:'Add Attendee'},
+  invoices:      {title:'Invoices',          sub:'Invoice register and billing',                   addLabel:'Add Invoice'},
+  payments:      {title:'Payments',          sub:'Payment receipts and tracking',                  addLabel:'Add Payment'},
+  trainers:      {title:'Trainers',          sub:'Training facilitators',                         addLabel:'Add Trainer'},
+  certificates:  {title:'Certificates',      sub:'Issued certificates register',                  addLabel:'Add Certificate'},
+};
+
+function nav(page){
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  const cfg = PAGE_CONFIG[page];
+  document.getElementById('page-title').textContent = cfg.title;
+  document.getElementById('page-sub').textContent = cfg.sub;
+  const addBtn = document.getElementById('topbar-add-btn');
+  if(cfg.addLabel){
+    addBtn.style.display='';
+    document.getElementById('topbar-add-label').textContent = cfg.addLabel;
+  } else {
+    addBtn.style.display='none';
+  }
+  loadPage(page);
+}
+
+async function loadPage(page){
+  const loaders = {
+    courses:       loadCourses,
+    runs:          loadRuns,
+    organisations: loadOrgs,
+    attendees:     loadAttendees,
+    invoices:      loadInvoices,
+    payments:      loadPayments,
+    trainers:      loadTrainers,
+    certificates:  loadCertificates,
+  };
+  if(loaders[page]) await loaders[page]();
+}
+
+function refreshPage(){ loadPage(currentPage); if(currentPage==='dashboard') loadDashboard(); }
+function openAddModal(){ openFormModal(currentPage, null); }
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function loadDashboard(){
+  try {
+    const [runs, atts, invs, pays] = await Promise.all([
+      getItems('runs','$top=500'),
+      getItems('attendees','$top=500'),
+      getItems('invoices','$top=500'),
+      getItems('payments','$top=500'),
+    ]);
+    cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
+
+    const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+    const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+
+    document.getElementById('dm-runs').textContent = runs.length;
+    document.getElementById('dm-att').textContent = atts.length;
+    document.getElementById('dm-rev').textContent = fmt(totalInv);
+    document.getElementById('dm-out').textContent = fmt(totalInv - totalPaid);
+
+    buildDashCharts(atts, invs, pays);
+    buildAttBars(runs, atts);
+    buildRecentActivity(atts);
+  } catch(e){ toast('Dashboard error: '+e.message,'error'); }
+}
+
+function buildDashCharts(atts, invs, pays){
+  const cats = {Payroll:0, HR:0, Safety:0, Other:0};
+  // We can't easily join without course data here so use invoice totals
+  invs.forEach(i=>{ cats.Other += (+i.TotalAmount||0); });
+
+  if(revChart) revChart.destroy();
+  const rc = document.getElementById('revChart');
+  if(rc) revChart = new Chart(rc,{
+    type:'bar',
+    data:{
+      labels:['Total Invoiced'],
+      datasets:[{label:'PGK',data:[invs.reduce((s,i)=>s+(+i.TotalAmount||0),0)],backgroundColor:['#3b82f6'],borderRadius:6,borderSkipped:false}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'K'+Math.round(v/1000)+'k'}}}}
+  });
+
+  const paid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+  const totalDue = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  const outstanding = Math.max(0, totalDue - paid);
+  if(statusChart) statusChart.destroy();
+  const sc = document.getElementById('statusChart');
+  if(sc) statusChart = new Chart(sc,{
+    type:'doughnut',
+    data:{labels:['Paid','Outstanding'],datasets:[{data:[paid,outstanding],backgroundColor:['#0e9f6e','#f59e0b'],borderWidth:0,hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:12}}}}}
+  });
+}
+
+function buildAttBars(runs, atts){
+  const el = document.getElementById('dash-att-bars');
+  if(!runs.length){el.innerHTML='<div class="empty-state"><i class="ti ti-calendar-off"></i><p>No course runs yet</p></div>';return;}
+  const runCounts = {};
+  atts.forEach(a=>{ const rid=a.CourseRunIDId||a.CourseRunID; if(rid) runCounts[rid]=(runCounts[rid]||0)+1; });
+  let html='';
+  runs.slice(0,8).forEach(r=>{
+    const cnt = runCounts[r.id]||0;
+    const cap = +r.Capacity||7;
+    const pct = Math.min(100,Math.round(cnt/cap*100));
+    const col = pct>=80?'pf-t':pct>=40?'pf-b':'pf-a';
+    html+=`<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:12px;color:var(--g700)">${(r.CourseName||r.Title||'Course').substring(0,36)}</span>
+        <span style="font-size:12px;font-weight:600">${cnt}/${cap}</span>
+      </div>
+      <div class="prog"><div class="prog-fill ${col}" style="width:${pct}%"></div></div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function buildRecentActivity(atts){
+  const el = document.getElementById('dash-recent');
+  const recent = [...atts].reverse().slice(0,8);
+  if(!recent.length){el.innerHTML='<div class="empty-state"><i class="ti ti-users-off"></i><p>No attendees yet</p></div>';return;}
+  el.innerHTML = recent.map(a=>`
+    <div class="att-card">
+      <div class="av av-b">${initials(a.FullName||a.Title)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${a.FullName||a.Title||'—'}</div>
+        <div style="font-size:11px;color:var(--g500)">${a.OrgName||''}</div>
+      </div>
+      ${statusBadge(a.AttendanceStatus||'Registered')}
+    </div>`).join('');
+}
+
+// ============================================================
+// COURSES
+// ============================================================
+async function loadCourses(){
+  loading('courses-tbody');
+  try {
+    const items = await getItems('courses','$top=500');
+    cache.courses = items;
+    renderCourses(items);
+    // populate runs filter
+    const sel = document.getElementById('runs-course');
+    sel.innerHTML = '<option value="">All courses</option>';
+    items.forEach(c=>{ const o=document.createElement('option');o.value=c.id;o.textContent=c.CourseName||c.Title;sel.appendChild(o); });
+  } catch(e){ toast('Error loading courses: '+e.message,'error'); }
+}
+
+function renderCourses(items){
+  document.getElementById('courses-count').textContent = `Courses (${items.length})`;
+  if(!items.length){emptyState('courses-tbody','No courses yet — add your first course');return;}
+  document.getElementById('courses-tbody').innerHTML = items.map(c=>`<tr>
+    <td class="td-bold">${c.CourseName||c.Title||'—'}</td>
+    <td><span class="badge ${c.Category==='Payroll'?'bb':c.Category==='HR'?'bg':c.Category==='Safety'?'ba':'bgr'}">${c.Category||'—'}</span></td>
+    <td>${fmt(c.FeeExGST)}</td>
+    <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
+    <td>${(cache.runs||[]).filter(r=>r.CourseLookupId==c.id||r.CourseIDId==c.id).length}</td>
+    <td><div class="td-actions">
+      <button class="btn-icon" onclick="openFormModal('courses',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+      <button class="btn-icon danger" onclick="confirmDelete('courses','${c.id}','${(c.CourseName||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+
+function filterTable(entity){
+  const q = (document.getElementById(entity.substring(0,3)+'-q')||{value:''}).value.toLowerCase();
+  let items = cache[entity]||[];
+  if(q) items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
+  // extra filters
+  if(entity==='runs'){
+    const st=(document.getElementById('runs-status')||{value:''}).value;
+    const cr=(document.getElementById('runs-course')||{value:''}).value;
+    if(st) items=items.filter(i=>i.Status===st);
+    if(cr) items=items.filter(i=>(i.CourseIDId||i.CourseLookupId)==cr);
+  }
+  if(entity==='attendees'){
+    const run=(document.getElementById('att-run')||{value:''}).value;
+    const org=(document.getElementById('att-org')||{value:''}).value;
+    const st=(document.getElementById('att-status')||{value:''}).value;
+    if(run) items=items.filter(i=>i.CourseRunIDId==run);
+    if(org) items=items.filter(i=>i.OrgIDId==org);
+    if(st) items=items.filter(i=>i.AttendanceStatus===st);
+  }
+  if(entity==='invoices'){
+    const st=(document.getElementById('inv-status')||{value:''}).value;
+    if(st) items=items.filter(i=>payStatus(i.FeeExGST,i.GSTAmount,i.AmountPaid)===st);
+  }
+  if(entity==='payments'){
+    const st=(document.getElementById('pay-status')||{value:''}).value;
+    if(st) items=items.filter(i=>i.PaymentStatus===st);
+  }
+  const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,certificates:renderCertificates};
+  if(renders[entity]) renders[entity](items);
+}
+
+// ============================================================
+// COURSE RUNS
+// ============================================================
+async function loadRuns(){
+  loading('runs-tbody');
+  try {
+    const items = await getItems('runs','$top=500');
+    cache.runs = items;
+    renderRuns(items);
+  } catch(e){ toast('Error loading runs: '+e.message,'error'); }
+}
+
+function renderRuns(items){
+  document.getElementById('runs-count').textContent = `Course Runs (${items.length})`;
+  if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
+  document.getElementById('runs-tbody').innerHTML = items.map(r=>{
+    const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseLookupId));
+    const enrolled = (cache.attendees||[]).filter(a=>a.CourseRunIDId==r.id).length;
+    return `<tr>
+      <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
+      <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
+      <td style="white-space:nowrap">${fmtDate(r.EndDate)}</td>
+      <td>${r.Trainer||'—'}</td>
+      <td style="font-size:12px">${r.Venue||'—'}</td>
+      <td>${r.Capacity||7}</td>
+      <td><strong>${enrolled}</strong></td>
+      <td>${statusBadge(r.Status||'Scheduled')}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('runs','${r.id}','Run ${fmtDate(r.StartDate)}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// ORGANISATIONS
+// ============================================================
+async function loadOrgs(){
+  loading('orgs-tbody');
+  try {
+    const items = await getItems('organisations','$top=500');
+    cache.organisations = items;
+    renderOrgs(items);
+    // populate attendee org filter
+    const sel = document.getElementById('att-org');
+    sel.innerHTML = '<option value="">All organisations</option>';
+    items.forEach(o=>{ const op=document.createElement('option');op.value=o.id;op.textContent=o.OrgName||o.Title;sel.appendChild(op); });
+  } catch(e){ toast('Error loading organisations: '+e.message,'error'); }
+}
+
+function renderOrgs(items){
+  document.getElementById('orgs-count').textContent = `Organisations (${items.length})`;
+  if(!items.length){emptyState('orgs-tbody','No organisations yet');return;}
+  document.getElementById('orgs-tbody').innerHTML = items.map(o=>{
+    const attCount = (cache.attendees||[]).filter(a=>a.OrgIDId==o.id).length;
+    return `<tr>
+      <td class="td-bold">${o.OrgName||o.Title||'—'}</td>
+      <td>${o.ContactPerson||'—'}</td>
+      <td style="font-size:12px">${o.ContactPosition||'—'}</td>
+      <td style="font-size:12px"><a href="mailto:${o.ContactEmail}" style="color:var(--blue)">${o.ContactEmail||'—'}</a></td>
+      <td>${o.ContactPhone||'—'}</td>
+      <td>${attCount}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('organisations',${JSON.stringify(o).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('organisations','${o.id}','${(o.OrgName||o.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// ATTENDEES
+// ============================================================
+async function loadAttendees(){
+  loading('att-tbody');
+  try {
+    const [items, orgs, runs] = await Promise.all([
+      getItems('attendees','$top=500'),
+      cache.organisations ? Promise.resolve(cache.organisations) : getItems('organisations','$top=500'),
+      cache.runs ? Promise.resolve(cache.runs) : getItems('runs','$top=500'),
+    ]);
+    cache.attendees = items;
+    if(!cache.organisations) cache.organisations = orgs;
+    if(!cache.runs) cache.runs = runs;
+    renderAttendees(items);
+    // populate run filter
+    const sel = document.getElementById('att-run');
+    sel.innerHTML = '<option value="">All course runs</option>';
+    runs.forEach(r=>{ const op=document.createElement('option');op.value=r.id;op.textContent=(r.CourseID||r.Title||'Run')+' '+fmtDate(r.StartDate);sel.appendChild(op); });
+  } catch(e){ toast('Error loading attendees: '+e.message,'error'); }
+}
+
+function renderAttendees(items){
+  document.getElementById('att-count').textContent = `Attendees (${items.length})`;
+  if(!items.length){emptyState('att-tbody','No attendees registered yet');return;}
+  document.getElementById('att-tbody').innerHTML = items.map(a=>{
+    const org = (cache.organisations||[]).find(o=>o.id==a.OrgIDId);
+    const run = (cache.runs||[]).find(r=>r.id==a.CourseRunIDId);
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <div class="av av-b">${initials(a.FullName||a.Title)}</div>
+        <span class="td-bold">${a.FullName||a.Title||'—'}</span>
+      </div></td>
+      <td style="font-size:12px">${org?.OrgName||org?.Title||a.OrgName||'—'}</td>
+      <td style="font-size:12px;max-width:140px">${(run?.CourseID||run?.Title||'—').substring(0,30)}</td>
+      <td style="font-size:12px">${a.JobTitle||'—'}</td>
+      <td style="font-size:12px"><a href="mailto:${a.Email}" style="color:var(--blue)">${a.Email||'—'}</a></td>
+      <td>${a.Section65A?'<span class="badge bg">Yes</span>':'<span class="badge bgr">No</span>'}</td>
+      <td style="font-size:12px">${a.CertificateNumber||'—'}</td>
+      <td>${statusBadge(a.AttendanceStatus||'Registered')}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('attendees',${JSON.stringify(a).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('attendees','${a.id}','${(a.FullName||a.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// INVOICES
+// ============================================================
+async function loadInvoices(){
+  loading('inv-tbody');
+  try {
+    const [items, atts, pays] = await Promise.all([
+      getItems('invoices','$top=500'),
+      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
+      getItems('payments','$top=500'),
+    ]);
+    cache.invoices = items;
+    if(!cache.attendees) cache.attendees = atts;
+    cache.payments = pays;
+    const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+    const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+    document.getElementById('inv-m1').textContent = fmt(totalInv);
+    document.getElementById('inv-m2').textContent = fmt(totalPaid);
+    document.getElementById('inv-m3').textContent = fmt(totalInv-totalPaid);
+    document.getElementById('inv-m4').textContent = items.length;
+    renderInvoices(items);
+  } catch(e){ toast('Error loading invoices: '+e.message,'error'); }
+}
+
+function renderInvoices(items){
+  if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
+  document.getElementById('inv-tbody').innerHTML = items.map(i=>{
+    const att = (cache.attendees||[]).find(a=>a.id==i.AttendeeIDId);
+    return `<tr>
+      <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
+      <td>${att?.FullName||att?.Title||'—'}</td>
+      <td>${fmt(i.FeeExGST)}</td>
+      <td>${fmt(i.GSTAmount)}</td>
+      <td><strong>${fmt(i.TotalAmount)}</strong></td>
+      <td style="white-space:nowrap">${fmtDate(i.InvoiceDate)}</td>
+      <td style="font-size:12px">${i.QuoteRef||'—'}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('invoices',${JSON.stringify(i).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('invoices','${i.id}','${(i.InvoiceNumber||i.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+async function loadPayments(){
+  loading('pay-tbody');
+  try {
+    const [items, invs] = await Promise.all([
+      getItems('payments','$top=500'),
+      cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
+    ]);
+    cache.payments = items;
+    if(!cache.invoices) cache.invoices = invs;
+    renderPayments(items);
+  } catch(e){ toast('Error loading payments: '+e.message,'error'); }
+}
+
+function renderPayments(items){
+  document.getElementById('pay-count').textContent = `Payments (${items.length})`;
+  if(!items.length){emptyState('pay-tbody','No payments recorded yet');return;}
+  document.getElementById('pay-tbody').innerHTML = items.map(p=>{
+    const inv = (cache.invoices||[]).find(i=>i.id==p.InvoiceIDId);
+    const total = +(inv?.TotalAmount||0);
+    const paid = +(p.AmountPaid||0);
+    const bal = total - paid;
+    const st = bal<=0?'Paid':paid>0?'Partial':'Pending';
+    return `<tr>
+      <td class="td-bold">${inv?.InvoiceNumber||inv?.Title||p.InvoiceID||'—'}</td>
+      <td>${fmt(paid)}</td>
+      <td style="white-space:nowrap">${fmtDate(p.DatePaid)}</td>
+      <td style="font-size:12px">${p.RemittanceRef||'—'}</td>
+      <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}">${fmt(bal)}</td>
+      <td>${statusBadge(st)}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('payments',${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('payments','${p.id}','Payment ${fmtDate(p.DatePaid)}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// TRAINERS
+// ============================================================
+async function loadTrainers(){
+  loading('tr-tbody');
+  try {
+    const items = await getItems('trainers','$top=200');
+    cache.trainers = items;
+    renderTrainers(items);
+  } catch(e){ toast('Error loading trainers: '+e.message,'error'); }
+}
+
+function renderTrainers(items){
+  document.getElementById('tr-count').textContent = `Trainers (${items.length})`;
+  if(!items.length){emptyState('tr-tbody','No trainers added yet');return;}
+  document.getElementById('tr-tbody').innerHTML = items.map(t=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:8px">
+      <div class="av av-t">${initials(t.FullName||t.Title)}</div>
+      <span class="td-bold">${t.FullName||t.Title||'—'}</span>
+    </div></td>
+    <td style="font-size:12px"><a href="mailto:${t.Email}" style="color:var(--blue)">${t.Email||'—'}</a></td>
+    <td>${t.Phone||'—'}</td>
+    <td style="font-size:12px">${t.Specialisation||'—'}</td>
+    <td>${(cache.runs||[]).filter(r=>r.Trainer===(t.FullName||t.Title)).length}</td>
+    <td><div class="td-actions">
+      <button class="btn-icon" onclick="openFormModal('trainers',${JSON.stringify(t).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+      <button class="btn-icon danger" onclick="confirmDelete('trainers','${t.id}','${(t.FullName||t.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+
+// ============================================================
+// CERTIFICATES
+// ============================================================
+async function loadCertificates(){
+  loading('cert-tbody');
+  try {
+    const [items, atts, runs] = await Promise.all([
+      getItems('certificates','$top=500'),
+      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
+      cache.runs ? Promise.resolve(cache.runs) : getItems('runs','$top=500'),
+    ]);
+    cache.certificates = items;
+    if(!cache.attendees) cache.attendees = atts;
+    if(!cache.runs) cache.runs = runs;
+    renderCertificates(items);
+  } catch(e){ toast('Error loading certificates: '+e.message,'error'); }
+}
+
+function renderCertificates(items){
+  document.getElementById('cert-count').textContent = `Certificates (${items.length})`;
+  if(!items.length){emptyState('cert-tbody','No certificates issued yet');return;}
+  document.getElementById('cert-tbody').innerHTML = items.map(c=>{
+    const att = (cache.attendees||[]).find(a=>a.id==c.AttendeeIDId);
+    const run = (cache.runs||[]).find(r=>r.id==c.CourseRunIDId);
+    return `<tr>
+      <td class="td-bold">${c.CertificateNumber||c.Title||'—'}</td>
+      <td>${att?.FullName||att?.Title||'—'}</td>
+      <td style="font-size:12px">${run?.CourseID||run?.Title||'—'}</td>
+      <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="openFormModal('certificates',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('certificates','${c.id}','${(c.CertificateNumber||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// FORM MODALS — Add / Edit
+// ============================================================
+const FORM_DEFS = {
+  courses: {
+    title: (d)=> d?'Edit Course':'Add Course',
+    fields: [
+      {key:'CourseName',label:'Course Name',type:'text',full:true,required:true},
+      {key:'Category',label:'Category',type:'select',opts:['Payroll','HR','Safety','Other'],required:true},
+      {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number'},
+      {key:'GSTRate',label:'GST Rate (%)',type:'number'},
+    ],
+    toFields: (f)=>({CourseName:f.CourseName,Category:f.Category,FeeExGST:+f.FeeExGST||0,GSTRate:+f.GSTRate||10,Title:f.CourseName}),
+  },
+  runs: {
+    title: (d)=> d?'Edit Course Run':'Add Course Run',
+    fields: [
+      {key:'CourseIDId',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true},
+      {key:'StartDate',label:'Start Date',type:'date',required:true},
+      {key:'EndDate',label:'End Date',type:'date',required:true},
+      {key:'Trainer',label:'Trainer',type:'text'},
+      {key:'Venue',label:'Venue',type:'text'},
+      {key:'Capacity',label:'Capacity',type:'number'},
+      {key:'Status',label:'Status',type:'select',opts:['Scheduled','Active','Completed','Postponed']},
+    ],
+    toFields: (f)=>({CourseIDId:+f.CourseIDId||null,StartDate:f.StartDate||null,EndDate:f.EndDate||null,Trainer:f.Trainer,Venue:f.Venue,Capacity:+f.Capacity||7,Status:f.Status||'Scheduled',Title:f.StartDate||'Run'}),
+  },
+  organisations: {
+    title: (d)=> d?'Edit Organisation':'Add Organisation',
+    fields: [
+      {key:'OrgName',label:'Organisation Name',type:'text',full:true,required:true},
+      {key:'ContactPerson',label:'Contact Person',type:'text'},
+      {key:'ContactPosition',label:'Position',type:'text'},
+      {key:'ContactEmail',label:'Email',type:'email'},
+      {key:'ContactPhone',label:'Phone',type:'text'},
+    ],
+    toFields: (f)=>({OrgName:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone,Title:f.OrgName}),
+  },
+  attendees: {
+    title: (d)=> d?'Edit Attendee':'Add Attendee',
+    fields: [
+      {key:'FullName',label:'Full Name',type:'text',required:true},
+      {key:'JobTitle',label:'Job Title',type:'text'},
+      {key:'Email',label:'Email',type:'email'},
+      {key:'Mobile',label:'Mobile',type:'text'},
+      {key:'OrgIDId',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName'},
+      {key:'CourseRunIDId',label:'Course Run',type:'lookup',entity:'runs',display:'StartDate'},
+      {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
+      {key:'CertificateNumber',label:'Certificate Number',type:'text'},
+      {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
+    ],
+    toFields: (f)=>({FullName:f.FullName,JobTitle:f.JobTitle,Email:f.Email,Mobile:f.Mobile,OrgIDId:+f.OrgIDId||null,CourseRunIDId:+f.CourseRunIDId||null,Section65A:f.Section65A==='true'||f.Section65A===true,CertificateNumber:f.CertificateNumber,AttendanceStatus:f.AttendanceStatus||'Registered',Title:f.FullName}),
+  },
+  invoices: {
+    title: (d)=> d?'Edit Invoice':'Add Invoice',
+    fields: [
+      {key:'InvoiceNumber',label:'Invoice Number',type:'text',required:true},
+      {key:'InvoiceDate',label:'Invoice Date',type:'date'},
+      {key:'AttendeeIDId',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true},
+      {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
+      {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
+      {key:'TotalAmount',label:'Total (PGK)',type:'number'},
+      {key:'QuoteRef',label:'Quote Reference',type:'text'},
+      {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
+    ],
+    toFields: (f)=>({InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,AttendeeIDId:+f.AttendeeIDId||null,FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,QuoteRef:f.QuoteRef,InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber}),
+  },
+  payments: {
+    title: (d)=> d?'Edit Payment':'Add Payment',
+    fields: [
+      {key:'InvoiceIDId',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true},
+      {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
+      {key:'DatePaid',label:'Date Paid',type:'date'},
+      {key:'RemittanceRef',label:'Remittance Reference',type:'text'},
+      {key:'PaymentLink',label:'Payment Link / File Ref',type:'text',full:true},
+    ],
+    toFields: (f)=>({InvoiceIDId:+f.InvoiceIDId||null,AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,RemittanceRef:f.RemittanceRef,PaymentLink:f.PaymentLink,Title:f.RemittanceRef||'Payment'}),
+  },
+  trainers: {
+    title: (d)=> d?'Edit Trainer':'Add Trainer',
+    fields: [
+      {key:'FullName',label:'Full Name',type:'text',required:true},
+      {key:'Email',label:'Email',type:'email'},
+      {key:'Phone',label:'Phone',type:'text'},
+      {key:'Specialisation',label:'Specialisation',type:'text',full:true},
+    ],
+    toFields: (f)=>({FullName:f.FullName,Email:f.Email,Phone:f.Phone,Specialisation:f.Specialisation,Title:f.FullName}),
+  },
+  certificates: {
+    title: (d)=> d?'Edit Certificate':'Add Certificate',
+    fields: [
+      {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true},
+      {key:'AttendeeIDId',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName'},
+      {key:'CourseRunIDId',label:'Course Run',type:'lookup',entity:'runs',display:'StartDate'},
+      {key:'IssueDate',label:'Issue Date',type:'date'},
+    ],
+    toFields: (f)=>({CertificateNumber:f.CertificateNumber,AttendeeIDId:+f.AttendeeIDId||null,CourseRunIDId:+f.CourseRunIDId||null,IssueDate:f.IssueDate||null,Title:f.CertificateNumber}),
+  },
+};
+
+function openFormModal(entity, data){
+  editingId = data?.id || null;
+  editingEntity = entity;
+  const def = FORM_DEFS[entity];
+  document.getElementById('modal-title').textContent = def.title(data);
+  document.getElementById('modal-save-label').textContent = data ? 'Save Changes' : 'Create';
+
+  let html = '<div class="form-grid">';
+  def.fields.forEach(f=>{
+    const val = data?.[f.key] ?? '';
+    const cls = f.full ? 'fg full' : 'fg';
+    if(f.type==='lookup'){
+      const opts = (cache[f.entity]||[]);
+      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''}>
+        <option value="">— Select —</option>
+        ${opts.map(o=>`<option value="${o.id}" ${o.id==val?'selected':''}>${o[f.display]||o.Title||o.id}</option>`).join('')}
+      </select></div>`;
+    } else if(f.type==='select'){
+      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}">
+        ${f.opts.map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('')}
+      </select></div>`;
+    } else if(f.type==='checkbox'){
+      html += `<div class="${cls}"><label>${f.label}</label>
+        <select id="mf-${f.key}"><option value="true" ${val===true||val==='true'?'selected':''}>Yes</option><option value="false" ${!val||val===false||val==='false'?'selected':''}>No</option></select></div>`;
+    } else {
+      const v = f.type==='date' && val ? val.substring(0,10) : val;
+      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label>
+        <input type="${f.type}" id="mf-${f.key}" value="${v||''}" ${f.required?'required':''}></div>`;
+    }
+  });
+  html += '</div>';
+
+  // Auto-calc GST for invoices
+  if(entity==='invoices'){
+    html += `<div style="margin-top:10px;font-size:12px;color:var(--g500)">
+      <button type="button" class="btn btn-outline btn-sm" onclick="autoCalcInvoice()" style="margin-top:8px"><i class="ti ti-calculator"></i>Auto-calculate GST &amp; Total</button>
+    </div>`;
+  }
+
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('entity-modal').classList.add('open');
+}
+
+function autoCalcInvoice(){
+  const fee = +document.getElementById('mf-FeeExGST').value||0;
+  // Check attendee's section65A status
+  const attId = document.getElementById('mf-AttendeeIDId')?.value;
+  const att = (cache.attendees||[]).find(a=>a.id==attId);
+  const exempt = att?.Section65A===true||att?.Section65A==='true';
+  const gst = exempt ? 0 : Math.round(fee*0.1*100)/100;
+  document.getElementById('mf-GSTAmount').value = gst;
+  document.getElementById('mf-TotalAmount').value = fee+gst;
+}
+
+async function saveModal(){
+  const def = FORM_DEFS[editingEntity];
+  const rawFields = {};
+  def.fields.forEach(f=>{
+    const el = document.getElementById('mf-'+f.key);
+    if(el){
+      if(f.required && !el.value){ el.focus(); toast('Please fill in required fields','error'); throw new Error('validation'); }
+      rawFields[f.key] = el.value;
+    }
+  });
+  const fields = def.toFields(rawFields);
+  const btn = document.getElementById('modal-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Saving...';
+  try {
+    if(editingId){
+      await updateItem(editingEntity, editingId, fields);
+      toast('Record updated successfully');
+    } else {
+      await createItem(editingEntity, fields);
+      toast('Record created successfully');
+    }
+    closeModal();
+    await loadPage(currentPage);
+    if(currentPage==='dashboard') loadDashboard();
+  } catch(e){
+    if(e.message!=='validation') toast('Save failed: '+e.message,'error');
+  } finally {
+    btn.disabled=false;
+    btn.innerHTML='<i class="ti ti-check"></i><span id="modal-save-label">Save</span>';
+  }
+}
+
+// ============================================================
+// DELETE
+// ============================================================
+function confirmDelete(entity, id, name){
+  document.getElementById('confirm-title').textContent = `Delete "${name}"?`;
+  document.getElementById('confirm-msg').textContent = 'This will permanently remove the record from SharePoint. This cannot be undone.';
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.onclick = async()=>{
+    btn.disabled=true;
+    btn.innerHTML='<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>';
+    try {
+      await deleteItem(entity, id);
+      toast(`"${name}" deleted`);
+      document.getElementById('confirm-modal').classList.remove('open');
+      await loadPage(currentPage);
+      if(currentPage==='dashboard') loadDashboard();
+    } catch(e){ toast('Delete failed: '+e.message,'error'); }
+    finally { btn.disabled=false; btn.innerHTML='<i class="ti ti-trash"></i>Delete'; }
+  };
+  document.getElementById('confirm-modal').classList.add('open');
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+</script>
+</body>
+</html>
