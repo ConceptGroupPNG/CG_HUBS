@@ -965,7 +965,7 @@ function buildRecentActivity(atts){
       <div class="av av-b">${initials(a.FullName||a.Title)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">${a.FullName||a.Title||'—'}</div>
-        <div style="font-size:11px;color:var(--g500)">${a.OrgName||''}</div>
+        <div style="font-size:11px;color:var(--g500)">${a.OrgName||a.JobTitle||''}</div>
       </div>
       ${statusBadge(a.AttendanceStatus||'Registered')}
     </div>`).join('');
@@ -1131,15 +1131,18 @@ function renderAttendees(items){
   document.getElementById('att-count').textContent = `Attendees (${items.length})`;
   if(!items.length){emptyState('att-tbody','No attendees registered yet');return;}
   document.getElementById('att-tbody').innerHTML = items.map(a=>{
+    // Use stored text fields first, fall back to lookup resolution
     const org = (cache.organisations||[]).find(o=>o.id==(a.OrgOIDId||a.OrgIDId||a.OrgOID));
     const run = (cache.runs||[]).find(r=>r.id==(a.CourseRunIDId||a.CourseRunID));
+    const orgDisplay = a.OrgName || a.JobTitle || org?.OrgName || org?.Title || '—';
+    const runDisplay = a.CourseTitle || run?.CourseID || run?.Title || '—';
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px">
         <div class="av av-b">${initials(a.FullName||a.Title)}</div>
         <span class="td-bold">${a.FullName||a.Title||'—'}</span>
       </div></td>
-      <td style="font-size:12px">${org?.OrgName||org?.Title||a.OrgName||'—'}</td>
-      <td style="font-size:12px;max-width:140px">${(run?.CourseID||run?.Title||'—').substring(0,30)}</td>
+      <td style="font-size:12px">${orgDisplay}</td>
+      <td style="font-size:12px;max-width:140px">${runDisplay.substring(0,30)}</td>
       <td style="font-size:12px">${a.JobTitle||'—'}</td>
       <td style="font-size:12px"><a href="mailto:${a.Email}" style="color:var(--blue)">${a.Email||'—'}</a></td>
       <td>${a.Section65A?'<span class="badge bg">Yes</span>':'<span class="badge bgr">No</span>'}</td>
