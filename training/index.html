@@ -1119,6 +1119,17 @@ async function loadAttendees(){
     cache.attendees = items;
     if(!cache.organisations) cache.organisations = orgs;
     if(!cache.runs) cache.runs = runs;
+    // Log first attendee fields for diagnostics
+    if(items.length>0){
+      const first=items[0];
+      const orgRunFields=Object.entries(first).filter(([k])=>
+        k.toLowerCase().includes('org')||k.toLowerCase().includes('run')||
+        k.toLowerCase().includes('att')||k.toLowerCase().includes('course'));
+      console.log('=== ATTENDEE FIELD DIAGNOSTIC ===');
+      console.log('All fields:', Object.keys(first).join(', '));
+      console.log('Org/Run related:', JSON.stringify(Object.fromEntries(orgRunFields)));
+      toast('Check browser console (F12) for field diagnostics','success');
+    }
     renderAttendees(items);
     // populate run filter
     const sel = document.getElementById('att-run');
