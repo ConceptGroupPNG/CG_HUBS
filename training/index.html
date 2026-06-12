@@ -995,7 +995,11 @@ function renderCourses(items){
     <td><span class="badge ${c.Category==='Payroll'?'bb':c.Category==='HR'?'bg':c.Category==='Safety'?'ba':'bgr'}">${c.Category||'—'}</span></td>
     <td>${fmt(c.FeeExGST)}</td>
     <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
-    <td>${(cache.runs||[]).filter(r=>r.CourseLookupId==c.id||r.CourseIDId==c.id).length}</td>
+    <td>${(cache.runs||[]).filter(r=>{
+      const rt=(r.Title||'').toLowerCase();
+      const cn=(c.CourseName||c.Title||'').toLowerCase().substring(0,20);
+      return cn&&rt.includes(cn);
+    }).length}</td>
     <td><div class="td-actions">
       <button class="btn-icon" onclick="openFormModal('courses',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
       <button class="btn-icon danger" onclick="confirmDelete('courses','${c.id}','${(c.CourseName||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -1051,7 +1055,11 @@ function renderRuns(items){
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
     const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
-    const enrolled = (cache.attendees||[]).filter(a=>(a.CourseRunID||a.CourseRunIDId)==r.id).length;
+    const enrolled = (cache.attendees||[]).filter(a=>{
+      const rTitle=(r.Title||'').toLowerCase();
+      const aTitle=(a.CourseTitle||'').toLowerCase();
+      return aTitle&&rTitle&&rTitle.includes(aTitle.substring(0,20));
+    }).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
@@ -1089,7 +1097,7 @@ function renderOrgs(items){
   document.getElementById('orgs-count').textContent = `Organisations (${items.length})`;
   if(!items.length){emptyState('orgs-tbody','No organisations yet');return;}
   document.getElementById('orgs-tbody').innerHTML = items.map(o=>{
-    const attCount = (cache.attendees||[]).filter(a=>(a.OrgOID||a.OrgOIDId||a.OrgIDId)==o.id).length;
+    const attCount = (cache.attendees||[]).filter(a=>(a.OrgName||a.JobTitle)===(o.OrgName||o.Title)).length;
     return `<tr>
       <td class="td-bold">${o.OrgName||o.Title||'—'}</td>
       <td>${o.ContactPerson||'—'}</td>
@@ -1119,17 +1127,7 @@ async function loadAttendees(){
     cache.attendees = items;
     if(!cache.organisations) cache.organisations = orgs;
     if(!cache.runs) cache.runs = runs;
-    // Log first attendee fields for diagnostics
-    if(items.length>0){
-      const first=items[0];
-      const orgRunFields=Object.entries(first).filter(([k])=>
-        k.toLowerCase().includes('org')||k.toLowerCase().includes('run')||
-        k.toLowerCase().includes('att')||k.toLowerCase().includes('course'));
-      console.log('=== ATTENDEE FIELD DIAGNOSTIC ===');
-      console.log('All fields:', Object.keys(first).join(', '));
-      console.log('Org/Run related:', JSON.stringify(Object.fromEntries(orgRunFields)));
-      toast('Check browser console (F12) for field diagnostics','success');
-    }
+
     renderAttendees(items);
     // populate run filter
     const sel = document.getElementById('att-run');
@@ -1194,7 +1192,9 @@ async function loadInvoices(){
 function renderInvoices(items){
   if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
   document.getElementById('inv-tbody').innerHTML = items.map(i=>{
-    const att = (cache.attendees||[]).find(a=>a.id==(i.AttendeeID||i.AttendeeIDId));
+    // AttendeeID may store SP item id or be empty - try both
+    const att = (cache.attendees||[]).find(a=>a.id==(i.AttendeeID||i.AttendeeIDId))
+      || (cache.attendees||[]).find(a=>String(a.id)===String(i.AttendeeID));
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td>${att?.FullName||att?.Title||'—'}</td>
@@ -1304,8 +1304,8 @@ function renderCertificates(items){
   document.getElementById('cert-count').textContent = `Certificates (${items.length})`;
   if(!items.length){emptyState('cert-tbody','No certificates issued yet');return;}
   document.getElementById('cert-tbody').innerHTML = items.map(c=>{
-    const att = (cache.attendees||[]).find(a=>a.id==(c.AttendeeID||c.AttendeeIDId));
-    const run = (cache.runs||[]).find(r=>r.id==(c.CourseRunID||c.CourseRunIDId));
+    const att = (cache.attendees||[]).find(a=>a.id==(c.AttendeeID||c.AttendeeIDId)||String(a.id)===String(c.AttendeeID));
+    const run = (cache.runs||[]).find(r=>r.id==(c.CourseRunID||c.CourseRunIDId)||String(r.id)===String(c.CourseRunID));
     return `<tr>
       <td class="td-bold">${c.CertificateNumber||c.Title||'—'}</td>
       <td>${att?.FullName||att?.Title||'—'}</td>
