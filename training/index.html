@@ -475,7 +475,7 @@ const LISTS = {
   attendees:    'CG_Attendees',
   invoices:     'CG_Invoices',
   payments:     'CG_Payments',
-  trainers:     'CG_Trainers',
+  trainers:     'Trainers',
   certificates: 'CG_Certificates',
 };
 
@@ -1051,7 +1051,7 @@ function renderRuns(items){
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
     const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
-    const enrolled = (cache.attendees||[]).filter(a=>a.CourseRunIDId==r.id).length;
+    const enrolled = (cache.attendees||[]).filter(a=>(a.CourseRunID||a.CourseRunIDId)==r.id).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
@@ -1089,7 +1089,7 @@ function renderOrgs(items){
   document.getElementById('orgs-count').textContent = `Organisations (${items.length})`;
   if(!items.length){emptyState('orgs-tbody','No organisations yet');return;}
   document.getElementById('orgs-tbody').innerHTML = items.map(o=>{
-    const attCount = (cache.attendees||[]).filter(a=>a.OrgIDId==o.id).length;
+    const attCount = (cache.attendees||[]).filter(a=>(a.OrgOID||a.OrgOIDId||a.OrgIDId)==o.id).length;
     return `<tr>
       <td class="td-bold">${o.OrgName||o.Title||'—'}</td>
       <td>${o.ContactPerson||'—'}</td>
@@ -1183,7 +1183,7 @@ async function loadInvoices(){
 function renderInvoices(items){
   if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
   document.getElementById('inv-tbody').innerHTML = items.map(i=>{
-    const att = (cache.attendees||[]).find(a=>a.id==i.AttendeeIDId);
+    const att = (cache.attendees||[]).find(a=>a.id==(i.AttendeeID||i.AttendeeIDId));
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td>${att?.FullName||att?.Title||'—'}</td>
@@ -1220,7 +1220,7 @@ function renderPayments(items){
   document.getElementById('pay-count').textContent = `Payments (${items.length})`;
   if(!items.length){emptyState('pay-tbody','No payments recorded yet');return;}
   document.getElementById('pay-tbody').innerHTML = items.map(p=>{
-    const inv = (cache.invoices||[]).find(i=>i.id==p.InvoiceIDId);
+    const inv = (cache.invoices||[]).find(i=>i.id==(p.InvoiceID||p.InvoiceIDId));
     const total = +(inv?.TotalAmount||0);
     const paid = +(p.AmountPaid||0);
     const bal = total - paid;
@@ -1293,8 +1293,8 @@ function renderCertificates(items){
   document.getElementById('cert-count').textContent = `Certificates (${items.length})`;
   if(!items.length){emptyState('cert-tbody','No certificates issued yet');return;}
   document.getElementById('cert-tbody').innerHTML = items.map(c=>{
-    const att = (cache.attendees||[]).find(a=>a.id==c.AttendeeIDId);
-    const run = (cache.runs||[]).find(r=>r.id==c.CourseRunIDId);
+    const att = (cache.attendees||[]).find(a=>a.id==(c.AttendeeID||c.AttendeeIDId));
+    const run = (cache.runs||[]).find(r=>r.id==(c.CourseRunID||c.CourseRunIDId));
     return `<tr>
       <td class="td-bold">${c.CertificateNumber||c.Title||'—'}</td>
       <td>${att?.FullName||att?.Title||'—'}</td>
