@@ -1018,8 +1018,8 @@ function filterTable(entity){
     const run=(document.getElementById('att-run')||{value:''}).value;
     const org=(document.getElementById('att-org')||{value:''}).value;
     const st=(document.getElementById('att-status')||{value:''}).value;
-    if(run) items=items.filter(i=>i.CourseRunIDId==run);
-    if(org) items=items.filter(i=>i.OrgIDId==org);
+    if(run) items=items.filter(i=>(i.CourseRunIDId||i.CourseRunID)==run);
+    if(org) items=items.filter(i=>(i.OrgOIDId||i.OrgIDId||i.OrgOID)==org);
     if(st) items=items.filter(i=>i.AttendanceStatus===st);
   }
   if(entity==='invoices'){
@@ -1050,7 +1050,7 @@ function renderRuns(items){
   document.getElementById('runs-count').textContent = `Course Runs (${items.length})`;
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
-    const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseLookupId));
+    const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
     const enrolled = (cache.attendees||[]).filter(a=>a.CourseRunIDId==r.id).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
@@ -1131,8 +1131,8 @@ function renderAttendees(items){
   document.getElementById('att-count').textContent = `Attendees (${items.length})`;
   if(!items.length){emptyState('att-tbody','No attendees registered yet');return;}
   document.getElementById('att-tbody').innerHTML = items.map(a=>{
-    const org = (cache.organisations||[]).find(o=>o.id==a.OrgIDId);
-    const run = (cache.runs||[]).find(r=>r.id==a.CourseRunIDId);
+    const org = (cache.organisations||[]).find(o=>o.id==(a.OrgOIDId||a.OrgIDId||a.OrgOID));
+    const run = (cache.runs||[]).find(r=>r.id==(a.CourseRunIDId||a.CourseRunID));
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px">
         <div class="av av-b">${initials(a.FullName||a.Title)}</div>
