@@ -997,8 +997,9 @@ function renderCourses(items){
     <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
     <td>${(cache.runs||[]).filter(r=>{
       const rt=(r.Title||'').toLowerCase();
-      const cn=(c.CourseName||c.Title||'').toLowerCase().substring(0,20);
-      return cn&&rt.includes(cn);
+      const rt2=rt.replace(/\d{4}-\d{2}-\d{2}/g,'').trim();
+      const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
+      return cn&&rt2===cn;
     }).length}</td>
     <td><div class="td-actions">
       <button class="btn-icon" onclick="openFormModal('courses',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -1078,10 +1079,11 @@ function renderRuns(items){
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
     const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
+    const rDate=(r.StartDate||'').substring(0,10);
+    const rCourse=(r.Title||'').replace(rDate,'').trim().toLowerCase();
     const enrolled = (cache.attendees||[]).filter(a=>{
-      const rTitle=(r.Title||'').toLowerCase();
-      const aTitle=(a.CourseTitle||'').toLowerCase();
-      return aTitle&&rTitle&&rTitle.includes(aTitle.substring(0,20));
+      const aTitle=(a.CourseTitle||'').toLowerCase().trim();
+      return aTitle && rCourse && aTitle===rCourse;
     }).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
@@ -1120,7 +1122,10 @@ function renderOrgs(items){
   document.getElementById('orgs-count').textContent = `Organisations (${items.length})`;
   if(!items.length){emptyState('orgs-tbody','No organisations yet');return;}
   document.getElementById('orgs-tbody').innerHTML = items.map(o=>{
-    const attCount = (cache.attendees||[]).filter(a=>(a.OrgName||a.JobTitle)===(o.OrgName||o.Title)).length;
+    const oName=(o.OrgName||o.Title||'').trim().toLowerCase();
+    const attCount = (cache.attendees||[]).filter(a=>
+      (a.OrgName||a.JobTitle||'').trim().toLowerCase()===oName
+    ).length;
     return `<tr>
       <td class="td-bold">${o.OrgName||o.Title||'—'}</td>
       <td>${o.ContactPerson||'—'}</td>
