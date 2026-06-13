@@ -1117,8 +1117,10 @@ function renderRuns(items){
     const enrolled = (cache.attendees||[]).filter(a=>{
       const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
       const ad=(a.RunStartDate||'').substring(0,10);
-      return at && rCourseName2 && at===rCourseName2 && ad===rDate2;
+      const match = at && rCourseName2 && at===rCourseName2 && ad===rDate2;
+      return match;
     }).length;
+    if(enrolled===0&&rDate2) console.log('Run 0:', r.Title, '| rDate2:', rDate2, '| rCourse:', rCourseName2);
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
