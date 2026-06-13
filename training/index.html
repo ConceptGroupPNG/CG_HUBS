@@ -914,17 +914,23 @@ function buildDashCharts(atts, invs, pays){
   // Group revenue by course category via attendee->course lookup
   const revCats = {};
   invs.forEach(i=>{
-    // Find attendee for this invoice by AttendeeName
-    const att = (cache.attendees||[]).find(a=>a.FullName===i.AttendeeName||a.Title===i.AttendeeName);
-    const courseTitle = att?.CourseTitle||'';
-    // Find course category
-    const course = (cache.courses||[]).find(c=>{
-      const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
-      const ct=courseTitle.toLowerCase().trim();
-      return cn && ct && (ct===cn || ct.startsWith(cn));
-    });
-    const cat = course?.Category||'Other';
+    // Find attendee for this invoice by AttendeeName (exact or partial match)
+    const iName=(i.AttendeeName||'').trim().toLowerCase();
+    const att = iName ? (cache.attendees||[]).find(a=>
+      (a.FullName||a.Title||'').trim().toLowerCase()===iName
+    ) : null;
+    const courseTitle = (att?.CourseTitle||'').toLowerCase().trim();
+    // Find course category by matching course name to CourseTitle
+    let cat = 'Other';
+    if(courseTitle){
+      const course = (cache.courses||[]).find(c=>{
+        const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
+        return cn && courseTitle.includes(cn.substring(0,15));
+      });
+      cat = course?.Category || 'Other';
+    }
     revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
+    if(cat==='Other') console.log('Other cat:', i.InvoiceNumber, 'att:', att?.FullName, 'courseTitle:', courseTitle);
   });
   const catLabels=Object.keys(revCats);
   const catData=catLabels.map(k=>revCats[k]);
