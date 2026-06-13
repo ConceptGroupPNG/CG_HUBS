@@ -1202,14 +1202,7 @@ async function loadInvoices(){
     cache.invoices = items;
     if(!cache.attendees) cache.attendees = atts;
     cache.payments = pays;
-    // Diagnostic - log first invoice and payment fields
-    if(items.length>0){
-      const inv=items[0];
-      console.log('=== INVOICE FIELDS ===', JSON.stringify(inv));
-    }
-    if(pays.length>0){
-      console.log('=== PAYMENT FIELDS ===', JSON.stringify(pays[0]));
-    }
+
     const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
     document.getElementById('inv-m1').textContent = fmt(totalInv);
@@ -1224,11 +1217,11 @@ function renderInvoices(items){
   if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
   document.getElementById('inv-tbody').innerHTML = items.map(i=>{
     // AttendeeID may store SP item id or be empty - try both
-    const att = (cache.attendees||[]).find(a=>a.id==(i.AttendeeID||i.AttendeeIDId))
-      || (cache.attendees||[]).find(a=>String(a.id)===String(i.AttendeeID));
+    // Use AttendeeName text field stored by importer
+    const attName = i.AttendeeName || '—';
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
-      <td>${att?.FullName||att?.Title||'—'}</td>
+      <td>${attName}</td>
       <td>${fmt(i.FeeExGST)}</td>
       <td>${fmt(i.GSTAmount)}</td>
       <td><strong>${fmt(i.TotalAmount)}</strong></td>
@@ -1262,13 +1255,15 @@ function renderPayments(items){
   document.getElementById('pay-count').textContent = `Payments (${items.length})`;
   if(!items.length){emptyState('pay-tbody','No payments recorded yet');return;}
   document.getElementById('pay-tbody').innerHTML = items.map(p=>{
-    const inv = (cache.invoices||[]).find(i=>i.id==(p.InvoiceID||p.InvoiceIDId));
+    // RemittanceRef contains the invoice number (e.g. "INV-5544")
+    const inv = (cache.invoices||[]).find(i=>
+      (i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
     const total = +(inv?.TotalAmount||0);
     const paid = +(p.AmountPaid||0);
-    const bal = total - paid;
-    const st = bal<=0?'Paid':paid>0?'Partial':'Pending';
+    const bal = Math.max(0,total-paid);
+    const st = bal<=0&&total>0?'Paid':paid>0&&bal>0?'Partial':'Pending';
     return `<tr>
-      <td class="td-bold">${inv?.InvoiceNumber||inv?.Title||p.InvoiceID||'—'}</td>
+      <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
       <td>${fmt(paid)}</td>
       <td style="white-space:nowrap">${fmtDate(p.DatePaid)}</td>
       <td style="font-size:12px">${p.RemittanceRef||'—'}</td>
@@ -1327,7 +1322,7 @@ async function loadCertificates(){
     cache.certificates = items;
     if(!cache.attendees) cache.attendees = atts;
     if(!cache.runs) cache.runs = runs;
-    if(items.length>0) console.log('=== CERT FIELDS ===', JSON.stringify(items[0]));
+
     renderCertificates(items);
   } catch(e){ toast('Error loading certificates: '+e.message,'error'); }
 }
@@ -1340,8 +1335,8 @@ function renderCertificates(items){
     const run = (cache.runs||[]).find(r=>r.id==(c.CourseRunID||c.CourseRunIDId)||String(r.id)===String(c.CourseRunID));
     return `<tr>
       <td class="td-bold">${c.CertificateNumber||c.Title||'—'}</td>
-      <td>${att?.FullName||att?.Title||'—'}</td>
-      <td style="font-size:12px">${run?.CourseID||run?.Title||'—'}</td>
+      <td>${c.AttendeeName||'—'}</td>
+      <td style="font-size:12px">${c.CourseRunTitle||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="openFormModal('certificates',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
