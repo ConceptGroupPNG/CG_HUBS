@@ -921,7 +921,7 @@ function buildDashCharts(atts, invs, pays){
     const course = (cache.courses||[]).find(c=>{
       const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
       const ct=courseTitle.toLowerCase().trim();
-      return cn && (ct.startsWith(cn) || ct.includes(cn));
+      return cn && ct && (ct===cn || ct.startsWith(cn));
     });
     const cat = course?.Category||'Other';
     revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
@@ -960,10 +960,13 @@ function buildAttBars(runs, atts){
   // Match attendees to runs by CourseTitle (includes date) vs run Title
   let html='';
   runs.slice(0,8).forEach(r=>{
-    const rTitle=(r.Title||'').toLowerCase().replace(/\s+/g,' ').trim();
+    // Exact match by course name AND run start date
+    const rDate=(r.StartDate||'').substring(0,10);
+    const rCourseName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
     const cnt = atts.filter(a=>{
       const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
-      return at===rTitle || rTitle.startsWith(at) || at.startsWith(rTitle.substring(0,rTitle.lastIndexOf(' ')));
+      const ad=(a.RunStartDate||'').substring(0,10);
+      return at && rCourseName && at===rCourseName && ad===rDate;
     }).length;
     const cap = +r.Capacity||7;
     const pct = Math.min(100,Math.round(cnt/cap*100));
@@ -1102,11 +1105,13 @@ function renderRuns(items){
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
     const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
-    // CourseTitle on attendee = "CourseName YYYY-MM-DD" matching run Title exactly
-    const rTitle=(r.Title||'').toLowerCase().trim();
+    // Match by course name AND start date for precise per-run count
+    const rDate2=(r.StartDate||'').substring(0,10);
+    const rCourseName2=(r.Title||'').replace(rDate2,'').replace(/\s+/g,' ').trim().toLowerCase();
     const enrolled = (cache.attendees||[]).filter(a=>{
-      const aTitle=(a.CourseTitle||'').toLowerCase().trim();
-      return aTitle && rTitle && aTitle===rTitle;
+      const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
+      const ad=(a.RunStartDate||'').substring(0,10);
+      return at && rCourseName2 && at===rCourseName2 && ad===rDate2;
     }).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
