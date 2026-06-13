@@ -884,13 +884,15 @@ function openAddModal(){ openFormModal(currentPage, null); }
 // ============================================================
 async function loadDashboard(){
   try {
-    const [runs, atts, invs, pays] = await Promise.all([
+    const [runs, atts, invs, pays, courses] = await Promise.all([
       getItems('runs','$top=500'),
       getItems('attendees','$top=500'),
       getItems('invoices','$top=500'),
       getItems('payments','$top=500'),
+      cache.courses ? Promise.resolve(cache.courses) : getItems('courses','$top=500'),
     ]);
     cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
+    cache.courses=courses;
 
     const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
