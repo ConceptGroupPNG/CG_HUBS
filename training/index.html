@@ -272,6 +272,10 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2>Avg Attendance by Course (Top 10)</h2></div>
             <div class="card-body" id="dash-att-bars"><div class="loading"><div class="spinner"></div>Loading...</div></div>
           </div>
+          <div class="card" style="margin:0;margin-bottom:16px">
+            <div class="card-header"><h2>Sales Funnel</h2></div>
+            <div class="card-body" id="dash-funnel"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
           <div class="card" style="margin:0">
             <div class="card-header"><h2>Recent Registrations</h2></div>
             <div class="card-body" style="padding:0 18px" id="dash-recent"><div class="loading"><div class="spinner"></div></div></div>
@@ -342,7 +346,10 @@ select:focus{border-color:var(--teal)}
           </select>
         </div>
         <div class="card">
-          <div class="card-header"><h2 id="att-count">Attendees</h2></div>
+          <div class="card-header">
+            <h2 id="att-count">Attendees</h2>
+            <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+          </div>
           <div class="table-wrap">
             <table><thead><tr><th>Name</th><th>Organisation</th><th>Course Run</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="att-tbody"></tbody></table>
@@ -908,6 +915,7 @@ async function loadDashboard(){
 
     buildDashCharts(atts, invs, pays);
     buildAttBars(runs, atts);
+    buildSalesFunnel(atts, invs, pays);
     buildRecentActivity(atts);
   } catch(e){ toast('Dashboard error: '+e.message,'error'); }
 }
@@ -1152,6 +1160,7 @@ function renderRuns(items){
       <td><strong>${enrolled}</strong></td>
       <td>${statusBadge(r.Status||'Scheduled')}</td>
       <td><div class="td-actions">
+        <button class="btn-icon" onclick="printRoster(${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
         <button class="btn-icon" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('runs','${r.id}','Run ${fmtDate(r.StartDate)}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -1619,6 +1628,126 @@ function confirmDelete(entity, id, name){
 
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+
+// ── PRINT ROSTER ─────────────────────────────────────────────────────────
+function printRoster(run){
+  const rDate=(run.StartDate||'').substring(0,10);
+  const rCourse=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+  const atts=(cache.attendees||[]).filter(a=>{
+    const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const ad=(a.RunStartDate||'').substring(0,10);
+    return at===rCourse.toLowerCase()&&ad===rDate;
+  });
+  const w=window.open('','_blank','width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><title>Course Roster</title>
+  <style>
+    body{font-family:'Segoe UI',sans-serif;padding:30px;color:#111}
+    h1{font-size:20px;margin-bottom:4px}
+    .sub{color:#666;font-size:13px;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#1a2744;color:#fff;padding:8px 12px;text-align:left}
+    td{padding:8px 12px;border-bottom:1px solid #eee}
+    tr:nth-child(even) td{background:#f9f9f9}
+    .sig{margin-top:40px;display:flex;gap:60px}
+    .sig-box{border-top:1px solid #333;padding-top:6px;font-size:12px;color:#666;min-width:200px}
+    @media print{button{display:none}}
+  </style></head><body>
+  <img src="data:image/png;base64,${document.querySelector('.sidebar-logo img')?.src?.split(',')[1]||''}" style="height:50px;margin-bottom:10px" onerror="this.style.display='none'">
+  <h1>${rCourse}</h1>
+  <div class="sub">Course Roster &nbsp;|&nbsp; Start: ${rDate} &nbsp;|&nbsp; End: ${(run.EndDate||'').substring(0,10)} &nbsp;|&nbsp; Capacity: ${run.Capacity||7} &nbsp;|&nbsp; Enrolled: ${atts.length}</div>
+  <table>
+    <thead><tr><th>#</th><th>Full Name</th><th>Organisation</th><th>Sec 65A</th><th>Certificate #</th><th>Status</th><th>Signature</th></tr></thead>
+    <tbody>
+      ${atts.map((a,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${a.FullName||a.Title||''}</td>
+        <td>${a.OrgName||a.JobTitle||''}</td>
+        <td>${a.Section65A?'Yes':'No'}</td>
+        <td>${a.CertificateNumber||''}</td>
+        <td>${a.AttendanceStatus||''}</td>
+        <td style="min-width:120px">&nbsp;</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  <div class="sig">
+    <div class="sig-box">Trainer Signature &amp; Date</div>
+    <div class="sig-box">Authorised By &amp; Date</div>
+  </div>
+  <p style="margin-top:30px;font-size:11px;color:#999">Printed: ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})}</p>
+  <button onclick="window.print()" style="margin-top:16px;padding:8px 20px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Print</button>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── EXPORT ATTENDEES CSV ──────────────────────────────────────────────────
+function exportAttendeesCSV(){
+  const atts = cache.attendees||[];
+  if(!atts.length){ toast('No attendees to export','error'); return; }
+  const headers = ['Full Name','Organisation','Course Title','Run Start Date','Job Title','Mobile','Section 65A','Certificate #','Attendance Status'];
+  const rows = atts.map(a=>[
+    a.FullName||a.Title||'',
+    a.OrgName||a.JobTitle||'',
+    a.CourseTitle||'',
+    a.RunStartDate||'',
+    a.JobTitle||'',
+    a.Mobile||'',
+    a.Section65A?'Yes':'No',
+    a.CertificateNumber||'',
+    a.AttendanceStatus||''
+  ].map(v=>'"'+String(v).replace(/"/g,'""')+'"'));
+  const csv = [headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='CG_Attendees_'+new Date().toISOString().substring(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('Exported '+atts.length+' attendees to CSV','success');
+}
+
+// ── SALES FUNNEL ──────────────────────────────────────────────────────────
+function buildSalesFunnel(atts, invs, pays){
+  const el = document.getElementById('dash-funnel');
+  if(!el) return;
+  const registered = atts.length;
+  const invoiced = invs.length;
+  const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+  const paidInvs = invs.filter(i=>{
+    const paid = pays.filter(p=>(p.RemittanceRef||'')===(i.InvoiceNumber||i.Title||'')).reduce((s,p)=>s+(+p.AmountPaid||0),0);
+    return paid>=(+i.TotalAmount||0)&&(+i.TotalAmount||0)>0;
+  }).length;
+  const convRate = invoiced>0?Math.round((paidInvs/invoiced)*100):0;
+  const fmt = v=>'K '+v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:4px 0">
+      <div style="text-align:center;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
+        <div style="font-size:28px;font-weight:700;color:#065f46">${registered}</div>
+        <div style="font-size:12px;color:#059669;margin-top:4px;font-weight:600">Registered</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">Attendees</div>
+      </div>
+      <div style="text-align:center;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
+        <div style="font-size:28px;font-weight:700;color:#1e40af">${invoiced}</div>
+        <div style="font-size:12px;color:#2563eb;margin-top:4px;font-weight:600">Invoiced</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv)}</div>
+      </div>
+      <div style="text-align:center;padding:16px;background:#fefce8;border-radius:8px;border:1px solid #fde68a">
+        <div style="font-size:28px;font-weight:700;color:#92400e">${invoiced-paidInvs}</div>
+        <div style="font-size:12px;color:#d97706;margin-top:4px;font-weight:600">Outstanding</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv-totalPaid)}</div>
+      </div>
+      <div style="text-align:center;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
+        <div style="font-size:28px;font-weight:700;color:#065f46">${paidInvs}</div>
+        <div style="font-size:12px;color:#059669;margin-top:4px;font-weight:600">Fully Paid</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${convRate}% conversion</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;background:var(--g200);border-radius:4px;height:8px;overflow:hidden">
+      <div style="height:100%;background:linear-gradient(90deg,#059669,#2563eb);border-radius:4px;width:${convRate}%;transition:width .5s"></div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:4px">${convRate}% payment conversion rate</div>
+  `;
+}
+
 </script>
 </body>
 </html>
