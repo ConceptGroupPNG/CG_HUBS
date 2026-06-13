@@ -912,7 +912,7 @@ function buildDashCharts(atts, invs, pays){
   invs.forEach(i=>{ cats.Other += (+i.TotalAmount||0); });
 
   // Group revenue by course category via attendee->course lookup
-  const cats = {};
+  const revCats = {};
   invs.forEach(i=>{
     // Find attendee for this invoice by AttendeeName
     const att = (cache.attendees||[]).find(a=>a.FullName===i.AttendeeName||a.Title===i.AttendeeName);
@@ -923,10 +923,10 @@ function buildDashCharts(atts, invs, pays){
       return courseTitle.toLowerCase().includes(cn.substring(0,15));
     });
     const cat = course?.Category||'Other';
-    cats[cat]=(cats[cat]||0)+(+i.TotalAmount||0);
+    revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
   });
-  const catLabels=Object.keys(cats);
-  const catData=catLabels.map(k=>cats[k]);
+  const catLabels=Object.keys(revCats);
+  const catData=catLabels.map(k=>revCats[k]);
   const catColors={'Payroll':'#3b82f6','HR':'#10b981','Safety':'#f59e0b','Other':'#8b5cf6'};
   const bgColors=catLabels.map(k=>catColors[k]||'#6b7280');
 
