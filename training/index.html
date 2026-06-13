@@ -252,7 +252,7 @@ select:focus{border-color:var(--teal)}
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
         <div class="metrics-grid" id="dash-metrics">
-          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-b"><i class="ti ti-books"></i></span>Course Runs</div><div class="mc-value" id="dm-runs">—</div><div class="mc-delta">Total scheduled 2026</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-b"><i class="ti ti-books"></i></span>Course Runs</div><div class="mc-value" id="dm-runs">—</div><div class="mc-delta" id="dm-runs-sub">Total scheduled 2026</div></div>
           <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-users"></i></span>Attendees</div><div class="mc-value" id="dm-att">—</div><div class="mc-delta">Registered this year</div></div>
           <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-currency-kina"></i></span>Revenue (PGK)</div><div class="mc-value" id="dm-rev">—</div><div class="mc-delta">Total invoiced</div></div>
           <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-a"><i class="ti ti-clock"></i></span>Outstanding</div><div class="mc-value" id="dm-out" style="color:var(--amber)">—</div><div class="mc-delta">Awaiting payment</div></div>
@@ -897,7 +897,11 @@ async function loadDashboard(){
     const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
 
+    const completedRuns = runs.filter(r=>r.Status==='Completed').length;
+    const upcomingRuns = runs.filter(r=>r.Status==='Scheduled').length;
     document.getElementById('dm-runs').textContent = runs.length;
+    const dmRunsSub = document.getElementById('dm-runs-sub');
+    if(dmRunsSub) dmRunsSub.textContent = `${completedRuns} completed, ${upcomingRuns} upcoming`;
     document.getElementById('dm-att').textContent = atts.length;
     document.getElementById('dm-rev').textContent = fmt(totalInv);
     document.getElementById('dm-out').textContent = fmt(totalInv - totalPaid);
@@ -963,10 +967,8 @@ function buildDashCharts(atts, invs, pays){
 function buildAttBars(runs, atts){
   const el = document.getElementById('dash-att-bars');
   if(!runs.length){el.innerHTML='<div class="empty-state"><i class="ti ti-calendar-off"></i><p>No course runs yet</p></div>';return;}
-  // Match attendees to runs by CourseTitle (includes date) vs run Title
-  let html='';
-  runs.slice(0,8).forEach(r=>{
-    // Exact match by course name AND run start date
+  // Calculate attendance count for each run
+  const runWithCounts = runs.map(r=>{
     const rDate=(r.StartDate||'').substring(0,10);
     const rCourseName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
     const cnt = atts.filter(a=>{
@@ -974,6 +976,13 @@ function buildAttBars(runs, atts){
       const ad=(a.RunStartDate||'').substring(0,10);
       return at && rCourseName && at===rCourseName && ad===rDate;
     }).length;
+    return {...r, _cnt:cnt};
+  });
+  // Sort by count descending, show top 8 most attended
+  const topRuns = [...runWithCounts].sort((a,b)=>b._cnt-a._cnt).slice(0,8);
+  let html='';
+  topRuns.forEach(r=>{
+    const cnt = r._cnt;
     const cap = +r.Capacity||7;
     const pct = Math.min(100,Math.round(cnt/cap*100));
     const col = pct>=80?'pf-t':pct>=40?'pf-b':'pf-a';
@@ -1120,7 +1129,7 @@ function renderRuns(items){
       const match = at && rCourseName2 && at===rCourseName2 && ad===rDate2;
       return match;
     }).length;
-    if(enrolled===0&&rDate2) console.log('Run 0:', r.Title, '| rDate2:', rDate2, '| rCourse:', rCourseName2);
+
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
