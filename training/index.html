@@ -1079,11 +1079,11 @@ function renderRuns(items){
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
     const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
-    const rDate=(r.StartDate||'').substring(0,10);
-    const rCourse=(r.Title||'').replace(rDate,'').trim().toLowerCase();
+    // CourseTitle on attendee = "CourseName YYYY-MM-DD" matching run Title exactly
+    const rTitle=(r.Title||'').toLowerCase().trim();
     const enrolled = (cache.attendees||[]).filter(a=>{
       const aTitle=(a.CourseTitle||'').toLowerCase().trim();
-      return aTitle && rCourse && aTitle===rCourse;
+      return aTitle && rTitle && aTitle===rTitle;
     }).length;
     return `<tr>
       <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
