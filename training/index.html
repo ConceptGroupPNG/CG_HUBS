@@ -907,10 +907,6 @@ async function loadDashboard(){
 }
 
 function buildDashCharts(atts, invs, pays){
-  const cats = {Payroll:0, HR:0, Safety:0, Other:0};
-  // We can't easily join without course data here so use invoice totals
-  invs.forEach(i=>{ cats.Other += (+i.TotalAmount||0); });
-
   // Group revenue by course category via attendee->course lookup
   const revCats = {};
   invs.forEach(i=>{
@@ -923,14 +919,16 @@ function buildDashCharts(atts, invs, pays){
     // Find course category by matching course name to CourseTitle
     let cat = 'Other';
     if(courseTitle){
-      const course = (cache.courses||[]).find(c=>{
+      // Sort courses by name length descending so longest match wins
+      const sorted = [...(cache.courses||[])].sort((a,b)=>
+        (b.CourseName||b.Title||'').length-(a.CourseName||a.Title||'').length);
+      const course = sorted.find(c=>{
         const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
-        return cn && courseTitle.includes(cn.substring(0,15));
+        return cn && courseTitle===cn;
       });
       cat = course?.Category || 'Other';
     }
     revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
-    if(cat==='Other') console.log('Other cat:', i.InvoiceNumber, 'att:', att?.FullName, 'courseTitle:', courseTitle);
   });
   const catLabels=Object.keys(revCats);
   const catData=catLabels.map(k=>revCats[k]);
