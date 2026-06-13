@@ -269,7 +269,7 @@ select:focus{border-color:var(--teal)}
         </div>
         <div class="grid-2" style="margin-top:18px">
           <div class="card" style="margin:0">
-            <div class="card-header"><h2>Attendance by Course</h2></div>
+            <div class="card-header"><h2>Avg Attendance by Course (Top 10)</h2></div>
             <div class="card-body" id="dash-att-bars"><div class="loading"><div class="spinner"></div>Loading...</div></div>
           </div>
           <div class="card" style="margin:0">
@@ -967,29 +967,41 @@ function buildDashCharts(atts, invs, pays){
 function buildAttBars(runs, atts){
   const el = document.getElementById('dash-att-bars');
   if(!runs.length){el.innerHTML='<div class="empty-state"><i class="ti ti-calendar-off"></i><p>No course runs yet</p></div>';return;}
-  // Calculate attendance count for each run
-  const runWithCounts = runs.map(r=>{
-    const rDate=(r.StartDate||'').substring(0,10);
-    const rCourseName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
-    const cnt = atts.filter(a=>{
-      const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
-      const ad=(a.RunStartDate||'').substring(0,10);
-      return at && rCourseName && at===rCourseName && ad===rDate;
-    }).length;
-    return {...r, _cnt:cnt};
+  // Group attendees by CourseTitle and calculate average attendance per course
+  const courseCounts = {};
+  const courseRunCounts = {};
+  atts.forEach(a=>{
+    const ct=(a.CourseTitle||'').trim();
+    if(!ct) return;
+    courseCounts[ct]=(courseCounts[ct]||0)+1;
   });
-  // Sort by count descending, show top 8 most attended
-  const topRuns = [...runWithCounts].sort((a,b)=>b._cnt-a._cnt).slice(0,8);
+  // Count runs per course name
+  runs.forEach(r=>{
+    const rDate=(r.StartDate||'').substring(0,10);
+    const rCourse=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+    if(!rCourse) return;
+    courseRunCounts[rCourse]=(courseRunCounts[rCourse]||0)+1;
+  });
+  // Build course averages
+  const courseAvgs = Object.entries(courseCounts).map(([name,total])=>{
+    const numRuns = courseRunCounts[name]||1;
+    const avg = total/numRuns;
+    return {name, total, numRuns, avg};
+  });
+  // Sort by average attendance descending, show top 10
+  const topCourses = courseAvgs.sort((a,b)=>b.avg-a.avg).slice(0,10);
+  // Get capacity from runs (use 7 as default)
+  const cap = runs.length ? (runs[0].Capacity||7) : 7;
   let html='';
-  topRuns.forEach(r=>{
-    const cnt = r._cnt;
-    const cap = +r.Capacity||7;
-    const pct = Math.min(100,Math.round(cnt/cap*100));
+  topCourses.forEach(r=>{
+    const cnt = Math.round(r.avg);
+    const pct = Math.min(100,Math.round((cnt/cap)*100));
     const col = pct>=80?'pf-t':pct>=40?'pf-b':'pf-a';
+    const shortName = r.name.length>36?r.name.substring(0,36)+'…':r.name;
     html+=`<div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <span style="font-size:12px;color:var(--g700)">${(r.CourseName||r.Title||'Course').substring(0,36)}</span>
-        <span style="font-size:12px;font-weight:600">${cnt}/${cap}</span>
+        <span style="font-size:12px;color:var(--g700)">${shortName}</span>
+        <span style="font-size:12px;font-weight:600">${cnt}/${cap} <span style="color:var(--g500);font-weight:400">(${r.numRuns} runs)</span></span>
       </div>
       <div class="prog"><div class="prog-fill ${col}" style="width:${pct}%"></div></div>
     </div>`;
