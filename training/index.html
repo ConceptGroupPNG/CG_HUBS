@@ -920,7 +920,8 @@ function buildDashCharts(atts, invs, pays){
     // Find course category
     const course = (cache.courses||[]).find(c=>{
       const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
-      return courseTitle.toLowerCase().includes(cn.substring(0,15));
+      const ct=courseTitle.toLowerCase().trim();
+      return cn && (ct.startsWith(cn) || ct.includes(cn));
     });
     const cat = course?.Category||'Other';
     revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
@@ -959,8 +960,11 @@ function buildAttBars(runs, atts){
   // Match attendees to runs by CourseTitle (includes date) vs run Title
   let html='';
   runs.slice(0,8).forEach(r=>{
-    const rTitle=(r.Title||'').toLowerCase().trim();
-    const cnt = atts.filter(a=>(a.CourseTitle||'').toLowerCase().trim()===rTitle).length;
+    const rTitle=(r.Title||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const cnt = atts.filter(a=>{
+      const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
+      return at===rTitle || rTitle.startsWith(at) || at.startsWith(rTitle.substring(0,rTitle.lastIndexOf(' ')));
+    }).length;
     const cap = +r.Capacity||7;
     const pct = Math.min(100,Math.round(cnt/cap*100));
     const col = pct>=80?'pf-t':pct>=40?'pf-b':'pf-a';
