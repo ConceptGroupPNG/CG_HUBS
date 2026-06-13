@@ -1007,8 +1007,16 @@ function renderCourses(items){
   </tr>`).join('');
 }
 
+// Search input ID map
+const SEARCH_IDS = {
+  courses:'course-q', runs:'runs-q', organisations:'orgs-q',
+  attendees:'att-q', invoices:'inv-q', payments:'pay-q',
+  trainers:'tr-q', certificates:'cert-q'
+};
+
 function filterTable(entity){
-  const q = (document.getElementById(entity.substring(0,3)+'-q')||{value:''}).value.toLowerCase();
+  const qEl = document.getElementById(SEARCH_IDS[entity]||entity.substring(0,3)+'-q');
+  const q = (qEl||{value:''}).value.toLowerCase();
   let items = cache[entity]||[];
   if(q) items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
   // extra filters
@@ -1016,14 +1024,29 @@ function filterTable(entity){
     const st=(document.getElementById('runs-status')||{value:''}).value;
     const cr=(document.getElementById('runs-course')||{value:''}).value;
     if(st) items=items.filter(i=>i.Status===st);
-    if(cr) items=items.filter(i=>(i.CourseIDId||i.CourseLookupId)==cr);
+    if(cr){
+      // Filter by course name match
+      const course=(cache.courses||[]).find(c=>c.id==cr);
+      const cname=(course?.CourseName||course?.Title||'').toLowerCase().substring(0,20);
+      if(cname) items=items.filter(i=>(i.Title||'').toLowerCase().includes(cname));
+    }
   }
   if(entity==='attendees'){
     const run=(document.getElementById('att-run')||{value:''}).value;
     const org=(document.getElementById('att-org')||{value:''}).value;
     const st=(document.getElementById('att-status')||{value:''}).value;
-    if(run) items=items.filter(i=>(i.CourseRunIDId||i.CourseRunID)==run);
-    if(org) items=items.filter(i=>(i.OrgOIDId||i.OrgIDId||i.OrgOID)==org);
+    if(run){
+      // Filter by CourseTitle text match
+      const runRec=(cache.runs||[]).find(r=>r.id==run);
+      const rtitle=(runRec?.Title||runRec?.CourseID||'').toLowerCase().substring(0,20);
+      if(rtitle) items=items.filter(i=>(i.CourseTitle||'').toLowerCase().includes(rtitle));
+    }
+    if(org){
+      // Filter by OrgName text match
+      const orgRec=(cache.organisations||[]).find(o=>o.id==org);
+      const oname=(orgRec?.OrgName||orgRec?.Title||'').toLowerCase();
+      if(oname) items=items.filter(i=>(i.OrgName||i.JobTitle||'').toLowerCase()===oname);
+    }
     if(st) items=items.filter(i=>i.AttendanceStatus===st);
   }
   if(entity==='invoices'){
@@ -1179,6 +1202,14 @@ async function loadInvoices(){
     cache.invoices = items;
     if(!cache.attendees) cache.attendees = atts;
     cache.payments = pays;
+    // Diagnostic - log first invoice and payment fields
+    if(items.length>0){
+      const inv=items[0];
+      console.log('=== INVOICE FIELDS ===', JSON.stringify(inv));
+    }
+    if(pays.length>0){
+      console.log('=== PAYMENT FIELDS ===', JSON.stringify(pays[0]));
+    }
     const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
     document.getElementById('inv-m1').textContent = fmt(totalInv);
@@ -1296,6 +1327,7 @@ async function loadCertificates(){
     cache.certificates = items;
     if(!cache.attendees) cache.attendees = atts;
     if(!cache.runs) cache.runs = runs;
+    if(items.length>0) console.log('=== CERT FIELDS ===', JSON.stringify(items[0]));
     renderCertificates(items);
   } catch(e){ toast('Error loading certificates: '+e.message,'error'); }
 }
