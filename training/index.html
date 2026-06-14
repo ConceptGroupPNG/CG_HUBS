@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+.sortable{cursor:pointer;user-select:none}
+.sortable:hover{color:var(--teal)}
 :root{
   --navy:#1a2744;--navy2:#243358;--teal:#0e9f6e;--teal-l:#d1fae5;--teal-d:#065f46;
   --amber:#f59e0b;--amber-l:#fef3c7;--red:#ef4444;--red-l:#fee2e2;
@@ -291,11 +293,18 @@ select:focus{border-color:var(--teal)}
             <option value="">All categories</option>
             <option>Payroll</option><option>HR</option><option>Safety</option><option>Other</option>
           </select>
+          <button class="btn btn-outline" onclick="clearFilters('courses')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="courses-count">Courses</h2></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Course Name</th><th>Category</th><th>Fee (PGK excl. GST)</th><th>GST Rate</th><th>Runs</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortCourses('CourseName')">Course Name <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCourses('Category')">Category <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCourses('FeeExGST')">Fee (PGK excl. GST) <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>GST Rate</th>
+              <th class="sortable" onclick="sortCourses('Runs')">Runs <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th></tr></thead>
             <tbody id="courses-tbody"></tbody></table>
           </div>
         </div>
@@ -310,6 +319,7 @@ select:focus{border-color:var(--teal)}
             <option>Scheduled</option><option>Active</option><option>Completed</option><option>Postponed</option>
           </select>
           <select id="runs-course" onchange="filterTable('runs')"><option value="">All courses</option></select>
+          <button class="btn btn-outline" onclick="clearFilters('runs')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="runs-count">Course Runs</h2></div>
@@ -324,6 +334,7 @@ select:focus{border-color:var(--teal)}
       <div id="page-organisations" class="page">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search organisations..." id="orgs-q" oninput="filterTable('organisations')"></div>
+          <button class="btn btn-outline" onclick="clearFilters('organisations')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="orgs-count">Organisations</h2></div>
@@ -344,6 +355,7 @@ select:focus{border-color:var(--teal)}
             <option value="">All statuses</option>
             <option>Registered</option><option>Attended</option><option>Completed</option><option>No-show</option>
           </select>
+          <button class="btn btn-outline" onclick="clearFilters('attendees')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header">
@@ -364,6 +376,7 @@ select:focus{border-color:var(--teal)}
           <select id="inv-status" onchange="filterTable('invoices')">
             <option value="">All statuses</option><option>Paid</option><option>Partial</option><option>Pending</option>
           </select>
+          <button class="btn btn-outline" onclick="clearFilters('invoices')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="metrics-grid" style="margin-bottom:16px">
           <div class="metric-card"><div class="mc-label">Total Invoiced</div><div class="mc-value" id="inv-m1" style="font-size:18px">—</div></div>
@@ -373,7 +386,7 @@ select:focus{border-color:var(--teal)}
         </div>
         <div class="card">
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Invoice Date</th><th>Quote Ref</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="inv-tbody"></tbody></table>
           </div>
         </div>
@@ -386,11 +399,15 @@ select:focus{border-color:var(--teal)}
           <select id="pay-status" onchange="filterTable('payments')">
             <option value="">All</option><option>Paid</option><option>Partial</option><option>Pending</option>
           </select>
+          <button class="btn btn-outline" onclick="clearFilters('payments')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
-          <div class="card-header"><h2 id="pay-count">Payments</h2></div>
+          <div class="card-header">
+            <h2 id="pay-count">Payments</h2>
+            <button class="btn btn-outline" style="font-size:12px" onclick="exportPaymentsCSV()"><i class="ti ti-download"></i> Export CSV</button>
+          </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Amount Paid</th><th>Date Paid</th><th>Remittance Ref</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Amount Paid</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="pay-tbody"></tbody></table>
           </div>
         </div>
@@ -400,6 +417,7 @@ select:focus{border-color:var(--teal)}
       <div id="page-trainers" class="page">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search trainers..." id="tr-q" oninput="filterTable('trainers')"></div>
+          <button class="btn btn-outline" onclick="clearFilters('trainers')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="tr-count">Trainers</h2></div>
@@ -414,6 +432,7 @@ select:focus{border-color:var(--teal)}
       <div id="page-certificates" class="page">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search certificates..." id="cert-q" oninput="filterTable('certificates')"></div>
+          <button class="btn btn-outline" onclick="clearFilters('certificates')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="cert-count">Certificates</h2></div>
@@ -816,6 +835,36 @@ function payStatus(fee,gst,paid){
   if((+paid||0)>0) return 'Partial';
   return 'Pending';
 }
+// Compute invoice status by summing matching payments via RemittanceRef
+function invoiceTotalPaid(inv){
+  const invNum=inv.InvoiceNumber||inv.Title||'';
+  return (cache.payments||[]).filter(p=>(p.RemittanceRef||'')===invNum)
+    .reduce((s,p)=>s+(+p.AmountPaid||0),0);
+}
+function invoiceStatus(inv){
+  const total=+(inv.TotalAmount||0);
+  const paid=invoiceTotalPaid(inv);
+  if(!total) return 'N/A';
+  if(paid>=total) return 'Paid';
+  if(paid>0) return 'Partial';
+  return 'Pending';
+}
+// Compute payment status by comparing to its matched invoice
+function paymentStatus(p){
+  const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
+  const total=+(inv?.TotalAmount||0);
+  const paid=+(p.AmountPaid||0);
+  const bal=Math.max(0,total-paid);
+  if(bal<=0&&total>0) return 'Paid';
+  if(paid>0&&bal>0) return 'Partial';
+  return 'Pending';
+}
+// Find attendee linked to an invoice via AttendeeName
+function attendeeForInvoice(inv){
+  const name=(inv.AttendeeName||'').trim().toLowerCase();
+  if(!name) return null;
+  return (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===name);
+}
 function toast(msg, type='success'){
   const c=document.getElementById('toast-container');
   const t=document.createElement('div');
@@ -1056,12 +1105,7 @@ function renderCourses(items){
     <td><span class="badge ${c.Category==='Payroll'?'bb':c.Category==='HR'?'bg':c.Category==='Safety'?'ba':'bgr'}">${c.Category||'—'}</span></td>
     <td>${fmt(c.FeeExGST)}</td>
     <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
-    <td>${(cache.runs||[]).filter(r=>{
-      const rt=(r.Title||'').toLowerCase();
-      const rt2=rt.replace(/\d{4}-\d{2}-\d{2}/g,'').trim();
-      const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
-      return cn&&rt2===cn;
-    }).length}</td>
+    <td>${courseRunCount(c)}</td>
     <td><div class="td-actions">
       <button class="btn-icon" onclick="openFormModal('courses',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
       <button class="btn-icon danger" onclick="confirmDelete('courses','${c.id}','${(c.CourseName||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -1076,12 +1120,57 @@ const SEARCH_IDS = {
   trainers:'tr-q', certificates:'cert-q'
 };
 
+let courseSortState = {key:null, dir:1};
+function sortCourses(key){
+  if(courseSortState.key===key) courseSortState.dir*=-1;
+  else { courseSortState.key=key; courseSortState.dir=1; }
+  let items=[...(cache.courses||[])];
+  const dir=courseSortState.dir;
+  if(key==='Runs'){
+    items.sort((a,b)=>{
+      const ra=courseRunCount(a), rb=courseRunCount(b);
+      return (ra-rb)*dir;
+    });
+  } else if(key==='FeeExGST'){
+    items.sort((a,b)=>((+a.FeeExGST||0)-(+b.FeeExGST||0))*dir);
+  } else {
+    items.sort((a,b)=>{
+      const va=(a[key]||a.Title||'').toString().toLowerCase();
+      const vb=(b[key]||b.Title||'').toString().toLowerCase();
+      return va.localeCompare(vb)*dir;
+    });
+  }
+  renderCourses(items);
+}
+function courseRunCount(c){
+  const cName=(c.CourseName||c.Title||'').toLowerCase().trim();
+  return (cache.runs||[]).filter(r=>{
+    const rt=(r.Title||'').replace(/\d{4}-\d{2}-\d{2}/g,'').trim().toLowerCase();
+    return cName&&rt&&rt===cName;
+  }).length;
+}
+
+function clearFilters(entity){
+  const qEl = document.getElementById(SEARCH_IDS[entity]||entity.substring(0,3)+'-q');
+  if(qEl) qEl.value='';
+  // Reset all select elements within the relevant filter-bar
+  const page = document.getElementById('page-'+entity);
+  if(page){
+    page.querySelectorAll('.filter-bar select').forEach(s=>{ s.value=''; });
+  }
+  filterTable(entity);
+}
+
 function filterTable(entity){
   const qEl = document.getElementById(SEARCH_IDS[entity]||entity.substring(0,3)+'-q');
   const q = (qEl||{value:''}).value.toLowerCase();
   let items = cache[entity]||[];
   if(q) items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
   // extra filters
+  if(entity==='courses'){
+    const cat=(document.getElementById('course-cat')||{value:''}).value;
+    if(cat) items=items.filter(i=>i.Category===cat);
+  }
   if(entity==='runs'){
     const st=(document.getElementById('runs-status')||{value:''}).value;
     const cr=(document.getElementById('runs-course')||{value:''}).value;
@@ -1113,11 +1202,11 @@ function filterTable(entity){
   }
   if(entity==='invoices'){
     const st=(document.getElementById('inv-status')||{value:''}).value;
-    if(st) items=items.filter(i=>payStatus(i.FeeExGST,i.GSTAmount,i.AmountPaid)===st);
+    if(st) items=items.filter(i=>invoiceStatus(i)===st);
   }
   if(entity==='payments'){
     const st=(document.getElementById('pay-status')||{value:''}).value;
-    if(st) items=items.filter(i=>i.PaymentStatus===st);
+    if(st) items=items.filter(i=>paymentStatus(i)===st);
   }
   const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,certificates:renderCertificates};
   if(renders[entity]) renders[entity](items);
@@ -1190,7 +1279,7 @@ function renderOrgs(items){
   document.getElementById('orgs-tbody').innerHTML = items.map(o=>{
     const oName=(o.OrgName||o.Title||'').trim().toLowerCase();
     const attCount = (cache.attendees||[]).filter(a=>
-      (a.OrgName||a.JobTitle||'').trim().toLowerCase()===oName
+      (a.OrgName||'').trim().toLowerCase()===oName
     ).length;
     return `<tr>
       <td class="td-bold">${o.OrgName||o.Title||'—'}</td>
@@ -1290,14 +1379,17 @@ function renderInvoices(items){
     // AttendeeID may store SP item id or be empty - try both
     // Use AttendeeName text field stored by importer
     const attName = i.AttendeeName || '—';
+    const att = attendeeForInvoice(i);
+    const orgName = att?.OrgName || '—';
+    const st = invoiceStatus(i);
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td>${attName}</td>
+      <td style="font-size:12px">${orgName}</td>
       <td>${fmt(i.FeeExGST)}</td>
       <td>${fmt(i.GSTAmount)}</td>
       <td><strong>${fmt(i.TotalAmount)}</strong></td>
-      <td style="white-space:nowrap">${fmtDate(i.InvoiceDate)}</td>
-      <td style="font-size:12px">${i.QuoteRef||'—'}</td>
+      <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="openFormModal('invoices',${JSON.stringify(i).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('invoices','${i.id}','${(i.InvoiceNumber||i.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -1332,12 +1424,15 @@ function renderPayments(items){
     const total = +(inv?.TotalAmount||0);
     const paid = +(p.AmountPaid||0);
     const bal = Math.max(0,total-paid);
-    const st = bal<=0&&total>0?'Paid':paid>0&&bal>0?'Partial':'Pending';
+    const st = paymentStatus(p);
+    const att = inv ? attendeeForInvoice(inv) : null;
+    const attName = inv?.AttendeeName || '—';
+    const orgName = att?.OrgName || '—';
     return `<tr>
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
+      <td>${attName}</td>
+      <td style="font-size:12px">${orgName}</td>
       <td>${fmt(paid)}</td>
-      <td style="white-space:nowrap">${fmtDate(p.DatePaid)}</td>
-      <td style="font-size:12px">${p.RemittanceRef||'—'}</td>
       <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}">${fmt(bal)}</td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
@@ -1402,11 +1497,14 @@ function renderCertificates(items){
   document.getElementById('cert-count').textContent = `Certificates (${items.length})`;
   if(!items.length){emptyState('cert-tbody','No certificates issued yet');return;}
   document.getElementById('cert-tbody').innerHTML = items.map(c=>{
-    const att = (cache.attendees||[]).find(a=>a.id==(c.AttendeeID||c.AttendeeIDId)||String(a.id)===String(c.AttendeeID));
-    const run = (cache.runs||[]).find(r=>r.id==(c.CourseRunID||c.CourseRunIDId)||String(r.id)===String(c.CourseRunID));
+    // Find attendee by name to get organisation
+    const attName=(c.AttendeeName||'').trim().toLowerCase();
+    const att = attName ? (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName) : null;
+    const orgName = att?.OrgName || '—';
     return `<tr>
       <td class="td-bold">${c.CertificateNumber||c.Title||'—'}</td>
       <td>${c.AttendeeName||'—'}</td>
+      <td style="font-size:12px">${orgName}</td>
       <td style="font-size:12px">${c.CourseRunTitle||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
       <td><div class="td-actions">
@@ -1629,6 +1727,56 @@ function confirmDelete(entity, id, name){
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
+// ── GENERIC CSV EXPORT (filtered rows) ─────────────────────────────────────
+function exportTableCSV(entity, tbodyId, headers, rowFn){
+  const tbody = document.getElementById(tbodyId);
+  const visibleIds = new Set();
+  if(tbody){
+    tbody.querySelectorAll('tr').forEach(tr=>{
+      const editBtn = tr.querySelector(`button[onclick^="openFormModal('${entity}'"]`);
+      if(editBtn){
+        const m = editBtn.getAttribute('onclick').match(/openFormModal\('[^']+',(.*)\)$/);
+        if(m){
+          try{ const obj = JSON.parse(m[1].replace(/&quot;/g,'"')); visibleIds.add(String(obj.id)); }catch(e){}
+        }
+      }
+    });
+  }
+  let items = cache[entity]||[];
+  if(visibleIds.size) items = items.filter(i=>visibleIds.has(String(i.id)));
+  if(!items.length){ toast('No data to export','error'); return; }
+  const rows = items.map(rowFn).map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"'));
+  const csv = [headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`CG_${entity}_`+new Date().toISOString().substring(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('Exported '+items.length+' '+entity+' to CSV','success');
+}
+
+function exportPaymentsCSV(){
+  exportTableCSV('payments','pay-tbody',
+    ['Invoice #','Attendee','Organisation','Amount Paid','Balance Due','Status','Date Paid'],
+    p=>{
+      const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
+      const total=+(inv?.TotalAmount||0);
+      const paid=+(p.AmountPaid||0);
+      const bal=Math.max(0,total-paid);
+      const att=inv?attendeeForInvoice(inv):null;
+      return [
+        p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'',
+        inv?.AttendeeName||'',
+        att?.OrgName||'',
+        paid,
+        bal,
+        paymentStatus(p),
+        p.DatePaid||''
+      ];
+    }
+  );
+}
+
 // ── PRINT ROSTER ─────────────────────────────────────────────────────────
 function printRoster(run){
   const rDate=(run.StartDate||'').substring(0,10);
@@ -1681,7 +1829,22 @@ function printRoster(run){
 
 // ── EXPORT ATTENDEES CSV ──────────────────────────────────────────────────
 function exportAttendeesCSV(){
-  const atts = cache.attendees||[];
+  // Export current filtered table rows, not full cache
+  const tbody = document.getElementById('att-tbody');
+  const visibleIds = new Set();
+  if(tbody){
+    tbody.querySelectorAll('tr').forEach(tr=>{
+      const editBtn = tr.querySelector('button[onclick^="openFormModal"]');
+      if(editBtn){
+        const m = editBtn.getAttribute('onclick').match(/openFormModal\('attendees',(.*)\)$/);
+        if(m){
+          try{ const obj = JSON.parse(m[1].replace(/&quot;/g,'"')); visibleIds.add(String(obj.id)); }catch(e){}
+        }
+      }
+    });
+  }
+  let atts = cache.attendees||[];
+  if(visibleIds.size) atts = atts.filter(a=>visibleIds.has(String(a.id)));
   if(!atts.length){ toast('No attendees to export','error'); return; }
   const headers = ['Full Name','Organisation','Course Title','Run Start Date','Job Title','Mobile','Section 65A','Certificate #','Attendance Status'];
   const rows = atts.map(a=>[
