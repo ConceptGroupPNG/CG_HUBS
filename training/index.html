@@ -2026,6 +2026,7 @@ function printRunsCalendar(){
   const w=window.open('','_blank','width=1000,height=750');
   w.document.write(`<!DOCTYPE html><html><head><title>Course Calendar - ${monthNames[calendarMonth]} ${calendarYear}</title>
   <style>
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
     body{font-family:'Segoe UI',sans-serif;padding:30px;color:#111}
     h1{font-size:20px;margin-bottom:4px}
     .sub{color:#666;font-size:13px;margin-bottom:20px}
@@ -2034,14 +2035,20 @@ function printRunsCalendar(){
     td{border-bottom:1px solid #eee;border-right:1px solid #eee;vertical-align:top;height:90px;padding:6px;font-size:11px}
     td.empty{background:#f9f9f9}
     .day-num{font-weight:700;font-size:12px;color:#1a2744;margin-bottom:3px}
-    .run{border-radius:3px;padding:2px 5px;margin-bottom:2px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-    .run.scheduled{background:#3b82f6}
-    .run.completed{background:#0e9f6e}
-    .run.postponed{background:#ef4444}
+    .run{border-radius:3px;padding:2px 5px;margin-bottom:2px;font-size:10px;color:#fff!important;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:600}
+    .run.scheduled{background-color:#3b82f6!important}
+    .run.completed{background-color:#0e9f6e!important}
+    .run.postponed{background-color:#ef4444!important}
     .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#666}
     .legend span{display:inline-flex;align-items:center;gap:5px}
     .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
-    @media print{button{display:none}}
+    .legend i.scheduled{background-color:#3b82f6!important}
+    .legend i.completed{background-color:#0e9f6e!important}
+    .legend i.postponed{background-color:#ef4444!important}
+    @media print{
+      button{display:none}
+      .run{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    }
   </style></head><body>
   <img src="${logoSrc}" style="height:50px;margin-bottom:10px" onerror="this.style.display='none'">
   <h1>Course Schedule — ${monthNames[calendarMonth]} ${calendarYear}</h1>
@@ -2051,9 +2058,9 @@ function printRunsCalendar(){
     <tbody><tr>${cells}</tr></tbody>
   </table>
   <div class="legend">
-    <span><i style="background:#3b82f6"></i>Scheduled</span>
-    <span><i style="background:#0e9f6e"></i>Completed</span>
-    <span><i style="background:#ef4444"></i>Postponed</span>
+    <span><i class="scheduled"></i>Scheduled</span>
+    <span><i class="completed"></i>Completed</span>
+    <span><i class="postponed"></i>Postponed</span>
   </div>
   <p style="margin-top:30px;font-size:11px;color:#999">Printed: ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})}</p>
   <button onclick="window.print()" style="margin-top:16px;padding:8px 20px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Print</button>
