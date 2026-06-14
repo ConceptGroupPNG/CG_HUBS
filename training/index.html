@@ -319,14 +319,18 @@ select:focus{border-color:var(--teal)}
             <option>Scheduled</option><option>Active</option><option>Completed</option><option>Postponed</option>
           </select>
           <select id="runs-course" onchange="filterTable('runs')"><option value="">All courses</option></select>
+          <input type="date" id="runs-from" onchange="filterTable('runs')" title="Start date from" style="padding:8px 10px;border:1px solid var(--g300);border-radius:8px;font-size:13px">
+          <input type="date" id="runs-to" onchange="filterTable('runs')" title="Start date to" style="padding:8px 10px;border:1px solid var(--g300);border-radius:8px;font-size:13px">
           <button class="btn btn-outline" onclick="clearFilters('runs')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
+          <button class="btn btn-outline" id="runs-view-toggle" onclick="toggleRunsView()" title="Toggle calendar view"><i class="ti ti-calendar"></i> Calendar</button>
         </div>
         <div class="card">
           <div class="card-header"><h2 id="runs-count">Course Runs</h2></div>
-          <div class="table-wrap">
+          <div class="table-wrap" id="runs-table-view">
             <table><thead><tr><th>Course</th><th>Start</th><th>End</th><th>Trainer</th><th>Venue</th><th>Capacity</th><th>Enrolled</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="runs-tbody"></tbody></table>
           </div>
+          <div id="runs-calendar-view" style="display:none;padding:18px"></div>
         </div>
       </div>
 
@@ -349,7 +353,7 @@ select:focus{border-color:var(--teal)}
       <div id="page-attendees" class="page">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search attendees..." id="att-q" oninput="filterTable('attendees')"></div>
-          <select id="att-run" onchange="filterTable('attendees')"><option value="">All course runs</option></select>
+          <select id="att-run" onchange="filterTable('attendees')"><option value="">All courses</option></select>
           <select id="att-org" onchange="filterTable('attendees')"><option value="">All organisations</option></select>
           <select id="att-status" onchange="filterTable('attendees')">
             <option value="">All statuses</option>
@@ -385,6 +389,10 @@ select:focus{border-color:var(--teal)}
           <div class="metric-card"><div class="mc-label">Invoice Count</div><div class="mc-value" style="font-size:18px" id="inv-m4">—</div></div>
         </div>
         <div class="card">
+          <div class="card-header">
+            <h2 id="inv-count">Invoices</h2>
+            <button class="btn btn-outline" style="font-size:12px" onclick="exportInvoicesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+          </div>
           <div class="table-wrap">
             <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="inv-tbody"></tbody></table>
@@ -437,7 +445,7 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header"><h2 id="cert-count">Certificates</h2></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Certificate #</th><th>Attendee</th><th>Course Run</th><th>Issue Date</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Certificate #</th><th>Attendee</th><th>Organisation</th><th>Course Run</th><th>Issue Date</th><th>Actions</th></tr></thead>
             <tbody id="cert-tbody"></tbody></table>
           </div>
         </div>
@@ -1120,6 +1128,96 @@ const SEARCH_IDS = {
   trainers:'tr-q', certificates:'cert-q'
 };
 
+// ── COURSE RUNS CALENDAR VIEW ───────────────────────────────────────────────
+let runsViewMode = 'table'; // 'table' or 'calendar'
+let calendarMonth = new Date().getMonth();
+let calendarYear = new Date().getFullYear();
+
+function toggleRunsView(){
+  runsViewMode = runsViewMode==='table'?'calendar':'table';
+  const tableView = document.getElementById('runs-table-view');
+  const calView = document.getElementById('runs-calendar-view');
+  const btn = document.getElementById('runs-view-toggle');
+  if(runsViewMode==='calendar'){
+    tableView.style.display='none';
+    calView.style.display='block';
+    btn.innerHTML='<i class="ti ti-table"></i> Table';
+    renderRunsCalendar();
+  } else {
+    tableView.style.display='';
+    calView.style.display='none';
+    btn.innerHTML='<i class="ti ti-calendar"></i> Calendar';
+  }
+}
+
+function changeCalendarMonth(delta){
+  calendarMonth += delta;
+  if(calendarMonth<0){ calendarMonth=11; calendarYear--; }
+  if(calendarMonth>11){ calendarMonth=0; calendarYear++; }
+  renderRunsCalendar();
+}
+
+function renderRunsCalendar(){
+  const el = document.getElementById('runs-calendar-view');
+  if(!el) return;
+  // Use currently filtered runs (re-derive from current table state)
+  const allRuns = cache.runs||[];
+  const monthRuns = allRuns.filter(r=>{
+    const d = new Date((r.StartDate||'').substring(0,10));
+    return d.getFullYear()===calendarYear && d.getMonth()===calendarMonth;
+  });
+  const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const firstDay = new Date(calendarYear, calendarMonth, 1);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
+
+  // Group runs by day
+  const byDay = {};
+  monthRuns.forEach(r=>{
+    const d = new Date((r.StartDate||'').substring(0,10));
+    const day = d.getDate();
+    if(!byDay[day]) byDay[day]=[];
+    byDay[day].push(r);
+  });
+
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <button class="btn-icon" onclick="changeCalendarMonth(-1)"><i class="ti ti-chevron-left"></i></button>
+    <h3 style="font-size:16px">${monthNames[calendarMonth]} ${calendarYear}</h3>
+    <button class="btn-icon" onclick="changeCalendarMonth(1)"><i class="ti ti-chevron-right"></i></button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px;color:var(--g500);font-weight:600;text-align:center;margin-bottom:6px">
+    <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">`;
+
+  // Empty cells before first day
+  for(let i=0;i<startWeekday;i++){
+    html += `<div style="min-height:70px;background:var(--g100);border-radius:6px"></div>`;
+  }
+  // Day cells
+  for(let day=1;day<=daysInMonth;day++){
+    const runsToday = byDay[day]||[];
+    const isToday = (new Date().getFullYear()===calendarYear && new Date().getMonth()===calendarMonth && new Date().getDate()===day);
+    html += `<div style="min-height:70px;background:${isToday?'var(--teal-l)':'#fff'};border:1px solid var(--g200);border-radius:6px;padding:4px;font-size:11px">
+      <div style="font-weight:600;color:${isToday?'var(--teal-d)':'var(--g700)'};margin-bottom:2px">${day}</div>
+      ${runsToday.map(r=>{
+        const rDate=(r.StartDate||'').substring(0,10);
+        const cname=(r.Title||'').replace(rDate,'').trim();
+        const statusColor = r.Status==='Completed'?'#0e9f6e':r.Status==='Postponed'?'#ef4444':'#3b82f6';
+        return `<div title="${r.Title}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})">${cname.substring(0,18)}</div>`;
+      }).join('')}
+    </div>`;
+  }
+  html += `</div>
+  <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--g500)">
+    <span><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px;margin-right:4px"></span>Scheduled</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#0e9f6e;border-radius:2px;margin-right:4px"></span>Completed</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px"></span>Postponed</span>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
 let courseSortState = {key:null, dir:1};
 function sortCourses(key){
   if(courseSortState.key===key) courseSortState.dir*=-1;
@@ -1153,10 +1251,11 @@ function courseRunCount(c){
 function clearFilters(entity){
   const qEl = document.getElementById(SEARCH_IDS[entity]||entity.substring(0,3)+'-q');
   if(qEl) qEl.value='';
-  // Reset all select elements within the relevant filter-bar
+  // Reset all select and date inputs within the relevant filter-bar
   const page = document.getElementById('page-'+entity);
   if(page){
     page.querySelectorAll('.filter-bar select').forEach(s=>{ s.value=''; });
+    page.querySelectorAll('.filter-bar input[type="date"]').forEach(s=>{ s.value=''; });
   }
   filterTable(entity);
 }
@@ -1165,7 +1264,19 @@ function filterTable(entity){
   const qEl = document.getElementById(SEARCH_IDS[entity]||entity.substring(0,3)+'-q');
   const q = (qEl||{value:''}).value.toLowerCase();
   let items = cache[entity]||[];
-  if(q) items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
+  if(q){
+    if(entity==='payments'){
+      // Search invoice #, attendee name, and organisation via linked invoice
+      items = items.filter(p=>{
+        const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
+        const att=inv?attendeeForInvoice(inv):null;
+        const searchable=[p.RemittanceRef,inv?.AttendeeName,att?.OrgName,p.Title].join(' ').toLowerCase();
+        return searchable.includes(q);
+      });
+    } else {
+      items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
+    }
+  }
   // extra filters
   if(entity==='courses'){
     const cat=(document.getElementById('course-cat')||{value:''}).value;
@@ -1174,6 +1285,8 @@ function filterTable(entity){
   if(entity==='runs'){
     const st=(document.getElementById('runs-status')||{value:''}).value;
     const cr=(document.getElementById('runs-course')||{value:''}).value;
+    const from=(document.getElementById('runs-from')||{value:''}).value;
+    const to=(document.getElementById('runs-to')||{value:''}).value;
     if(st) items=items.filter(i=>i.Status===st);
     if(cr){
       // Filter by course name match
@@ -1181,16 +1294,17 @@ function filterTable(entity){
       const cname=(course?.CourseName||course?.Title||'').toLowerCase().substring(0,20);
       if(cname) items=items.filter(i=>(i.Title||'').toLowerCase().includes(cname));
     }
+    if(from) items=items.filter(i=>(i.StartDate||'').substring(0,10)>=from);
+    if(to) items=items.filter(i=>(i.StartDate||'').substring(0,10)<=to);
   }
   if(entity==='attendees'){
     const run=(document.getElementById('att-run')||{value:''}).value;
     const org=(document.getElementById('att-org')||{value:''}).value;
     const st=(document.getElementById('att-status')||{value:''}).value;
     if(run){
-      // Filter by CourseTitle text match
-      const runRec=(cache.runs||[]).find(r=>r.id==run);
-      const rtitle=(runRec?.Title||runRec?.CourseID||'').toLowerCase().substring(0,20);
-      if(rtitle) items=items.filter(i=>(i.CourseTitle||'').toLowerCase().includes(rtitle));
+      // 'run' is now the course name (without date) selected from dropdown
+      const rname=run.toLowerCase().trim();
+      items=items.filter(i=>(i.CourseTitle||'').toLowerCase().trim()===rname);
     }
     if(org){
       // Filter by OrgName text match
@@ -1314,8 +1428,19 @@ async function loadAttendees(){
     renderAttendees(items);
     // populate run filter
     const sel = document.getElementById('att-run');
-    sel.innerHTML = '<option value="">All course runs</option>';
-    runs.forEach(r=>{ const op=document.createElement('option');op.value=r.id;op.textContent=(r.CourseID||r.Title||'Run')+' '+fmtDate(r.StartDate);sel.appendChild(op); });
+    sel.innerHTML = '<option value="">All courses</option>';
+    // Build unique course names (strip dates) for cleaner filter list
+    const seen = new Set();
+    runs.forEach(r=>{
+      const rDate=(r.StartDate||'').substring(0,10);
+      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+      if(cName && !seen.has(cName)){
+        seen.add(cName);
+        const op=document.createElement('option');
+        op.value=cName; op.textContent=cName;
+        sel.appendChild(op);
+      }
+    });
   } catch(e){ toast('Error loading attendees: '+e.message,'error'); }
 }
 
@@ -1363,17 +1488,22 @@ async function loadInvoices(){
     if(!cache.attendees) cache.attendees = atts;
     cache.payments = pays;
 
-    const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
-    const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
-    document.getElementById('inv-m1').textContent = fmt(totalInv);
-    document.getElementById('inv-m2').textContent = fmt(totalPaid);
-    document.getElementById('inv-m3').textContent = fmt(totalInv-totalPaid);
-    document.getElementById('inv-m4').textContent = items.length;
     renderInvoices(items);
   } catch(e){ toast('Error loading invoices: '+e.message,'error'); }
 }
 
 function renderInvoices(items){
+  // Update summary metrics based on current (filtered) items
+  const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  const totalPaid = items.reduce((s,i)=>s+invoiceTotalPaid(i),0);
+  const m1=document.getElementById('inv-m1'), m2=document.getElementById('inv-m2'),
+        m3=document.getElementById('inv-m3'), m4=document.getElementById('inv-m4');
+  if(m1) m1.textContent = fmt(totalInv);
+  if(m2) m2.textContent = fmt(totalPaid);
+  if(m3) m3.textContent = fmt(totalInv-totalPaid);
+  if(m4) m4.textContent = items.length;
+  const cnt=document.getElementById('inv-count');
+  if(cnt) cnt.textContent=`Invoices (${items.length})`;
   if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
   document.getElementById('inv-tbody').innerHTML = items.map(i=>{
     // AttendeeID may store SP item id or be empty - try both
@@ -1753,6 +1883,24 @@ function exportTableCSV(entity, tbodyId, headers, rowFn){
   a.href=url; a.download=`CG_${entity}_`+new Date().toISOString().substring(0,10)+'.csv';
   a.click(); URL.revokeObjectURL(url);
   toast('Exported '+items.length+' '+entity+' to CSV','success');
+}
+
+function exportInvoicesCSV(){
+  exportTableCSV('invoices','inv-tbody',
+    ['Invoice #','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
+    i=>{
+      const att=attendeeForInvoice(i);
+      return [
+        i.InvoiceNumber||i.Title||'',
+        i.AttendeeName||'',
+        att?.OrgName||'',
+        i.FeeExGST||0,
+        i.GSTAmount||0,
+        i.TotalAmount||0,
+        invoiceStatus(i)
+      ];
+    }
+  );
 }
 
 function exportPaymentsCSV(){
