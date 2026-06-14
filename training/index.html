@@ -1175,11 +1175,13 @@ function changeCalendarMonth(delta){
   renderRunsCalendar();
 }
 
+let calendarCurrentRuns = [];
 function renderRunsCalendar(items, jumpToResults){
   const el = document.getElementById('runs-calendar-view');
   if(!el) return;
   // Use passed-in filtered runs, or fall back to full cache
   const allRuns = items || cache.runs || [];
+  calendarCurrentRuns = allRuns;
   // If filters produced results and caller requests it, jump to the month of the first result
   if(jumpToResults && allRuns.length){
     const firstDate = new Date((allRuns[0].StartDate||'').substring(0,10));
@@ -1209,7 +1211,10 @@ function renderRunsCalendar(items, jumpToResults){
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
     <button class="btn-icon" onclick="changeCalendarMonth(-1)"><i class="ti ti-chevron-left"></i></button>
     <h3 style="font-size:16px">${monthNames[calendarMonth]} ${calendarYear}</h3>
-    <button class="btn-icon" onclick="changeCalendarMonth(1)"><i class="ti ti-chevron-right"></i></button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-outline" style="font-size:12px" onclick="printRunsCalendar()"><i class="ti ti-printer"></i> Print</button>
+      <button class="btn-icon" onclick="changeCalendarMonth(1)"><i class="ti ti-chevron-right"></i></button>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px;color:var(--g500);font-weight:600;text-align:center;margin-bottom:6px">
     <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
@@ -1974,6 +1979,83 @@ function exportPaymentsCSV(){
       ];
     }
   );
+}
+
+// ── PRINT CALENDAR ───────────────────────────────────────────────────────
+function printRunsCalendar(){
+  const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const firstDay = new Date(calendarYear, calendarMonth, 1);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
+  const monthRuns = (calendarCurrentRuns||[]).filter(r=>{
+    const d = new Date((r.StartDate||'').substring(0,10));
+    return d.getFullYear()===calendarYear && d.getMonth()===calendarMonth;
+  });
+  const byDay = {};
+  monthRuns.forEach(r=>{
+    const d = new Date((r.StartDate||'').substring(0,10));
+    const day = d.getDate();
+    if(!byDay[day]) byDay[day]=[];
+    byDay[day].push(r);
+  });
+
+  let cells = '';
+  for(let i=0;i<startWeekday;i++){
+    cells += `<td class="empty"></td>`;
+  }
+  let dayCount = startWeekday;
+  for(let day=1;day<=daysInMonth;day++){
+    if(dayCount>0 && dayCount%7===0) cells += `</tr><tr>`;
+    const runsToday = byDay[day]||[];
+    cells += `<td>
+      <div class="day-num">${day}</div>
+      ${runsToday.map(r=>{
+        const rDate=(r.StartDate||'').substring(0,10);
+        const cname=(r.Title||'').replace(rDate,'').trim();
+        const cls = r.Status==='Completed'?'completed':r.Status==='Postponed'?'postponed':'scheduled';
+        return `<div class="run ${cls}">${cname}</div>`;
+      }).join('')}
+    </td>`;
+    dayCount++;
+  }
+  // pad final row
+  while(dayCount%7!==0){ cells += `<td class="empty"></td>`; dayCount++; }
+
+  const w=window.open('','_blank','width=1000,height=750');
+  w.document.write(`<!DOCTYPE html><html><head><title>Course Calendar - ${monthNames[calendarMonth]} ${calendarYear}</title>
+  <style>
+    body{font-family:'Segoe UI',sans-serif;padding:24px;color:#111}
+    h1{font-size:20px;margin-bottom:2px}
+    .sub{color:#666;font-size:13px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    th{background:#1a2744;color:#fff;padding:6px;font-size:12px;text-align:center}
+    td{border:1px solid #ddd;vertical-align:top;height:90px;padding:4px;font-size:11px}
+    td.empty{background:#f5f5f5}
+    .day-num{font-weight:700;font-size:12px;color:#1a2744;margin-bottom:2px}
+    .run{border-radius:3px;padding:2px 4px;margin-bottom:2px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .run.scheduled{background:#3b82f6}
+    .run.completed{background:#0e9f6e}
+    .run.postponed{background:#ef4444}
+    .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#555}
+    .legend span{display:inline-flex;align-items:center;gap:5px}
+    .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+    @media print{button{display:none}}
+  </style></head><body>
+  <h1>Course Schedule — ${monthNames[calendarMonth]} ${calendarYear}</h1>
+  <div class="sub">Concept Group Training Management System &nbsp;|&nbsp; ${monthRuns.length} run(s) this month</div>
+  <table>
+    <thead><tr><th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th></tr></thead>
+    <tbody><tr>${cells}</tr></tbody>
+  </table>
+  <div class="legend">
+    <span><i style="background:#3b82f6"></i>Scheduled</span>
+    <span><i style="background:#0e9f6e"></i>Completed</span>
+    <span><i style="background:#ef4444"></i>Postponed</span>
+  </div>
+  <p style="margin-top:20px;font-size:11px;color:#999">Printed: ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})}</p>
+  <button onclick="window.print()" style="margin-top:14px;padding:8px 20px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Print</button>
+  </body></html>`);
+  w.document.close();
 }
 
 // ── PRINT ROSTER ─────────────────────────────────────────────────────────
