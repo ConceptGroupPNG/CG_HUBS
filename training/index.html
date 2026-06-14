@@ -2021,28 +2021,31 @@ function printRunsCalendar(){
   // pad final row
   while(dayCount%7!==0){ cells += `<td class="empty"></td>`; dayCount++; }
 
+  const logoSrc = document.querySelector('.sidebar-logo img')?.src || '';
+
   const w=window.open('','_blank','width=1000,height=750');
   w.document.write(`<!DOCTYPE html><html><head><title>Course Calendar - ${monthNames[calendarMonth]} ${calendarYear}</title>
   <style>
-    body{font-family:'Segoe UI',sans-serif;padding:24px;color:#111}
-    h1{font-size:20px;margin-bottom:2px}
-    .sub{color:#666;font-size:13px;margin-bottom:16px}
-    table{width:100%;border-collapse:collapse;table-layout:fixed}
-    th{background:#1a2744;color:#fff;padding:6px;font-size:12px;text-align:center}
-    td{border:1px solid #ddd;vertical-align:top;height:90px;padding:4px;font-size:11px}
-    td.empty{background:#f5f5f5}
-    .day-num{font-weight:700;font-size:12px;color:#1a2744;margin-bottom:2px}
-    .run{border-radius:3px;padding:2px 4px;margin-bottom:2px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    body{font-family:'Segoe UI',sans-serif;padding:30px;color:#111}
+    h1{font-size:20px;margin-bottom:4px}
+    .sub{color:#666;font-size:13px;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
+    th{background:#1a2744;color:#fff;padding:8px 6px;font-size:12px;text-align:center}
+    td{border-bottom:1px solid #eee;border-right:1px solid #eee;vertical-align:top;height:90px;padding:6px;font-size:11px}
+    td.empty{background:#f9f9f9}
+    .day-num{font-weight:700;font-size:12px;color:#1a2744;margin-bottom:3px}
+    .run{border-radius:3px;padding:2px 5px;margin-bottom:2px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .run.scheduled{background:#3b82f6}
     .run.completed{background:#0e9f6e}
     .run.postponed{background:#ef4444}
-    .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#555}
+    .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#666}
     .legend span{display:inline-flex;align-items:center;gap:5px}
     .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
     @media print{button{display:none}}
   </style></head><body>
+  <img src="${logoSrc}" style="height:50px;margin-bottom:10px" onerror="this.style.display='none'">
   <h1>Course Schedule — ${monthNames[calendarMonth]} ${calendarYear}</h1>
-  <div class="sub">Concept Group Training Management System &nbsp;|&nbsp; ${monthRuns.length} run(s) this month</div>
+  <div class="sub">Course Calendar &nbsp;|&nbsp; ${monthRuns.length} run(s) this month</div>
   <table>
     <thead><tr><th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th></tr></thead>
     <tbody><tr>${cells}</tr></tbody>
@@ -2052,8 +2055,8 @@ function printRunsCalendar(){
     <span><i style="background:#0e9f6e"></i>Completed</span>
     <span><i style="background:#ef4444"></i>Postponed</span>
   </div>
-  <p style="margin-top:20px;font-size:11px;color:#999">Printed: ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})}</p>
-  <button onclick="window.print()" style="margin-top:14px;padding:8px 20px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Print</button>
+  <p style="margin-top:30px;font-size:11px;color:#999">Printed: ${new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})}</p>
+  <button onclick="window.print()" style="margin-top:16px;padding:8px 20px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Print</button>
   </body></html>`);
   w.document.close();
 }
@@ -2067,6 +2070,7 @@ function printRoster(run){
     const ad=(a.RunStartDate||'').substring(0,10);
     return at===rCourse.toLowerCase()&&ad===rDate;
   });
+  const logoSrc = document.querySelector('.sidebar-logo img')?.src || '';
   const w=window.open('','_blank','width=900,height=700');
   w.document.write(`<!DOCTYPE html><html><head><title>Course Roster</title>
   <style>
@@ -2081,7 +2085,7 @@ function printRoster(run){
     .sig-box{border-top:1px solid #333;padding-top:6px;font-size:12px;color:#666;min-width:200px}
     @media print{button{display:none}}
   </style></head><body>
-  <img src="data:image/png;base64,${document.querySelector('.sidebar-logo img')?.src?.split(',')[1]||''}" style="height:50px;margin-bottom:10px" onerror="this.style.display='none'">
+  <img src="${logoSrc}" style="height:50px;margin-bottom:10px" onerror="this.style.display='none'">
   <h1>${rCourse}</h1>
   <div class="sub">Course Roster &nbsp;|&nbsp; Start: ${rDate} &nbsp;|&nbsp; End: ${(run.EndDate||'').substring(0,10)} &nbsp;|&nbsp; Capacity: ${run.Capacity||7} &nbsp;|&nbsp; Enrolled: ${atts.length}</div>
   <table>
