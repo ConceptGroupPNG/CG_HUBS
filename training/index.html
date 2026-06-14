@@ -836,6 +836,16 @@ function statusBadge(s){
   const map={Paid:'bg',Partial:'ba',Pending:'br',Active:'bb',Completed:'bg',Scheduled:'bp',Postponed:'br',Registered:'bb',Attended:'ba','No-show':'br'};
   return `<span class="badge ${map[s]||'bgr'}">${s||'—'}</span>`;
 }
+// Compute a run's effective status based on dates, falling back to stored Status for Postponed
+function runStatus(r){
+  if(r.Status==='Postponed') return 'Postponed';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const end = new Date((r.EndDate||r.StartDate||'').substring(0,10));
+  const start = new Date((r.StartDate||'').substring(0,10));
+  if(!isNaN(end) && end < today) return 'Completed';
+  if(!isNaN(start) && start <= today && (isNaN(end)||end>=today)) return 'Active';
+  return 'Scheduled';
+}
 function payStatus(fee,gst,paid){
   const total=(+fee||0)+(+gst||0);
   if(!total) return 'N/A';
@@ -961,8 +971,8 @@ async function loadDashboard(){
     const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
 
-    const completedRuns = runs.filter(r=>r.Status==='Completed').length;
-    const upcomingRuns = runs.filter(r=>r.Status==='Scheduled').length;
+    const completedRuns = runs.filter(r=>runStatus(r)==='Completed').length;
+    const upcomingRuns = runs.filter(r=>{const s=runStatus(r);return s==='Scheduled'||s==='Active';}).length;
     document.getElementById('dm-runs').textContent = runs.length;
     const dmRunsSub = document.getElementById('dm-runs-sub');
     if(dmRunsSub) dmRunsSub.textContent = `${completedRuns} completed, ${upcomingRuns} upcoming`;
@@ -1151,7 +1161,7 @@ function toggleRunsView(){
     const cr=(document.getElementById('runs-course')||{}).value;
     const from=(document.getElementById('runs-from')||{}).value;
     const to=(document.getElementById('runs-to')||{}).value;
-    if(st) items=items.filter(i=>i.Status===st);
+    if(st) items=items.filter(i=>runStatus(i)===st);
     if(cr){
       const course=(cache.courses||[]).find(c=>c.id==cr);
       const cname=(course?.CourseName||course?.Title||'').toLowerCase().substring(0,20);
@@ -1234,7 +1244,8 @@ function renderRunsCalendar(items, jumpToResults){
       ${runsToday.map(r=>{
         const rDate=(r.StartDate||'').substring(0,10);
         const cname=(r.Title||'').replace(rDate,'').trim();
-        const statusColor = r.Status==='Completed'?'#0e9f6e':r.Status==='Postponed'?'#ef4444':'#3b82f6';
+        const _rs = runStatus(r);
+        const statusColor = _rs==='Completed'?'#0e9f6e':_rs==='Postponed'?'#ef4444':_rs==='Active'?'#f59e0b':'#3b82f6';
         return `<div title="${r.Title}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})">${cname.substring(0,18)}</div>`;
       }).join('')}
     </div>`;
@@ -1242,6 +1253,7 @@ function renderRunsCalendar(items, jumpToResults){
   html += `</div>
   <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--g500)">
     <span><span style="display:inline-block;width:10px;height:10px;background:#3b82f6;border-radius:2px;margin-right:4px"></span>Scheduled</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;margin-right:4px"></span>In Progress</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#0e9f6e;border-radius:2px;margin-right:4px"></span>Completed</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px"></span>Postponed</span>
   </div>`;
@@ -1318,7 +1330,7 @@ function filterTable(entity){
     const cr=(document.getElementById('runs-course')||{value:''}).value;
     const from=(document.getElementById('runs-from')||{value:''}).value;
     const to=(document.getElementById('runs-to')||{value:''}).value;
-    if(st) items=items.filter(i=>i.Status===st);
+    if(st) items=items.filter(i=>runStatus(i)===st);
     if(cr){
       // Filter by course name match
       const course=(cache.courses||[]).find(c=>c.id==cr);
@@ -1410,7 +1422,7 @@ function renderRuns(items){
       <td style="font-size:12px">${r.Venue||'—'}</td>
       <td>${r.Capacity||7}</td>
       <td><strong>${enrolled}</strong></td>
-      <td>${statusBadge(r.Status||'Scheduled')}</td>
+      <td>${statusBadge(runStatus(r))}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="printRoster(${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
         <button class="btn-icon" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -2012,7 +2024,8 @@ function printRunsCalendar(){
       ${runsToday.map(r=>{
         const rDate=(r.StartDate||'').substring(0,10);
         const cname=(r.Title||'').replace(rDate,'').trim();
-        const cls = r.Status==='Completed'?'completed':r.Status==='Postponed'?'postponed':'scheduled';
+        const _rs2 = runStatus(r);
+        const cls = _rs2==='Completed'?'completed':_rs2==='Postponed'?'postponed':_rs2==='Active'?'active':'scheduled';
         return `<div class="run ${cls}">${cname}</div>`;
       }).join('')}
     </td>`;
@@ -2039,12 +2052,14 @@ function printRunsCalendar(){
     .run.scheduled{background-color:#3b82f6!important}
     .run.completed{background-color:#0e9f6e!important}
     .run.postponed{background-color:#ef4444!important}
+    .run.active{background-color:#f59e0b!important}
     .legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#666}
     .legend span{display:inline-flex;align-items:center;gap:5px}
     .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
     .legend i.scheduled{background-color:#3b82f6!important}
     .legend i.completed{background-color:#0e9f6e!important}
     .legend i.postponed{background-color:#ef4444!important}
+    .legend i.active{background-color:#f59e0b!important}
     @media print{
       button{display:none}
       .run{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -2059,6 +2074,7 @@ function printRunsCalendar(){
   </table>
   <div class="legend">
     <span><i class="scheduled"></i>Scheduled</span>
+    <span><i class="active"></i>In Progress</span>
     <span><i class="completed"></i>Completed</span>
     <span><i class="postponed"></i>Postponed</span>
   </div>
