@@ -1142,7 +1142,25 @@ function toggleRunsView(){
     tableView.style.display='none';
     calView.style.display='block';
     btn.innerHTML='<i class="ti ti-table"></i> Table';
-    renderRunsCalendar();
+    // Apply current filters to determine what calendar should show
+    const qEl=document.getElementById('runs-q');
+    const q=(qEl?.value||'').toLowerCase();
+    let items = cache.runs||[];
+    if(q) items = items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
+    const st=(document.getElementById('runs-status')||{}).value;
+    const cr=(document.getElementById('runs-course')||{}).value;
+    const from=(document.getElementById('runs-from')||{}).value;
+    const to=(document.getElementById('runs-to')||{}).value;
+    if(st) items=items.filter(i=>i.Status===st);
+    if(cr){
+      const course=(cache.courses||[]).find(c=>c.id==cr);
+      const cname=(course?.CourseName||course?.Title||'').toLowerCase().substring(0,20);
+      if(cname) items=items.filter(i=>(i.Title||'').toLowerCase().includes(cname));
+    }
+    if(from) items=items.filter(i=>(i.StartDate||'').substring(0,10)>=from);
+    if(to) items=items.filter(i=>(i.StartDate||'').substring(0,10)<=to);
+    const hasActiveFilter = !!(q||st||cr||from||to);
+    renderRunsCalendar(items, hasActiveFilter);
   } else {
     tableView.style.display='';
     calView.style.display='none';
@@ -1157,11 +1175,19 @@ function changeCalendarMonth(delta){
   renderRunsCalendar();
 }
 
-function renderRunsCalendar(){
+function renderRunsCalendar(items, jumpToResults){
   const el = document.getElementById('runs-calendar-view');
   if(!el) return;
-  // Use currently filtered runs (re-derive from current table state)
-  const allRuns = cache.runs||[];
+  // Use passed-in filtered runs, or fall back to full cache
+  const allRuns = items || cache.runs || [];
+  // If filters produced results and caller requests it, jump to the month of the first result
+  if(jumpToResults && allRuns.length){
+    const firstDate = new Date((allRuns[0].StartDate||'').substring(0,10));
+    if(!isNaN(firstDate)){
+      calendarYear = firstDate.getFullYear();
+      calendarMonth = firstDate.getMonth();
+    }
+  }
   const monthRuns = allRuns.filter(r=>{
     const d = new Date((r.StartDate||'').substring(0,10));
     return d.getFullYear()===calendarYear && d.getMonth()===calendarMonth;
@@ -1324,6 +1350,14 @@ function filterTable(entity){
   }
   const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,certificates:renderCertificates};
   if(renders[entity]) renders[entity](items);
+  // If runs filter changed while calendar view is active, refresh calendar with filtered items
+  if(entity==='runs' && runsViewMode==='calendar'){
+    const hasActiveFilter = q || (document.getElementById('runs-status')||{}).value
+      || (document.getElementById('runs-course')||{}).value
+      || (document.getElementById('runs-from')||{}).value
+      || (document.getElementById('runs-to')||{}).value;
+    renderRunsCalendar(items, !!hasActiveFilter);
+  }
 }
 
 // ============================================================
@@ -1332,8 +1366,18 @@ function filterTable(entity){
 async function loadRuns(){
   loading('runs-tbody');
   try {
-    const items = await getItems('runs','$top=500');
+    const [items, courses] = await Promise.all([
+      getItems('runs','$top=500'),
+      cache.courses ? Promise.resolve(cache.courses) : getItems('courses','$top=500'),
+    ]);
     cache.runs = items;
+    if(!cache.courses) cache.courses = courses;
+    // populate course filter dropdown
+    const sel = document.getElementById('runs-course');
+    if(sel){
+      sel.innerHTML = '<option value="">All courses</option>';
+      (cache.courses||[]).forEach(c=>{ const o=document.createElement('option');o.value=c.id;o.textContent=c.CourseName||c.Title;sel.appendChild(o); });
+    }
     renderRuns(items);
   } catch(e){ toast('Error loading runs: '+e.message,'error'); }
 }
@@ -1441,6 +1485,13 @@ async function loadAttendees(){
         sel.appendChild(op);
       }
     });
+    // populate organisation filter
+    const orgSel = document.getElementById('att-org');
+    if(orgSel){
+      orgSel.innerHTML = '<option value="">All organisations</option>';
+      (orgs||[]).slice().sort((a,b)=>(a.OrgName||a.Title||'').localeCompare(b.OrgName||b.Title||''))
+        .forEach(o=>{ const op=document.createElement('option');op.value=o.id;op.textContent=o.OrgName||o.Title;orgSel.appendChild(op); });
+    }
   } catch(e){ toast('Error loading attendees: '+e.message,'error'); }
 }
 
