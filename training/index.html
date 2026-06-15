@@ -291,6 +291,10 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2>Recent Registrations</h2></div>
             <div class="card-body" style="padding:0 18px" id="dash-recent"><div class="loading"><div class="spinner"></div></div></div>
           </div>
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>⚠ Unfilled Seats</h2><span style="font-size:11px;color:var(--g500)">Invoiced but no attendee named</span></div>
+            <div class="card-body" style="padding:0 18px 12px" id="dash-unfilled"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
         </div>
       </div>
 
@@ -1013,17 +1017,21 @@ function openAddModal(){ openFormModal(currentPage, null); }
 // ============================================================
 async function loadDashboard(){
   try {
-    const [runs, atts, invs, pays, courses] = await Promise.all([
+    const [runs, atts, invs, pays, courses, invLines] = await Promise.all([
       getItems('runs','$top=500'),
       getItems('attendees','$top=500'),
       getItems('invoices','$top=500'),
       getItems('payments','$top=500'),
       cache.courses ? Promise.resolve(cache.courses) : getItems('courses','$top=500'),
+      getItems('invoicelines','$top=999'),
     ]);
     cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
-    cache.courses=courses;
+    cache.courses=courses; cache.invoicelines=invLines;
 
-    const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+    const totalInv = invs.reduce((s,i)=>{
+      const lt=invoiceLineTotals(i.InvoiceNumber||i.Title);
+      return s+(lt?lt.total:(+i.TotalAmount||0));
+    },0);
     const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
 
     const completedRuns = runs.filter(r=>runStatus(r)==='Completed').length;
@@ -1039,6 +1047,7 @@ async function loadDashboard(){
     buildAttBars(runs, atts);
     buildSalesFunnel(atts, invs, pays);
     buildRecentActivity(atts);
+    buildUnfilledSeats(invs, invLines, atts);
   } catch(e){ toast('Dashboard error: '+e.message,'error'); }
 }
 
@@ -1152,6 +1161,46 @@ function buildRecentActivity(atts){
       </div>
       ${statusBadge(a.AttendanceStatus||'Registered')}
     </div>`).join('');
+}
+
+function buildUnfilledSeats(invs, invLines, atts){
+  const el = document.getElementById('dash-unfilled');
+  if(!el) return;
+  // Build a flat list of invoice lines with their fulfillment status
+  const rows = [];
+  invLines.forEach(l=>{
+    if(!l.CourseName || !l.Quantity) return;
+    const invNum = (l.Title||'').trim().toLowerCase();
+    const inv = invs.find(i=>(i.InvoiceNumber||i.Title||'').trim().toLowerCase()===invNum);
+    if(!inv) return;
+    const filledSeats = atts.filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum &&
+      (a.InvoiceLineCourse||'').trim().toLowerCase()===(l.CourseName||'').trim().toLowerCase()).length;
+    const unfilled = Math.max(0, (+l.Quantity||0) - filledSeats);
+    if(unfilled > 0){
+      rows.push({invNum:inv.InvoiceNumber||inv.Title||'', org:inv.OrgName||'—',
+        course:l.CourseName, qty:+l.Quantity, filled:filledSeats, unfilled});
+    }
+  });
+  if(!rows.length){
+    el.innerHTML='<div style="color:var(--g500);font-size:13px;padding:8px 0"><i class="ti ti-check" style="color:var(--teal)"></i> All invoiced seats are filled</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--g200)">
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Invoice</th>
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Organisation</th>
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Course</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Filled</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Unfilled</th>
+    </tr></thead>
+    <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
+      <td style="padding:5px 8px;font-weight:600">${r.invNum}</td>
+      <td style="padding:5px 8px">${r.org}</td>
+      <td style="padding:5px 8px">${r.course}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--teal)">${r.filled}/${r.qty}</td>
+      <td style="padding:5px 8px;text-align:right"><span style="background:var(--amber);color:#fff;border-radius:12px;padding:2px 8px;font-weight:700">${r.unfilled}</span></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
 }
 
 // ============================================================
@@ -1779,6 +1828,188 @@ async function saveQuoteLines(quoteNumber){
   try{ cache.quotelines = await getItems('quotelines','$top=999'); }catch(e){}
 }
 
+// ============================================================
+// INVOICE LINE ITEMS (CG_InvoiceLines)
+// ============================================================
+let invoiceLines = [];
+let invoiceLinesOriginalIds = [];
+let invoiceLineSeq = 0;
+
+async function initInvoiceLines(data){
+  invoiceLines = [];
+  invoiceLinesOriginalIds = [];
+  invoiceLineSeq = 0;
+  if(!cache.courses){ try{ cache.courses = await getItems('courses','$top=500'); }catch(e){} }
+  if(!cache.runs){ try{ cache.runs = await getItems('runs','$top=500'); }catch(e){} }
+  if(data && data.Title){
+    try{
+      if(!cache.invoicelines) cache.invoicelines = await getItems('invoicelines','$top=999');
+      const invNum = (data.Title||data.InvoiceNumber||'').trim().toLowerCase();
+      const existing = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+      invoiceLines = existing.map(l=>({
+        _id: 'il'+(++invoiceLineSeq),
+        spId: l.id,
+        CourseName: l.CourseName||'',
+        Quantity: l.Quantity||1,
+        FeeExGST: l.FeeExGST||0,
+        GSTAmount: l.GSTAmount||0,
+        LineTotal: l.LineTotal||0,
+        RunStartDate: l.RunStartDate||'',
+      }));
+      invoiceLinesOriginalIds = existing.map(l=>l.id);
+    }catch(e){ console.warn('Could not load invoice lines',e); }
+  }
+  // For existing invoices with no line items yet, seed from the old flat fields
+  if(invoiceLines.length===0 && data && (+data.FeeExGST||+data.TotalAmount)){
+    const rDate = (data.RunStartDate||'').substring(0,10);
+    invoiceLines.push({
+      _id: 'il'+(++invoiceLineSeq),
+      spId: null,
+      CourseName: data.CourseTitle||'',
+      Quantity: 1,
+      FeeExGST: +data.FeeExGST||0,
+      GSTAmount: +data.GSTAmount||0,
+      LineTotal: +data.TotalAmount||0,
+      RunStartDate: rDate,
+    });
+  }
+  if(invoiceLines.length===0) addInvoiceLine();
+  renderInvoiceLines();
+}
+
+function addInvoiceLine(){
+  invoiceLines.push({_id:'il'+(++invoiceLineSeq),spId:null,CourseName:'',Quantity:1,FeeExGST:0,GSTAmount:0,LineTotal:0,RunStartDate:''});
+  renderInvoiceLines();
+}
+
+function removeInvoiceLine(lineId){
+  invoiceLines = invoiceLines.filter(l=>l._id!==lineId);
+  if(invoiceLines.length===0) addInvoiceLine();
+  else renderInvoiceLines();
+}
+
+function updateInvoiceLine(lineId, field, value){
+  const line = invoiceLines.find(l=>l._id===lineId);
+  if(!line) return;
+  if(field==='CourseName' || field==='RunStartDate'){
+    line[field] = value;
+    renderInvoiceLines();
+    return;
+  }
+  line[field] = +value||0;
+  const gstRate = 0.10;
+  line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
+  line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
+  // Targeted cell updates to preserve focus
+  const gstCell = document.getElementById('il-gst-'+lineId);
+  const totalCell = document.getElementById('il-total-'+lineId);
+  if(gstCell) gstCell.textContent = fmt(line.GSTAmount);
+  if(totalCell) totalCell.textContent = fmt(line.LineTotal);
+  const totals = invoiceLinesTotals();
+  const ftFee = document.getElementById('il-foot-fee');
+  const ftGst = document.getElementById('il-foot-gst');
+  const ftTotal = document.getElementById('il-foot-total');
+  if(ftFee) ftFee.textContent = fmt(totals.fee);
+  if(ftGst) ftGst.textContent = fmt(totals.gst);
+  if(ftTotal) ftTotal.textContent = fmt(totals.total);
+}
+
+function invoiceLinesTotals(){
+  return invoiceLines.reduce((acc,l)=>({
+    fee: acc.fee + (+l.FeeExGST||0)*(+l.Quantity||0),
+    gst: acc.gst + (+l.GSTAmount||0),
+    total: acc.total + (+l.LineTotal||0),
+  }), {fee:0, gst:0, total:0});
+}
+
+function renderInvoiceLines(){
+  const container = document.getElementById('invoice-lines-container');
+  if(!container) return;
+  const courses = cache.courses||[];
+  const totals = invoiceLinesTotals();
+  container.innerHTML = `
+    <div style="margin-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">Line Items</label>
+      <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr style="background:var(--g100)">
+            <th style="text-align:left;padding:6px 8px">Course</th>
+            <th style="text-align:right;padding:6px 8px;width:60px">Qty</th>
+            <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
+            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
+            <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
+            <th style="text-align:left;padding:6px 8px;width:110px">Run Date</th>
+            <th style="width:36px"></th>
+          </tr></thead>
+          <tbody>
+            ${invoiceLines.map(l=>`<tr>
+              <td style="padding:4px 8px">
+                <select onchange="updateInvoiceLine('${l._id}','CourseName',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+                  <option value="">— Select course —</option>
+                  ${courses.map(c=>{const cname=c.CourseName||c.Title||'';return `<option value="${cname.replace(/"/g,'&quot;')}" ${cname===l.CourseName?'selected':''}>${cname}</option>`;}).join('')}
+                </select>
+              </td>
+              <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateInvoiceLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
+              <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateInvoiceLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
+              <td style="padding:4px 8px;text-align:right" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</td>
+              <td style="padding:4px 8px;text-align:right;font-weight:700" id="il-total-${l._id}">${fmt(l.LineTotal)}</td>
+              <td style="padding:4px 8px"><input type="date" value="${l.RunStartDate||''}" onchange="updateInvoiceLine('${l._id}','RunStartDate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px"></td>
+              <td style="padding:4px 8px;text-align:center">
+                <button type="button" onclick="removeInvoiceLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--g100);font-weight:700">
+              <td style="padding:6px 8px" colspan="2">Total</td>
+              <td style="padding:6px 8px;text-align:right" id="il-foot-fee">${fmt(totals.fee)}</td>
+              <td style="padding:6px 8px;text-align:right" id="il-foot-gst">${fmt(totals.gst)}</td>
+              <td style="padding:6px 8px;text-align:right" id="il-foot-total">${fmt(totals.total)}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="addInvoiceLine()" style="margin-top:8px"><i class="ti ti-plus"></i> Add Line</button>
+    </div>
+  `;
+}
+
+async function saveInvoiceLines(invoiceNumber){
+  const currentSpIds = new Set(invoiceLines.filter(l=>l.spId).map(l=>l.spId));
+  // Delete removed lines
+  for(const oldId of invoiceLinesOriginalIds){
+    if(!currentSpIds.has(oldId)){
+      try{ await deleteItem('invoicelines', oldId); }catch(e){ console.warn('Failed to delete invoice line',e); }
+    }
+  }
+  // Compute rollup totals for the header
+  const totals = invoiceLinesTotals();
+  // Create/update lines
+  for(const l of invoiceLines){
+    if(!l.CourseName) continue;
+    const fields = {
+      Title: invoiceNumber,
+      CourseName: l.CourseName,
+      Quantity: +l.Quantity||0,
+      FeeExGST: +l.FeeExGST||0,
+      GSTAmount: +l.GSTAmount||0,
+      LineTotal: +l.LineTotal||0,
+      RunStartDate: l.RunStartDate||'',
+    };
+    if(l.spId) await saveWithFieldFallback(true, 'invoicelines', l.spId, fields);
+    else await saveWithFieldFallback(false, 'invoicelines', null, fields);
+  }
+  // Write rollup totals back to the Invoice header
+  await saveWithFieldFallback(true, 'invoices', editingId, {
+    FeeExGST: totals.fee,
+    GSTAmount: totals.gst,
+    TotalAmount: totals.total,
+  });
+  // Refresh cache
+  try{ cache.invoicelines = await getItems('invoicelines','$top=999'); }catch(e){}
+}
+
 async function loadQuotes(){
   loading('quo-tbody');
   try {
@@ -1863,22 +2094,39 @@ function exportQuotesCSV(){
 async function loadInvoices(){
   loading('inv-tbody');
   try {
-    const [items, atts, pays] = await Promise.all([
+    const [items, atts, pays, lines] = await Promise.all([
       getItems('invoices','$top=500'),
       cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
       getItems('payments','$top=500'),
+      getItems('invoicelines','$top=999'),
     ]);
     cache.invoices = items;
     if(!cache.attendees) cache.attendees = atts;
     cache.payments = pays;
-
+    cache.invoicelines = lines;
     renderInvoices(items);
   } catch(e){ toast('Error loading invoices: '+e.message,'error'); }
 }
 
+function invoiceLineTotals(invoiceNumber){
+  const invNum=(invoiceNumber||'').trim().toLowerCase();
+  const lines=(cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+  if(!lines.length) return null;
+  return lines.reduce((acc,l)=>({
+    fee: acc.fee + (+l.FeeExGST||0)*(+l.Quantity||0),
+    gst: acc.gst + (+l.GSTAmount||0),
+    total: acc.total + (+l.LineTotal||0),
+    seats: acc.seats + (+l.Quantity||0),
+    courses: acc.courses.concat(l.CourseName?[{name:l.CourseName,qty:+l.Quantity||0,date:l.RunStartDate||''}]:[]),
+  }), {fee:0, gst:0, total:0, seats:0, courses:[]});
+}
+
 function renderInvoices(items){
   // Update summary metrics based on current (filtered) items
-  const totalInv = items.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  const totalInv = items.reduce((s,i)=>{
+    const lt = invoiceLineTotals(i.InvoiceNumber||i.Title);
+    return s + (lt ? lt.total : (+i.TotalAmount||0));
+  },0);
   const totalPaid = items.reduce((s,i)=>s+invoiceTotalPaid(i),0);
   const m1=document.getElementById('inv-m1'), m2=document.getElementById('inv-m2'),
         m3=document.getElementById('inv-m3'), m4=document.getElementById('inv-m4');
@@ -1890,20 +2138,28 @@ function renderInvoices(items){
   if(cnt) cnt.textContent=`Invoices (${items.length})`;
   if(!items.length){emptyState('inv-tbody','No invoices yet');return;}
   document.getElementById('inv-tbody').innerHTML = items.map(i=>{
-    // AttendeeID may store SP item id or be empty - try both
-    // Use AttendeeName text field stored by importer
     const attName = i.AttendeeName || '—';
     const att = attendeeForInvoice(i);
-    const orgName = att?.OrgName || '—';
+    const orgName = i.OrgName || att?.OrgName || '—';
     const st = invoiceStatus(i);
+    const lt = invoiceLineTotals(i.InvoiceNumber||i.Title);
+    const fee = lt ? lt.fee : (+i.FeeExGST||0);
+    const gst = lt ? lt.gst : (+i.GSTAmount||0);
+    const total = lt ? lt.total : (+i.TotalAmount||0);
+    const seats = lt ? lt.seats : 0;
+    // Seat fulfillment: count attendees linked to this invoice
+    const invNum = (i.InvoiceNumber||i.Title||'').trim().toLowerCase();
+    const filledSeats = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum).length;
+    const unfilledSeats = Math.max(0, seats - filledSeats);
+    const seatBadge = seats>0 ? `<span title="${filledSeats}/${seats} seats filled" style="font-size:11px;margin-left:4px;color:${unfilledSeats>0?'var(--amber)':'var(--teal)'}">${filledSeats}/${seats}</span>` : '';
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td style="font-size:12px">${i.QuoteRef||'—'}</td>
-      <td>${attName}</td>
+      <td>${attName}${seatBadge}</td>
       <td style="font-size:12px">${orgName}</td>
-      <td>${fmt(i.FeeExGST)}</td>
-      <td>${fmt(i.GSTAmount)}</td>
-      <td><strong>${fmt(i.TotalAmount)}</strong></td>
+      <td>${fmt(fee)}</td>
+      <td>${fmt(gst)}</td>
+      <td><strong>${fmt(total)}</strong></td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="editRow('invoices','${i.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -2126,6 +2382,8 @@ const FORM_DEFS = {
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
       {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel'},
+      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef'},
+      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse'},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
@@ -2148,6 +2406,20 @@ const FORM_DEFS = {
           out.CourseTitle = (run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
           out.RunStartDate = rDate;
         }
+      }
+      // Resolve invoice lookup -> store invoice number text
+      if(f.InvoiceRef){
+        const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
+        if(inv) out.InvoiceRef = inv.InvoiceNumber||inv.Title||'';
+      } else {
+        out.InvoiceRef = '';
+      }
+      // Resolve invoice line lookup -> store course name text
+      if(f.InvoiceLineCourse){
+        const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(f.InvoiceLineCourse));
+        if(il) out.InvoiceLineCourse = il.CourseName||'';
+      } else {
+        out.InvoiceLineCourse = '';
       }
       return out;
     },
@@ -2187,16 +2459,13 @@ const FORM_DEFS = {
     fields: [
       {key:'InvoiceNumber',label:'Invoice Number',type:'text',required:true},
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
-      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true,matchKey:'AttendeeName'},
-      {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
-      {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
-      {key:'TotalAmount',label:'Total (PGK)',type:'number'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName'},
+      {key:'AttendeeRef',label:'Attendee (if known)',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
       {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef'},
       {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
     ],
     toFields: (f)=>{
       const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
-        FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,
         InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber};
       if(f.QuoteRefLookup){
         const quote=(cache.quotes||[]).find(q=>String(q.id)===String(f.QuoteRefLookup));
@@ -2204,10 +2473,19 @@ const FORM_DEFS = {
       } else {
         out.QuoteRef = '';
       }
+      if(f.OrgRef){
+        const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
+        out.OrgName = org ? (org.OrgName||org.Title||'') : '';
+      } else {
+        out.OrgName = '';
+      }
       if(f.AttendeeRef){
         const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
         if(att) out.AttendeeName = att.FullName||att.Title||'';
+      } else {
+        out.AttendeeName = '';
       }
+      // FeeExGST/GSTAmount/TotalAmount computed from line items, written by saveInvoiceLines()
       return out;
     },
   },
@@ -2320,6 +2598,7 @@ async function openFormModal(entity, data){
         if(f.display==='TrainerName') return o.FullName||o.Title||o.id;
         if(f.display==='CourseName') return o.CourseName||o.Title||o.id;
         if(f.display==='VenueName') return o.Title ? `${o.Title}${o.Capacity?` (cap. ${o.Capacity})`:''}` : o.id;
+        if(f.entity==='invoicelines') return `${o.CourseName||'?'} (${o.Title||'?'} ×${o.Quantity||0})`;
         return o[f.display]||o.Title||o.id;
       };
       // Determine the currently-selected option id by matching on matchKey (text field)
@@ -2377,6 +2656,21 @@ async function openFormModal(entity, data){
             const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===cur);
             if(match) selectedId = match.id;
           }
+        } else if(f.matchKey==='InvoiceRef'){
+          const cur=(data.InvoiceRef||'').trim().toLowerCase();
+          if(cur){
+            const match=opts.find(o=>(o.InvoiceNumber||o.Title||'').trim().toLowerCase()===cur);
+            if(match) selectedId = match.id;
+          }
+        } else if(f.matchKey==='InvoiceLineCourse'){
+          const cur=(data.InvoiceLineCourse||'').trim().toLowerCase();
+          const invRef=(data.InvoiceRef||'').trim().toLowerCase();
+          if(cur){
+            // Filter invoice lines to those matching the selected invoice first
+            const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===invRef &&
+              (o.CourseName||'').trim().toLowerCase()===cur);
+            if(match) selectedId = match.id;
+          }
         }
       }
       // Sort run options by start date for easier browsing
@@ -2414,11 +2708,21 @@ async function openFormModal(entity, data){
     html += '<div id="quote-lines-container"></div>';
   }
 
+  // Invoices: add a placeholder container for the line items editor
+  if(entity==='invoices'){
+    html += '<div id="invoice-lines-container"></div>';
+  }
+
   document.getElementById('modal-body').innerHTML = html;
 
   // Quotes: render the line items editor below the header fields
   if(entity==='quotes'){
     await initQuoteLines(data);
+  }
+
+  // Invoices: render the line items editor below the header fields
+  if(entity==='invoices'){
+    await initInvoiceLines(data);
   }
 
   document.getElementById('entity-modal').classList.add('open');
@@ -2507,6 +2811,10 @@ async function saveModal(){
     if(editingEntity==='quotes'){
       await saveQuoteLines(fields.Title);
     }
+    // Invoices: sync line items to CG_InvoiceLines after saving the header
+    if(editingEntity==='invoices'){
+      await saveInvoiceLines(fields.Title);
+    }
     closeModal();
     await loadPage(currentPage);
     if(currentPage==='dashboard') loadDashboard();
@@ -2574,14 +2882,15 @@ function exportInvoicesCSV(){
     ['Invoice #','Quote Ref','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
     i=>{
       const att=attendeeForInvoice(i);
+      const lt=invoiceLineTotals(i.InvoiceNumber||i.Title);
       return [
         i.InvoiceNumber||i.Title||'',
         i.QuoteRef||'',
         i.AttendeeName||'',
-        att?.OrgName||'',
-        i.FeeExGST||0,
-        i.GSTAmount||0,
-        i.TotalAmount||0,
+        i.OrgName||att?.OrgName||'',
+        lt ? lt.fee : (+i.FeeExGST||0),
+        lt ? lt.gst : (+i.GSTAmount||0),
+        lt ? lt.total : (+i.TotalAmount||0),
         invoiceStatus(i)
       ];
     }
