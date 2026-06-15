@@ -1949,8 +1949,19 @@ async function openFormModal(entity, data){
           const match=opts.find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
         } else if(f.matchKey==='RunLabel'){
-          const curTitle=(data.CourseTitle||data.CourseRunTitle||'').trim().toLowerCase();
-          const curDate=(data.RunStartDate||'').substring(0,10);
+          let curTitle=(data.CourseTitle||data.CourseRunTitle||'').trim().toLowerCase();
+          let curDate=(data.RunStartDate||'').substring(0,10);
+          // Fallback: if this record has no run info but has an AttendeeName,
+          // borrow the run info from that attendee's record (certificates often
+          // weren't linked during import, but attendees were)
+          if((!curTitle || !curDate) && data.AttendeeName){
+            const attName=(data.AttendeeName||'').trim().toLowerCase();
+            const att=(cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName);
+            if(att){
+              if(!curTitle) curTitle=(att.CourseTitle||'').trim().toLowerCase();
+              if(!curDate) curDate=(att.RunStartDate||'').substring(0,10);
+            }
+          }
           const match=opts.find(o=>{
             const rDate=(o.StartDate||'').substring(0,10);
             const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
