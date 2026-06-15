@@ -401,7 +401,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportInvoicesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Invoice #</th><th>Quote Ref</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="inv-tbody"></tbody></table>
           </div>
         </div>
@@ -1591,6 +1591,7 @@ function renderInvoices(items){
     const st = invoiceStatus(i);
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
+      <td style="font-size:12px">${i.QuoteRef||'—'}</td>
       <td>${attName}</td>
       <td style="font-size:12px">${orgName}</td>
       <td>${fmt(i.FeeExGST)}</td>
@@ -2113,11 +2114,12 @@ function exportTableCSV(entity, tbodyId, headers, rowFn){
 
 function exportInvoicesCSV(){
   exportTableCSV('invoices','inv-tbody',
-    ['Invoice #','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
+    ['Invoice #','Quote Ref','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
     i=>{
       const att=attendeeForInvoice(i);
       return [
         i.InvoiceNumber||i.Title||'',
+        i.QuoteRef||'',
         i.AttendeeName||'',
         att?.OrgName||'',
         i.FeeExGST||0,
