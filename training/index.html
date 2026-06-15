@@ -138,13 +138,13 @@ select:focus{border-color:var(--teal)}
 .modal-header h3{font-size:15px;font-weight:700}
 .modal-close{width:30px;height:30px;border-radius:var(--r);border:1px solid var(--g200);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--g500);background:transparent;font-size:17px}
 .modal-close:hover{background:var(--g50)}
-.modal-body{padding:18px 22px}
+.modal-body{padding:18px 22px;max-height:70vh;overflow-y:auto}
 .modal-footer{padding:14px 22px;border-top:1px solid var(--g200);display:flex;align-items:center;justify-content:flex-end;gap:8px;background:var(--g50);border-radius:0 0 var(--rl) var(--rl)}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .fg{display:flex;flex-direction:column;gap:4px}
 .fg.full{grid-column:1/-1}
 .fg label{font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px}
-.fg input,.fg select,.fg textarea{padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g900);outline:none;transition:border-color .15s;background:#fff}
+.fg input,.fg select,.fg textarea{padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g900);outline:none;transition:border-color .15s;background:#fff;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--teal)}
 .fg textarea{resize:vertical;min-height:70px}
 
@@ -1778,7 +1778,7 @@ const FORM_DEFS = {
       {key:'ContactEmail',label:'Email',type:'email'},
       {key:'ContactPhone',label:'Phone',type:'text'},
     ],
-    toFields: (f)=>({OrgName:f.OrgName,Title:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone}),
+    toFields: (f)=>({Title:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone}),
   },
   attendees: {
     title: (d)=> d?'Edit Attendee':'Add Attendee',
@@ -1819,14 +1819,23 @@ const FORM_DEFS = {
     fields: [
       {key:'InvoiceNumber',label:'Invoice Number',type:'text',required:true},
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
-      {key:'AttendeeIDId',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true},
+      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true,matchKey:'AttendeeName'},
       {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
       {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
       {key:'TotalAmount',label:'Total (PGK)',type:'number'},
       {key:'QuoteRef',label:'Quote Reference',type:'text'},
       {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
     ],
-    toFields: (f)=>({InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,AttendeeIDId:+f.AttendeeIDId||null,FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,QuoteRef:f.QuoteRef,InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber}),
+    toFields: (f)=>{
+      const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
+        FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,
+        QuoteRef:f.QuoteRef,InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber};
+      if(f.AttendeeRef){
+        const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
+        if(att) out.AttendeeName = att.FullName||att.Title||'';
+      }
+      return out;
+    },
   },
   payments: {
     title: (d)=> d?'Edit Payment':'Add Payment',
@@ -1930,6 +1939,10 @@ async function openFormModal(entity, data){
           const cur=(data.Trainer||'').trim().toLowerCase();
           const match=opts.find(o=>(o.FullName||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
+        } else if(f.matchKey==='AttendeeName'){
+          const cur=(data.AttendeeName||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.FullName||o.Title||'').trim().toLowerCase()===cur);
+          if(match) selectedId = match.id;
         }
       }
       // Sort run options by start date for easier browsing
@@ -1969,12 +1982,31 @@ async function openFormModal(entity, data){
 function autoCalcInvoice(){
   const fee = +document.getElementById('mf-FeeExGST').value||0;
   // Check attendee's section65A status
-  const attId = document.getElementById('mf-AttendeeIDId')?.value;
+  const attId = document.getElementById('mf-AttendeeRef')?.value;
   const att = (cache.attendees||[]).find(a=>a.id==attId);
   const exempt = att?.Section65A===true||att?.Section65A==='true';
   const gst = exempt ? 0 : Math.round(fee*0.1*100)/100;
   document.getElementById('mf-GSTAmount').value = gst;
   document.getElementById('mf-TotalAmount').value = fee+gst;
+}
+
+async function saveWithFieldFallback(isUpdate, entity, id, fields){
+  let payload = {...fields};
+  // Try up to 10 times, stripping any field SharePoint says it doesn't recognize
+  for(let attempt=0; attempt<10; attempt++){
+    try{
+      if(isUpdate) await updateItem(entity, id, payload);
+      else return await createItem(entity, payload);
+      return;
+    }catch(e){
+      const m = (e.message||'').match(/Field '([^']+)' is not recognized/i);
+      if(m && payload.hasOwnProperty(m[1])){
+        delete payload[m[1]];
+        continue; // retry without this field
+      }
+      throw e; // different error - bubble up
+    }
+  }
 }
 
 async function saveModal(){
@@ -2011,10 +2043,10 @@ async function saveModal(){
   btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Saving...';
   try {
     if(editingId){
-      await updateItem(editingEntity, editingId, fields);
+      await saveWithFieldFallback(true, editingEntity, editingId, fields);
       toast('Record updated successfully');
     } else {
-      await createItem(editingEntity, fields);
+      await saveWithFieldFallback(false, editingEntity, null, fields);
       toast('Record created successfully');
     }
     closeModal();
