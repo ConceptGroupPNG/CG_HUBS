@@ -2021,7 +2021,7 @@ function renderInvoiceAttendees(data){
     </div>`;
 }
 
-async function saveInvoiceLines(invoiceNumber){
+async function saveInvoiceLines(invoiceNumber, createdItem=null){
   const currentSpIds = new Set(invoiceLines.filter(l=>l.spId).map(l=>l.spId));
   // Delete removed lines
   for(const oldId of invoiceLinesOriginalIds){
@@ -2041,17 +2041,22 @@ async function saveInvoiceLines(invoiceNumber){
       FeeExGST: +l.FeeExGST||0,
       GSTAmount: +l.GSTAmount||0,
       LineTotal: +l.LineTotal||0,
-      RunStartDate: l.RunStartDate||'',
+      RunStartDate: l.RunStartDate||null,
     };
     if(l.spId) await saveWithFieldFallback(true, 'invoicelines', l.spId, fields);
     else await saveWithFieldFallback(false, 'invoicelines', null, fields);
   }
   // Write rollup totals back to the Invoice header
-  await saveWithFieldFallback(true, 'invoices', editingId, {
-    FeeExGST: totals.fee,
-    GSTAmount: totals.gst,
-    TotalAmount: totals.total,
-  });
+  // Use createdItem.id for new invoices, editingId for edits, fallback to cache lookup
+  const invId = editingId || createdItem?.id || createdItem?.fields?.id ||
+    (cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title||'').trim().toLowerCase()===invoiceNumber.trim().toLowerCase())?.id;
+  if(invId){
+    await saveWithFieldFallback(true, 'invoices', invId, {
+      FeeExGST: totals.fee,
+      GSTAmount: totals.gst,
+      TotalAmount: totals.total,
+    });
+  }
   // Refresh cache
   try{ cache.invoicelines = await getItems('invoicelines','$top=999'); }catch(e){}
 }
@@ -2891,12 +2896,13 @@ async function saveModal(){
   const btn = document.getElementById('modal-save-btn');
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Saving...';
+  let createdItem = null;
   try {
     if(editingId){
       await saveWithFieldFallback(true, editingEntity, editingId, fields);
       toast('Record updated successfully');
     } else {
-      await saveWithFieldFallback(false, editingEntity, null, fields);
+      createdItem = await saveWithFieldFallback(false, editingEntity, null, fields);
       toast('Record created successfully');
     }
     // Quotes: sync line items to CG_QuoteLines after saving the header
@@ -2905,7 +2911,8 @@ async function saveModal(){
     }
     // Invoices: sync line items to CG_InvoiceLines after saving the header
     if(editingEntity==='invoices'){
-      await saveInvoiceLines(fields.Title);
+      // Pass the created item (if new) so saveInvoiceLines can get the ID directly
+      await saveInvoiceLines(fields.Title, createdItem);
     }
     closeModal();
     await loadPage(currentPage);
