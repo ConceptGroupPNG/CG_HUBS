@@ -790,10 +790,10 @@ async function resolveSite(){
   const data = await graph(`/sites/${SP_SITE}:${SP_PATH}`);
   siteId = data.id;
   // resolve list IDs
-  const lists = await graph(`/sites/${siteId}/lists?$select=id,name`);
+  const lists = await graph(`/sites/${siteId}/lists?$select=id,name,displayName`);
   lists.value.forEach(l=>{
     Object.entries(LISTS).forEach(([key,spName])=>{
-      if(l.name.toLowerCase()===spName.toLowerCase()) listIds[key]=l.id;
+      if(l.name.toLowerCase()===spName.toLowerCase() || (l.displayName||'').toLowerCase()===spName.toLowerCase()) listIds[key]=l.id;
     });
   });
 }
@@ -1756,7 +1756,6 @@ const FORM_DEFS = {
         const course=(cache.courses||[]).find(c=>String(c.id)===String(f.CourseRef));
         if(course){
           courseName = course.CourseName||course.Title||'';
-          out.CourseIDId = +course.id; // attempt numeric lookup too (harmless if unsupported)
         }
       }
       out.Title = (courseName||'Run')+' '+(f.StartDate||'');
@@ -1773,13 +1772,13 @@ const FORM_DEFS = {
   organisations: {
     title: (d)=> d?'Edit Organisation':'Add Organisation',
     fields: [
-      {key:'OrgName',label:'Organisation Name',type:'text',full:true,required:true},
+      {key:'OrgName',label:'Organisation Name',type:'text',full:true,required:true,fallbackKey:'Title'},
       {key:'ContactPerson',label:'Contact Person',type:'text'},
       {key:'ContactPosition',label:'Position',type:'text'},
       {key:'ContactEmail',label:'Email',type:'email'},
       {key:'ContactPhone',label:'Phone',type:'text'},
     ],
-    toFields: (f)=>({OrgName:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone,Title:f.OrgName}),
+    toFields: (f)=>({OrgName:f.OrgName,Title:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone}),
   },
   attendees: {
     title: (d)=> d?'Edit Attendee':'Add Attendee',
@@ -1889,7 +1888,8 @@ async function openFormModal(entity, data){
 
   let html = '<div class="form-grid">';
   def.fields.forEach(f=>{
-    const val = data?.[f.key] ?? '';
+    let val = data?.[f.key] ?? '';
+    if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
       let opts = (cache[f.entity]||[]);
