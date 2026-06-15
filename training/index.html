@@ -516,7 +516,7 @@ const LISTS = {
   attendees:    'CG_Attendees',
   invoices:     'CG_Invoices',
   payments:     'CG_Payments',
-  trainers:     'Trainers',
+  trainers:     'CG_Trainers',
   certificates: 'CG_Certificates',
 };
 
@@ -1134,7 +1134,7 @@ function renderCourses(items){
     <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
     <td>${courseRunCount(c)}</td>
     <td><div class="td-actions">
-      <button class="btn-icon" onclick="openFormModal('courses',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+      <button class="btn-icon" onclick="editRow('courses','${c.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
       <button class="btn-icon danger" onclick="confirmDelete('courses','${c.id}','${(c.CourseName||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </div></td>
   </tr>`).join('');
@@ -1255,7 +1255,7 @@ function renderRunsCalendar(items, jumpToResults){
         const cname=(r.Title||'').replace(rDate,'').trim();
         const _rs = runStatus(r);
         const statusColor = _rs==='Completed'?'#0e9f6e':_rs==='Postponed'?'#ef4444':_rs==='Active'?'#f59e0b':'#3b82f6';
-        return `<div title="${r.Title}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})">${cname.substring(0,18)}</div>`;
+        return `<div title="${r.Title}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="editRow('runs','${r.id}')">${cname.substring(0,18)}</div>`;
       }).join('')}
     </div>`;
   }
@@ -1433,8 +1433,8 @@ function renderRuns(items){
       <td><strong>${enrolled}</strong></td>
       <td>${statusBadge(runStatus(r))}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="printRoster(${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
-        <button class="btn-icon" onclick="openFormModal('runs',${JSON.stringify(r).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="printRosterById('${r.id}')" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
+        <button class="btn-icon" onclick="editRow('runs','${r.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('runs','${r.id}','Run ${fmtDate(r.StartDate)}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1473,7 +1473,7 @@ function renderOrgs(items){
       <td>${o.ContactPhone||'—'}</td>
       <td>${attCount}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="openFormModal('organisations',${JSON.stringify(o).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="editRow('organisations','${o.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('organisations','${o.id}','${(o.OrgName||o.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1543,7 +1543,7 @@ function renderAttendees(items){
       <td style="font-size:12px">${a.CertificateNumber||'—'}</td>
       <td>${statusBadge(a.AttendanceStatus||'Registered')}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="openFormModal('attendees',${JSON.stringify(a).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="editRow('attendees','${a.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('attendees','${a.id}','${(a.FullName||a.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1598,7 +1598,7 @@ function renderInvoices(items){
       <td><strong>${fmt(i.TotalAmount)}</strong></td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="openFormModal('invoices',${JSON.stringify(i).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="editRow('invoices','${i.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('invoices','${i.id}','${(i.InvoiceNumber||i.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1643,7 +1643,7 @@ function renderPayments(items){
       <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}">${fmt(bal)}</td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="openFormModal('payments',${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="editRow('payments','${p.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('payments','${p.id}','Payment ${fmtDate(p.DatePaid)}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1675,7 +1675,7 @@ function renderTrainers(items){
     <td style="font-size:12px">${t.Specialisation||'—'}</td>
     <td>${(cache.runs||[]).filter(r=>r.Trainer===(t.FullName||t.Title)).length}</td>
     <td><div class="td-actions">
-      <button class="btn-icon" onclick="openFormModal('trainers',${JSON.stringify(t).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+      <button class="btn-icon" onclick="editRow('trainers','${t.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
       <button class="btn-icon danger" onclick="confirmDelete('trainers','${t.id}','${(t.FullName||t.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </div></td>
   </tr>`).join('');
@@ -1715,7 +1715,7 @@ function renderCertificates(items){
       <td style="font-size:12px">${c.CourseRunTitle||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
       <td><div class="td-actions">
-        <button class="btn-icon" onclick="openFormModal('certificates',${JSON.stringify(c).replace(/"/g,'&quot;')})" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon" onclick="editRow('certificates','${c.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('certificates','${c.id}','${(c.CertificateNumber||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`;
@@ -1739,15 +1739,36 @@ const FORM_DEFS = {
   runs: {
     title: (d)=> d?'Edit Course Run':'Add Course Run',
     fields: [
-      {key:'CourseIDId',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true},
+      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true,matchKey:'CourseName'},
       {key:'StartDate',label:'Start Date',type:'date',required:true},
       {key:'EndDate',label:'End Date',type:'date',required:true},
-      {key:'Trainer',label:'Trainer',type:'text'},
+      {key:'TrainerRef',label:'Trainer',type:'lookup',entity:'trainers',display:'TrainerName',matchKey:'TrainerName'},
       {key:'Venue',label:'Venue',type:'text'},
       {key:'Capacity',label:'Capacity',type:'number'},
       {key:'Status',label:'Status',type:'select',opts:['Scheduled','Active','Completed','Postponed']},
     ],
-    toFields: (f)=>({CourseIDId:+f.CourseIDId||null,StartDate:f.StartDate||null,EndDate:f.EndDate||null,Trainer:f.Trainer,Venue:f.Venue,Capacity:+f.Capacity||7,Status:f.Status||'Scheduled',Title:f.StartDate||'Run'}),
+    toFields: (f)=>{
+      const out = {StartDate:f.StartDate||null,EndDate:f.EndDate||null,
+        Venue:f.Venue,Capacity:+f.Capacity||7,Status:f.Status||'Scheduled'};
+      // Resolve course lookup -> Title = "CourseName StartDate"
+      let courseName = '';
+      if(f.CourseRef){
+        const course=(cache.courses||[]).find(c=>String(c.id)===String(f.CourseRef));
+        if(course){
+          courseName = course.CourseName||course.Title||'';
+          out.CourseIDId = +course.id; // attempt numeric lookup too (harmless if unsupported)
+        }
+      }
+      out.Title = (courseName||'Run')+' '+(f.StartDate||'');
+      // Resolve trainer lookup -> store trainer name as text
+      if(f.TrainerRef){
+        const trainer=(cache.trainers||[]).find(t=>String(t.id)===String(f.TrainerRef));
+        if(trainer) out.Trainer = trainer.FullName||trainer.Title||'';
+      } else {
+        out.Trainer = '';
+      }
+      return out;
+    },
   },
   organisations: {
     title: (d)=> d?'Edit Organisation':'Add Organisation',
@@ -1763,17 +1784,36 @@ const FORM_DEFS = {
   attendees: {
     title: (d)=> d?'Edit Attendee':'Add Attendee',
     fields: [
-      {key:'FullName',label:'Full Name',type:'text',required:true},
+      {key:'FullName',label:'Full Name',type:'text',required:true,full:true},
       {key:'JobTitle',label:'Job Title',type:'text'},
-      {key:'Email',label:'Email',type:'email'},
       {key:'Mobile',label:'Mobile',type:'text'},
-      {key:'OrgIDId',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName'},
-      {key:'CourseRunIDId',label:'Course Run',type:'lookup',entity:'runs',display:'StartDate'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
+      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel'},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
     ],
-    toFields: (f)=>({FullName:f.FullName,JobTitle:f.JobTitle,Email:f.Email,Mobile:f.Mobile,OrgIDId:+f.OrgIDId||null,CourseRunIDId:+f.CourseRunIDId||null,Section65A:f.Section65A==='true'||f.Section65A===true,CertificateNumber:f.CertificateNumber,AttendanceStatus:f.AttendanceStatus||'Registered',Title:f.FullName}),
+    toFields: (f)=>{
+      const out = {FullName:f.FullName,JobTitle:f.JobTitle,Mobile:f.Mobile,
+        Section65A:f.Section65A==='true'||f.Section65A===true,
+        CertificateNumber:f.CertificateNumber,
+        AttendanceStatus:f.AttendanceStatus||'Registered',Title:f.FullName};
+      // Resolve organisation lookup to text fields
+      if(f.OrgRef){
+        const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
+        if(org) out.OrgName = org.OrgName||org.Title||'';
+      }
+      // Resolve course run lookup to text fields (course name + start date)
+      if(f.RunRef){
+        const run=(cache.runs||[]).find(r=>String(r.id)===String(f.RunRef));
+        if(run){
+          const rDate=(run.StartDate||'').substring(0,10);
+          out.CourseTitle = (run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+          out.RunStartDate = rDate;
+        }
+      }
+      return out;
+    },
   },
   invoices: {
     title: (d)=> d?'Edit Invoice':'Add Invoice',
@@ -1822,10 +1862,28 @@ const FORM_DEFS = {
   },
 };
 
-function openFormModal(entity, data){
+function editRow(entity, id){
+  const item = (cache[entity]||[]).find(x=>String(x.id)===String(id));
+  if(!item){ toast('Record not found - try refreshing the page','error'); return; }
+  openFormModal(entity, item);
+}
+
+function printRosterById(id){
+  const run = (cache.runs||[]).find(r=>String(r.id)===String(id));
+  if(!run){ toast('Run not found - try refreshing the page','error'); return; }
+  printRoster(run);
+}
+
+async function openFormModal(entity, data){
   editingId = data?.id || null;
   editingEntity = entity;
   const def = FORM_DEFS[entity];
+  // Preload any lookup entities not yet cached
+  for(const f of def.fields){
+    if(f.type==='lookup' && !cache[f.entity]){
+      try{ cache[f.entity] = await getItems(f.entity, '$top=500'); }catch(e){}
+    }
+  }
   document.getElementById('modal-title').textContent = def.title(data);
   document.getElementById('modal-save-label').textContent = data ? 'Save Changes' : 'Create';
 
@@ -1834,10 +1892,53 @@ function openFormModal(entity, data){
     const val = data?.[f.key] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
-      const opts = (cache[f.entity]||[]);
+      let opts = (cache[f.entity]||[]);
+      // Build a display label for each option; runs need a synthetic "Course - Date" label
+      const getLabel = (o) => {
+        if(f.display==='RunLabel'){
+          const rDate=(o.StartDate||'').substring(0,10);
+          const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+          return `${cName} — ${rDate}`;
+        }
+        if(f.display==='TrainerName') return o.FullName||o.Title||o.id;
+        if(f.display==='CourseName') return o.CourseName||o.Title||o.id;
+        return o[f.display]||o.Title||o.id;
+      };
+      // Determine the currently-selected option id by matching on matchKey (text field)
+      let selectedId = val; // direct id if present
+      if(f.matchKey && data){
+        if(f.matchKey==='OrgName'){
+          const cur=(data.OrgName||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===cur);
+          if(match) selectedId = match.id;
+        } else if(f.matchKey==='RunLabel'){
+          const curTitle=(data.CourseTitle||'').trim().toLowerCase();
+          const curDate=(data.RunStartDate||'').substring(0,10);
+          const match=opts.find(o=>{
+            const rDate=(o.StartDate||'').substring(0,10);
+            const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+            return cName===curTitle && rDate===curDate;
+          });
+          if(match) selectedId = match.id;
+        } else if(f.matchKey==='CourseName'){
+          // For runs: data.Title = "CourseName StartDate" - extract course name
+          const rDate=(data.StartDate||'').substring(0,10);
+          const curName=(data.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+          const match=opts.find(o=>(o.CourseName||o.Title||'').trim().toLowerCase()===curName);
+          if(match) selectedId = match.id;
+        } else if(f.matchKey==='TrainerName'){
+          const cur=(data.Trainer||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.FullName||o.Title||'').trim().toLowerCase()===cur);
+          if(match) selectedId = match.id;
+        }
+      }
+      // Sort run options by start date for easier browsing
+      if(f.display==='RunLabel'){
+        opts = [...opts].sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+      }
       html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''}>
         <option value="">— Select —</option>
-        ${opts.map(o=>`<option value="${o.id}" ${o.id==val?'selected':''}>${o[f.display]||o.Title||o.id}</option>`).join('')}
+        ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
       </select></div>`;
     } else if(f.type==='select'){
       html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}">
@@ -1879,13 +1980,31 @@ function autoCalcInvoice(){
 async function saveModal(){
   const def = FORM_DEFS[editingEntity];
   const rawFields = {};
+  // Clear previous validation states
+  document.querySelectorAll('#modal-body .fg input, #modal-body .fg select').forEach(el=>el.style.borderColor='');
+  document.querySelectorAll('#modal-body .fg-error').forEach(el=>el.remove());
+
+  const missing = [];
   def.fields.forEach(f=>{
     const el = document.getElementById('mf-'+f.key);
     if(el){
-      if(f.required && !el.value){ el.focus(); toast('Please fill in required fields','error'); throw new Error('validation'); }
+      if(f.required && !el.value){
+        missing.push(f);
+        el.style.borderColor = 'var(--red)';
+        const err = document.createElement('div');
+        err.className = 'fg-error';
+        err.style.cssText = 'color:var(--red);font-size:11px;margin-top:2px';
+        err.textContent = `${f.label} is required`;
+        el.insertAdjacentElement('afterend', err);
+      }
       rawFields[f.key] = el.value;
     }
   });
+  if(missing.length){
+    document.getElementById('mf-'+missing[0].key).focus();
+    toast(`Please fill in: ${missing.map(f=>f.label).join(', ')}`,'error');
+    throw new Error('validation');
+  }
   const fields = def.toFields(rawFields);
   const btn = document.getElementById('modal-save-btn');
   btn.disabled = true;
@@ -1940,12 +2059,10 @@ function exportTableCSV(entity, tbodyId, headers, rowFn){
   const visibleIds = new Set();
   if(tbody){
     tbody.querySelectorAll('tr').forEach(tr=>{
-      const editBtn = tr.querySelector(`button[onclick^="openFormModal('${entity}'"]`);
+      const editBtn = tr.querySelector(`button[onclick^="editRow('${entity}'"]`);
       if(editBtn){
-        const m = editBtn.getAttribute('onclick').match(/openFormModal\('[^']+',(.*)\)$/);
-        if(m){
-          try{ const obj = JSON.parse(m[1].replace(/&quot;/g,'"')); visibleIds.add(String(obj.id)); }catch(e){}
-        }
+        const m = editBtn.getAttribute('onclick').match(/editRow\('[^']+','([^']+)'\)$/);
+        if(m){ visibleIds.add(String(m[1])); }
       }
     });
   }
@@ -2272,12 +2389,10 @@ function exportAttendeesCSV(){
   const visibleIds = new Set();
   if(tbody){
     tbody.querySelectorAll('tr').forEach(tr=>{
-      const editBtn = tr.querySelector('button[onclick^="openFormModal"]');
+      const editBtn = tr.querySelector('button[onclick^="editRow(\'attendees\'"]');
       if(editBtn){
-        const m = editBtn.getAttribute('onclick').match(/openFormModal\('attendees',(.*)\)$/);
-        if(m){
-          try{ const obj = JSON.parse(m[1].replace(/&quot;/g,'"')); visibleIds.add(String(obj.id)); }catch(e){}
-        }
+        const m = editBtn.getAttribute('onclick').match(/editRow\('attendees','([^']+)'\)$/);
+        if(m){ visibleIds.add(String(m[1])); }
       }
     });
   }
