@@ -1841,13 +1841,24 @@ const FORM_DEFS = {
   payments: {
     title: (d)=> d?'Edit Payment':'Add Payment',
     fields: [
-      {key:'InvoiceIDId',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true},
+      {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber'},
       {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
       {key:'DatePaid',label:'Date Paid',type:'date'},
-      {key:'RemittanceRef',label:'Remittance Reference',type:'text'},
       {key:'PaymentLink',label:'Payment Link / File Ref',type:'text',full:true},
     ],
-    toFields: (f)=>({InvoiceIDId:+f.InvoiceIDId||null,AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,RemittanceRef:f.RemittanceRef,PaymentLink:f.PaymentLink,Title:f.RemittanceRef||'Payment'}),
+    toFields: (f)=>{
+      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,PaymentLink:f.PaymentLink};
+      if(f.InvoiceRef){
+        const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
+        if(inv){
+          const invNum = inv.InvoiceNumber||inv.Title||'';
+          out.RemittanceRef = invNum;
+          out.Title = 'PAY-'+invNum;
+        }
+      }
+      if(!out.Title) out.Title = 'Payment';
+      return out;
+    },
   },
   trainers: {
     title: (d)=> d?'Edit Trainer':'Add Trainer',
@@ -1943,6 +1954,10 @@ async function openFormModal(entity, data){
         } else if(f.matchKey==='AttendeeName'){
           const cur=(data.AttendeeName||'').trim().toLowerCase();
           const match=opts.find(o=>(o.FullName||o.Title||'').trim().toLowerCase()===cur);
+          if(match) selectedId = match.id;
+        } else if(f.matchKey==='InvoiceNumber'){
+          const cur=(data.RemittanceRef||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.InvoiceNumber||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
         }
       }
