@@ -228,6 +228,7 @@ select:focus{border-color:var(--teal)}
       <div class="nav-item" onclick="nav('payments')"><i class="ti ti-cash"></i>Payments</div>
       <div class="nav-section">Admin</div>
       <div class="nav-item" onclick="nav('trainers')"><i class="ti ti-user-star"></i>Trainers</div>
+      <div class="nav-item" onclick="nav('venues')"><i class="ti ti-map-pin"></i>Venues</div>
       <div class="nav-item" onclick="nav('certificates')"><i class="ti ti-award"></i>Certificates</div>
     </nav>
     <div class="sidebar-footer">
@@ -439,6 +440,21 @@ select:focus{border-color:var(--teal)}
           <div class="table-wrap">
             <table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Specialisation</th><th>Courses Delivered</th><th>Actions</th></tr></thead>
             <tbody id="tr-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VENUES -->
+      <div id="page-venues" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search venues..." id="ven-q" oninput="filterTable('venues')"></div>
+          <button class="btn btn-outline" onclick="clearFilters('venues')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 id="ven-count">Venues</h2></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Venue</th><th>Capacity</th><th>Course Runs</th><th>Actions</th></tr></thead>
+            <tbody id="ven-tbody"></tbody></table>
           </div>
         </div>
       </div>
@@ -922,6 +938,7 @@ const PAGE_CONFIG = {
   invoices:      {title:'Invoices',          sub:'Invoice register and billing',                   addLabel:'Add Invoice'},
   payments:      {title:'Payments',          sub:'Payment receipts and tracking',                  addLabel:'Add Payment'},
   trainers:      {title:'Trainers',          sub:'Training facilitators',                         addLabel:'Add Trainer'},
+  venues:        {title:'Venues',            sub:'Training venues and capacities',                addLabel:'Add Venue'},
   certificates:  {title:'Certificates',      sub:'Issued certificates register',                  addLabel:'Add Certificate'},
 };
 
@@ -955,6 +972,7 @@ async function loadPage(page){
     invoices:      loadInvoices,
     payments:      loadPayments,
     trainers:      loadTrainers,
+    venues:        loadVenues,
     certificates:  loadCertificates,
   };
   if(loaders[page]) await loaders[page]();
@@ -1145,7 +1163,7 @@ function renderCourses(items){
 const SEARCH_IDS = {
   courses:'course-q', runs:'runs-q', organisations:'orgs-q',
   attendees:'att-q', invoices:'inv-q', payments:'pay-q',
-  trainers:'tr-q', certificates:'cert-q'
+  trainers:'tr-q', certificates:'cert-q', venues:'ven-q'
 };
 
 // ── COURSE RUNS CALENDAR VIEW ───────────────────────────────────────────────
@@ -1684,6 +1702,29 @@ function renderTrainers(items){
   </tr>`).join('');
 }
 
+async function loadVenues(){
+  loading('ven-tbody');
+  try {
+    const items = await getItems('venues','$top=200');
+    cache.venues = items;
+    renderVenues(items);
+  } catch(e){ toast('Error loading venues: '+e.message,'error'); }
+}
+
+function renderVenues(items){
+  document.getElementById('ven-count').textContent = `Venues (${items.length})`;
+  if(!items.length){emptyState('ven-tbody','No venues added yet');return;}
+  document.getElementById('ven-tbody').innerHTML = items.map(v=>`<tr>
+    <td class="td-bold">${v.Title||'—'}</td>
+    <td>${v.Capacity||'—'}</td>
+    <td>${(cache.runs||[]).filter(r=>r.Venue===(v.Title||'')).length}</td>
+    <td><div class="td-actions">
+      <button class="btn-icon" onclick="editRow('venues','${v.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
+      <button class="btn-icon danger" onclick="confirmDelete('venues','${v.id}','${(v.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+
 // ============================================================
 // CERTIFICATES
 // ============================================================
@@ -1878,6 +1919,14 @@ const FORM_DEFS = {
       {key:'Specialisation',label:'Specialisation',type:'text',full:true},
     ],
     toFields: (f)=>({FullName:f.FullName,Email:f.Email,Phone:f.Phone,Specialisation:f.Specialisation,Title:f.FullName}),
+  },
+  venues: {
+    title: (d)=> d?'Edit Venue':'Add Venue',
+    fields: [
+      {key:'VenueName',label:'Venue Name',type:'text',full:true,required:true,fallbackKey:'Title'},
+      {key:'Capacity',label:'Capacity',type:'number'},
+    ],
+    toFields: (f)=>({Title:f.VenueName,Capacity:+f.Capacity||0}),
   },
   certificates: {
     title: (d)=> d?'Edit Certificate':'Add Certificate',
