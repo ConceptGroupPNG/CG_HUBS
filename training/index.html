@@ -374,7 +374,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Name</th><th>Organisation</th><th>Course Run</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Name</th><th>Organisation</th><th>Course Run</th><th>Course Date</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="att-tbody"></tbody></table>
           </div>
         </div>
@@ -1537,6 +1537,7 @@ function renderAttendees(items){
       </div></td>
       <td style="font-size:12px">${orgDisplay}</td>
       <td style="font-size:12px;max-width:140px">${runDisplay.substring(0,30)}</td>
+      <td style="font-size:12px">${fmtDate(a.RunStartDate || run?.StartDate)}</td>
       <td style="font-size:12px">${a.JobTitle||'—'}</td>
       <td style="font-size:12px"><a href="mailto:${a.Email}" style="color:var(--blue)">${a.Email||'—'}</a></td>
       <td>${a.Section65A?'<span class="badge bg">Yes</span>':'<span class="badge bgr">No</span>'}</td>
@@ -1873,12 +1874,27 @@ const FORM_DEFS = {
   certificates: {
     title: (d)=> d?'Edit Certificate':'Add Certificate',
     fields: [
-      {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true},
-      {key:'AttendeeIDId',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName'},
-      {key:'CourseRunIDId',label:'Course Run',type:'lookup',entity:'runs',display:'StartDate'},
+      {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true,full:true},
+      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
+      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',matchKey:'RunLabel'},
       {key:'IssueDate',label:'Issue Date',type:'date'},
     ],
-    toFields: (f)=>({CertificateNumber:f.CertificateNumber,AttendeeIDId:+f.AttendeeIDId||null,CourseRunIDId:+f.CourseRunIDId||null,IssueDate:f.IssueDate||null,Title:f.CertificateNumber}),
+    toFields: (f)=>{
+      const out = {CertificateNumber:f.CertificateNumber,IssueDate:f.IssueDate||null,Title:f.CertificateNumber};
+      if(f.AttendeeRef){
+        const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
+        if(att) out.AttendeeName = att.FullName||att.Title||'';
+      }
+      if(f.RunRef){
+        const run=(cache.runs||[]).find(r=>String(r.id)===String(f.RunRef));
+        if(run){
+          const rDate=(run.StartDate||'').substring(0,10);
+          out.CourseRunTitle = (run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+          out.RunStartDate = rDate;
+        }
+      }
+      return out;
+    },
   },
 };
 
@@ -1933,7 +1949,7 @@ async function openFormModal(entity, data){
           const match=opts.find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
         } else if(f.matchKey==='RunLabel'){
-          const curTitle=(data.CourseTitle||'').trim().toLowerCase();
+          const curTitle=(data.CourseTitle||data.CourseRunTitle||'').trim().toLowerCase();
           const curDate=(data.RunStartDate||'').substring(0,10);
           const match=opts.find(o=>{
             const rDate=(o.StartDate||'').substring(0,10);
