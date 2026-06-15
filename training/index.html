@@ -1988,9 +1988,8 @@ function renderInvoiceLines(){
 function renderInvoiceAttendees(data){
   const container = document.getElementById('invoice-attendees-container');
   if(!container) return;
-  if(!data || !data.Title) return;
-  const invNum = (data.InvoiceNumber||data.Title||'').trim().toLowerCase();
-  const linked = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
+  const invNum = (data?.InvoiceNumber||data?.Title||'').trim().toLowerCase();
+  const linked = invNum ? (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum) : [];
   container.innerHTML = `
     <div style="margin-top:14px">
       <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
@@ -2014,7 +2013,9 @@ function renderInvoiceAttendees(data){
           </table>
         </div>` :
         `<div style="margin-top:6px;font-size:12px;color:var(--g500);padding:8px 0">
-          No attendees linked yet. Link attendees to this invoice from the <strong>Attendees</strong> page using the Invoice Reference field.
+          ${invNum
+            ? 'No attendees linked yet. Link attendees to this invoice from the <strong>Attendees</strong> page using the Invoice Reference field.'
+            : 'Save this invoice first, then link attendees from the <strong>Attendees</strong> page using the Invoice Reference field.'}
         </div>`
       }
     </div>`;
