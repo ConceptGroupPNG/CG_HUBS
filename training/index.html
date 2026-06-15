@@ -1861,16 +1861,26 @@ async function initInvoiceLines(data){
   }
   // For existing invoices with no line items yet, seed from the old flat fields
   if(invoiceLines.length===0 && data && (+data.FeeExGST||+data.TotalAmount)){
-    const rDate = (data.RunStartDate||'').substring(0,10);
+    // Try to derive course name from the linked attendee if not on the invoice itself
+    let courseName = data.CourseTitle||'';
+    let runDate = (data.RunStartDate||'').substring(0,10);
+    if(!courseName && data.AttendeeName){
+      const attName=(data.AttendeeName||'').trim().toLowerCase();
+      const att=(cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName);
+      if(att){
+        courseName = att.CourseTitle||'';
+        if(!runDate) runDate = (att.RunStartDate||'').substring(0,10);
+      }
+    }
     invoiceLines.push({
       _id: 'il'+(++invoiceLineSeq),
       spId: null,
-      CourseName: data.CourseTitle||'',
+      CourseName: courseName,
       Quantity: 1,
       FeeExGST: +data.FeeExGST||0,
       GSTAmount: +data.GSTAmount||0,
       LineTotal: +data.TotalAmount||0,
-      RunStartDate: rDate,
+      RunStartDate: runDate,
     });
   }
   if(invoiceLines.length===0) addInvoiceLine();
@@ -1973,6 +1983,41 @@ function renderInvoiceLines(){
       <button type="button" class="btn btn-outline btn-sm" onclick="addInvoiceLine()" style="margin-top:8px"><i class="ti ti-plus"></i> Add Line</button>
     </div>
   `;
+}
+
+function renderInvoiceAttendees(data){
+  const container = document.getElementById('invoice-attendees-container');
+  if(!container) return;
+  if(!data || !data.Title) return;
+  const invNum = (data.InvoiceNumber||data.Title||'').trim().toLowerCase();
+  const linked = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
+  container.innerHTML = `
+    <div style="margin-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
+        Linked Attendees (${linked.length})
+      </label>
+      ${linked.length ? `
+        <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="background:var(--g100)">
+              <th style="text-align:left;padding:6px 8px">Name</th>
+              <th style="text-align:left;padding:6px 8px">Course</th>
+              <th style="text-align:left;padding:6px 8px">Status</th>
+            </tr></thead>
+            <tbody>
+              ${linked.map(a=>`<tr style="border-top:1px solid var(--g100)">
+                <td style="padding:5px 8px;font-weight:600">${a.FullName||a.Title||'—'}</td>
+                <td style="padding:5px 8px;color:var(--g500)">${a.InvoiceLineCourse||a.CourseTitle||'—'}</td>
+                <td style="padding:5px 8px">${statusBadge(a.AttendanceStatus||'Registered')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` :
+        `<div style="margin-top:6px;font-size:12px;color:var(--g500);padding:8px 0">
+          No attendees linked yet. Link attendees to this invoice from the <strong>Attendees</strong> page using the Invoice Reference field.
+        </div>`
+      }
+    </div>`;
 }
 
 async function saveInvoiceLines(invoiceNumber){
@@ -2459,8 +2504,7 @@ const FORM_DEFS = {
     fields: [
       {key:'InvoiceNumber',label:'Invoice Number',type:'text',required:true},
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
-      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName'},
-      {key:'AttendeeRef',label:'Attendee (if known)',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef'},
       {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
     ],
@@ -2478,12 +2522,6 @@ const FORM_DEFS = {
         out.OrgName = org ? (org.OrgName||org.Title||'') : '';
       } else {
         out.OrgName = '';
-      }
-      if(f.AttendeeRef){
-        const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
-        if(att) out.AttendeeName = att.FullName||att.Title||'';
-      } else {
-        out.AttendeeName = '';
       }
       // FeeExGST/GSTAmount/TotalAmount computed from line items, written by saveInvoiceLines()
       return out;
@@ -2605,7 +2643,13 @@ async function openFormModal(entity, data){
       let selectedId = val; // direct id if present
       if(f.matchKey && data){
         if(f.matchKey==='OrgName'){
-          const cur=(data.OrgName||'').trim().toLowerCase();
+          let cur=(data.OrgName||'').trim().toLowerCase();
+          // Fallback: for legacy invoices with no OrgName, derive from linked attendee
+          if(!cur && f.fallbackMatchKey==='AttendeeName' && data.AttendeeName){
+            const attName=(data.AttendeeName||'').trim().toLowerCase();
+            const att=(cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName);
+            if(att) cur=(att.OrgName||'').trim().toLowerCase();
+          }
           const match=opts.find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
         } else if(f.matchKey==='RunLabel'){
@@ -2711,6 +2755,7 @@ async function openFormModal(entity, data){
   // Invoices: add a placeholder container for the line items editor
   if(entity==='invoices'){
     html += '<div id="invoice-lines-container"></div>';
+    html += '<div id="invoice-attendees-container"></div>';
   }
 
   document.getElementById('modal-body').innerHTML = html;
@@ -2723,6 +2768,7 @@ async function openFormModal(entity, data){
   // Invoices: render the line items editor below the header fields
   if(entity==='invoices'){
     await initInvoiceLines(data);
+    renderInvoiceAttendees(data);
   }
 
   document.getElementById('entity-modal').classList.add('open');
