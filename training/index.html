@@ -2505,7 +2505,7 @@ const FORM_DEFS = {
       {key:'InvoiceNumber',label:'Invoice Number',type:'text',required:true},
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
-      {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef'},
+      {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef',onchange:'onQuoteRefChange()'},
       {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
     ],
     toFields: (f)=>{
@@ -2772,6 +2772,51 @@ async function openFormModal(entity, data){
   }
 
   document.getElementById('entity-modal').classList.add('open');
+}
+
+async function onQuoteRefChange(){
+  const quoteId = document.getElementById('mf-QuoteRefLookup')?.value;
+  if(!quoteId) return;
+  const quote = (cache.quotes||[]).find(q=>String(q.id)===String(quoteId));
+  if(!quote) return;
+
+  // Pre-select Organisation from the quote
+  if(quote.OrgName){
+    const orgEl = document.getElementById('mf-OrgRef');
+    if(orgEl){
+      const org = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===(quote.OrgName||'').trim().toLowerCase());
+      if(org) orgEl.value = org.id;
+    }
+  }
+
+  // Load quote lines if not cached
+  if(!cache.quotelines){
+    try{ cache.quotelines = await getItems('quotelines','$top=999'); }catch(e){}
+  }
+  const qNum = (quote.Title||'').trim().toLowerCase();
+  const qLines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===qNum);
+
+  // Seed invoice lines from quote lines (only if no lines already entered)
+  const hasRealLines = invoiceLines.some(l=>l.CourseName);
+  if(qLines.length > 0 && !hasRealLines){
+    invoiceLines = [];
+    invoiceLineSeq = 0;
+    invoiceLinesOriginalIds = [];
+    qLines.forEach(ql=>{
+      invoiceLines.push({
+        _id: 'il'+(++invoiceLineSeq),
+        spId: null,
+        CourseName: ql.CourseName||'',
+        Quantity: +ql.Quantity||1,
+        FeeExGST: +ql.FeeExGST||0,
+        GSTAmount: +ql.GSTAmount||0,
+        LineTotal: +ql.LineTotal||0,
+        RunStartDate: '',
+      });
+    });
+    renderInvoiceLines();
+    toast('Line items pre-filled from quote '+quote.Title);
+  }
 }
 
 function onVenueChange(){
