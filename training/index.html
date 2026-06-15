@@ -397,7 +397,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportQuotesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Organisation</th><th>Courses</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="quo-tbody"></tbody></table>
           </div>
         </div>
@@ -553,7 +553,9 @@ const LISTS = {
   organisations:'CG_Organisations',
   attendees:    'CG_Attendees',
   quotes:       'CG_Quotes',
+  quotelines:   'CG_QuoteLines',
   invoices:     'CG_Invoices',
+  invoicelines: 'CG_InvoiceLines',
   payments:     'CG_Payments',
   trainers:     'CG_Trainers',
   certificates: 'CG_Certificates',
@@ -1608,17 +1610,186 @@ function attendeeForQuote(q){
   return (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===name);
 }
 
+// ============================================================
+// QUOTE LINE ITEMS (CG_QuoteLines)
+// ============================================================
+let quoteLines = []; // working copy of line items for the open quote
+let quoteLinesOriginalIds = []; // ids of lines that existed before editing (for delete-diff on save)
+let quoteLineSeq = 0; // for generating temporary client-side ids
+
+async function initQuoteLines(data){
+  quoteLines = [];
+  quoteLinesOriginalIds = [];
+  quoteLineSeq = 0;
+  // Preload courses for the course dropdown
+  if(!cache.courses){ try{ cache.courses = await getItems('courses','$top=500'); }catch(e){} }
+  // Load existing lines for this quote (matched by Quote Number text, like other links)
+  if(data && (data.Title)){
+    try{
+      if(!cache.quotelines) cache.quotelines = await getItems('quotelines','$top=999');
+      const qNum = (data.Title||'').trim().toLowerCase();
+      const existing = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===qNum);
+      quoteLines = existing.map(l=>({
+        _id: 'l'+(++quoteLineSeq),
+        spId: l.id,
+        CourseName: l.CourseName||'',
+        Quantity: l.Quantity||1,
+        FeeExGST: l.FeeExGST||0,
+        GSTAmount: l.GSTAmount||0,
+        LineTotal: l.LineTotal||0,
+      }));
+      quoteLinesOriginalIds = existing.map(l=>l.id);
+    }catch(e){ console.warn('Could not load quote lines',e); }
+  }
+  if(quoteLines.length===0){
+    addQuoteLine(); // start with one empty row for convenience
+  }
+  renderQuoteLines();
+}
+
+function addQuoteLine(){
+  quoteLines.push({_id:'l'+(++quoteLineSeq), spId:null, CourseName:'', Quantity:1, FeeExGST:0, GSTAmount:0, LineTotal:0});
+  renderQuoteLines();
+}
+
+function removeQuoteLine(lineId){
+  quoteLines = quoteLines.filter(l=>l._id!==lineId);
+  if(quoteLines.length===0) addQuoteLine();
+  else renderQuoteLines();
+}
+
+function updateQuoteLine(lineId, field, value){
+  const line = quoteLines.find(l=>l._id===lineId);
+  if(!line) return;
+  if(field==='CourseName') line.CourseName = value;
+  else line[field] = +value || 0;
+  // Auto-calc GST and total whenever qty or fee changes
+  if(field==='Quantity' || field==='FeeExGST'){
+    const gstRate = 0.10; // default 10% GST
+    line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
+    line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
+  }
+  renderQuoteLines();
+}
+
+function quoteLinesTotal(){
+  return quoteLines.reduce((acc,l)=>({
+    fee: acc.fee + (+l.FeeExGST||0)*(+l.Quantity||0),
+    gst: acc.gst + (+l.GSTAmount||0),
+    total: acc.total + (+l.LineTotal||0),
+  }), {fee:0, gst:0, total:0});
+}
+
+function renderQuoteLines(){
+  const container = document.getElementById('quote-lines-container');
+  if(!container) return;
+  const courses = cache.courses||[];
+  const totals = quoteLinesTotal();
+  container.innerHTML = `
+    <div style="margin-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">Line Items</label>
+      <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr style="background:var(--g100)">
+            <th style="text-align:left;padding:6px 8px">Course</th>
+            <th style="text-align:right;padding:6px 8px;width:70px">Qty</th>
+            <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
+            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
+            <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
+            <th style="width:36px"></th>
+          </tr></thead>
+          <tbody>
+            ${quoteLines.map(l=>`<tr>
+              <td style="padding:4px 8px">
+                <select onchange="updateQuoteLine('${l._id}','CourseName',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+                  <option value="">— Select course —</option>
+                  ${courses.map(c=>{
+                    const cname=c.CourseName||c.Title||'';
+                    return `<option value="${cname.replace(/"/g,'&quot;')}" ${cname===l.CourseName?'selected':''}>${cname}</option>`;
+                  }).join('')}
+                </select>
+              </td>
+              <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateQuoteLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
+              <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateQuoteLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
+              <td style="padding:4px 8px;text-align:right">${fmt(l.GSTAmount)}</td>
+              <td style="padding:4px 8px;text-align:right;font-weight:700">${fmt(l.LineTotal)}</td>
+              <td style="padding:4px 8px;text-align:center">
+                <button type="button" onclick="removeQuoteLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--g100);font-weight:700">
+              <td style="padding:6px 8px" colspan="2">Total</td>
+              <td style="padding:6px 8px;text-align:right">${fmt(totals.fee)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmt(totals.gst)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmt(totals.total)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="addQuoteLine()" style="margin-top:8px"><i class="ti ti-plus"></i> Add Line</button>
+    </div>
+  `;
+}
+
+// Sync the in-memory quoteLines array to CG_QuoteLines for the given quote number.
+// Creates new lines, updates changed lines, deletes removed lines.
+async function saveQuoteLines(quoteNumber){
+  const currentSpIds = new Set(quoteLines.filter(l=>l.spId).map(l=>l.spId));
+  // Delete lines that were removed from the form
+  for(const oldId of quoteLinesOriginalIds){
+    if(!currentSpIds.has(oldId)){
+      try{ await deleteItem('quotelines', oldId); }catch(e){ console.warn('Failed to delete quote line',oldId,e); }
+    }
+  }
+  // Create or update remaining lines
+  for(const l of quoteLines){
+    if(!l.CourseName) continue; // skip empty rows
+    const fields = {
+      Title: quoteNumber,
+      CourseName: l.CourseName,
+      Quantity: +l.Quantity||0,
+      FeeExGST: +l.FeeExGST||0,
+      GSTAmount: +l.GSTAmount||0,
+      LineTotal: +l.LineTotal||0,
+    };
+    if(l.spId){
+      await saveWithFieldFallback(true, 'quotelines', l.spId, fields);
+    } else {
+      await saveWithFieldFallback(false, 'quotelines', null, fields);
+    }
+  }
+  // Refresh the quotelines cache so totals reflect the new state
+  try{ cache.quotelines = await getItems('quotelines','$top=999'); }catch(e){}
+}
+
 async function loadQuotes(){
   loading('quo-tbody');
   try {
-    const [items, atts] = await Promise.all([
+    const [items, atts, lines] = await Promise.all([
       getItems('quotes','$top=500'),
       cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
+      getItems('quotelines','$top=999'),
     ]);
     cache.quotes = items;
     if(!cache.attendees) cache.attendees = atts;
+    cache.quotelines = lines;
     renderQuotes(items);
   } catch(e){ toast('Error loading quotes: '+e.message,'error'); }
+}
+
+function quoteLineTotals(quoteTitle){
+  const qNum=(quoteTitle||'').trim().toLowerCase();
+  const lines=(cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===qNum);
+  if(!lines.length) return null;
+  return lines.reduce((acc,l)=>({
+    fee: acc.fee + (+l.FeeExGST||0)*(+l.Quantity||0),
+    gst: acc.gst + (+l.GSTAmount||0),
+    total: acc.total + (+l.LineTotal||0),
+    courses: acc.courses.concat(l.CourseName?[`${l.CourseName} ×${l.Quantity||0}`]:[]),
+  }), {fee:0, gst:0, total:0, courses:[]});
 }
 
 function renderQuotes(items){
@@ -1629,14 +1800,19 @@ function renderQuotes(items){
     const attName = q.AttendeeName || '—';
     const att = attendeeForQuote(q);
     const orgName = q.OrgName || att?.OrgName || '—';
+    const lineTotals = quoteLineTotals(q.Title);
+    const fee = lineTotals ? lineTotals.fee : (+q.FeeExGST||0);
+    const gst = lineTotals ? lineTotals.gst : (+q.GSTAmount||0);
+    const total = lineTotals ? lineTotals.total : (+q.TotalAmount||0);
+    const coursesSummary = lineTotals && lineTotals.courses.length ? lineTotals.courses.join(', ') : (attName!=='—'?'—':'—');
     return `<tr>
       <td class="td-bold">${q.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(q.QuoteDate)}</td>
-      <td>${attName}</td>
       <td style="font-size:12px">${orgName}</td>
-      <td>${fmt(q.FeeExGST)}</td>
-      <td>${fmt(q.GSTAmount)}</td>
-      <td><strong>${fmt(q.TotalAmount)}</strong></td>
+      <td style="font-size:12px;max-width:180px">${coursesSummary}</td>
+      <td>${fmt(fee)}</td>
+      <td>${fmt(gst)}</td>
+      <td><strong>${fmt(total)}</strong></td>
       <td>${statusBadge(q.Status)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="editRow('quotes','${q.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -1648,17 +1824,22 @@ function renderQuotes(items){
 
 function exportQuotesCSV(){
   exportTableCSV('quotes','quo-tbody',
-    ['Quote #','Quote Date','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
+    ['Quote #','Quote Date','Organisation','Courses','Fee (PGK)','GST','Total','Status'],
     q=>{
       const att=attendeeForQuote(q);
+      const lineTotals = quoteLineTotals(q.Title);
+      const fee = lineTotals ? lineTotals.fee : (+q.FeeExGST||0);
+      const gst = lineTotals ? lineTotals.gst : (+q.GSTAmount||0);
+      const total = lineTotals ? lineTotals.total : (+q.TotalAmount||0);
+      const courses = lineTotals && lineTotals.courses.length ? lineTotals.courses.join('; ') : '';
       return [
         q.Title||'',
         q.QuoteDate||'',
-        q.AttendeeName||'',
         q.OrgName||att?.OrgName||'',
-        q.FeeExGST||0,
-        q.GSTAmount||0,
-        q.TotalAmount||0,
+        courses,
+        fee,
+        gst,
+        total,
         q.Status||''
       ];
     }
@@ -1962,24 +2143,28 @@ const FORM_DEFS = {
     fields: [
       {key:'QuoteNumber',label:'Quote Number',type:'text',required:true,fallbackKey:'Title',full:true},
       {key:'QuoteDate',label:'Quote Date',type:'date'},
-      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true,matchKey:'AttendeeName'},
-      {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
-      {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
-      {key:'TotalAmount',label:'Total (PGK)',type:'number'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName'},
+      {key:'AttendeeRef',label:'Attendee (if known)',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
       {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
       {key:'QuoteLink',label:'Quote Link / File Ref',type:'text',full:true},
     ],
     toFields: (f)=>{
       const out = {Title:f.QuoteNumber,QuoteDate:f.QuoteDate||null,
-        FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,
         Status:f.Status||'Pending',QuoteLink:f.QuoteLink};
+      if(f.OrgRef){
+        const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
+        out.OrgName = org ? (org.OrgName||org.Title||'') : '';
+      } else {
+        out.OrgName = '';
+      }
       if(f.AttendeeRef){
         const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
-        if(att){
-          out.AttendeeName = att.FullName||att.Title||'';
-          out.OrgName = att.OrgName||'';
-        }
+        if(att) out.AttendeeName = att.FullName||att.Title||'';
+      } else {
+        out.AttendeeName = '';
       }
+      // FeeExGST/GSTAmount/TotalAmount are computed as rollups from line items
+      // and written separately by saveQuoteLines()
       return out;
     },
   },
@@ -2203,14 +2388,25 @@ async function openFormModal(entity, data){
   });
   html += '</div>';
 
-  // Auto-calc GST for invoices and quotes
-  if(entity==='invoices' || entity==='quotes'){
+  // Auto-calc GST for invoices (quotes use line-item totals instead)
+  if(entity==='invoices'){
     html += `<div style="margin-top:10px;font-size:12px;color:var(--g500)">
       <button type="button" class="btn btn-outline btn-sm" onclick="autoCalcInvoice()" style="margin-top:8px"><i class="ti ti-calculator"></i>Auto-calculate GST &amp; Total</button>
     </div>`;
   }
 
+  // Quotes: add a placeholder container for the line items editor
+  if(entity==='quotes'){
+    html += '<div id="quote-lines-container"></div>';
+  }
+
   document.getElementById('modal-body').innerHTML = html;
+
+  // Quotes: render the line items editor below the header fields
+  if(entity==='quotes'){
+    await initQuoteLines(data);
+  }
+
   document.getElementById('entity-modal').classList.add('open');
 }
 
@@ -2292,6 +2488,10 @@ async function saveModal(){
     } else {
       await saveWithFieldFallback(false, editingEntity, null, fields);
       toast('Record created successfully');
+    }
+    // Quotes: sync line items to CG_QuoteLines after saving the header
+    if(editingEntity==='quotes'){
+      await saveQuoteLines(fields.Title);
     }
     closeModal();
     await loadPage(currentPage);
