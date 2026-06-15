@@ -224,6 +224,7 @@ select:focus{border-color:var(--teal)}
       <div class="nav-item" onclick="nav('organisations')"><i class="ti ti-building"></i>Organisations</div>
       <div class="nav-item" onclick="nav('attendees')"><i class="ti ti-users"></i>Attendees</div>
       <div class="nav-section">Finance</div>
+      <div class="nav-item" onclick="nav('quotes')"><i class="ti ti-file-description"></i>Quotes</div>
       <div class="nav-item" onclick="nav('invoices')"><i class="ti ti-file-invoice"></i>Invoices</div>
       <div class="nav-item" onclick="nav('payments')"><i class="ti ti-cash"></i>Payments</div>
       <div class="nav-section">Admin</div>
@@ -381,6 +382,27 @@ select:focus{border-color:var(--teal)}
         </div>
       </div>
 
+      <!-- QUOTES -->
+      <div id="page-quotes" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search quotes..." id="quo-q" oninput="filterTable('quotes')"></div>
+          <select id="quo-status" onchange="filterTable('quotes')">
+            <option value="">All statuses</option><option>Pending</option><option>Accepted</option><option>Converted to Invoice</option><option>Declined</option><option>Expired</option>
+          </select>
+          <button class="btn btn-outline" onclick="clearFilters('quotes')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2 id="quo-count">Quotes</h2>
+            <button class="btn btn-outline" style="font-size:12px" onclick="exportQuotesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="quo-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+
       <!-- INVOICES -->
       <div id="page-invoices" class="page">
         <div class="filter-bar">
@@ -530,6 +552,7 @@ const LISTS = {
   runs:         'CG_CourseRuns',
   organisations:'CG_Organisations',
   attendees:    'CG_Attendees',
+  quotes:       'CG_Quotes',
   invoices:     'CG_Invoices',
   payments:     'CG_Payments',
   trainers:     'CG_Trainers',
@@ -857,7 +880,7 @@ function initials(n){
   return n.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
 }
 function statusBadge(s){
-  const map={Paid:'bg',Partial:'ba',Pending:'br',Active:'bb',Completed:'bg',Scheduled:'bp',Postponed:'br',Registered:'bb',Attended:'ba','No-show':'br'};
+  const map={Paid:'bg',Partial:'ba',Pending:'br',Active:'bb',Completed:'bg',Scheduled:'bp',Postponed:'br',Registered:'bb',Attended:'ba','No-show':'br',Accepted:'bg','Converted to Invoice':'bb',Declined:'br',Expired:'bgr'};
   return `<span class="badge ${map[s]||'bgr'}">${s||'—'}</span>`;
 }
 // Compute a run's effective status based on dates, falling back to stored Status for Postponed
@@ -935,6 +958,7 @@ const PAGE_CONFIG = {
   runs:          {title:'Course Runs',       sub:'Scheduled and completed course runs',            addLabel:'Add Course Run'},
   organisations: {title:'Organisations',     sub:'Client organisations and contact details',       addLabel:'Add Organisation'},
   attendees:     {title:'Attendees',         sub:'Registered participants across all courses',     addLabel:'Add Attendee'},
+  quotes:        {title:'Quotes',            sub:'Price quotes prior to invoicing',               addLabel:'Add Quote'},
   invoices:      {title:'Invoices',          sub:'Invoice register and billing',                   addLabel:'Add Invoice'},
   payments:      {title:'Payments',          sub:'Payment receipts and tracking',                  addLabel:'Add Payment'},
   trainers:      {title:'Trainers',          sub:'Training facilitators',                         addLabel:'Add Trainer'},
@@ -969,6 +993,7 @@ async function loadPage(page){
     runs:          loadRuns,
     organisations: loadOrgs,
     attendees:     loadAttendees,
+    quotes:        loadQuotes,
     invoices:      loadInvoices,
     payments:      loadPayments,
     trainers:      loadTrainers,
@@ -1163,7 +1188,7 @@ function renderCourses(items){
 const SEARCH_IDS = {
   courses:'course-q', runs:'runs-q', organisations:'orgs-q',
   attendees:'att-q', invoices:'inv-q', payments:'pay-q',
-  trainers:'tr-q', certificates:'cert-q', venues:'ven-q'
+  trainers:'tr-q', certificates:'cert-q', venues:'ven-q', quotes:'quo-q'
 };
 
 // ── COURSE RUNS CALENDAR VIEW ───────────────────────────────────────────────
@@ -1389,11 +1414,15 @@ function filterTable(entity){
     const st=(document.getElementById('inv-status')||{value:''}).value;
     if(st) items=items.filter(i=>invoiceStatus(i)===st);
   }
+  if(entity==='quotes'){
+    const st=(document.getElementById('quo-status')||{value:''}).value;
+    if(st) items=items.filter(q=>(q.Status||'Pending')===st);
+  }
   if(entity==='payments'){
     const st=(document.getElementById('pay-status')||{value:''}).value;
     if(st) items=items.filter(i=>paymentStatus(i)===st);
   }
-  const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,certificates:renderCertificates};
+  const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,quotes:renderQuotes,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,venues:renderVenues,certificates:renderCertificates};
   if(renders[entity]) renders[entity](items);
   // If runs filter changed while calendar view is active, refresh calendar with filtered items
   if(entity==='runs' && runsViewMode==='calendar'){
@@ -1573,6 +1602,69 @@ function renderAttendees(items){
 // ============================================================
 // INVOICES
 // ============================================================
+function attendeeForQuote(q){
+  const name=(q.AttendeeName||'').trim().toLowerCase();
+  if(!name) return null;
+  return (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===name);
+}
+
+async function loadQuotes(){
+  loading('quo-tbody');
+  try {
+    const [items, atts] = await Promise.all([
+      getItems('quotes','$top=500'),
+      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
+    ]);
+    cache.quotes = items;
+    if(!cache.attendees) cache.attendees = atts;
+    renderQuotes(items);
+  } catch(e){ toast('Error loading quotes: '+e.message,'error'); }
+}
+
+function renderQuotes(items){
+  const cnt=document.getElementById('quo-count');
+  if(cnt) cnt.textContent=`Quotes (${items.length})`;
+  if(!items.length){emptyState('quo-tbody','No quotes yet');return;}
+  document.getElementById('quo-tbody').innerHTML = items.map(q=>{
+    const attName = q.AttendeeName || '—';
+    const att = attendeeForQuote(q);
+    const orgName = q.OrgName || att?.OrgName || '—';
+    return `<tr>
+      <td class="td-bold">${q.Title||'—'}</td>
+      <td style="white-space:nowrap">${fmtDate(q.QuoteDate)}</td>
+      <td>${attName}</td>
+      <td style="font-size:12px">${orgName}</td>
+      <td>${fmt(q.FeeExGST)}</td>
+      <td>${fmt(q.GSTAmount)}</td>
+      <td><strong>${fmt(q.TotalAmount)}</strong></td>
+      <td>${statusBadge(q.Status)}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="editRow('quotes','${q.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="btn-icon danger" onclick="confirmDelete('quotes','${q.id}','${(q.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function exportQuotesCSV(){
+  exportTableCSV('quotes','quo-tbody',
+    ['Quote #','Quote Date','Attendee','Organisation','Fee (PGK)','GST','Total','Status'],
+    q=>{
+      const att=attendeeForQuote(q);
+      return [
+        q.Title||'',
+        q.QuoteDate||'',
+        q.AttendeeName||'',
+        q.OrgName||att?.OrgName||'',
+        q.FeeExGST||0,
+        q.GSTAmount||0,
+        q.TotalAmount||0,
+        q.Status||''
+      ];
+    }
+  );
+}
+
 async function loadInvoices(){
   loading('inv-tbody');
   try {
@@ -1865,6 +1957,32 @@ const FORM_DEFS = {
       return out;
     },
   },
+  quotes: {
+    title: (d)=> d?'Edit Quote':'Add Quote',
+    fields: [
+      {key:'QuoteNumber',label:'Quote Number',type:'text',required:true,fallbackKey:'Title',full:true},
+      {key:'QuoteDate',label:'Quote Date',type:'date'},
+      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',full:true,matchKey:'AttendeeName'},
+      {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
+      {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
+      {key:'TotalAmount',label:'Total (PGK)',type:'number'},
+      {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
+      {key:'QuoteLink',label:'Quote Link / File Ref',type:'text',full:true},
+    ],
+    toFields: (f)=>{
+      const out = {Title:f.QuoteNumber,QuoteDate:f.QuoteDate||null,
+        FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,
+        Status:f.Status||'Pending',QuoteLink:f.QuoteLink};
+      if(f.AttendeeRef){
+        const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
+        if(att){
+          out.AttendeeName = att.FullName||att.Title||'';
+          out.OrgName = att.OrgName||'';
+        }
+      }
+      return out;
+    },
+  },
   invoices: {
     title: (d)=> d?'Edit Invoice':'Add Invoice',
     fields: [
@@ -1874,13 +1992,19 @@ const FORM_DEFS = {
       {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number',required:true},
       {key:'GSTAmount',label:'GST Amount (PGK)',type:'number'},
       {key:'TotalAmount',label:'Total (PGK)',type:'number'},
-      {key:'QuoteRef',label:'Quote Reference',type:'text'},
+      {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef'},
       {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
     ],
     toFields: (f)=>{
       const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
         FeeExGST:+f.FeeExGST||0,GSTAmount:+f.GSTAmount||0,TotalAmount:+f.TotalAmount||0,
-        QuoteRef:f.QuoteRef,InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber};
+        InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber};
+      if(f.QuoteRefLookup){
+        const quote=(cache.quotes||[]).find(q=>String(q.id)===String(f.QuoteRefLookup));
+        out.QuoteRef = quote ? (quote.Title||'') : '';
+      } else {
+        out.QuoteRef = '';
+      }
       if(f.AttendeeRef){
         const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
         if(att) out.AttendeeName = att.FullName||att.Title||'';
@@ -2048,6 +2172,12 @@ async function openFormModal(entity, data){
           const cur=(data.Venue||'').trim().toLowerCase();
           const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
+        } else if(f.matchKey==='QuoteRef'){
+          const cur=(data.QuoteRef||'').trim().toLowerCase();
+          if(cur){
+            const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===cur);
+            if(match) selectedId = match.id;
+          }
         }
       }
       // Sort run options by start date for easier browsing
@@ -2073,8 +2203,8 @@ async function openFormModal(entity, data){
   });
   html += '</div>';
 
-  // Auto-calc GST for invoices
-  if(entity==='invoices'){
+  // Auto-calc GST for invoices and quotes
+  if(entity==='invoices' || entity==='quotes'){
     html += `<div style="margin-top:10px;font-size:12px;color:var(--g500)">
       <button type="button" class="btn btn-outline btn-sm" onclick="autoCalcInvoice()" style="margin-top:8px"><i class="ti ti-calculator"></i>Auto-calculate GST &amp; Total</button>
     </div>`;
