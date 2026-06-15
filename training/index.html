@@ -1661,15 +1661,29 @@ function removeQuoteLine(lineId){
 function updateQuoteLine(lineId, field, value){
   const line = quoteLines.find(l=>l._id===lineId);
   if(!line) return;
-  if(field==='CourseName') line.CourseName = value;
-  else line[field] = +value || 0;
-  // Auto-calc GST and total whenever qty or fee changes
-  if(field==='Quantity' || field==='FeeExGST'){
-    const gstRate = 0.10; // default 10% GST
-    line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
-    line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
+  if(field==='CourseName'){
+    line.CourseName = value;
+    renderQuoteLines(); // course change doesn't affect focus on a text input
+    return;
   }
-  renderQuoteLines();
+  line[field] = +value || 0;
+  // Auto-calc GST and total whenever qty or fee changes
+  const gstRate = 0.10; // default 10% GST
+  line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
+  line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
+  // Update only the calculated cells for this row + footer totals, without
+  // rebuilding the input elements (rebuilding would steal focus mid-typing)
+  const gstCell = document.getElementById('ql-gst-'+lineId);
+  const totalCell = document.getElementById('ql-total-'+lineId);
+  if(gstCell) gstCell.textContent = fmt(line.GSTAmount);
+  if(totalCell) totalCell.textContent = fmt(line.LineTotal);
+  const totals = quoteLinesTotal();
+  const ftFee = document.getElementById('ql-foot-fee');
+  const ftGst = document.getElementById('ql-foot-gst');
+  const ftTotal = document.getElementById('ql-foot-total');
+  if(ftFee) ftFee.textContent = fmt(totals.fee);
+  if(ftGst) ftGst.textContent = fmt(totals.gst);
+  if(ftTotal) ftTotal.textContent = fmt(totals.total);
 }
 
 function quoteLinesTotal(){
@@ -1711,8 +1725,8 @@ function renderQuoteLines(){
               </td>
               <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateQuoteLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
               <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateQuoteLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
-              <td style="padding:4px 8px;text-align:right">${fmt(l.GSTAmount)}</td>
-              <td style="padding:4px 8px;text-align:right;font-weight:700">${fmt(l.LineTotal)}</td>
+              <td style="padding:4px 8px;text-align:right" id="ql-gst-${l._id}">${fmt(l.GSTAmount)}</td>
+              <td style="padding:4px 8px;text-align:right;font-weight:700" id="ql-total-${l._id}">${fmt(l.LineTotal)}</td>
               <td style="padding:4px 8px;text-align:center">
                 <button type="button" onclick="removeQuoteLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
               </td>
@@ -1721,9 +1735,9 @@ function renderQuoteLines(){
           <tfoot>
             <tr style="background:var(--g100);font-weight:700">
               <td style="padding:6px 8px" colspan="2">Total</td>
-              <td style="padding:6px 8px;text-align:right">${fmt(totals.fee)}</td>
-              <td style="padding:6px 8px;text-align:right">${fmt(totals.gst)}</td>
-              <td style="padding:6px 8px;text-align:right">${fmt(totals.total)}</td>
+              <td style="padding:6px 8px;text-align:right" id="ql-foot-fee">${fmt(totals.fee)}</td>
+              <td style="padding:6px 8px;text-align:right" id="ql-foot-gst">${fmt(totals.gst)}</td>
+              <td style="padding:6px 8px;text-align:right" id="ql-foot-total">${fmt(totals.total)}</td>
               <td></td>
             </tr>
           </tfoot>
