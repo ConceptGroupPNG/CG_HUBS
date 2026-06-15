@@ -518,6 +518,7 @@ const LISTS = {
   payments:     'CG_Payments',
   trainers:     'CG_Trainers',
   certificates: 'CG_Certificates',
+  venues:       'CG_Venue',
 };
 
 const SCOPES       = 'https://graph.microsoft.com/Sites.ReadWrite.All User.Read offline_access';
@@ -1745,13 +1746,13 @@ const FORM_DEFS = {
       {key:'StartDate',label:'Start Date',type:'date',required:true},
       {key:'EndDate',label:'End Date',type:'date',required:true},
       {key:'TrainerRef',label:'Trainer',type:'lookup',entity:'trainers',display:'TrainerName',matchKey:'TrainerName'},
-      {key:'Venue',label:'Venue',type:'text'},
+      {key:'VenueRef',label:'Venue',type:'lookup',entity:'venues',display:'VenueName',matchKey:'VenueName',onchange:'onVenueChange()'},
       {key:'Capacity',label:'Capacity',type:'number'},
       {key:'Status',label:'Status',type:'select',opts:['Scheduled','Active','Completed','Postponed']},
     ],
     toFields: (f)=>{
       const out = {StartDate:f.StartDate||null,EndDate:f.EndDate||null,
-        Venue:f.Venue,Capacity:+f.Capacity||7,Status:f.Status||'Scheduled'};
+        Capacity:+f.Capacity||7,Status:f.Status||'Scheduled'};
       // Resolve course lookup -> Title = "CourseName StartDate"
       let courseName = '';
       if(f.CourseRef){
@@ -1767,6 +1768,13 @@ const FORM_DEFS = {
         if(trainer) out.Trainer = trainer.FullName||trainer.Title||'';
       } else {
         out.Trainer = '';
+      }
+      // Resolve venue lookup -> store venue name as text
+      if(f.VenueRef){
+        const venue=(cache.venues||[]).find(v=>String(v.id)===String(f.VenueRef));
+        if(venue) out.Venue = venue.Title||'';
+      } else {
+        out.Venue = '';
       }
       return out;
     },
@@ -1939,6 +1947,7 @@ async function openFormModal(entity, data){
         }
         if(f.display==='TrainerName') return o.FullName||o.Title||o.id;
         if(f.display==='CourseName') return o.CourseName||o.Title||o.id;
+        if(f.display==='VenueName') return o.Title ? `${o.Title}${o.Capacity?` (cap. ${o.Capacity})`:''}` : o.id;
         return o[f.display]||o.Title||o.id;
       };
       // Determine the currently-selected option id by matching on matchKey (text field)
@@ -1986,13 +1995,17 @@ async function openFormModal(entity, data){
           const cur=(data.RemittanceRef||'').trim().toLowerCase();
           const match=opts.find(o=>(o.InvoiceNumber||o.Title||'').trim().toLowerCase()===cur);
           if(match) selectedId = match.id;
+        } else if(f.matchKey==='VenueName'){
+          const cur=(data.Venue||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===cur);
+          if(match) selectedId = match.id;
         }
       }
       // Sort run options by start date for easier browsing
       if(f.display==='RunLabel'){
         opts = [...opts].sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
       }
-      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''}>
+      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
         <option value="">— Select —</option>
         ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
       </select></div>`;
@@ -2020,6 +2033,15 @@ async function openFormModal(entity, data){
 
   document.getElementById('modal-body').innerHTML = html;
   document.getElementById('entity-modal').classList.add('open');
+}
+
+function onVenueChange(){
+  const venueId = document.getElementById('mf-VenueRef')?.value;
+  const venue = (cache.venues||[]).find(v=>String(v.id)===String(venueId));
+  if(venue && venue.Capacity){
+    const capEl = document.getElementById('mf-Capacity');
+    if(capEl) capEl.value = venue.Capacity;
+  }
 }
 
 function autoCalcInvoice(){
