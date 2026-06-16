@@ -1169,6 +1169,19 @@ function buildRecentActivity(atts){
     </div>`).join('');
 }
 
+function invoiceLineSeatStatus(line){
+  // line: a CG_InvoiceLines record. Returns {qty, filled, unfilled} counting
+  // CG_Attendees rows whose InvoiceRef+InvoiceLineCourse match this exact line.
+  const invNum = (line.Title||'').trim().toLowerCase();
+  const courseName = (line.CourseName||'').trim().toLowerCase();
+  const filled = (cache.attendees||[]).filter(a=>
+    (a.InvoiceRef||'').trim().toLowerCase()===invNum &&
+    (a.InvoiceLineCourse||'').trim().toLowerCase()===courseName
+  ).length;
+  const qty = +line.Quantity||0;
+  return {qty, filled, unfilled: Math.max(0, qty-filled)};
+}
+
 function buildUnfilledSeats(invs, invLines, atts){
   const el = document.getElementById('dash-unfilled');
   if(!el) return;
@@ -2505,7 +2518,7 @@ const FORM_DEFS = {
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
-      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions()'},
+      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,showSeatBadge:true,onchange:'refreshCourseDateOptions()'},
       {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
@@ -2877,11 +2890,12 @@ async function openFormModal(entity, data){
         // Render as a searchable text input backed by a datalist, for long option lists
         // (e.g. Invoices, Attendees) where scrolling a plain <select> is painful.
         const listId = 'dl-'+f.key;
-        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label>
+        const badgeHtml = f.showSeatBadge ? `<span id="seat-badge-${f.key}" style="margin-left:6px"></span>` : '';
+        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}${badgeHtml}</label>
           <input type="text" id="mf-${f.key}-search" list="${listId}"
             placeholder="Type to search..."
             value="${selectedOpt ? getLabel(selectedOpt).replace(/"/g,'&quot;') : ''}"
-            oninput="resolveSearchableLookup('${f.key}','${f.entity}','${f.display}')"
+            oninput="resolveSearchableLookup('${f.key}','${f.entity}','${f.display}')${f.showSeatBadge?`;updateSeatBadge('${f.key}')`:''}"
             ${f.onchange?`onchange="${f.onchange}"`:''}>
           <datalist id="${listId}">
             ${opts.map(o=>`<option data-id="${o.id}" value="${getLabel(o).replace(/"/g,'&quot;')}"></option>`).join('')}
@@ -2942,6 +2956,11 @@ async function openFormModal(entity, data){
     renderInvoiceAttendees(data);
   }
 
+  // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected
+  if(entity==='attendees'){
+    updateSeatBadge('InvoiceLineCourse');
+  }
+
   document.getElementById('entity-modal').classList.add('open');
 }
 
@@ -2987,6 +3006,33 @@ async function onQuoteRefChange(){
     });
     renderInvoiceLines();
     toast('Line items pre-filled from quote '+quote.Title);
+  }
+}
+
+function updateSeatBadge(key){
+  const badge = document.getElementById('seat-badge-'+key);
+  if(!badge) return;
+  const lineId = document.getElementById('mf-'+key)?.value;
+  if(!lineId){ badge.innerHTML=''; return; }
+  const line = (cache.invoicelines||[]).find(l=>String(l.id)===String(lineId));
+  if(!line){ badge.innerHTML=''; return; }
+  const status = invoiceLineSeatStatus(line);
+  const color = status.unfilled>0 ? 'var(--amber)' : 'var(--red)';
+  badge.innerHTML = `<span style="font-size:11px;font-weight:700;color:${color}">${status.filled}/${status.qty} filled</span>`;
+  // On Add (no editingId yet), warn clearly if this course line is already full -
+  // adding another attendee here would over-allocate the invoiced seats.
+  let warnEl = document.getElementById('seat-warn-'+key);
+  if(!editingId && status.unfilled<=0 && status.qty>0){
+    if(!warnEl){
+      warnEl = document.createElement('div');
+      warnEl.id = 'seat-warn-'+key;
+      warnEl.style.cssText = 'color:var(--red);font-size:11px;margin-top:4px;font-weight:600';
+      const fieldDiv = document.getElementById('mf-'+key+'-search')?.closest('.fg');
+      if(fieldDiv) fieldDiv.appendChild(warnEl);
+    }
+    warnEl.textContent = `⚠ All ${status.qty} seat(s) on this invoice line are already filled.`;
+  } else if(warnEl){
+    warnEl.remove();
   }
 }
 
@@ -3068,6 +3114,7 @@ async function onAttendeeInvoiceChange(){
     if(lineEl){ lineEl.value = lines[0].id; }
     if(lineSearch){ lineSearch.value = `${lines[0].CourseName||'?'} (${lines[0].Title||'?'} ×${lines[0].Quantity||0})`; }
     refreshCourseDateOptions();
+    updateSeatBadge('InvoiceLineCourse');
     toast('Course pre-filled from invoice');
   } else if(lines.length>1){
     toast(`This invoice has ${lines.length} course lines — please select the Invoice Course Line manually`, 'error');
@@ -3156,6 +3203,19 @@ async function saveModal(){
     toast(`Please fill in: ${missing.map(f=>f.label).join(', ')}`,'error');
     throw new Error('validation');
   }
+
+  // Attendees: block adding a new attendee to an invoice line that's already full
+  if(editingEntity==='attendees' && !editingId && rawFields.InvoiceLineCourse){
+    const line = (cache.invoicelines||[]).find(l=>String(l.id)===String(rawFields.InvoiceLineCourse));
+    if(line){
+      const status = invoiceLineSeatStatus(line);
+      if(status.qty>0 && status.unfilled<=0){
+        toast(`Cannot add: all ${status.qty} seat(s) on this invoice course line are already filled`,'error');
+        throw new Error('validation');
+      }
+    }
+  }
+
   const fields = def.toFields(rawFields);
   const btn = document.getElementById('modal-save-btn');
   btn.disabled = true;
