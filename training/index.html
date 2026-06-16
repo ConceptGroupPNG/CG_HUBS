@@ -2569,10 +2569,30 @@ const FORM_DEFS = {
       } else {
         out.InvoiceRef = '';
       }
-      // Resolve invoice line lookup -> store course name text
-      if(f.InvoiceLineCourse){
-        const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(f.InvoiceLineCourse));
-        if(il) out.InvoiceLineCourse = il.CourseName||'';
+      // Resolve invoice line lookup -> store course name text.
+      // Last-resort recovery: if the hidden ID is empty but the visible search
+      // box clearly shows a course (e.g. the dropdown displayed a pre-selected
+      // value that didn't get resolved into the hidden field), try to recover
+      // the line directly from the displayed text before giving up.
+      let invoiceLineId = f.InvoiceLineCourse;
+      if(!invoiceLineId){
+        const searchBox = document.getElementById('mf-InvoiceLineCourse-search');
+        const typed = (searchBox?.value||'').trim();
+        if(typed){
+          const recovered = (cache.invoicelines||[]).find(l=>{
+            const label = `${l.CourseName||'?'} (${l.Title||'?'} ×${l.Quantity||0})`;
+            return label===typed || (l.CourseName||'').trim()===typed;
+          });
+          if(recovered) invoiceLineId = recovered.id;
+        }
+      }
+      if(invoiceLineId){
+        const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(invoiceLineId));
+        if(il){
+          out.InvoiceLineCourse = il.CourseName||'';
+          if(!out.CourseTitle) out.CourseTitle = il.CourseName||'';
+          if(!out.RunStartDate && il.RunStartDate) out.RunStartDate = il.RunStartDate;
+        }
       } else {
         out.InvoiceLineCourse = '';
       }
@@ -3023,7 +3043,20 @@ async function onQuoteRefChange(){
 function updateSeatBadge(key){
   const badge = document.getElementById('seat-badge-'+key);
   if(!badge) return;
-  const lineId = document.getElementById('mf-'+key)?.value;
+  let lineId = document.getElementById('mf-'+key)?.value;
+  if(!lineId){
+    // Recovery: hidden field empty but the visible search text may still show
+    // a valid course - try to resolve it directly before giving up
+    const searchBox = document.getElementById('mf-'+key+'-search');
+    const typed = (searchBox?.value||'').trim();
+    if(typed){
+      const recovered = (cache.invoicelines||[]).find(l=>{
+        const label = `${l.CourseName||'?'} (${l.Title||'?'} ×${l.Quantity||0})`;
+        return label===typed || (l.CourseName||'').trim()===typed;
+      });
+      if(recovered) lineId = recovered.id;
+    }
+  }
   if(!lineId){ badge.innerHTML=''; return; }
   const line = (cache.invoicelines||[]).find(l=>String(l.id)===String(lineId));
   if(!line){ badge.innerHTML=''; return; }
