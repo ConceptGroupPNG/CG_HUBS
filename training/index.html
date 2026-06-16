@@ -2504,9 +2504,9 @@ const FORM_DEFS = {
       {key:'JobTitle',label:'Job Title',type:'text'},
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
-      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel'},
-      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef'},
-      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse'},
+      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
+      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
+      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
@@ -2601,7 +2601,7 @@ const FORM_DEFS = {
   payments: {
     title: (d)=> d?'Edit Payment':'Add Payment',
     fields: [
-      {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber'},
+      {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber',searchable:true},
       {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
       {key:'DatePaid',label:'Date Paid',type:'date'},
       {key:'PaymentLink',label:'Payment Link / File Ref',type:'text',full:true},
@@ -2642,8 +2642,8 @@ const FORM_DEFS = {
     title: (d)=> d?'Edit Certificate':'Add Certificate',
     fields: [
       {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true,full:true},
-      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
-      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',matchKey:'RunLabel'},
+      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName',searchable:true},
+      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',matchKey:'RunLabel',searchable:true},
       {key:'IssueDate',label:'Issue Date',type:'date'},
     ],
     toFields: (f)=>{
@@ -2665,6 +2665,28 @@ const FORM_DEFS = {
   },
 };
 
+function resolveSearchableLookup(key, entity, display){
+  const searchEl = document.getElementById('mf-'+key+'-search');
+  const hiddenEl = document.getElementById('mf-'+key);
+  if(!searchEl || !hiddenEl) return;
+  const typed = searchEl.value.trim();
+  const opts = cache[entity]||[];
+  const getLabel = (o) => {
+    if(display==='RunLabel'){
+      const rDate=(o.StartDate||'').substring(0,10);
+      const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+      return `${cName} — ${rDate}`;
+    }
+    if(display==='TrainerName') return o.FullName||o.Title||o.id;
+    if(display==='CourseName') return o.CourseName||o.Title||o.id;
+    if(display==='VenueName') return o.Title ? `${o.Title}${o.Capacity?` (cap. ${o.Capacity})`:''}` : o.id;
+    if(entity==='invoicelines') return `${o.CourseName||'?'} (${o.Title||'?'} ×${o.Quantity||0})`;
+    return o[display]||o.Title||o.id;
+  };
+  const match = opts.find(o=>getLabel(o)===typed);
+  hiddenEl.value = match ? match.id : '';
+}
+
 function editRow(entity, id){
   const item = (cache[entity]||[]).find(x=>String(x.id)===String(id));
   if(!item){ toast('Record not found - try refreshing the page','error'); return; }
@@ -2684,7 +2706,8 @@ async function openFormModal(entity, data){
   // Preload any lookup entities not yet cached
   for(const f of def.fields){
     if(f.type==='lookup' && !cache[f.entity]){
-      try{ cache[f.entity] = await getItems(f.entity, '$top=500'); }catch(e){}
+      const cap = (f.entity==='invoicelines'||f.entity==='quotelines') ? '$top=999' : '$top=500';
+      try{ cache[f.entity] = await getItems(f.entity, cap); }catch(e){}
     }
   }
   document.getElementById('modal-title').textContent = def.title(data);
@@ -2807,10 +2830,28 @@ async function openFormModal(entity, data){
       if(f.display==='RunLabel'){
         opts = [...opts].sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
       }
-      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
-        <option value="">— Select —</option>
-        ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
-      </select></div>`;
+      const selectedOpt = opts.find(o=>String(o.id)===String(selectedId));
+      if(f.searchable){
+        // Render as a searchable text input backed by a datalist, for long option lists
+        // (e.g. Invoices, Attendees) where scrolling a plain <select> is painful.
+        const listId = 'dl-'+f.key;
+        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label>
+          <input type="text" id="mf-${f.key}-search" list="${listId}"
+            placeholder="Type to search..."
+            value="${selectedOpt ? getLabel(selectedOpt).replace(/"/g,'&quot;') : ''}"
+            oninput="resolveSearchableLookup('${f.key}','${f.entity}','${f.display}')"
+            ${f.onchange?`onchange="${f.onchange}"`:''}>
+          <datalist id="${listId}">
+            ${opts.map(o=>`<option data-id="${o.id}" value="${getLabel(o).replace(/"/g,'&quot;')}"></option>`).join('')}
+          </datalist>
+          <input type="hidden" id="mf-${f.key}" value="${selectedId||''}">
+        </div>`;
+      } else {
+        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
+          <option value="">— Select —</option>
+          ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
+        </select></div>`;
+      }
     } else if(f.type==='select'){
       html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}">
         ${f.opts.map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('')}
@@ -2904,6 +2945,70 @@ async function onQuoteRefChange(){
     });
     renderInvoiceLines();
     toast('Line items pre-filled from quote '+quote.Title);
+  }
+}
+
+async function onAttendeeInvoiceChange(){
+  const invId = document.getElementById('mf-InvoiceRef')?.value;
+  if(!invId) return;
+  const inv = (cache.invoices||[]).find(i=>String(i.id)===String(invId));
+  if(!inv) return;
+
+  // Pre-select Organisation from the invoice
+  if(inv.OrgName){
+    const orgEl = document.getElementById('mf-OrgRef');
+    if(orgEl){
+      const org = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'').trim().toLowerCase()===(inv.OrgName||'').trim().toLowerCase());
+      if(org){
+        orgEl.value = org.id;
+        const orgSearch = document.getElementById('mf-OrgRef-search');
+        if(orgSearch) orgSearch.value = org.OrgName||org.Title||'';
+      }
+    }
+  }
+
+  // Load invoice lines for this invoice
+  if(!cache.invoicelines){ try{ cache.invoicelines = await getItems('invoicelines','$top=999'); }catch(e){} }
+  const invNum = (inv.InvoiceNumber||inv.Title||'').trim().toLowerCase();
+  const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+
+  if(lines.length===1){
+    // Only one course line on this invoice - auto-select it as the Invoice Course Line
+    const lineEl = document.getElementById('mf-InvoiceLineCourse');
+    const lineSearch = document.getElementById('mf-InvoiceLineCourse-search');
+    if(lineEl){ lineEl.value = lines[0].id; }
+    if(lineSearch){ lineSearch.value = `${lines[0].CourseName||'?'} (${lines[0].Title||'?'} ×${lines[0].Quantity||0})`; }
+
+    // Also try to pre-select the matching Course Run, if one exists with the same course+date
+    const courseName=(lines[0].CourseName||'').trim().toLowerCase();
+    const runDate=(lines[0].RunStartDate||'').substring(0,10);
+    const run = (cache.runs||[]).find(r=>{
+      const rDate=(r.StartDate||'').substring(0,10);
+      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+      return cName===courseName && (!runDate || rDate===runDate);
+    });
+    if(run){
+      const runEl=document.getElementById('mf-RunRef');
+      const runSearch=document.getElementById('mf-RunRef-search');
+      if(runEl) runEl.value = run.id;
+      if(runSearch){
+        const rDate=(run.StartDate||'').substring(0,10);
+        const cName=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+        runSearch.value = `${cName} — ${rDate}`;
+      }
+    }
+    toast('Course pre-filled from invoice');
+  } else if(lines.length>1){
+    toast(`This invoice has ${lines.length} course lines — please select the Invoice Course Line manually`, 'error');
+  }
+
+  // Narrow the Invoice Course Line datalist to only show lines from this invoice
+  const dl = document.getElementById('dl-InvoiceLineCourse');
+  if(dl){
+    dl.innerHTML = lines.map(l=>{
+      const label = `${l.CourseName||'?'} (${l.Title||'?'} ×${l.Quantity||0})`;
+      return `<option data-id="${l.id}" value="${label.replace(/"/g,'&quot;')}"></option>`;
+    }).join('');
   }
 }
 
