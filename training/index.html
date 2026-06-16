@@ -3335,10 +3335,62 @@ async function saveModal(){
 // ============================================================
 // DELETE
 // ============================================================
-function confirmDelete(entity, id, name){
+// Returns a list of {label, count} dependents that must be removed before
+// this record can be safely deleted, or an empty array if none exist.
+function getDependents(entity, record){
+  const deps = [];
+  if(entity==='invoices'){
+    const invNum = (record.InvoiceNumber||record.Title||'').trim().toLowerCase();
+    const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+    if(lines.length) deps.push({label:'invoice line item', count:lines.length});
+    const atts = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
+    if(atts.length) deps.push({label:'linked attendee', count:atts.length});
+    const pays = (cache.payments||[]).filter(p=>(p.RemittanceRef||'').trim().toLowerCase()===invNum);
+    if(pays.length) deps.push({label:'recorded payment', count:pays.length});
+  } else if(entity==='quotes'){
+    const quoteNum = (record.Title||'').trim().toLowerCase();
+    const lines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===quoteNum);
+    if(lines.length) deps.push({label:'quote line item', count:lines.length});
+    const invs = (cache.invoices||[]).filter(i=>(i.QuoteRef||'').trim().toLowerCase()===quoteNum);
+    if(invs.length) deps.push({label:'invoice referencing this quote', count:invs.length});
+  }
+  return deps;
+}
+
+async function confirmDelete(entity, id, name){
+  // For Invoices and Quotes, block deletion if other records still depend on
+  // this one - orphaned line items, attendees, payments, or quote references
+  // would otherwise silently lose their connection with no way to notice.
+  if(entity==='invoices' || entity==='quotes'){
+    // Make sure the relevant caches are loaded so the dependent check is accurate
+    if(entity==='invoices' && !cache.invoicelines){ try{ cache.invoicelines = await getItems('invoicelines','$top=999'); }catch(e){} }
+    if(entity==='quotes' && !cache.quotelines){ try{ cache.quotelines = await getItems('quotelines','$top=999'); }catch(e){} }
+    if(!cache.attendees){ try{ cache.attendees = await getItems('attendees','$top=500'); }catch(e){} }
+    if(!cache.payments){ try{ cache.payments = await getItems('payments','$top=500'); }catch(e){} }
+    if(!cache.invoices){ try{ cache.invoices = await getItems('invoices','$top=500'); }catch(e){} }
+
+    const record = (cache[entity]||[]).find(r=>String(r.id)===String(id));
+    if(record){
+      const deps = getDependents(entity, record);
+      if(deps.length){
+        const entityLabel = entity==='invoices' ? 'invoice' : 'quote';
+        document.getElementById('confirm-title').textContent = `Cannot delete "${name}"`;
+        document.getElementById('confirm-msg').innerHTML =
+          `This ${entityLabel} still has ${deps.map(d=>`<strong>${d.count} ${d.label}${d.count>1?'s':''}</strong>`).join(' and ')} attached. ` +
+          `Please delete ${deps.length>1?'these':'this'} first, then try again.`;
+        const btn = document.getElementById('confirm-ok-btn');
+        btn.style.display = 'none'; // no delete option while dependents exist
+        document.getElementById('confirm-modal').classList.add('open');
+        return;
+      }
+    }
+  }
+
+  // No dependents (or not an entity we check) - proceed with the normal confirm flow
   document.getElementById('confirm-title').textContent = `Delete "${name}"?`;
-  document.getElementById('confirm-msg').textContent = 'This will permanently remove the record from SharePoint. This cannot be undone.';
+  document.getElementById('confirm-msg').innerHTML = 'This will permanently remove the record from SharePoint. This cannot be undone.';
   const btn = document.getElementById('confirm-ok-btn');
+  btn.style.display = '';
   btn.onclick = async()=>{
     btn.disabled=true;
     btn.innerHTML='<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>';
