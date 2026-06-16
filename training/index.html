@@ -292,7 +292,7 @@ select:focus{border-color:var(--teal)}
             <div class="card-body" style="padding:0 18px" id="dash-recent"><div class="loading"><div class="spinner"></div></div></div>
           </div>
           <div class="card" style="margin:0">
-            <div class="card-header"><h2>⚠ Unfilled Seats</h2><span style="font-size:11px;color:var(--g500)">Invoiced but no attendee named</span></div>
+            <div class="card-header"><h2>⚠ Unused Seats</h2><span style="font-size:11px;color:var(--g500)">Invoiced but no attendee named</span></div>
             <div class="card-body" style="padding:0 18px 12px" id="dash-unfilled"><div class="loading"><div class="spinner"></div></div></div>
           </div>
         </div>
@@ -1237,7 +1237,7 @@ function buildUnfilledSeats(invs, invLines, atts){
       <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Organisation</th>
       <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Course</th>
       <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Filled</th>
-      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Unfilled</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Unused</th>
     </tr></thead>
     <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
       <td style="padding:5px 8px;font-weight:600">${r.invNum}</td>
