@@ -2794,15 +2794,25 @@ async function openFormModal(entity, data){
             if(il) courseName = (il.CourseName||'').trim().toLowerCase();
           }
         }
+        // Determine which run (if any) is already saved on this record, so we
+        // never filter it out of the options - even if it has since completed.
+        const savedDate = (data?.RunStartDate||'').substring(0,10);
         if(courseName){
           opts = opts.filter(r=>{
             const rDate=(r.StartDate||'').substring(0,10);
             const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
-            return cName===courseName && runStatus(r)!=='Completed';
+            const isMatch = cName===courseName;
+            const isCurrentlySaved = isMatch && savedDate && rDate===savedDate;
+            return isMatch && (isCurrentlySaved || runStatus(r)!=='Completed');
           });
         } else {
-          // No course context yet - still hide completed runs across the board
-          opts = opts.filter(r=>runStatus(r)!=='Completed');
+          // No course context yet - still hide completed runs across the board,
+          // unless this is the run already saved on the record being edited
+          opts = opts.filter(r=>{
+            const rDate=(r.StartDate||'').substring(0,10);
+            const isCurrentlySaved = savedDate && rDate===savedDate;
+            return isCurrentlySaved || runStatus(r)!=='Completed';
+          });
         }
       }
       // Build a display label for each option; runs need a synthetic "Course - Date" label
