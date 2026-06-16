@@ -1172,12 +1172,23 @@ function buildRecentActivity(atts){
 function invoiceLineSeatStatus(line){
   // line: a CG_InvoiceLines record. Returns {qty, filled, unfilled} counting
   // CG_Attendees rows whose InvoiceRef+InvoiceLineCourse match this exact line.
+  // Falls back to matching by CourseTitle if InvoiceLineCourse wasn't saved
+  // (e.g. attendees added before that field existed, or via the looser
+  // course-name-only fallback used when pre-selecting the form).
   const invNum = (line.Title||'').trim().toLowerCase();
   const courseName = (line.CourseName||'').trim().toLowerCase();
-  const filled = (cache.attendees||[]).filter(a=>
-    (a.InvoiceRef||'').trim().toLowerCase()===invNum &&
-    (a.InvoiceLineCourse||'').trim().toLowerCase()===courseName
-  ).length;
+  const filled = (cache.attendees||[]).filter(a=>{
+    const aInv = (a.InvoiceRef||'').trim().toLowerCase();
+    if(aInv !== invNum) return false;
+    const aLineCourse = (a.InvoiceLineCourse||'').trim().toLowerCase();
+    if(aLineCourse === courseName) return true;
+    // Fallback: same invoice, no InvoiceLineCourse saved, but CourseTitle matches
+    if(!aLineCourse){
+      const aCourseTitle = (a.CourseTitle||'').trim().toLowerCase();
+      if(aCourseTitle === courseName) return true;
+    }
+    return false;
+  }).length;
   const qty = +line.Quantity||0;
   return {qty, filled, unfilled: Math.max(0, qty-filled)};
 }
