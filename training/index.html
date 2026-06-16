@@ -1799,7 +1799,56 @@ function renderQuoteLines(){
 
 // Sync the in-memory quoteLines array to CG_QuoteLines for the given quote number.
 // Creates new lines, updates changed lines, deletes removed lines.
-async function saveQuoteLines(quoteNumber){
+function renderQuoteAttendees(data){
+  const container = document.getElementById('quote-attendees-container');
+  if(!container) return;
+  const quoteNum = (data?.Title||'').trim().toLowerCase();
+  // Find attendees via invoices that link to this quote
+  let linked = [];
+  if(quoteNum){
+    const relatedInvNums = new Set(
+      (cache.invoices||[])
+        .filter(i=>(i.QuoteRef||'').trim().toLowerCase()===quoteNum)
+        .map(i=>(i.InvoiceNumber||i.Title||'').trim().toLowerCase())
+    );
+    linked = (cache.attendees||[]).filter(a=>
+      relatedInvNums.has((a.InvoiceRef||'').trim().toLowerCase())
+    );
+  }
+  container.innerHTML = `
+    <div style="margin-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
+        Linked Attendees (${linked.length})
+      </label>
+      ${linked.length ? `
+        <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="background:var(--g100)">
+              <th style="text-align:left;padding:6px 8px">Name</th>
+              <th style="text-align:left;padding:6px 8px">Course</th>
+              <th style="text-align:left;padding:6px 8px">Invoice</th>
+              <th style="text-align:left;padding:6px 8px">Status</th>
+            </tr></thead>
+            <tbody>
+              ${linked.map(a=>`<tr style="border-top:1px solid var(--g100)">
+                <td style="padding:5px 8px;font-weight:600">${a.FullName||a.Title||'—'}</td>
+                <td style="padding:5px 8px;color:var(--g500)">${a.InvoiceLineCourse||a.CourseTitle||'—'}</td>
+                <td style="padding:5px 8px;color:var(--g500)">${a.InvoiceRef||'—'}</td>
+                <td style="padding:5px 8px">${statusBadge(a.AttendanceStatus||'Registered')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` :
+        `<div style="margin-top:6px;font-size:12px;color:var(--g500);padding:8px 0">
+          ${quoteNum
+            ? 'No attendees linked yet. Attendees are linked via Invoices that reference this quote.'
+            : 'Save this quote first, then create an Invoice referencing it to link attendees.'}
+        </div>`
+      }
+    </div>`;
+}
+
+async function saveQuoteLines(quoteNumber, createdItem=null){
   const currentSpIds = new Set(quoteLines.filter(l=>l.spId).map(l=>l.spId));
   // Delete lines that were removed from the form
   for(const oldId of quoteLinesOriginalIds){
@@ -1807,9 +1856,11 @@ async function saveQuoteLines(quoteNumber){
       try{ await deleteItem('quotelines', oldId); }catch(e){ console.warn('Failed to delete quote line',oldId,e); }
     }
   }
+  // Compute rollup totals
+  const totals = quoteLinesTotal();
   // Create or update remaining lines
   for(const l of quoteLines){
-    if(!l.CourseName) continue; // skip empty rows
+    if(!l.CourseName) continue;
     const fields = {
       Title: quoteNumber,
       CourseName: l.CourseName,
@@ -1823,6 +1874,16 @@ async function saveQuoteLines(quoteNumber){
     } else {
       await saveWithFieldFallback(false, 'quotelines', null, fields);
     }
+  }
+  // Write rollup totals back to the Quote header
+  const quoteId = editingId || createdItem?.id ||
+    (cache.quotes||[]).find(q=>(q.Title||'').trim().toLowerCase()===quoteNumber.trim().toLowerCase())?.id;
+  if(quoteId){
+    await saveWithFieldFallback(true, 'quotes', quoteId, {
+      FeeExGST: totals.fee,
+      GSTAmount: totals.gst,
+      TotalAmount: totals.total,
+    });
   }
   // Refresh the quotelines cache so totals reflect the new state
   try{ cache.quotelines = await getItems('quotelines','$top=999'); }catch(e){}
@@ -2480,7 +2541,7 @@ const FORM_DEFS = {
     fields: [
       {key:'QuoteNumber',label:'Quote Number',type:'text',required:true,fallbackKey:'Title',full:true},
       {key:'QuoteDate',label:'Quote Date',type:'date'},
-      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'AttendeeRef',label:'Attendee (if known)',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
       {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
       {key:'QuoteLink',label:'Quote Link / File Ref',type:'text',full:true},
@@ -2756,6 +2817,7 @@ async function openFormModal(entity, data){
   // Quotes: add a placeholder container for the line items editor
   if(entity==='quotes'){
     html += '<div id="quote-lines-container"></div>';
+    html += '<div id="quote-attendees-container"></div>';
   }
 
   // Invoices: add a placeholder container for the line items editor
@@ -2769,6 +2831,7 @@ async function openFormModal(entity, data){
   // Quotes: render the line items editor below the header fields
   if(entity==='quotes'){
     await initQuoteLines(data);
+    renderQuoteAttendees(data);
   }
 
   // Invoices: render the line items editor below the header fields
@@ -2907,7 +2970,7 @@ async function saveModal(){
     }
     // Quotes: sync line items to CG_QuoteLines after saving the header
     if(editingEntity==='quotes'){
-      await saveQuoteLines(fields.Title);
+      await saveQuoteLines(fields.Title, createdItem);
     }
     // Invoices: sync line items to CG_InvoiceLines after saving the header
     if(editingEntity==='invoices'){
