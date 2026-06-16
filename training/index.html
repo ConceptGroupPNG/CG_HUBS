@@ -2504,9 +2504,9 @@ const FORM_DEFS = {
       {key:'JobTitle',label:'Job Title',type:'text'},
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
-      {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
       {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true},
+      {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
@@ -2832,9 +2832,14 @@ async function openFormModal(entity, data){
           const cur=(data.InvoiceLineCourse||'').trim().toLowerCase();
           const invRef=(data.InvoiceRef||'').trim().toLowerCase();
           if(cur){
-            // Filter invoice lines to those matching the selected invoice first
-            const match=opts.find(o=>(o.Title||'').trim().toLowerCase()===invRef &&
+            // Prefer a match scoped to the linked invoice (most precise)
+            let match=opts.find(o=>(o.Title||'').trim().toLowerCase()===invRef &&
               (o.CourseName||'').trim().toLowerCase()===cur);
+            // Fallback: match by course name alone if the invoice-scoped match
+            // fails (e.g. InvoiceRef wasn't saved, or text drifted slightly)
+            if(!match){
+              match=opts.find(o=>(o.CourseName||'').trim().toLowerCase()===cur);
+            }
             if(match) selectedId = match.id;
           }
         }
