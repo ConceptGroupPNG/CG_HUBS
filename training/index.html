@@ -1634,7 +1634,7 @@ function renderAttendees(items){
     const org = (cache.organisations||[]).find(o=>o.id==(a.OrgOIDId||a.OrgIDId||a.OrgOID));
     const run = (cache.runs||[]).find(r=>r.id==(a.CourseRunIDId||a.CourseRunID));
     const orgDisplay = a.OrgName || a.JobTitle || org?.OrgName || org?.Title || '—';
-    const runDisplay = a.CourseTitle || run?.CourseID || run?.Title || '—';
+    const runDisplay = a.CourseTitle || a.InvoiceLineCourse || run?.CourseID || run?.Title || '—';
     // Count how many total course rows exist for this same person, to surface
     // when someone has multiple enrolments across different courses/invoices
     const sameName=(a.FullName||a.Title||'').trim().toLowerCase();
@@ -2529,6 +2529,14 @@ const FORM_DEFS = {
           out.CourseTitle = (run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
           out.RunStartDate = rDate;
         }
+      } else if(f.InvoiceLineCourse){
+        // No Course Run selected directly, but an Invoice Course Line was -
+        // use its course name so CourseTitle is still populated for display/reporting
+        const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(f.InvoiceLineCourse));
+        if(il){
+          out.CourseTitle = il.CourseName||'';
+          if(il.RunStartDate) out.RunStartDate = il.RunStartDate;
+        }
       }
       // Resolve invoice lookup -> store invoice number text
       if(f.InvoiceRef){
@@ -2684,7 +2692,12 @@ function resolveSearchableLookup(key, entity, display){
     return o[display]||o.Title||o.id;
   };
   const match = opts.find(o=>getLabel(o)===typed);
-  hiddenEl.value = match ? match.id : '';
+  if(match){
+    hiddenEl.value = match.id;
+  } else if(typed===''){
+    hiddenEl.value = ''; // explicitly cleared by user
+  }
+  // else: no exact match yet (user still typing) - leave hidden value as-is
 }
 
 function editRow(entity, id){
@@ -3060,6 +3073,12 @@ async function saveModal(){
 
   const missing = [];
   def.fields.forEach(f=>{
+    // For searchable lookups, re-resolve the hidden ID field from the visible
+    // search text right before reading it, as a safety net in case oninput
+    // didn't fire (e.g. value was set programmatically) or got out of sync.
+    if(f.searchable){
+      resolveSearchableLookup(f.key, f.entity, f.display);
+    }
     const el = document.getElementById('mf-'+f.key);
     if(el){
       if(f.required && !el.value){
