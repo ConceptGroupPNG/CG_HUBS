@@ -881,6 +881,22 @@ function fmtDate(s){
   if(!s) return '—';
   try{return new Date(s).toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}
 }
+function ordinal(n){
+  const s=['th','st','nd','rd'], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+function fmtDateLong(s){
+  if(!s) return '';
+  try{
+    const parts = String(s).substring(0,10).split('-');
+    if(parts.length!==3) return s;
+    const d = new Date(+parts[0], +parts[1]-1, +parts[2]);
+    if(isNaN(d)) return s;
+    const weekday = d.toLocaleDateString('en-AU',{weekday:'short'});
+    const month = d.toLocaleDateString('en-AU',{month:'long'});
+    return `${weekday} ${ordinal(d.getDate())} ${month} ${d.getFullYear()}`;
+  }catch{return s;}
+}
 function initials(n){
   if(!n) return '?';
   return n.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
@@ -2730,7 +2746,7 @@ function resolveSearchableLookup(key, entity, display){
       return `${cName} — ${rDate}`;
     }
     if(display==='DateOnly'){
-      return (o.StartDate||'').substring(0,10);
+      return fmtDateLong(o.StartDate);
     }
     if(display==='TrainerName') return o.FullName||o.Title||o.id;
     if(display==='CourseName') return o.CourseName||o.Title||o.id;
@@ -2823,7 +2839,7 @@ async function openFormModal(entity, data){
           return `${cName} — ${rDate}`;
         }
         if(f.display==='DateOnly'){
-          return (o.StartDate||'').substring(0,10);
+          return fmtDateLong(o.StartDate);
         }
         if(f.display==='TrainerName') return o.FullName||o.Title||o.id;
         if(f.display==='CourseName') return o.CourseName||o.Title||o.id;
@@ -3131,7 +3147,7 @@ function refreshCourseDateOptions(){
   }
   runs.sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
 
-  const getRunLabel = (r) => (r.StartDate||'').substring(0,10);
+  const getRunLabel = (r) => fmtDateLong(r.StartDate);
 
   dl.innerHTML = runs.map(r=>`<option data-id="${r.id}" value="${getRunLabel(r).replace(/"/g,'&quot;')}"></option>`).join('');
 
