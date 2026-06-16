@@ -2529,8 +2529,8 @@ const FORM_DEFS = {
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
-      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,showSeatBadge:true,onchange:'refreshCourseDateOptions()'},
-      {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
+      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions();updateSeatBadge(\'RunRef\',\'InvoiceLineCourse\')'},
+      {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse'},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
@@ -2729,6 +2729,9 @@ function resolveSearchableLookup(key, entity, display){
       const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
       return `${cName} — ${rDate}`;
     }
+    if(display==='DateOnly'){
+      return (o.StartDate||'').substring(0,10);
+    }
     if(display==='TrainerName') return o.FullName||o.Title||o.id;
     if(display==='CourseName') return o.CourseName||o.Title||o.id;
     if(display==='VenueName') return o.Title ? `${o.Title}${o.Capacity?` (cap. ${o.Capacity})`:''}` : o.id;
@@ -2759,6 +2762,7 @@ function printRosterById(id){
 async function openFormModal(entity, data){
   editingId = data?.id || null;
   editingEntity = entity;
+  _lastCourseDateFilterCourse = null; // reset guard so the new form's initial filter always applies
   const def = FORM_DEFS[entity];
   // Preload any lookup entities not yet cached
   for(const f of def.fields){
@@ -2807,6 +2811,9 @@ async function openFormModal(entity, data){
           const rDate=(o.StartDate||'').substring(0,10);
           const cName=(o.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
           return `${cName} — ${rDate}`;
+        }
+        if(f.display==='DateOnly'){
+          return (o.StartDate||'').substring(0,10);
         }
         if(f.display==='TrainerName') return o.FullName||o.Title||o.id;
         if(f.display==='CourseName') return o.CourseName||o.Title||o.id;
@@ -2913,7 +2920,7 @@ async function openFormModal(entity, data){
         }
       }
       // Sort run options by start date for easier browsing
-      if(f.display==='RunLabel'){
+      if(f.display==='RunLabel' || f.display==='DateOnly'){
         opts = [...opts].sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
       }
       const selectedOpt = opts.find(o=>String(o.id)===String(selectedId));
@@ -2926,7 +2933,7 @@ async function openFormModal(entity, data){
           <input type="text" id="mf-${f.key}-search" list="${listId}"
             placeholder="Type to search..."
             value="${selectedOpt ? getLabel(selectedOpt).replace(/"/g,'&quot;') : ''}"
-            oninput="resolveSearchableLookup('${f.key}','${f.entity}','${f.display}')${f.showSeatBadge?`;updateSeatBadge('${f.key}')`:''}"
+            oninput="resolveSearchableLookup('${f.key}','${f.entity}','${f.display}')${f.showSeatBadge?`;updateSeatBadge('${f.key}'${f.seatBadgeFrom?`,'${f.seatBadgeFrom}'`:''})`:''}${f.onchange?`;${f.onchange}`:''}"
             ${f.onchange?`onchange="${f.onchange}"`:''}>
           <datalist id="${listId}">
             ${opts.map(o=>`<option data-id="${o.id}" value="${getLabel(o).replace(/"/g,'&quot;')}"></option>`).join('')}
@@ -2989,7 +2996,7 @@ async function openFormModal(entity, data){
 
   // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected
   if(entity==='attendees'){
-    updateSeatBadge('InvoiceLineCourse');
+    updateSeatBadge('RunRef','InvoiceLineCourse');
   }
 
   document.getElementById('entity-modal').classList.add('open');
@@ -3040,14 +3047,15 @@ async function onQuoteRefChange(){
   }
 }
 
-function updateSeatBadge(key){
+function updateSeatBadge(key, sourceKey){
+  sourceKey = sourceKey || key;
   const badge = document.getElementById('seat-badge-'+key);
   if(!badge) return;
-  let lineId = document.getElementById('mf-'+key)?.value;
+  let lineId = document.getElementById('mf-'+sourceKey)?.value;
   if(!lineId){
     // Recovery: hidden field empty but the visible search text may still show
     // a valid course - try to resolve it directly before giving up
-    const searchBox = document.getElementById('mf-'+key+'-search');
+    const searchBox = document.getElementById('mf-'+sourceKey+'-search');
     const typed = (searchBox?.value||'').trim();
     if(typed){
       const recovered = (cache.invoicelines||[]).find(l=>{
@@ -3080,6 +3088,8 @@ function updateSeatBadge(key){
   }
 }
 
+let _lastCourseDateFilterCourse = null;
+
 function refreshCourseDateOptions(){
   const ilId = document.getElementById('mf-InvoiceLineCourse')?.value;
   const dl = document.getElementById('dl-RunRef');
@@ -3093,6 +3103,12 @@ function refreshCourseDateOptions(){
     if(il) courseName = (il.CourseName||'').trim().toLowerCase();
   }
 
+  // Skip re-filtering (and clearing the current selection) if the resolved
+  // course hasn't actually changed since the last call - oninput fires on
+  // every keystroke, but the course only changes once a real match is made.
+  if(courseName === _lastCourseDateFilterCourse) return;
+  _lastCourseDateFilterCourse = courseName;
+
   let runs = cache.runs||[];
   if(courseName){
     runs = runs.filter(r=>{
@@ -3105,11 +3121,7 @@ function refreshCourseDateOptions(){
   }
   runs.sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
 
-  const getRunLabel = (r) => {
-    const rDate=(r.StartDate||'').substring(0,10);
-    const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
-    return `${cName} — ${rDate}`;
-  };
+  const getRunLabel = (r) => (r.StartDate||'').substring(0,10);
 
   dl.innerHTML = runs.map(r=>`<option data-id="${r.id}" value="${getRunLabel(r).replace(/"/g,'&quot;')}"></option>`).join('');
 
@@ -3158,7 +3170,7 @@ async function onAttendeeInvoiceChange(){
     if(lineEl){ lineEl.value = lines[0].id; }
     if(lineSearch){ lineSearch.value = `${lines[0].CourseName||'?'} (${lines[0].Title||'?'} ×${lines[0].Quantity||0})`; }
     refreshCourseDateOptions();
-    updateSeatBadge('InvoiceLineCourse');
+    updateSeatBadge('RunRef','InvoiceLineCourse');
     toast('Course pre-filled from invoice');
   } else if(lines.length>1){
     toast(`This invoice has ${lines.length} course lines — please select the Invoice Course Line manually`, 'error');
