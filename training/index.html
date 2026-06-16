@@ -1212,6 +1212,7 @@ function invoiceLineSeatStatus(line){
 function buildUnfilledSeats(invs, invLines, atts){
   const el = document.getElementById('dash-unfilled');
   if(!el) return;
+  const today = new Date(); today.setHours(0,0,0,0);
   // Build a flat list of invoice lines with their fulfillment status
   const rows = [];
   invLines.forEach(l=>{
@@ -1222,11 +1223,43 @@ function buildUnfilledSeats(invs, invLines, atts){
     const filledSeats = atts.filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum &&
       (a.InvoiceLineCourse||'').trim().toLowerCase()===(l.CourseName||'').trim().toLowerCase()).length;
     const unfilled = Math.max(0, (+l.Quantity||0) - filledSeats);
-    if(unfilled > 0){
-      rows.push({invNum:inv.InvoiceNumber||inv.Title||'', org:inv.OrgName||'—',
-        course:l.CourseName, qty:+l.Quantity, filled:filledSeats, unfilled});
+    if(unfilled <= 0) return;
+
+    // Resolve a course date for this line: prefer the line's own RunStartDate,
+    // otherwise fall back to the nearest upcoming Course Run for this course name.
+    let runDate = (l.RunStartDate||'').substring(0,10);
+    if(!runDate){
+      const cName=(l.CourseName||'').trim().toLowerCase();
+      const matchingRuns = (cache.runs||[]).filter(r=>{
+        const rDate=(r.StartDate||'').substring(0,10);
+        const rcName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+        return rcName===cName;
+      }).sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+      const upcoming = matchingRuns.find(r=>{
+        const d=new Date((r.StartDate||'').substring(0,10));
+        return !isNaN(d) && d>=today;
+      });
+      if(upcoming) runDate = (upcoming.StartDate||'').substring(0,10);
     }
+
+    // Only show lines whose course date is in the future (or unknown - still
+    // worth flagging since there's no date to judge by, but it's rare).
+    const dateObj = runDate ? new Date(runDate) : null;
+    const isFuture = !dateObj || isNaN(dateObj) || dateObj>=today;
+    if(!isFuture) return;
+
+    rows.push({invNum:inv.InvoiceNumber||inv.Title||'', org:inv.OrgName||'—',
+      course:l.CourseName, qty:+l.Quantity, filled:filledSeats, unfilled, runDate});
   });
+
+  // Sort by course date ascending; lines with no known date go last
+  rows.sort((a,b)=>{
+    if(!a.runDate && !b.runDate) return 0;
+    if(!a.runDate) return 1;
+    if(!b.runDate) return -1;
+    return a.runDate.localeCompare(b.runDate);
+  });
+
   if(!rows.length){
     el.innerHTML='<div style="color:var(--g500);font-size:13px;padding:8px 0"><i class="ti ti-check" style="color:var(--teal)"></i> All invoiced seats are filled</div>';
     return;
@@ -1236,6 +1269,7 @@ function buildUnfilledSeats(invs, invLines, atts){
       <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Invoice</th>
       <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Organisation</th>
       <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Course</th>
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Course Date</th>
       <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Filled</th>
       <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Unfilled</th>
     </tr></thead>
@@ -1243,6 +1277,7 @@ function buildUnfilledSeats(invs, invLines, atts){
       <td style="padding:5px 8px;font-weight:600">${r.invNum}</td>
       <td style="padding:5px 8px">${r.org}</td>
       <td style="padding:5px 8px">${r.course}</td>
+      <td style="padding:5px 8px;white-space:nowrap">${r.runDate?fmtDate(r.runDate):'—'}</td>
       <td style="padding:5px 8px;text-align:right;color:var(--teal)">${r.filled}/${r.qty}</td>
       <td style="padding:5px 8px;text-align:right"><span style="background:var(--amber);color:#fff;border-radius:12px;padding:2px 8px;font-weight:700">${r.unfilled}</span></td>
     </tr>`).join('')}</tbody>
@@ -2542,6 +2577,7 @@ const FORM_DEFS = {
     fields: [
       {key:'FullName',label:'Full Name',type:'text',required:true,full:true},
       {key:'JobTitle',label:'Job Title',type:'text'},
+      {key:'Email',label:'Email',type:'email'},
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
@@ -2552,7 +2588,7 @@ const FORM_DEFS = {
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
     ],
     toFields: (f)=>{
-      const out = {FullName:f.FullName,JobTitle:f.JobTitle,Mobile:f.Mobile,
+      const out = {FullName:f.FullName,JobTitle:f.JobTitle,Email:f.Email,Mobile:f.Mobile,
         Section65A:f.Section65A==='true'||f.Section65A===true,
         CertificateNumber:f.CertificateNumber,
         AttendanceStatus:f.AttendanceStatus||'Registered',Title:f.FullName};
