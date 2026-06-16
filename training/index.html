@@ -2505,7 +2505,7 @@ const FORM_DEFS = {
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
-      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true},
+      {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions()'},
       {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'RunLabel',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
@@ -2733,6 +2733,30 @@ async function openFormModal(entity, data){
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
       let opts = (cache[f.entity]||[]);
+      // For the Attendees form's Course Date field, narrow the run list down to
+      // only runs of the same course (from the linked Invoice Course Line, or
+      // the existing CourseTitle on edit) that haven't already completed.
+      if(f.key==='RunRef' && f.entity==='runs' && editingEntity==='attendees'){
+        let courseName = (data?.InvoiceLineCourse||data?.CourseTitle||'').trim().toLowerCase();
+        if(!courseName){
+          // Fall back to whatever Invoice Course Line is currently selected in the form
+          const ilId = document.getElementById('mf-InvoiceLineCourse')?.value;
+          if(ilId){
+            const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(ilId));
+            if(il) courseName = (il.CourseName||'').trim().toLowerCase();
+          }
+        }
+        if(courseName){
+          opts = opts.filter(r=>{
+            const rDate=(r.StartDate||'').substring(0,10);
+            const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+            return cName===courseName && runStatus(r)!=='Completed';
+          });
+        } else {
+          // No course context yet - still hide completed runs across the board
+          opts = opts.filter(r=>runStatus(r)!=='Completed');
+        }
+      }
       // Build a display label for each option; runs need a synthetic "Course - Date" label
       const getLabel = (o) => {
         if(f.display==='RunLabel'){
@@ -2966,6 +2990,53 @@ async function onQuoteRefChange(){
   }
 }
 
+function refreshCourseDateOptions(){
+  const ilId = document.getElementById('mf-InvoiceLineCourse')?.value;
+  const dl = document.getElementById('dl-RunRef');
+  const searchEl = document.getElementById('mf-RunRef-search');
+  const hiddenEl = document.getElementById('mf-RunRef');
+  if(!dl) return;
+
+  let courseName = '';
+  if(ilId){
+    const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(ilId));
+    if(il) courseName = (il.CourseName||'').trim().toLowerCase();
+  }
+
+  let runs = cache.runs||[];
+  if(courseName){
+    runs = runs.filter(r=>{
+      const rDate=(r.StartDate||'').substring(0,10);
+      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+      return cName===courseName && runStatus(r)!=='Completed';
+    });
+  } else {
+    runs = runs.filter(r=>runStatus(r)!=='Completed');
+  }
+  runs.sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+
+  const getRunLabel = (r) => {
+    const rDate=(r.StartDate||'').substring(0,10);
+    const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+    return `${cName} — ${rDate}`;
+  };
+
+  dl.innerHTML = runs.map(r=>`<option data-id="${r.id}" value="${getRunLabel(r).replace(/"/g,'&quot;')}"></option>`).join('');
+
+  // Clear the current Course Date selection since the available options changed -
+  // the previously selected run may no longer match the new course
+  if(searchEl) searchEl.value = '';
+  if(hiddenEl) hiddenEl.value = '';
+
+  if(courseName && runs.length===0){
+    toast('No upcoming or active runs found for this course yet','error');
+  } else if(courseName && runs.length===1){
+    // Auto-select the only available date
+    if(searchEl) searchEl.value = getRunLabel(runs[0]);
+    if(hiddenEl) hiddenEl.value = runs[0].id;
+  }
+}
+
 async function onAttendeeInvoiceChange(){
   const invId = document.getElementById('mf-InvoiceRef')?.value;
   if(!invId) return;
@@ -2996,25 +3067,7 @@ async function onAttendeeInvoiceChange(){
     const lineSearch = document.getElementById('mf-InvoiceLineCourse-search');
     if(lineEl){ lineEl.value = lines[0].id; }
     if(lineSearch){ lineSearch.value = `${lines[0].CourseName||'?'} (${lines[0].Title||'?'} ×${lines[0].Quantity||0})`; }
-
-    // Also try to pre-select the matching Course Run, if one exists with the same course+date
-    const courseName=(lines[0].CourseName||'').trim().toLowerCase();
-    const runDate=(lines[0].RunStartDate||'').substring(0,10);
-    const run = (cache.runs||[]).find(r=>{
-      const rDate=(r.StartDate||'').substring(0,10);
-      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
-      return cName===courseName && (!runDate || rDate===runDate);
-    });
-    if(run){
-      const runEl=document.getElementById('mf-RunRef');
-      const runSearch=document.getElementById('mf-RunRef-search');
-      if(runEl) runEl.value = run.id;
-      if(runSearch){
-        const rDate=(run.StartDate||'').substring(0,10);
-        const cName=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
-        runSearch.value = `${cName} — ${rDate}`;
-      }
-    }
+    refreshCourseDateOptions();
     toast('Course pre-filled from invoice');
   } else if(lines.length>1){
     toast(`This invoice has ${lines.length} course lines — please select the Invoice Course Line manually`, 'error');
