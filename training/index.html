@@ -3446,6 +3446,9 @@ function printDashboard(){
   // Attendance bars HTML (clone current content)
   const attBarsHTML = document.getElementById('dash-att-bars')?.innerHTML || '';
 
+  // Unused Seats widget HTML (clone current content)
+  const unfilledHTML = document.getElementById('dash-unfilled')?.innerHTML || '';
+
   // Recent registrations - extract name, org, status from .att-card rows
   const recentEl = document.getElementById('dash-recent');
   let recentRows = '';
@@ -3538,6 +3541,11 @@ function printDashboard(){
       <h2>Recent Registrations</h2>
       ${recentRows||'<p style="color:#999;font-size:12px">No data</p>'}
     </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:24px">
+    <h2>⚠ Unused Seats</h2>
+    ${unfilledHTML||'<p style="color:#999;font-size:12px">No data</p>'}
   </div>
 
   <p style="margin-top:10px;font-size:11px;color:#999">Printed: ${today}</p>
