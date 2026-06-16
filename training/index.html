@@ -1052,32 +1052,38 @@ async function loadDashboard(){
 }
 
 function buildDashCharts(atts, invs, pays){
-  // Group revenue by course category via attendee->course lookup
+  // Build a case-insensitive course name → category lookup
+  const courseCatMap = {};
+  (cache.courses||[]).forEach(c=>{
+    const name=(c.CourseName||c.Title||'').toLowerCase().trim();
+    if(name) courseCatMap[name] = c.Category||'Uncategorised';
+  });
+
+  // Group revenue by course category using invoice line items (preferred)
+  // falling back to the old attendee→course lookup for invoices without lines
   const revCats = {};
   invs.forEach(i=>{
-    // Find attendee for this invoice by AttendeeName (exact or partial match)
-    const iName=(i.AttendeeName||'').trim().toLowerCase();
-    const att = iName ? (cache.attendees||[]).find(a=>
-      (a.FullName||a.Title||'').trim().toLowerCase()===iName
-    ) : null;
-    const courseTitle = (att?.CourseTitle||'').toLowerCase().trim();
-    // Find course category by matching course name to CourseTitle
-    let cat = 'Other';
-    if(courseTitle){
-      // Sort courses by name length descending so longest match wins
-      const sorted = [...(cache.courses||[])].sort((a,b)=>
-        (b.CourseName||b.Title||'').length-(a.CourseName||a.Title||'').length);
-      const course = sorted.find(c=>{
-        const cn=(c.CourseName||c.Title||'').toLowerCase().trim();
-        return cn && courseTitle===cn;
+    const invNum = (i.InvoiceNumber||i.Title||'').trim().toLowerCase();
+    const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+    if(lines.length){
+      // Use line items — each line contributes its LineTotal to the matching category
+      lines.forEach(l=>{
+        const cname=(l.CourseName||'').toLowerCase().trim();
+        const cat = (cname && courseCatMap[cname]) || 'Uncategorised';
+        revCats[cat]=(revCats[cat]||0)+(+l.LineTotal||0);
       });
-      cat = course?.Category || 'Other';
+    } else {
+      // Legacy fallback: derive from attendee's course
+      const iName=(i.AttendeeName||'').trim().toLowerCase();
+      const att = iName ? atts.find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===iName) : null;
+      const cname=(att?.CourseTitle||'').toLowerCase().trim();
+      const cat = (cname && courseCatMap[cname]) || 'Uncategorised';
+      revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
     }
-    revCats[cat]=(revCats[cat]||0)+(+i.TotalAmount||0);
   });
   const catLabels=Object.keys(revCats);
   const catData=catLabels.map(k=>revCats[k]);
-  const catColors={'Payroll':'#3b82f6','HR':'#10b981','Safety':'#f59e0b','Other':'#8b5cf6'};
+  const catColors={'Payroll':'#3b82f6','HR':'#10b981','Safety':'#f59e0b','Other':'#8b5cf6','Uncategorised':'#8b5cf6'};
   const bgColors=catLabels.map(k=>catColors[k]||'#6b7280');
 
   if(revChart) revChart.destroy();
@@ -2542,7 +2548,6 @@ const FORM_DEFS = {
       {key:'QuoteNumber',label:'Quote Number',type:'text',required:true,fallbackKey:'Title',full:true},
       {key:'QuoteDate',label:'Quote Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
-      {key:'AttendeeRef',label:'Attendee (if known)',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName'},
       {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
       {key:'QuoteLink',label:'Quote Link / File Ref',type:'text',full:true},
     ],
@@ -2554,12 +2559,6 @@ const FORM_DEFS = {
         out.OrgName = org ? (org.OrgName||org.Title||'') : '';
       } else {
         out.OrgName = '';
-      }
-      if(f.AttendeeRef){
-        const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
-        if(att) out.AttendeeName = att.FullName||att.Title||'';
-      } else {
-        out.AttendeeName = '';
       }
       // FeeExGST/GSTAmount/TotalAmount are computed as rollups from line items
       // and written separately by saveQuoteLines()
