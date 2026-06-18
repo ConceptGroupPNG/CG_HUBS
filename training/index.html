@@ -510,6 +510,7 @@ select:focus{border-color:var(--teal)}
     <div class="modal-header"><h3 id="modal-title">Add Record</h3><button class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer">
+      <button class="btn btn-outline" id="modal-print-reg-btn" onclick="printRegistrationNotice()" style="display:none;margin-right:auto"><i class="ti ti-printer"></i>Print Registration Notice</button>
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="modal-save-btn" onclick="saveModal()"><i class="ti ti-check"></i><span id="modal-save-label">Save</span></button>
     </div>
@@ -2780,6 +2781,8 @@ async function openFormModal(entity, data){
   editingId = data?.id || null;
   editingEntity = entity;
   _lastCourseDateFilterCourse = null; // reset guard so the new form's initial filter always applies
+  const printBtn = document.getElementById('modal-print-reg-btn');
+  if(printBtn) printBtn.style.display = 'none'; // reset; shown again below only if criteria are met
   const def = FORM_DEFS[entity];
   // Preload any lookup entities not yet cached
   for(const f of def.fields){
@@ -3024,6 +3027,15 @@ async function openFormModal(entity, data){
   // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected
   if(entity==='attendees'){
     updateSeatBadge('RunRef','InvoiceLineCourse');
+    updatePrintRegButtonVisibility();
+    // Re-check the print button's visibility whenever any field in the form
+    // changes, since its criteria depend on several fields together (name,
+    // invoice ref, course line, course date, status) rather than just one.
+    const modalBody = document.getElementById('modal-body');
+    if(modalBody){
+      modalBody.addEventListener('input', updatePrintRegButtonVisibility);
+      modalBody.addEventListener('change', updatePrintRegButtonVisibility);
+    }
   }
 
   document.getElementById('entity-modal').classList.add('open');
@@ -3072,6 +3084,95 @@ async function onQuoteRefChange(){
     renderInvoiceLines();
     toast('Line items pre-filled from quote '+quote.Title);
   }
+}
+
+function updatePrintRegButtonVisibility(){
+  const printBtn = document.getElementById('modal-print-reg-btn');
+  if(!printBtn || editingEntity!=='attendees') return;
+  const fullName = (document.getElementById('mf-FullName')?.value||'').trim();
+  const invoiceRef = document.getElementById('mf-InvoiceRef')?.value||'';
+  const invoiceLineCourse = document.getElementById('mf-InvoiceLineCourse')?.value||'';
+  const runRef = document.getElementById('mf-RunRef')?.value||'';
+  const status = document.getElementById('mf-AttendanceStatus')?.value||'';
+  const ready = !!fullName && !!invoiceRef && !!invoiceLineCourse && !!runRef && status==='Registered';
+  printBtn.style.display = ready ? '' : 'none';
+}
+
+function printRegistrationNotice(){
+  const fullName = (document.getElementById('mf-FullName')?.value||'').trim();
+  const jobTitle = (document.getElementById('mf-JobTitle')?.value||'').trim();
+  const orgId = document.getElementById('mf-OrgRef')?.value;
+  const org = (cache.organisations||[]).find(o=>String(o.id)===String(orgId));
+  const orgName = org ? (org.OrgName||org.Title||'') : '';
+  const invoiceId = document.getElementById('mf-InvoiceRef')?.value;
+  const inv = (cache.invoices||[]).find(i=>String(i.id)===String(invoiceId));
+  const invoiceNumber = inv ? (inv.InvoiceNumber||inv.Title||'') : '';
+  const lineId = document.getElementById('mf-InvoiceLineCourse')?.value;
+  const line = (cache.invoicelines||[]).find(l=>String(l.id)===String(lineId));
+  const courseName = line ? (line.CourseName||'') : '';
+  const runId = document.getElementById('mf-RunRef')?.value;
+  const run = (cache.runs||[]).find(r=>String(r.id)===String(runId));
+  const courseDate = run ? fmtDateLong(run.StartDate) : '';
+  const venueName = run ? (run.Venue||'') : '';
+
+  const logoSrc = document.querySelector('.sidebar-logo img')?.src || '';
+  const today = fmtDateLong(new Date().toISOString().substring(0,10));
+
+  const w = window.open('', '_blank');
+  w.document.write(`
+    <!DOCTYPE html>
+    <html><head><title>Notice of Course Registration — ${fullName}</title>
+    <style>
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
+      body{font-family:'Segoe UI',system-ui,sans-serif;color:#111827;padding:40px;max-width:760px;margin:0 auto}
+      .header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0e9f6e;padding-bottom:16px;margin-bottom:28px}
+      .header img{height:48px}
+      .header .title{text-align:right}
+      .header h1{font-size:20px;font-weight:700;color:#1a2744;margin:0}
+      .header p{font-size:12px;color:#6b7280;margin:2px 0 0}
+      .notice-title{font-size:16px;font-weight:700;text-align:center;margin-bottom:24px;text-transform:uppercase;letter-spacing:.5px;color:#1a2744}
+      table{width:100%;border-collapse:collapse;margin-bottom:28px}
+      td{padding:10px 0;border-bottom:1px solid #e5e7eb;font-size:14px}
+      td.label{color:#6b7280;font-weight:600;width:200px}
+      td.value{font-weight:600;color:#111827}
+      .footer{margin-top:50px;font-size:12px;color:#6b7280}
+      .sign-row{display:flex;gap:40px;margin-top:60px}
+      .sign-box{flex:1;border-top:1px solid #111827;padding-top:6px;font-size:12px;color:#6b7280}
+      .printed{margin-top:40px;font-size:11px;color:#999;text-align:right}
+      @media print{ body{padding:20px} }
+    </style></head>
+    <body>
+      <div class="header">
+        ${logoSrc?`<img src="${logoSrc}">`:'<div></div>'}
+        <div class="title">
+          <h1>Concept Group</h1>
+          <p>Training Management System</p>
+        </div>
+      </div>
+      <div class="notice-title">Notice of Course Registration</div>
+      <table>
+        <tr><td class="label">Attendee Name</td><td class="value">${fullName||'—'}</td></tr>
+        <tr><td class="label">Job Title</td><td class="value">${jobTitle||'—'}</td></tr>
+        <tr><td class="label">Organisation</td><td class="value">${orgName||'—'}</td></tr>
+        <tr><td class="label">Invoice Reference</td><td class="value">${invoiceNumber||'—'}</td></tr>
+        <tr><td class="label">Course</td><td class="value">${courseName||'—'}</td></tr>
+        <tr><td class="label">Course Date</td><td class="value">${courseDate||'—'}</td></tr>
+        ${venueName?`<tr><td class="label">Venue</td><td class="value">${venueName}</td></tr>`:''}
+      </table>
+      <p style="font-size:13px;color:#374151;line-height:1.6">
+        This notice confirms that the above-named individual has been registered to attend the course
+        and course date listed above. Please retain this notice for your records.
+      </p>
+      <div class="sign-row">
+        <div class="sign-box">Authorised Signature</div>
+        <div class="sign-box">Date</div>
+      </div>
+      <div class="printed">Printed: ${today}</div>
+    </body></html>
+  `);
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(), 300);
 }
 
 function updateSeatBadge(key, sourceKey){
