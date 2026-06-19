@@ -341,7 +341,7 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header"><h2 id="runs-count">Course Runs</h2></div>
           <div class="table-wrap" id="runs-table-view">
-            <table><thead><tr><th>Course</th><th>Start</th><th>End</th><th>Trainer</th><th>Venue</th><th>Capacity</th><th>Enrolled</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Course</th><th>Start</th><th>End</th><th>Duration</th><th>Trainer</th><th>Venue</th><th>Capacity</th><th>Enrolled</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="runs-tbody"></tbody></table>
           </div>
           <div id="runs-calendar-view" style="display:none;padding:18px"></div>
@@ -1619,6 +1619,13 @@ function renderRuns(items){
       <td class="td-bold" style="max-width:160px">${(r.Title||'').replace(rDate2,'').replace(/\s+/g,' ').trim()||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
       <td style="white-space:nowrap">${fmtDate(r.EndDate)}</td>
+      <td style="font-size:12px">${(()=>{
+        const s=new Date((r.StartDate||'').substring(0,10));
+        const e=new Date((r.EndDate||'').substring(0,10));
+        if(isNaN(s)||isNaN(e)) return '—';
+        const d=Math.round((e-s)/86400000)+1;
+        return d>0 ? `${d} day${d===1?'':'s'}` : '—';
+      })()}</td>
       <td>${r.Trainer||'—'}</td>
       <td style="font-size:12px">${r.Venue||'—'}</td>
       <td>${r.Capacity||7}</td>
