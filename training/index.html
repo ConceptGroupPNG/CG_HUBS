@@ -1558,7 +1558,6 @@ function renderRuns(items){
   document.getElementById('runs-count').textContent = `Course Runs (${items.length})`;
   if(!items.length){emptyState('runs-tbody','No course runs yet');return;}
   document.getElementById('runs-tbody').innerHTML = items.map(r=>{
-    const course = (cache.courses||[]).find(c=>c.id==(r.CourseIDId||r.CourseID||r.CourseLookupId));
     // Match by course name AND start date for precise per-run count
     const rDate2=(r.StartDate||'').substring(0,10);
     const rCourseName2=(r.Title||'').replace(rDate2,'').replace(/\s+/g,' ').trim().toLowerCase();
@@ -1570,7 +1569,7 @@ function renderRuns(items){
     }).length;
 
     return `<tr>
-      <td class="td-bold" style="max-width:160px">${course?.CourseName||r.CourseID||r.Title||'—'}</td>
+      <td class="td-bold" style="max-width:160px">${(r.Title||'').replace(rDate2,'').replace(/\s+/g,' ').trim()||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
       <td style="white-space:nowrap">${fmtDate(r.EndDate)}</td>
       <td>${r.Trainer||'—'}</td>
@@ -1671,11 +1670,9 @@ function renderAttendees(items){
   document.getElementById('att-count').textContent = `Attendees (${items.length})`;
   if(!items.length){emptyState('att-tbody','No attendees registered yet');return;}
   document.getElementById('att-tbody').innerHTML = items.map(a=>{
-    // Use stored text fields first, fall back to lookup resolution
-    const org = (cache.organisations||[]).find(o=>o.id==(a.OrgOIDId||a.OrgIDId||a.OrgOID));
-    const run = (cache.runs||[]).find(r=>r.id==(a.CourseRunIDId||a.CourseRunID));
-    const orgDisplay = a.OrgName || a.JobTitle || org?.OrgName || org?.Title || '—';
-    const runDisplay = a.CourseTitle || a.InvoiceLineCourse || run?.CourseID || run?.Title || '—';
+    // Use stored text fields (lookup columns were removed - text is the source of truth)
+    const orgDisplay = a.OrgName || a.JobTitle || '—';
+    const runDisplay = a.CourseTitle || a.InvoiceLineCourse || '—';
     // Count how many total course rows exist for this same person, to surface
     // when someone has multiple enrolments across different courses/invoices
     const sameName=(a.FullName||a.Title||'').trim().toLowerCase();
@@ -1688,7 +1685,7 @@ function renderAttendees(items){
       </div></td>
       <td style="font-size:12px">${orgDisplay}</td>
       <td style="font-size:12px;max-width:140px">${runDisplay.substring(0,30)}</td>
-      <td style="font-size:12px">${fmtDate(a.RunStartDate || run?.StartDate)}</td>
+      <td style="font-size:12px">${fmtDate(a.RunStartDate)}</td>
       <td style="font-size:12px">${a.JobTitle||'—'}</td>
       <td style="font-size:12px"><a href="mailto:${a.Email}" style="color:var(--blue)">${a.Email||'—'}</a></td>
       <td>${a.Section65A?'<span class="badge bg">Yes</span>':'<span class="badge bgr">No</span>'}</td>
