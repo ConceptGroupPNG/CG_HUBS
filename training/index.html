@@ -3558,6 +3558,29 @@ async function saveModal(){
     }
   }
 
+  // Payments: block adding/editing a payment against an invoice with zero balance due
+  if(editingEntity==='payments' && rawFields.InvoiceRef){
+    const inv = (cache.invoices||[]).find(i=>String(i.id)===String(rawFields.InvoiceRef));
+    if(inv){
+      const total = +(inv.TotalAmount||0);
+      let paidSoFar = invoiceTotalPaid(inv);
+      // If editing an existing payment against this same invoice, exclude its own
+      // current amount from the running total so we're checking the balance as it
+      // would be without this payment, not double-counting it against itself.
+      if(editingId){
+        const existing = (cache.payments||[]).find(p=>String(p.id)===String(editingId));
+        if(existing && (existing.RemittanceRef||'')===(inv.InvoiceNumber||inv.Title||'')){
+          paidSoFar -= (+existing.AmountPaid||0);
+        }
+      }
+      const balanceDue = Math.max(0, total-paidSoFar);
+      if(total>0 && balanceDue<=0){
+        toast(`Cannot add payment: Invoice "${inv.InvoiceNumber||inv.Title}" already has a zero balance due`,'error');
+        throw new Error('validation');
+      }
+    }
+  }
+
   const fields = def.toFields(rawFields);
   const btn = document.getElementById('modal-save-btn');
   btn.disabled = true;
