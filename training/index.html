@@ -381,7 +381,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Name</th><th>Organisation</th><th>Course Run</th><th>Course Date</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Name</th><th>Organisation</th><th>Invoice #</th><th>Course Run</th><th>Course Date</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="att-tbody"></tbody></table>
           </div>
         </div>
@@ -1731,6 +1731,7 @@ function renderAttendees(items){
         <span class="td-bold">${a.FullName||a.Title||'—'}</span>${multiBadge}
       </div></td>
       <td style="font-size:12px">${orgDisplay}</td>
+      <td style="font-size:12px">${a.InvoiceRef||'—'}</td>
       <td style="font-size:12px;max-width:140px">${runDisplay.substring(0,30)}</td>
       <td style="font-size:12px">${fmtDate(a.RunStartDate)}</td>
       <td style="font-size:12px">${a.JobTitle||'—'}</td>
@@ -3926,10 +3927,11 @@ function exportAttendeesCSV(){
   let atts = cache.attendees||[];
   if(visibleIds.size) atts = atts.filter(a=>visibleIds.has(String(a.id)));
   if(!atts.length){ toast('No attendees to export','error'); return; }
-  const headers = ['Full Name','Organisation','Course Title','Run Start Date','Job Title','Mobile','Section 65A','Certificate #','Attendance Status'];
+  const headers = ['Full Name','Organisation','Invoice Number','Course Title','Run Start Date','Job Title','Mobile','Section 65A','Certificate #','Attendance Status'];
   const rows = atts.map(a=>[
     a.FullName||a.Title||'',
     a.OrgName||a.JobTitle||'',
+    a.InvoiceRef||'',
     a.CourseTitle||'',
     a.RunStartDate||'',
     a.JobTitle||'',
