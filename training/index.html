@@ -2616,8 +2616,13 @@ const FORM_DEFS = {
       {key:'ContactPosition',label:'Position',type:'text'},
       {key:'ContactEmail',label:'Email',type:'email'},
       {key:'ContactPhone',label:'Phone',type:'text'},
+      {key:'Contact2Person',label:'2nd Contact Person',type:'text',sectionLabel:'Second Contact'},
+      {key:'Contact2Position',label:'2nd Contact Position',type:'text'},
+      {key:'Contact2Email',label:'2nd Contact Email',type:'email'},
+      {key:'Contact2Phone',label:'2nd Contact Phone',type:'text'},
     ],
-    toFields: (f)=>({Title:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone}),
+    toFields: (f)=>({Title:f.OrgName,ContactPerson:f.ContactPerson,ContactPosition:f.ContactPosition,ContactEmail:f.ContactEmail,ContactPhone:f.ContactPhone,
+      Contact2Person:f.Contact2Person,Contact2Position:f.Contact2Position,Contact2Email:f.Contact2Email,Contact2Phone:f.Contact2Phone}),
   },
   attendees: {
     title: (d)=> d?'Edit Attendee':'Add Attendee',
@@ -2878,6 +2883,11 @@ async function openFormModal(entity, data){
 
   let html = '<div class="form-grid">';
   def.fields.forEach(f=>{
+    if(f.sectionLabel){
+      html += `<div class="fg full" style="margin-top:8px;padding-top:12px;border-top:1px solid var(--g200)">
+        <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">${f.sectionLabel}</label>
+      </div>`;
+    }
     let val = data?.[f.key] ?? '';
     if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
