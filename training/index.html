@@ -402,7 +402,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportQuotesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Organisation</th><th>Courses</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Organisation</th><th>Courses</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Invoice #</th><th>Actions</th></tr></thead>
             <tbody id="quo-tbody"></tbody></table>
           </div>
         </div>
@@ -2256,14 +2256,16 @@ async function saveInvoiceLines(invoiceNumber, createdItem=null){
 async function loadQuotes(){
   loading('quo-tbody');
   try {
-    const [items, atts, lines] = await Promise.all([
+    const [items, atts, lines, invs] = await Promise.all([
       getItems('quotes','$top=500'),
       cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
       getItems('quotelines','$top=999'),
+      cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
     ]);
     cache.quotes = items;
     if(!cache.attendees) cache.attendees = atts;
     cache.quotelines = lines;
+    if(!cache.invoices) cache.invoices = invs;
     renderQuotes(items);
   } catch(e){ toast('Error loading quotes: '+e.message,'error'); }
 }
@@ -2293,6 +2295,13 @@ function renderQuotes(items){
     const gst = lineTotals ? lineTotals.gst : (+q.GSTAmount||0);
     const total = lineTotals ? lineTotals.total : (+q.TotalAmount||0);
     const coursesSummary = lineTotals && lineTotals.courses.length ? lineTotals.courses.join(', ') : (attName!=='—'?'—':'—');
+    // A Quote may be referenced by more than one Invoice in rare cases; show all matches.
+    const quoteNum = (q.Title||'').trim().toLowerCase();
+    const linkedInvoiceNumbers = (cache.invoices||[])
+      .filter(i=>(i.QuoteRef||'').trim().toLowerCase()===quoteNum)
+      .map(i=>i.InvoiceNumber||i.Title||'')
+      .filter(Boolean);
+    const invoiceDisplay = linkedInvoiceNumbers.length ? linkedInvoiceNumbers.join(', ') : '—';
     return `<tr>
       <td class="td-bold">${q.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(q.QuoteDate)}</td>
@@ -2302,6 +2311,7 @@ function renderQuotes(items){
       <td>${fmt(gst)}</td>
       <td><strong>${fmt(total)}</strong></td>
       <td>${statusBadge(q.Status)}</td>
+      <td style="font-size:12px">${invoiceDisplay}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="editRow('quotes','${q.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('quotes','${q.id}','${(q.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -2312,7 +2322,7 @@ function renderQuotes(items){
 
 function exportQuotesCSV(){
   exportTableCSV('quotes','quo-tbody',
-    ['Quote #','Quote Date','Organisation','Courses','Fee (PGK)','GST','Total','Status'],
+    ['Quote #','Quote Date','Organisation','Courses','Fee (PGK)','GST','Total','Status','Invoice #'],
     q=>{
       const att=attendeeForQuote(q);
       const lineTotals = quoteLineTotals(q.Title);
@@ -2320,6 +2330,11 @@ function exportQuotesCSV(){
       const gst = lineTotals ? lineTotals.gst : (+q.GSTAmount||0);
       const total = lineTotals ? lineTotals.total : (+q.TotalAmount||0);
       const courses = lineTotals && lineTotals.courses.length ? lineTotals.courses.join('; ') : '';
+      const quoteNum = (q.Title||'').trim().toLowerCase();
+      const invoiceNumbers = (cache.invoices||[])
+        .filter(i=>(i.QuoteRef||'').trim().toLowerCase()===quoteNum)
+        .map(i=>i.InvoiceNumber||i.Title||'')
+        .filter(Boolean).join('; ');
       return [
         q.Title||'',
         q.QuoteDate||'',
@@ -2328,7 +2343,8 @@ function exportQuotesCSV(){
         fee,
         gst,
         total,
-        q.Status||''
+        q.Status||'',
+        invoiceNumbers
       ];
     }
   );
