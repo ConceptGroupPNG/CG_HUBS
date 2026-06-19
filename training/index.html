@@ -313,6 +313,7 @@ select:focus{border-color:var(--teal)}
           <div class="table-wrap">
             <table><thead><tr>
               <th class="sortable" onclick="sortCourses('CourseName')">Course Name <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Duration</th>
               <th class="sortable" onclick="sortCourses('Category')">Category <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               <th class="sortable" onclick="sortCourses('FeeExGST')">Fee (PGK excl. GST) <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               <th>GST Rate</th>
@@ -1256,8 +1257,12 @@ function buildUnfilledSeats(invs, invLines, atts){
 async function loadCourses(){
   loading('courses-tbody');
   try {
-    const items = await getItems('courses','$top=500');
+    const [items, runs] = await Promise.all([
+      getItems('courses','$top=500'),
+      cache.runs ? Promise.resolve(cache.runs) : getItems('runs','$top=500'),
+    ]);
     cache.courses = items;
+    if(!cache.runs) cache.runs = runs;
     renderCourses(items);
     // populate runs filter
     const sel = document.getElementById('runs-course');
@@ -1269,8 +1274,11 @@ async function loadCourses(){
 function renderCourses(items){
   document.getElementById('courses-count').textContent = `Courses (${items.length})`;
   if(!items.length){emptyState('courses-tbody','No courses yet — add your first course');return;}
-  document.getElementById('courses-tbody').innerHTML = items.map(c=>`<tr>
+  document.getElementById('courses-tbody').innerHTML = items.map(c=>{
+    const dur = courseDuration(c);
+    return `<tr>
     <td class="td-bold">${c.CourseName||c.Title||'—'}</td>
+    <td style="font-size:12px">${dur!=null?`${dur} day${dur===1?'':'s'}`:'—'}</td>
     <td><span class="badge ${c.Category==='Payroll'?'bb':c.Category==='HR'?'bg':c.Category==='Safety'?'ba':'bgr'}">${c.Category||'—'}</span></td>
     <td>${fmt(c.FeeExGST)}</td>
     <td>${c.GSTRate!=null?c.GSTRate+'%':'—'}</td>
@@ -1279,7 +1287,8 @@ function renderCourses(items){
       <button class="btn-icon" onclick="editRow('courses','${c.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
       <button class="btn-icon danger" onclick="confirmDelete('courses','${c.id}','${(c.CourseName||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </div></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }
 
 // Search input ID map
@@ -1440,6 +1449,24 @@ function courseRunCount(c){
     const rt=(r.Title||'').replace(/\d{4}-\d{2}-\d{2}/g,'').trim().toLowerCase();
     return cName&&rt&&rt===cName;
   }).length;
+}
+
+function courseDuration(c){
+  const cName=(c.CourseName||c.Title||'').toLowerCase().trim();
+  if(!cName) return null;
+  const matches = (cache.runs||[]).filter(r=>{
+    const rt=(r.Title||'').replace(/\d{4}-\d{2}-\d{2}/g,'').trim().toLowerCase();
+    return rt===cName && r.StartDate && r.EndDate;
+  });
+  if(!matches.length) return null;
+  // Use the most recently scheduled run (by start date) as the representative duration
+  matches.sort((a,b)=>(b.StartDate||'').localeCompare(a.StartDate||''));
+  const r = matches[0];
+  const start = new Date((r.StartDate||'').substring(0,10));
+  const end = new Date((r.EndDate||'').substring(0,10));
+  if(isNaN(start)||isNaN(end)) return null;
+  const days = Math.round((end-start)/86400000)+1; // inclusive of both start and end day
+  return days>0 ? days : null;
 }
 
 function clearFilters(entity){
