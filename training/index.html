@@ -381,7 +381,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Name</th><th>Organisation</th><th>Invoice #</th><th>Course Run</th><th>Course Date</th><th>Job Title</th><th>Email</th><th>Sec.65A</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Name</th><th>Organisation</th><th>Invoice #</th><th>Course Run</th><th>Course Date</th><th>Email</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="att-tbody"></tbody></table>
           </div>
         </div>
@@ -1734,9 +1734,7 @@ function renderAttendees(items){
       <td style="font-size:12px">${a.InvoiceRef||'—'}</td>
       <td style="font-size:12px;max-width:140px">${runDisplay.substring(0,30)}</td>
       <td style="font-size:12px">${fmtDate(a.RunStartDate)}</td>
-      <td style="font-size:12px">${a.JobTitle||'—'}</td>
       <td style="font-size:12px"><a href="mailto:${a.Email}" style="color:var(--blue)">${a.Email||'—'}</a></td>
-      <td>${a.Section65A?'<span class="badge bg">Yes</span>':'<span class="badge bgr">No</span>'}</td>
       <td style="font-size:12px">${a.CertificateNumber||'—'}</td>
       <td>${statusBadge(a.AttendanceStatus||'Registered')}</td>
       <td><div class="td-actions">
