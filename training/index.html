@@ -969,8 +969,9 @@ function invoiceStatus(inv){
 // Compute payment status by comparing to its matched invoice
 function paymentStatus(p){
   const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
-  const total=+(inv?.TotalAmount||0);
-  const paid=+(p.AmountPaid||0);
+  if(!inv) return 'Pending';
+  const total=+(inv.TotalAmount||0);
+  const paid=invoiceTotalPaid(inv); // sum of ALL payments against this invoice, not just this one
   const bal=Math.max(0,total-paid);
   if(bal<=0&&total>0) return 'Paid';
   if(paid>0&&bal>0) return 'Partial';
@@ -2435,8 +2436,9 @@ function renderPayments(items){
     const inv = (cache.invoices||[]).find(i=>
       (i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
     const total = +(inv?.TotalAmount||0);
-    const paid = +(p.AmountPaid||0);
-    const bal = Math.max(0,total-paid);
+    const paid = +(p.AmountPaid||0); // this payment's own amount, shown in the Amount Paid column
+    const totalPaidOnInvoice = inv ? invoiceTotalPaid(inv) : paid; // all payments against the invoice
+    const bal = Math.max(0,total-totalPaidOnInvoice); // invoice-wide balance, not just this payment
     const st = paymentStatus(p);
     const att = inv ? attendeeForInvoice(inv) : null;
     const attName = inv?.AttendeeName || '—';
@@ -2446,7 +2448,7 @@ function renderPayments(items){
       <td>${attName}</td>
       <td style="font-size:12px">${orgName}</td>
       <td>${fmt(paid)}</td>
-      <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}">${fmt(bal)}</td>
+      <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}" title="Balance remaining on the whole invoice, not just this payment">${fmt(bal)}</td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="editRow('payments','${p.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -3754,7 +3756,8 @@ function exportPaymentsCSV(){
       const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
       const total=+(inv?.TotalAmount||0);
       const paid=+(p.AmountPaid||0);
-      const bal=Math.max(0,total-paid);
+      const totalPaidOnInvoice = inv ? invoiceTotalPaid(inv) : paid;
+      const bal=Math.max(0,total-totalPaidOnInvoice);
       const att=inv?attendeeForInvoice(inv):null;
       return [
         p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'',
