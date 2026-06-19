@@ -450,7 +450,7 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportPaymentsCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Amount Paid</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Invoice Total</th><th>Amount Paid</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="pay-tbody"></tbody></table>
           </div>
         </div>
@@ -2447,6 +2447,7 @@ function renderPayments(items){
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
       <td>${attName}</td>
       <td style="font-size:12px">${orgName}</td>
+      <td>${fmt(total)}</td>
       <td>${fmt(paid)}</td>
       <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}" title="Balance remaining on the whole invoice, not just this payment">${fmt(bal)}</td>
       <td>${statusBadge(st)}</td>
@@ -3751,7 +3752,7 @@ function exportInvoicesCSV(){
 
 function exportPaymentsCSV(){
   exportTableCSV('payments','pay-tbody',
-    ['Invoice #','Attendee','Organisation','Amount Paid','Balance Due','Status','Date Paid'],
+    ['Invoice #','Attendee','Organisation','Invoice Total','Amount Paid','Balance Due','Status','Date Paid'],
     p=>{
       const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
       const total=+(inv?.TotalAmount||0);
@@ -3763,6 +3764,7 @@ function exportPaymentsCSV(){
         p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'',
         inv?.AttendeeName||'',
         att?.OrgName||'',
+        total,
         paid,
         bal,
         paymentStatus(p),
