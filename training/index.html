@@ -1361,21 +1361,36 @@ function renderRunsCalendar(items, jumpToResults){
     }
   }
   const monthRuns = allRuns.filter(r=>{
-    const d = new Date((r.StartDate||'').substring(0,10));
-    return d.getFullYear()===calendarYear && d.getMonth()===calendarMonth;
+    const start = new Date((r.StartDate||'').substring(0,10));
+    const end = new Date((r.EndDate||r.StartDate||'').substring(0,10));
+    if(isNaN(start)) return false;
+    const monthStart = new Date(calendarYear, calendarMonth, 1);
+    const monthEnd = new Date(calendarYear, calendarMonth+1, 0);
+    const runEnd = isNaN(end) ? start : end;
+    return runEnd>=monthStart && start<=monthEnd; // run span overlaps the displayed month at all
   });
   const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const firstDay = new Date(calendarYear, calendarMonth, 1);
   const startWeekday = firstDay.getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
 
-  // Group runs by day
+  // Group runs by day - a multi-day run (different StartDate/EndDate) appears
+  // on every day it spans, each labelled with its day number within the run.
   const byDay = {};
   monthRuns.forEach(r=>{
-    const d = new Date((r.StartDate||'').substring(0,10));
-    const day = d.getDate();
-    if(!byDay[day]) byDay[day]=[];
-    byDay[day].push(r);
+    const start = new Date((r.StartDate||'').substring(0,10));
+    const endRaw = (r.EndDate||r.StartDate||'').substring(0,10);
+    const end = new Date(endRaw);
+    if(isNaN(start)) return;
+    const totalDays = !isNaN(end) ? Math.max(1, Math.round((end-start)/86400000)+1) : 1;
+    for(let n=0; n<totalDays; n++){
+      const cellDate = new Date(start);
+      cellDate.setDate(cellDate.getDate()+n);
+      if(cellDate.getFullYear()!==calendarYear || cellDate.getMonth()!==calendarMonth) continue; // stays within the displayed month only
+      const day = cellDate.getDate();
+      if(!byDay[day]) byDay[day]=[];
+      byDay[day].push({ run: r, dayNumber: n+1, totalDays });
+    }
   });
 
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1401,12 +1416,14 @@ function renderRunsCalendar(items, jumpToResults){
     const isToday = (new Date().getFullYear()===calendarYear && new Date().getMonth()===calendarMonth && new Date().getDate()===day);
     html += `<div style="min-height:70px;background:${isToday?'var(--teal-l)':'#fff'};border:1px solid var(--g200);border-radius:6px;padding:4px;font-size:11px">
       <div style="font-weight:600;color:${isToday?'var(--teal-d)':'var(--g700)'};margin-bottom:2px">${day}</div>
-      ${runsToday.map(r=>{
+      ${runsToday.map(entry=>{
+        const r = entry.run;
         const rDate=(r.StartDate||'').substring(0,10);
         const cname=(r.Title||'').replace(rDate,'').trim();
+        const label = entry.totalDays>1 ? `${cname} - Day ${entry.dayNumber}` : cname;
         const _rs = runStatus(r);
         const statusColor = _rs==='Completed'?'#0e9f6e':_rs==='Postponed'?'#ef4444':_rs==='Active'?'#f59e0b':'#3b82f6';
-        return `<div title="${r.Title}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="editRow('runs','${r.id}')">${cname.substring(0,18)}</div>`;
+        return `<div title="${label}" style="background:${statusColor};color:#fff;border-radius:3px;padding:1px 4px;margin-bottom:2px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="editRow('runs','${r.id}')">${label.substring(0,24)}</div>`;
       }).join('')}
     </div>`;
   }
@@ -3738,15 +3755,29 @@ function printRunsCalendar(){
   const startWeekday = firstDay.getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
   const monthRuns = (calendarCurrentRuns||[]).filter(r=>{
-    const d = new Date((r.StartDate||'').substring(0,10));
-    return d.getFullYear()===calendarYear && d.getMonth()===calendarMonth;
+    const start = new Date((r.StartDate||'').substring(0,10));
+    const end = new Date((r.EndDate||r.StartDate||'').substring(0,10));
+    if(isNaN(start)) return false;
+    const monthStart = new Date(calendarYear, calendarMonth, 1);
+    const monthEnd = new Date(calendarYear, calendarMonth+1, 0);
+    const runEnd = isNaN(end) ? start : end;
+    return runEnd>=monthStart && start<=monthEnd;
   });
   const byDay = {};
   monthRuns.forEach(r=>{
-    const d = new Date((r.StartDate||'').substring(0,10));
-    const day = d.getDate();
-    if(!byDay[day]) byDay[day]=[];
-    byDay[day].push(r);
+    const start = new Date((r.StartDate||'').substring(0,10));
+    const endRaw = (r.EndDate||r.StartDate||'').substring(0,10);
+    const end = new Date(endRaw);
+    if(isNaN(start)) return;
+    const totalDays = !isNaN(end) ? Math.max(1, Math.round((end-start)/86400000)+1) : 1;
+    for(let n=0; n<totalDays; n++){
+      const cellDate = new Date(start);
+      cellDate.setDate(cellDate.getDate()+n);
+      if(cellDate.getFullYear()!==calendarYear || cellDate.getMonth()!==calendarMonth) continue;
+      const day = cellDate.getDate();
+      if(!byDay[day]) byDay[day]=[];
+      byDay[day].push({ run: r, dayNumber: n+1, totalDays });
+    }
   });
 
   let cells = '';
@@ -3759,12 +3790,14 @@ function printRunsCalendar(){
     const runsToday = byDay[day]||[];
     cells += `<td>
       <div class="day-num">${day}</div>
-      ${runsToday.map(r=>{
+      ${runsToday.map(entry=>{
+        const r = entry.run;
         const rDate=(r.StartDate||'').substring(0,10);
         const cname=(r.Title||'').replace(rDate,'').trim();
+        const label = entry.totalDays>1 ? `${cname} - Day ${entry.dayNumber}` : cname;
         const _rs2 = runStatus(r);
         const cls = _rs2==='Completed'?'completed':_rs2==='Postponed'?'postponed':_rs2==='Active'?'active':'scheduled';
-        return `<div class="run ${cls}">${cname}</div>`;
+        return `<div class="run ${cls}">${label}</div>`;
       }).join('')}
     </td>`;
     dayCount++;
