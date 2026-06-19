@@ -518,6 +518,33 @@ select:focus{border-color:var(--teal)}
   </div>
 </div>
 
+<div id="invoice-prompt-modal" class="modal-overlay">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2><i class="ti ti-file-invoice"></i> Create Invoice</h2>
+      <button class="modal-close" onclick="document.getElementById('invoice-prompt-modal').classList.remove('open')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--g500);margin-bottom:16px">
+        This quote was marked <strong>Converted to Invoice</strong>. Enter the new Invoice's details below
+        and its Organisation and line items will be copied across automatically.
+      </p>
+      <div class="fg" style="margin-bottom:12px">
+        <label>Invoice Number *</label>
+        <input type="text" id="ip-invoice-number">
+      </div>
+      <div class="fg">
+        <label>Invoice Date</label>
+        <input type="date" id="ip-invoice-date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('invoice-prompt-modal').classList.remove('open')">Skip for now</button>
+      <button class="btn btn-primary" id="ip-create-btn" onclick="createInvoiceFromQuotePrompt()"><i class="ti ti-check"></i>Create Invoice</button>
+    </div>
+  </div>
+</div>
+
 <div id="confirm-modal" class="modal-overlay">
   <div class="modal confirm-modal">
     <div class="confirm-body">
@@ -580,6 +607,7 @@ let cache = {};
 let currentPage = 'dashboard';
 let editingId = null;
 let editingEntity = null;
+let editingOriginalData = null;
 let revChart = null;
 let statusChart = null;
 
@@ -2830,6 +2858,7 @@ function printRosterById(id){
 async function openFormModal(entity, data){
   editingId = data?.id || null;
   editingEntity = entity;
+  editingOriginalData = data || null;
   _lastCourseDateFilterCourse = null; // reset guard so the new form's initial filter always applies
   const printBtn = document.getElementById('modal-print-reg-btn');
   if(printBtn) printBtn.style.display = 'none'; // reset; shown again below only if criteria are met
@@ -3089,6 +3118,85 @@ async function openFormModal(entity, data){
   }
 
   document.getElementById('entity-modal').classList.add('open');
+}
+
+function promptCreateInvoiceFromQuote(quoteNumber){
+  document.getElementById('ip-invoice-number').value = '';
+  document.getElementById('ip-invoice-date').value = new Date().toISOString().substring(0,10);
+  document.getElementById('invoice-prompt-modal').dataset.quoteNumber = quoteNumber;
+  document.getElementById('invoice-prompt-modal').classList.add('open');
+}
+
+async function createInvoiceFromQuotePrompt(){
+  const quoteNumber = document.getElementById('invoice-prompt-modal').dataset.quoteNumber;
+  const invoiceNumber = document.getElementById('ip-invoice-number').value.trim();
+  const invoiceDate = document.getElementById('ip-invoice-date').value || null;
+  if(!invoiceNumber){
+    toast('Please enter an Invoice Number','error');
+    document.getElementById('ip-invoice-number').focus();
+    return;
+  }
+
+  const btn = document.getElementById('ip-create-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>';
+
+  try {
+    const quote = (cache.quotes||[]).find(q=>(q.Title||'').trim().toLowerCase()===quoteNumber.trim().toLowerCase());
+    if(!quote) throw new Error('Could not find the quote that was just saved');
+
+    // Create the Invoice header, copying Organisation and Quote Reference across
+    const invoiceFields = {
+      InvoiceNumber: invoiceNumber,
+      Title: invoiceNumber,
+      InvoiceDate: invoiceDate,
+      OrgName: quote.OrgName || '',
+      QuoteRef: quote.Title || '',
+    };
+    const createdInvoice = await saveWithFieldFallback(false, 'invoices', null, invoiceFields);
+
+    // Copy the quote's line items across as invoice lines
+    if(!cache.quotelines) cache.quotelines = await getItems('quotelines','$top=999');
+    const qLines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===quoteNumber.trim().toLowerCase());
+    let totals = {fee:0, gst:0, total:0};
+    for(const ql of qLines){
+      const lineFields = {
+        Title: invoiceNumber,
+        CourseName: ql.CourseName||'',
+        Quantity: +ql.Quantity||0,
+        FeeExGST: +ql.FeeExGST||0,
+        GSTAmount: +ql.GSTAmount||0,
+        LineTotal: +ql.LineTotal||0,
+        RunStartDate: null,
+      };
+      await saveWithFieldFallback(false, 'invoicelines', null, lineFields);
+      totals.fee += lineFields.FeeExGST*lineFields.Quantity;
+      totals.gst += lineFields.GSTAmount;
+      totals.total += lineFields.LineTotal;
+    }
+
+    // Write the rolled-up totals back to the new Invoice header
+    const invId = createdInvoice?.id;
+    if(invId){
+      await saveWithFieldFallback(true, 'invoices', invId, {
+        FeeExGST: totals.fee, GSTAmount: totals.gst, TotalAmount: totals.total,
+      });
+    }
+
+    // Refresh caches so the new invoice/lines show up immediately
+    cache.invoices = await getItems('invoices','$top=500');
+    cache.invoicelines = await getItems('invoicelines','$top=999');
+
+    toast(`Invoice "${invoiceNumber}" created from quote "${quoteNumber}"`);
+    document.getElementById('invoice-prompt-modal').classList.remove('open');
+    await loadPage(currentPage);
+    if(currentPage==='dashboard') loadDashboard();
+  } catch(e){
+    toast('Could not create invoice: '+e.message,'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-check"></i>Create Invoice';
+  }
 }
 
 async function onQuoteRefChange(){
@@ -3464,8 +3572,15 @@ async function saveModal(){
       toast('Record created successfully');
     }
     // Quotes: sync line items to CG_QuoteLines after saving the header
+    let promptInvoiceFor = null;
     if(editingEntity==='quotes'){
       await saveQuoteLines(fields.Title, createdItem);
+      // If Status just transitioned to "Converted to Invoice", prompt to create
+      // the matching Invoice once the Quote has safely saved.
+      const wasAlreadyConverted = editingOriginalData?.Status==='Converted to Invoice';
+      if(fields.Status==='Converted to Invoice' && !wasAlreadyConverted){
+        promptInvoiceFor = fields.Title;
+      }
     }
     // Invoices: sync line items to CG_InvoiceLines after saving the header
     if(editingEntity==='invoices'){
@@ -3475,6 +3590,9 @@ async function saveModal(){
     closeModal();
     await loadPage(currentPage);
     if(currentPage==='dashboard') loadDashboard();
+    if(promptInvoiceFor){
+      promptCreateInvoiceFromQuote(promptInvoiceFor);
+    }
   } catch(e){
     if(e.message!=='validation') toast('Save failed: '+e.message,'error');
   } finally {
