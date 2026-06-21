@@ -295,6 +295,10 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2>⚠ Unused Seats</h2><span style="font-size:11px;color:var(--g500)">Invoiced but no attendee named</span></div>
             <div class="card-body" style="padding:0 18px 12px" id="dash-unfilled"><div class="loading"><div class="spinner"></div></div></div>
           </div>
+          <div class="card" style="margin:0;grid-column:1/-1">
+            <div class="card-header"><h2>Invoice Seat Allocation</h2><span style="font-size:11px;color:var(--g500)">Value of filled seats vs. balance still unallocated, per invoice</span></div>
+            <div class="card-body" style="padding:0 18px 12px" id="dash-allocation"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
         </div>
       </div>
 
@@ -1095,6 +1099,7 @@ async function loadDashboard(){
     buildSalesFunnel(atts, invs, pays);
     buildRecentActivity(atts);
     buildUnfilledSeats(invs, invLines, atts);
+    buildSeatAllocation(invs, invLines, atts);
   } catch(e){ toast('Dashboard error: '+e.message,'error'); }
 }
 
@@ -1238,6 +1243,68 @@ function invoiceLineSeatStatus(line){
   }).length;
   const qty = +line.Quantity||0;
   return {qty, filled, unfilled: Math.max(0, qty-filled)};
+}
+
+function buildSeatAllocation(invs, invLines, atts){
+  const el = document.getElementById('dash-allocation');
+  if(!el) return;
+  const rows = [];
+  invs.forEach(inv=>{
+    const invNum = (inv.InvoiceNumber||inv.Title||'').trim().toLowerCase();
+    const lines = invLines.filter(l=>(l.Title||'').trim().toLowerCase()===invNum && l.CourseName);
+    if(!lines.length) return; // skip invoices with no line items yet (nothing to allocate)
+
+    let allocated = 0;
+    lines.forEach(l=>{
+      const status = invoiceLineSeatStatus(l); // {qty, filled, unfilled}
+      const feePerSeat = (+l.FeeExGST||0) + (+l.Quantity ? (+l.GSTAmount||0)/(+l.Quantity) : 0);
+      allocated += status.filled * feePerSeat;
+    });
+
+    const lt = invoiceLineTotals(inv.InvoiceNumber||inv.Title);
+    const total = lt ? lt.total : (+inv.TotalAmount||0);
+    const balance = Math.max(0, total-allocated);
+
+    rows.push({
+      invNum: inv.InvoiceNumber||inv.Title||'',
+      org: inv.OrgName||'—',
+      total, allocated, balance,
+    });
+  });
+
+  // Largest outstanding balance first - surfaces the most actionable rows
+  rows.sort((a,b)=>b.balance-a.balance);
+
+  if(!rows.length){
+    el.innerHTML='<div style="color:var(--g500);font-size:13px;padding:8px 0">No invoices with line items yet</div>';
+    return;
+  }
+  const grandTotal = rows.reduce((s,r)=>s+r.total,0);
+  const grandAllocated = rows.reduce((s,r)=>s+r.allocated,0);
+  const grandBalance = rows.reduce((s,r)=>s+r.balance,0);
+
+  el.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--g200)">
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Invoice</th>
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Invoice To</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Total</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Allocated</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Balance</th>
+    </tr></thead>
+    <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
+      <td style="padding:5px 8px;font-weight:600">${r.invNum}</td>
+      <td style="padding:5px 8px">${r.org}</td>
+      <td style="padding:5px 8px;text-align:right">${fmt(r.total)}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--teal-d)">${fmt(r.allocated)}</td>
+      <td style="padding:5px 8px;text-align:right;${r.balance>0?'color:var(--amber);font-weight:700':'color:var(--g500)'}">${fmt(r.balance)}</td>
+    </tr>`).join('')}</tbody>
+    <tfoot><tr style="background:var(--g100);font-weight:700">
+      <td style="padding:6px 8px" colspan="2">Total</td>
+      <td style="padding:6px 8px;text-align:right">${fmt(grandTotal)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--teal-d)">${fmt(grandAllocated)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--amber)">${fmt(grandBalance)}</td>
+    </tr></tfoot>
+  </table>`;
 }
 
 function buildUnfilledSeats(invs, invLines, atts){
@@ -3824,6 +3891,9 @@ function printDashboard(){
   // Unused Seats widget HTML (clone current content)
   const unfilledHTML = document.getElementById('dash-unfilled')?.innerHTML || '';
 
+  // Invoice Seat Allocation widget HTML (clone current content)
+  const allocationHTML = document.getElementById('dash-allocation')?.innerHTML || '';
+
   // Recent registrations - extract name, org, status from .att-card rows
   const recentEl = document.getElementById('dash-recent');
   let recentRows = '';
@@ -3921,6 +3991,11 @@ function printDashboard(){
   <div class="panel" style="margin-bottom:24px">
     <h2>⚠ Unused Seats</h2>
     ${unfilledHTML||'<p style="color:#999;font-size:12px">No data</p>'}
+  </div>
+
+  <div class="panel" style="margin-bottom:24px">
+    <h2>Invoice Seat Allocation</h2>
+    ${allocationHTML||'<p style="color:#999;font-size:12px">No data</p>'}
   </div>
 
   <p style="margin-top:10px;font-size:11px;color:#999">Printed: ${today}</p>
