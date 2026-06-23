@@ -2369,6 +2369,7 @@ function renderQuotes(items){
       .map(i=>i.InvoiceNumber||i.Title||'')
       .filter(Boolean);
     const invoiceDisplay = linkedInvoiceNumbers.length ? linkedInvoiceNumbers.join(', ') : '—';
+    const quoteLink = q.QuoteLink?.Url || (typeof q.QuoteLink==='string'?q.QuoteLink:'');
     return `<tr>
       <td class="td-bold">${q.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(q.QuoteDate)}</td>
@@ -2380,6 +2381,7 @@ function renderQuotes(items){
       <td>${statusBadge(q.Status)}</td>
       <td style="font-size:12px">${invoiceDisplay}</td>
       <td><div class="td-actions">
+        ${quoteLink?`<a class="btn-icon" href="${quoteLink}" target="_blank" rel="noopener" title="Open Quote Document"><i class="ti ti-external-link"></i></a>`:''}
         <button class="btn-icon" onclick="editRow('quotes','${q.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('quotes','${q.id}','${(q.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -2478,6 +2480,7 @@ function renderInvoices(items){
     const filledSeats = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum).length;
     const unfilledSeats = Math.max(0, seats - filledSeats);
     const seatBadge = seats>0 ? `<span title="${filledSeats}/${seats} seats filled" style="font-size:11px;margin-left:4px;color:${unfilledSeats>0?'var(--amber)':'var(--teal)'}">${filledSeats}/${seats}</span>` : '';
+    const invoiceLink = i.InvoiceLink?.Url || (typeof i.InvoiceLink==='string'?i.InvoiceLink:'');
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td style="font-size:12px">${i.QuoteRef||'—'}</td>
@@ -2488,6 +2491,7 @@ function renderInvoices(items){
       <td><strong>${fmt(total)}</strong></td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
+        ${invoiceLink?`<a class="btn-icon" href="${invoiceLink}" target="_blank" rel="noopener" title="Open Invoice Document"><i class="ti ti-external-link"></i></a>`:''}
         <button class="btn-icon" onclick="editRow('invoices','${i.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('invoices','${i.id}','${(i.InvoiceNumber||i.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -2526,6 +2530,7 @@ function renderPayments(items){
     const att = inv ? attendeeForInvoice(inv) : null;
     const attName = inv?.AttendeeName || '—';
     const orgName = att?.OrgName || '—';
+    const paymentLink = p.PaymentLink?.Url || (typeof p.PaymentLink==='string'?p.PaymentLink:'');
     return `<tr>
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
       <td>${attName}</td>
@@ -2535,6 +2540,7 @@ function renderPayments(items){
       <td style="color:${bal>0?'var(--red)':'var(--teal-d)'}" title="Balance remaining on the whole invoice, not just this payment">${fmt(bal)}</td>
       <td>${statusBadge(st)}</td>
       <td><div class="td-actions">
+        ${paymentLink?`<a class="btn-icon" href="${paymentLink}" target="_blank" rel="noopener" title="Open Payment Document"><i class="ti ti-external-link"></i></a>`:''}
         <button class="btn-icon" onclick="editRow('payments','${p.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('payments','${p.id}','Payment ${fmtDate(p.DatePaid)}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -2793,11 +2799,11 @@ const FORM_DEFS = {
       {key:'QuoteDate',label:'Quote Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
-      {key:'QuoteLink',label:'Quote Link / File Ref',type:'text',full:true},
+      {key:'QuoteLink',label:'Quote Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
       const out = {Title:f.QuoteNumber,QuoteDate:f.QuoteDate||null,
-        Status:f.Status||'Pending',QuoteLink:f.QuoteLink};
+        Status:f.Status||'Pending',QuoteLink:f.QuoteLink?{Url:f.QuoteLink,Description:f.QuoteLink}:null};
       if(f.OrgRef){
         const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
         out.OrgName = org ? (org.OrgName||org.Title||'') : '';
@@ -2816,11 +2822,11 @@ const FORM_DEFS = {
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef',onchange:'onQuoteRefChange()'},
-      {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'text',full:true},
+      {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
       const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
-        InvoiceLink:f.InvoiceLink,Title:f.InvoiceNumber};
+        InvoiceLink:f.InvoiceLink?{Url:f.InvoiceLink,Description:f.InvoiceLink}:null,Title:f.InvoiceNumber};
       if(f.QuoteRefLookup){
         const quote=(cache.quotes||[]).find(q=>String(q.id)===String(f.QuoteRefLookup));
         out.QuoteRef = quote ? (quote.Title||'') : '';
@@ -2843,10 +2849,10 @@ const FORM_DEFS = {
       {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber',searchable:true},
       {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
       {key:'DatePaid',label:'Date Paid',type:'date'},
-      {key:'PaymentLink',label:'Payment Link / File Ref',type:'text',full:true},
+      {key:'PaymentLink',label:'Payment Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
-      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,PaymentLink:f.PaymentLink};
+      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,PaymentLink:f.PaymentLink?{Url:f.PaymentLink,Description:f.PaymentLink}:null};
       if(f.InvoiceRef){
         const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
         if(inv){
@@ -2972,6 +2978,8 @@ async function openFormModal(entity, data){
       </div>`;
     }
     let val = data?.[f.key] ?? '';
+    // SharePoint URL columns return {Url, Description} objects — unwrap to plain string for the input
+    if(f.type==='url' && val && typeof val === 'object') val = val.Url || '';
     if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
