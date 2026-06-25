@@ -2799,15 +2799,10 @@ const FORM_DEFS = {
       {key:'QuoteDate',label:'Quote Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'Status',label:'Status',type:'select',opts:['Pending','Accepted','Converted to Invoice','Declined','Expired']},
-      {key:'QuoteLink',label:'Quote Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
       const out = {Title:f.QuoteNumber,QuoteDate:f.QuoteDate||null,
         Status:f.Status||'Pending'};
-      if(f.QuoteLink){
-        out.QuoteLink = f.QuoteLink;
-        out.QuoteLinkDesc = f.QuoteLink;
-      }
       if(f.OrgRef){
         const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
         out.OrgName = org ? (org.OrgName||org.Title||'') : '';
@@ -2826,15 +2821,10 @@ const FORM_DEFS = {
       {key:'InvoiceDate',label:'Invoice Date',type:'date'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',matchKey:'OrgName',fallbackMatchKey:'AttendeeName'},
       {key:'QuoteRefLookup',label:'Quote Reference',type:'lookup',entity:'quotes',display:'Title',matchKey:'QuoteRef',onchange:'onQuoteRefChange()'},
-      {key:'InvoiceLink',label:'Invoice Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
       const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
         Title:f.InvoiceNumber};
-      if(f.InvoiceLink){
-        out.InvoiceLink = f.InvoiceLink;
-        out.InvoiceLinkDesc = f.InvoiceLink;
-      }
       if(f.QuoteRefLookup){
         const quote=(cache.quotes||[]).find(q=>String(q.id)===String(f.QuoteRefLookup));
         out.QuoteRef = quote ? (quote.Title||'') : '';
@@ -2857,11 +2847,9 @@ const FORM_DEFS = {
       {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber',searchable:true},
       {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
       {key:'DatePaid',label:'Date Paid',type:'date'},
-      {key:'PaymentLink',label:'Payment Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
       const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null};
-      if(f.PaymentLink){ out.PaymentLink = f.PaymentLink; out.PaymentLinkDesc = f.PaymentLink; }
       if(f.InvoiceRef){
         const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
         if(inv){
@@ -2987,11 +2975,6 @@ async function openFormModal(entity, data){
       </div>`;
     }
     let val = data?.[f.key] ?? '';
-    // SharePoint URL columns may return {Url, Description} objects or flat strings — unwrap either to plain string for the input
-    if(f.type==='url' && val){
-      if(typeof val === 'object') val = val.Url || '';
-      // else already a string, use as-is
-    }
     if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
