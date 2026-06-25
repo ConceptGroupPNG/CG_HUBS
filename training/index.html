@@ -2369,7 +2369,7 @@ function renderQuotes(items){
       .map(i=>i.InvoiceNumber||i.Title||'')
       .filter(Boolean);
     const invoiceDisplay = linkedInvoiceNumbers.length ? linkedInvoiceNumbers.join(', ') : '—';
-    const quoteLink = q.QuoteLink?.Url || (typeof q.QuoteLink==='string'?q.QuoteLink:'');
+    const quoteLink = (typeof q.QuoteLink==='object' ? q.QuoteLink?.Url : q.QuoteLink) || '';
     return `<tr>
       <td class="td-bold">${q.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(q.QuoteDate)}</td>
@@ -2480,7 +2480,7 @@ function renderInvoices(items){
     const filledSeats = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum).length;
     const unfilledSeats = Math.max(0, seats - filledSeats);
     const seatBadge = seats>0 ? `<span title="${filledSeats}/${seats} seats filled" style="font-size:11px;margin-left:4px;color:${unfilledSeats>0?'var(--amber)':'var(--teal)'}">${filledSeats}/${seats}</span>` : '';
-    const invoiceLink = i.InvoiceLink?.Url || (typeof i.InvoiceLink==='string'?i.InvoiceLink:'');
+    const invoiceLink = (typeof i.InvoiceLink==='object' ? i.InvoiceLink?.Url : i.InvoiceLink) || '';
     return `<tr>
       <td class="td-bold">${i.InvoiceNumber||i.Title||'—'}</td>
       <td style="font-size:12px">${i.QuoteRef||'—'}</td>
@@ -2530,7 +2530,7 @@ function renderPayments(items){
     const att = inv ? attendeeForInvoice(inv) : null;
     const attName = inv?.AttendeeName || '—';
     const orgName = att?.OrgName || '—';
-    const paymentLink = p.PaymentLink?.Url || (typeof p.PaymentLink==='string'?p.PaymentLink:'');
+    const paymentLink = (typeof p.PaymentLink==='object' ? p.PaymentLink?.Url : p.PaymentLink) || '';
     return `<tr>
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
       <td>${attName}</td>
@@ -2803,7 +2803,11 @@ const FORM_DEFS = {
     ],
     toFields: (f)=>{
       const out = {Title:f.QuoteNumber,QuoteDate:f.QuoteDate||null,
-        Status:f.Status||'Pending',QuoteLink:f.QuoteLink?{Url:f.QuoteLink,Description:f.QuoteLink}:null};
+        Status:f.Status||'Pending'};
+      if(f.QuoteLink){
+        out.QuoteLink = f.QuoteLink;
+        out.QuoteLinkDesc = f.QuoteLink;
+      }
       if(f.OrgRef){
         const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
         out.OrgName = org ? (org.OrgName||org.Title||'') : '';
@@ -2826,7 +2830,11 @@ const FORM_DEFS = {
     ],
     toFields: (f)=>{
       const out = {InvoiceNumber:f.InvoiceNumber,InvoiceDate:f.InvoiceDate||null,
-        InvoiceLink:f.InvoiceLink?{Url:f.InvoiceLink,Description:f.InvoiceLink}:null,Title:f.InvoiceNumber};
+        Title:f.InvoiceNumber};
+      if(f.InvoiceLink){
+        out.InvoiceLink = f.InvoiceLink;
+        out.InvoiceLinkDesc = f.InvoiceLink;
+      }
       if(f.QuoteRefLookup){
         const quote=(cache.quotes||[]).find(q=>String(q.id)===String(f.QuoteRefLookup));
         out.QuoteRef = quote ? (quote.Title||'') : '';
@@ -2852,7 +2860,8 @@ const FORM_DEFS = {
       {key:'PaymentLink',label:'Payment Link / File Ref',type:'url',full:true},
     ],
     toFields: (f)=>{
-      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,PaymentLink:f.PaymentLink?{Url:f.PaymentLink,Description:f.PaymentLink}:null};
+      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null};
+      if(f.PaymentLink){ out.PaymentLink = f.PaymentLink; out.PaymentLinkDesc = f.PaymentLink; }
       if(f.InvoiceRef){
         const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
         if(inv){
@@ -2978,8 +2987,11 @@ async function openFormModal(entity, data){
       </div>`;
     }
     let val = data?.[f.key] ?? '';
-    // SharePoint URL columns return {Url, Description} objects — unwrap to plain string for the input
-    if(f.type==='url' && val && typeof val === 'object') val = val.Url || '';
+    // SharePoint URL columns may return {Url, Description} objects or flat strings — unwrap either to plain string for the input
+    if(f.type==='url' && val){
+      if(typeof val === 'object') val = val.Url || '';
+      // else already a string, use as-is
+    }
     if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
     const cls = f.full ? 'fg full' : 'fg';
     if(f.type==='lookup'){
