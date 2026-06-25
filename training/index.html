@@ -406,7 +406,16 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportQuotesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Quote #</th><th>Quote Date</th><th>Organisation</th><th>Courses</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Invoice #</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortQuotes('Title')">Quote # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortQuotes('QuoteDate')">Quote Date <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortQuotes('OrgName')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Courses</th>
+              <th>Fee (PGK)</th><th>GST</th>
+              <th class="sortable" onclick="sortQuotes('Total')">Total <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortQuotes('Status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Invoice #</th><th>Actions</th>
+            </tr></thead>
             <tbody id="quo-tbody"></tbody></table>
           </div>
         </div>
@@ -433,7 +442,16 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportInvoicesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Quote Ref</th><th>Attendee</th><th>Organisation</th><th>Fee (PGK)</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortInvoices('InvoiceNumber')">Invoice # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Quote Ref</th>
+              <th class="sortable" onclick="sortInvoices('AttendeeName')">Attendee <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortInvoices('OrgName')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Fee (PGK)</th><th>GST</th>
+              <th class="sortable" onclick="sortInvoices('Total')">Total <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortInvoices('Status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th>
+            </tr></thead>
             <tbody id="inv-tbody"></tbody></table>
           </div>
         </div>
@@ -454,7 +472,16 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportPaymentsCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Invoice #</th><th>Attendee</th><th>Organisation</th><th>Invoice Total</th><th>Amount Paid</th><th>Balance Due</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortPayments('RemittanceRef')">Invoice # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Attendee</th>
+              <th class="sortable" onclick="sortPayments('OrgName')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortPayments('InvoiceTotal')">Invoice Total <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortPayments('AmountPaid')">Amount Paid <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortPayments('BalanceDue')">Balance Due <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortPayments('Status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th>
+            </tr></thead>
             <tbody id="pay-tbody"></tbody></table>
           </div>
         </div>
@@ -1538,6 +1565,9 @@ function renderRunsCalendar(items, jumpToResults){
 }
 
 let courseSortState = {key:null, dir:1};
+let quotesSortState = {key:null, dir:1};
+let invoicesSortState = {key:null, dir:1};
+let paymentsSortState = {key:null, dir:1};
 function sortCourses(key){
   if(courseSortState.key===key) courseSortState.dir*=-1;
   else { courseSortState.key=key; courseSortState.dir=1; }
@@ -1559,6 +1589,85 @@ function sortCourses(key){
   }
   renderCourses(items);
 }
+function sortQuotes(key){
+  if(quotesSortState.key===key) quotesSortState.dir*=-1;
+  else { quotesSortState.key=key; quotesSortState.dir=1; }
+  let items=[...(cache.quotes||[])];
+  const dir=quotesSortState.dir;
+  if(key==='Total'){
+    items.sort((a,b)=>{
+      const lt_a=quoteLineTotals(a.Title), lt_b=quoteLineTotals(b.Title);
+      const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
+      const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
+      return (ta-tb)*dir;
+    });
+  } else {
+    items.sort((a,b)=>{
+      const va=(a[key]||a.Title||'').toString().toLowerCase();
+      const vb=(b[key]||b.Title||'').toString().toLowerCase();
+      return va.localeCompare(vb)*dir;
+    });
+  }
+  renderQuotes(items);
+}
+
+function sortInvoices(key){
+  if(invoicesSortState.key===key) invoicesSortState.dir*=-1;
+  else { invoicesSortState.key=key; invoicesSortState.dir=1; }
+  let items=[...(cache.invoices||[])];
+  const dir=invoicesSortState.dir;
+  if(key==='Total'){
+    items.sort((a,b)=>{
+      const lt_a=invoiceLineTotals(a.InvoiceNumber||a.Title), lt_b=invoiceLineTotals(b.InvoiceNumber||b.Title);
+      const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
+      const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
+      return (ta-tb)*dir;
+    });
+  } else if(key==='Status'){
+    items.sort((a,b)=>invoiceStatus(a).localeCompare(invoiceStatus(b))*dir);
+  } else {
+    items.sort((a,b)=>{
+      const va=(a[key]||a.Title||'').toString().toLowerCase();
+      const vb=(b[key]||b.Title||'').toString().toLowerCase();
+      return va.localeCompare(vb)*dir;
+    });
+  }
+  renderInvoices(items);
+}
+
+function sortPayments(key){
+  if(paymentsSortState.key===key) paymentsSortState.dir*=-1;
+  else { paymentsSortState.key=key; paymentsSortState.dir=1; }
+  let items=[...(cache.payments||[])];
+  const dir=paymentsSortState.dir;
+  if(key==='AmountPaid'){
+    items.sort((a,b)=>((+a.AmountPaid||0)-(+b.AmountPaid||0))*dir);
+  } else if(key==='InvoiceTotal'){
+    items.sort((a,b)=>{
+      const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
+      const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
+      return ((+inv_a?.TotalAmount||0)-(+inv_b?.TotalAmount||0))*dir;
+    });
+  } else if(key==='BalanceDue'){
+    items.sort((a,b)=>{
+      const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
+      const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
+      const bal_a=Math.max(0,(+inv_a?.TotalAmount||0)-invoiceTotalPaid(inv_a||{}));
+      const bal_b=Math.max(0,(+inv_b?.TotalAmount||0)-invoiceTotalPaid(inv_b||{}));
+      return (bal_a-bal_b)*dir;
+    });
+  } else if(key==='Status'){
+    items.sort((a,b)=>paymentStatus(a).localeCompare(paymentStatus(b))*dir);
+  } else {
+    items.sort((a,b)=>{
+      const va=(a[key]||'').toString().toLowerCase();
+      const vb=(b[key]||'').toString().toLowerCase();
+      return va.localeCompare(vb)*dir;
+    });
+  }
+  renderPayments(items);
+}
+
 function courseRunCount(c){
   const cName=(c.CourseName||c.Title||'').toLowerCase().trim();
   return (cache.runs||[]).filter(r=>{
