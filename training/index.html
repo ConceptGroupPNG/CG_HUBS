@@ -299,6 +299,13 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2>Invoice Seat Allocation</h2><span style="font-size:11px;color:var(--g500)">Value of filled seats vs. balance still unallocated, per invoice</span></div>
             <div class="card-body" style="padding:0 18px 12px" id="dash-allocation"><div class="loading"><div class="spinner"></div></div></div>
           </div>
+          <div class="card" style="margin:0;grid-column:1/-1;border:2px dashed var(--amber)">
+            <div class="card-header" style="background:#fff7ed">
+              <h2 style="color:#92400e">⚠ Diagnostic: Unmatched Course Names</h2>
+              <span style="font-size:11px;color:#92400e">Temporary — invoice line course names that don't match any Course record (causing Uncategorised revenue)</span>
+            </div>
+            <div class="card-body" style="padding:0 18px 12px" id="dash-diagnostic"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
         </div>
       </div>
 
@@ -1127,6 +1134,7 @@ async function loadDashboard(){
     buildRecentActivity(atts);
     buildUnfilledSeats(invs, invLines, atts);
     buildSeatAllocation(invs, invLines, atts);
+    buildDiagnostic(invLines);
   } catch(e){ toast('Dashboard error: '+e.message,'error'); }
 }
 
@@ -1331,6 +1339,55 @@ function buildSeatAllocation(invs, invLines, atts){
       <td style="padding:6px 8px;text-align:right;color:var(--teal-d)">${fmt(grandAllocated)}</td>
       <td style="padding:6px 8px;text-align:right;color:var(--amber)">${fmt(grandBalance)}</td>
     </tr></tfoot>
+  </table>`;
+}
+
+function buildDiagnostic(invLines){
+  const el = document.getElementById('dash-diagnostic');
+  if(!el) return;
+
+  // Build the same case-insensitive course name → category map used by the chart
+  const courseCatMap = {};
+  (cache.courses||[]).forEach(c=>{
+    const name=(c.CourseName||c.Title||'').toLowerCase().trim();
+    if(name) courseCatMap[name] = c.Category||'Uncategorised';
+  });
+
+  // Find every unique invoice line course name that doesn't match any Course record
+  const unmatched = {}; // courseName → {count, invoices[]}
+  invLines.forEach(l=>{
+    const cname=(l.CourseName||'').toLowerCase().trim();
+    if(!cname) return;
+    if(!courseCatMap[cname]){
+      if(!unmatched[cname]) unmatched[cname]={original:l.CourseName, count:0, invoices:[]};
+      unmatched[cname].count++;
+      if(!unmatched[cname].invoices.includes(l.Title)) unmatched[cname].invoices.push(l.Title);
+    }
+  });
+
+  const rows = Object.values(unmatched).sort((a,b)=>b.count-a.count);
+
+  if(!rows.length){
+    el.innerHTML='<div style="color:var(--teal-d);font-size:13px;padding:12px 0"><i class="ti ti-check"></i> All invoice line course names match a Course record — no unmatched names found. Safe to remove this diagnostic.</div>';
+    return;
+  }
+
+  el.innerHTML = `<p style="font-size:12px;color:var(--g500);padding:10px 0 6px">
+    Found <strong>${rows.length}</strong> invoice line course name(s) that don't match any Course record.
+    These are contributing to the "Uncategorised" revenue bucket. Fix by correcting the course name
+    in the invoice line (or in the Course record) so they match exactly.
+  </p>
+  <table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--g200)">
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Course Name (as stored in Invoice Lines)</th>
+      <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Lines</th>
+      <th style="text-align:left;padding:5px 8px;color:var(--g500);font-weight:600">Invoice Numbers</th>
+    </tr></thead>
+    <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
+      <td style="padding:5px 8px;font-weight:600;color:var(--amber)">"${r.original}"</td>
+      <td style="padding:5px 8px;text-align:right">${r.count}</td>
+      <td style="padding:5px 8px;font-size:11px;color:var(--g500)">${r.invoices.join(', ')}</td>
+    </tr>`).join('')}</tbody>
   </table>`;
 }
 
