@@ -1037,7 +1037,7 @@ function closeModal(){
 // NAVIGATION
 // ============================================================
 const PAGE_CONFIG = {
-  dashboard:     {title:'Dashboard',        sub:'Live data from SharePoint',                       addLabel:null},
+  dashboard:     {title:'Dashboard',        sub:`${new Date().getFullYear()} Training Year — Live data from SharePoint`,                       addLabel:null},
   courses:       {title:'Courses',           sub:'Course catalogue — add, edit, delete courses',   addLabel:'Add Course'},
   runs:          {title:'Course Runs',       sub:'Scheduled and completed course runs',            addLabel:'Add Course Run'},
   organisations: {title:'Organisations',     sub:'Client organisations and contact details',       addLabel:'Add Organisation'},
@@ -1117,8 +1117,6 @@ async function loadDashboard(){
     document.getElementById('dm-runs').textContent = runs.length;
     const dmRunsSub = document.getElementById('dm-runs-sub');
     if(dmRunsSub) dmRunsSub.textContent = `${completedRuns} completed, ${upcomingRuns} upcoming`;
-    const pageSub = document.getElementById('page-sub');
-    if(pageSub) pageSub.textContent = `${new Date().getFullYear()} Training Year — Live data from SharePoint`;
     document.getElementById('dm-att').textContent = atts.length;
     document.getElementById('dm-rev').textContent = fmt(totalInv);
     document.getElementById('dm-out').textContent = fmt(totalInv - totalPaid);
