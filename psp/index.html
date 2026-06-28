@@ -1601,10 +1601,7 @@ async function refreshCache() {
   cache.fees = fees;
   cache.clients = clients;
   cache.lastinv = lastinv;
-  if (clients.length > 0) {
-    console.log('[PSP_HUB] Client fields:', Object.keys(clients[0]));
-    console.log('[PSP_HUB] Client sample:', JSON.stringify(clients[0]).substring(0, 200));
-  }
+
 }
 
 async function refreshCalendarCache() {
@@ -1822,6 +1819,10 @@ function getPSPMember(item) {
 }
 function getPayGroup(item) {
   return item.PayGroup || item['Pay_x0020_Group'] || '—';
+}
+function getClientName(clientRecord) {
+  // PSP_Client_Details uses ContactName as the primary client identifier
+  return clientRecord.ContactName || clientRecord.PSPClient || clientRecord.Title || '—';
 }
 function getOrder(item) {
   if (!item) return '';
@@ -2526,14 +2527,14 @@ async function openTemplateForm(item = null) {
   modalIsEdit = !!item;
   const title = item ? 'Edit Template Activity' : 'Add Template Activity';
   if (!cache.clients.length) cache.clients = await getItems('clients');
-  const clients = [...new Set(cache.clients.map(c => c.PSPClient))].sort();
+  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-row">
       <div class="form-group">
         <label>Client *</label>
         <select id="f-client">
-          ${clients.map(c => `<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+          ${clients.map(c => `<option ${item && (item.PSPClient===c)?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -2689,7 +2690,7 @@ function openBillingFormById(id) {
 function openBillingForm(item = null) {
   modalEntity = 'billing';
   modalIsEdit = !!item;
-  const clients = cache.clients.map(c => c.PSPClient).sort();
+  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
   document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Billing Metrics';
   document.getElementById('modal-body').innerHTML = `
     <div class="form-row">
@@ -2823,7 +2824,7 @@ async function loadGenerateInvoice() {
   if (!cache.billing.length) cache.billing = await getItems('billing');
   if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
   const sel = document.getElementById('inv-client');
-  sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${c.PSPClient}</option>`).join('');
+  sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${getClientName(c)}</option>`).join('');
   const now = new Date();
   const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
   const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -2915,7 +2916,7 @@ async function generateInvoice() {
   const lastInvRecord = cache.lastinv[0];
   const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
   const invNo = `INV-${lastNo + 1}`;
-  const clientDetails = cache.clients.find(c => c.PSPClient === clientName);
+  const clientDetails = cache.clients.find(c => getClientName(c) === clientName);
   if (!clientDetails) { showToast('Client details not found', 'error'); return; }
   invoiceLines = [];
   const methodEGroups = {};
