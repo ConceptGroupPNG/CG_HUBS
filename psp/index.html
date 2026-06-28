@@ -147,6 +147,20 @@
   .cal-event.finished { background: var(--success-light); color: #065f46; border-color: var(--success); }
   .cal-more { font-size: 10px; color: var(--grey-500); padding: 1px 4px; cursor: pointer; font-weight: 600; }
 
+  /* ── PRINT STYLES ── */
+  @media print {
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area {
+      position: fixed; top: 0; left: 0; width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .cal-event { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cal-header-cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .metric-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+  #print-area { display: none; }
+
 </style>
 <style>
   :root {
@@ -984,6 +998,13 @@
               <div class="tab" id="cal-tab-list" onclick="setCalView('list')">List</div>
             </div>
           </div>
+          <div style="width:1px;height:24px;background:var(--grey-200);margin:0 4px;"></div>
+          <button class="btn btn-sm btn-outline" onclick="printCalendar()" title="Print current view">
+            <i class="ti ti-printer"></i> Print
+          </button>
+          <button class="btn btn-sm btn-outline" id="btn-export-cal" onclick="exportCalendarCSV()" title="Export list to CSV" style="display:none;">
+            <i class="ti ti-download"></i> Export CSV
+          </button>
         </div>
         <div id="cal-week-label" style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px;padding:0 2px;"></div>
         <div id="calendar-view-container"></div>
@@ -1257,6 +1278,7 @@
 </div>
 
 <!-- TOAST CONTAINER -->
+<div id="print-area"></div>
 <div id="toast-container"></div>
 
 <script>
@@ -1974,11 +1996,13 @@ function setCalView(mode) {
     const t = document.getElementById('cal-tab-' + m);
     if (t) t.classList.toggle('active', m === mode);
   });
-  const hidden = mode === 'list';
+  const isList = mode === 'list';
   ['cal-prev','cal-next','cal-today-btn'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = hidden ? 'none' : '';
+    if (el) el.style.display = isList ? 'none' : '';
   });
+  const exportBtn = document.getElementById('btn-export-cal');
+  if (exportBtn) exportBtn.style.display = isList ? '' : 'none';
   renderCalendar();
 }
 
@@ -2007,6 +2031,82 @@ function calEventHtml(i, showTime) {
   const time = showTime && d ? d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' ' : '';
   const label = `${time}${getPayGroup(i)} Pay ${i.PayNo||'?'} · ${i.ActivityMilestone||''}`;
   return `<div class="cal-event ${st}" title="${i.PSPClient} · ${i.ActivityMilestone||''}" onclick="openStatusModalById('${i.id}')">${label}</div>`;
+}
+
+function printCalendar() {
+  const container = document.getElementById('calendar-view-container');
+  const label = document.getElementById('cal-week-label');
+  const printArea = document.getElementById('print-area');
+  if (!container || !printArea) return;
+
+  const viewTitle = {
+    '7': '7-Day Calendar',
+    'month': 'Monthly Calendar',
+    'list': 'Activity List',
+  }[calViewMode] || 'Calendar';
+
+  const filters = [
+    document.getElementById('filter-cal-client').value,
+    document.getElementById('filter-cal-paygroup').value,
+    document.getElementById('filter-cal-status').value,
+  ].filter(Boolean).join(' · ') || 'All Activities';
+
+  printArea.innerHTML = `
+    <div style="padding:20px;">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;border-bottom:3px solid #1a2744;padding-bottom:12px;">
+        <div>
+          <div style="font-size:20px;font-weight:900;color:#1a2744;">PSP HUB — ${viewTitle}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;">${label?.textContent || ''} &nbsp;·&nbsp; ${filters} &nbsp;·&nbsp; Printed ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+      </div>
+      ${container.innerHTML}
+    </div>`;
+
+  printArea.style.display = 'block';
+  window.print();
+  printArea.style.display = 'none';
+}
+
+function exportCalendarCSV() {
+  const items = getFilteredCalItems()
+    .sort((a,b) => (spDateToDate(a.ActivityDateTime)||0)-(spDateToDate(b.ActivityDateTime)||0));
+
+  if (!items.length) { showToast('No items to export', 'error'); return; }
+
+  const headers = ['Client','Pay Group','Pay No','Pay End Date','Order','Milestone',
+    'Scheduled Date','Scheduled Time','Pay Master','Int/Ext','SLA','Status',
+    'Start Date','Start Time','Finish Date','Finish Time','Comments'];
+
+  const rows = items.map(i => {
+    const act = spDateToDate(i.ActivityDateTime);
+    const start = spDateToDate(i.StartDateTime);
+    const finish = spDateToDate(i.FinishDateTime);
+    const fmt = d => d ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '';
+    const fmtT = d => d ? d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+    const vals = [
+      i.PSPClient||'', getPayGroup(i), i.PayNo||'',
+      fmt(spDateToDate(i.PayEndDate)), getOrder(i)||'',
+      i.ActivityMilestone||'', fmt(act), fmtT(act),
+      getPSPMember(i)||'', i.IntExt||'', i.SLA?'Yes':'No',
+      getActStatus(i)||'Not Started',
+      fmt(start), fmtT(start), fmt(finish), fmtT(finish),
+      i.Comments||'',
+    ];
+    return vals.map(v => {
+      const s = String(v);
+      const needsQuote = s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0;
+      return needsQuote ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const label = document.getElementById('cal-week-label')?.textContent || 'calendar';
+  a.download = `PSP_Calendar_${label.replace(/[^a-z0-9]/gi,'_')}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast(`Exported ${items.length} activities`, 'success');
 }
 
 function renderCalendar() {
