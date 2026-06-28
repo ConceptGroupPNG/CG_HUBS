@@ -1808,18 +1808,14 @@ function renderMyActivities() {
 }
 
 function getPSPMember(item) {
-  // PSPMEmber is a Person field (note the typo in the SP column name: PSPMEmber not PSPMember)
-  // When expanded via Graph API ($expand=PSPMEmber), returns:
-  //   { LookupId: "29", LookupValue: "Philip Waliman" }
-  // When not expanded, returns PSPMEmberLookupId: "29" (ID only)
+  if (!item) return '';
   const expanded = item.PSPMEmber || item.PSPMember;
   if (expanded) {
     if (typeof expanded === 'object' && expanded.LookupValue) return expanded.LookupValue;
     if (typeof expanded === 'string' && expanded.length > 0) return expanded;
   }
-  // Fallback: if we only have the ID, return a placeholder
   if (item.PSPMEmberLookupId) return `User #${item.PSPMEmberLookupId}`;
-  return '—';
+  return '';
 }
 function getPayGroup(item) {
   return item.PayGroup || item['Pay_x0020_Group'] || '—';
@@ -2555,7 +2551,13 @@ function openTemplateForm(item = null) {
     <div class="form-row">
       <div class="form-group">
         <label>Pay Master</label>
-        <input type="text" id="f-member" value="${getPSPMember(item)||''}">
+        <div class="user-picker-wrap">
+          <input type="text" id="f-member" class="user-picker-input" placeholder="Search M365 users..." autocomplete="off" value="${item ? getPSPMember(item) : ''}">
+          <div id="f-member-dropdown" class="user-picker-dropdown"></div>
+        </div>
+        <div id="f-member-selected" class="user-picker-selected" style="display:${item && getPSPMember(item) ? 'flex' : 'none'};">
+          <i class="ti ti-circle-check"></i> ${item ? getPSPMember(item) : ''}
+        </div>
       </div>
       <div class="form-group">
         <label>Contact</label>
@@ -2587,6 +2589,9 @@ function openTemplateForm(item = null) {
     </div>`;
   document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
   document.getElementById('modal-overlay').classList.add('open');
+  // Wire user picker
+  userPickerSelected = item ? { displayName: getPSPMember(item) } : {};
+  setTimeout(() => renderUserPicker('f-member', 'f-member-dropdown', 'f-member-selected', null), 50);
 }
 
 async function saveModal() {
@@ -2598,7 +2603,7 @@ async function saveModal() {
       Order0: parseInt(document.getElementById('f-order').value),
       Offset: parseInt(document.getElementById('f-offset').value),
       ActivityMilestone: document.getElementById('f-milestone').value,
-      PSPMember: document.getElementById('f-member').value,
+      PSPMember: userPickerSelected.displayName || document.getElementById('f-member').value,
       Contact: document.getElementById('f-contact').value,
       Cycle: document.getElementById('f-cycle').value,
       IntExt: document.getElementById('f-intext').value,
