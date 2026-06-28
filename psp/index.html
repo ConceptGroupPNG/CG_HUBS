@@ -1564,7 +1564,7 @@ async function loadDashboard() {
     dashMy.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No activities scheduled for you today</p></div>';
   } else {
     const now = new Date();
-    const rows = myTodaySorted.slice(0, 8).map(i => {
+    const rows = myTodaySorted.map(i => {
       const due = spDateToDate(i.ActivityDateTime);
       const st = getActStatus(i);
       const diffMins = due ? (due - now) / 60000 : null;
@@ -1608,7 +1608,7 @@ async function loadDashboard() {
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
       </div>`;
     }).join('');
-    dashMy.innerHTML = `<div style="padding:4px 16px;">${rows}</div>`;
+    dashMy.innerHTML = `<div style="max-height:420px;overflow-y:auto;padding:4px 16px;">${rows}</div>`;
   }
 
   // Delayed & overdue — deduplicated, newest due date first
@@ -1618,7 +1618,7 @@ async function loadDashboard() {
   if (!issues.length) {
     dashDel.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No delays or overdue activities</p></div>';
   } else {
-    const rows = issues.slice(0, 8).map(i => {
+    const rows = issues.map(i => {
       const d = spDateToDate(i.ActivityDateTime);
       const dateStr = d ? d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) : '—';
       const timeStr = d ? d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : '—';
@@ -1638,7 +1638,7 @@ async function loadDashboard() {
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
       </div>`;
     }).join('');
-    dashDel.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
+    dashDel.innerHTML = `<div style="max-height:420px;overflow-y:auto;padding:4px 16px;">${rows}</div>`;
   }
 }
 
