@@ -2041,7 +2041,7 @@ function printCalendar() {
 
   const viewTitle = {
     '7': '7-Day Calendar',
-    'month': 'Monthly Calendar',
+    'month': calAnchor.toLocaleDateString('en-GB',{month:'long',year:'numeric'}) + ' — Monthly Calendar',
     'list': 'Activity List',
   }[calViewMode] || 'Calendar';
 
