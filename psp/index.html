@@ -1531,7 +1531,7 @@ async function loadDashboard() {
   } else {
     const rows = myToday.slice(0, 5).map(i => `
       <div class="activity-row">
-        <div class="activity-order ${(getActStatus(i).toLowerCase().replace(' ','-')}">${getOrder(i)}</div>
+        <div class="activity-order ${getActStatus(i).toLowerCase().replace(' ','-')}">${getOrder(i)}</div>
         <div>
           <div class="activity-name">${i.ActivityMilestone || '—'}</div>
           <div class="activity-meta">${i.PSPClient} · ${getPayGroup(i)} Pay ${i.PayNo || "—"}</div>
@@ -1772,7 +1772,7 @@ function renderCalendar() {
       <td>${fmtDateTime(i.FinishDateTime)}</td>
       <td>
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelete('calendar','${i.id}','${(i.ActivityMilestone||'').replace(/'/g,"\\'")}')">Del</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('calendar','${i.id}')">Del</button>
       </td>
     </tr>`).join('');
 }
@@ -1977,7 +1977,7 @@ function renderTemplates() {
       <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
       <td>
         <button class="btn btn-xs btn-outline" onclick="openTemplateFormById('${i.id}')">Edit</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelete('activities','${i.id}','${(i.ActivityMilestone||'').replace(/'/g,"\\'")}')">Del</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('activities','${i.id}')">Del</button>
       </td>
     </tr>`).join('');
 }
@@ -2604,11 +2604,19 @@ async function markAsBilled() {
 // DELETE CONFIRM
 // ─────────────────────────────────────────────
 function confirmDelete(entity, id, name) {
+  // name is optional - can look up from cache
+  let displayName = name || id;
+  if (!name || name === 'item') {
+    const cacheMap = { calendar: 'ActivityMilestone', activities: 'ActivityMilestone', billing: 'PSPClient' };
+    const field = cacheMap[entity] || 'id';
+    const rec = (cache[entity] || []).find(r => String(r.id) === String(id));
+    displayName = rec ? (rec[field] || id) : id;
+  }
   document.getElementById('modal-title').textContent = 'Confirm Delete';
   document.getElementById('modal-body').innerHTML = `
     <div class="alert alert-warning">
       <i class="ti ti-alert-triangle"></i>
-      <div>Are you sure you want to delete <strong>${name}</strong>? This cannot be undone.</div>
+      <div>Are you sure you want to delete <strong>${displayName}</strong>? This cannot be undone.</div>
     </div>`;
   document.getElementById('modal-save-btn').textContent = 'Delete';
   document.getElementById('modal-save-btn').className = 'btn btn-danger';
