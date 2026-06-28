@@ -1941,7 +1941,7 @@ function onGenPayGroupChange() {
   const client = document.getElementById('gen-client').value;
   const pg = document.getElementById('gen-paygroup').value;
   if (!pg) return;
-  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b) => (a.Order||0)-(b.Order||0));
+  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
   if (!tmpl.length) return;
   const cycle = tmpl[0].Cycle || '—';
   document.getElementById('gen-cycle').value = cycle;
@@ -1977,7 +1977,7 @@ async function generateCalendar() {
 
   const payEndDate = new Date(payEndDateStr);
   const payEndSerial = dateToExcelSerial(payEndDate);
-  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b)=>(getOrder(a)||0)-(getOrder(b)||0));
+  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b) => (getOrder(a) || 0) - (getOrder(b) || 0));
 
   if (!tmpl.length) { showToast('No template found', 'error'); return; }
 
