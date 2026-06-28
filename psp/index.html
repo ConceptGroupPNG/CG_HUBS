@@ -1601,7 +1601,10 @@ async function refreshCache() {
   cache.fees = fees;
   cache.clients = clients;
   cache.lastinv = lastinv;
-
+  if (clients.length > 0) {
+    console.log('[PSP_HUB] Client fields:', Object.keys(clients[0]));
+    console.log('[PSP_HUB] Client sample:', JSON.stringify(clients[0]).substring(0, 200));
+  }
 }
 
 async function refreshCalendarCache() {
