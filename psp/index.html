@@ -1288,10 +1288,15 @@ async function getListId(listName) {
   return list.id;
 }
 
-async function getItems(entity, filter = '', top = 5000) {
+async function getItems(entity, filter = '', top = 5000, expandFields = []) {
   const siteId = await getSiteId();
   const listId = await getListId(LISTS[entity]);
-  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=${top}`;
+  // Build expand param - always expand fields, optionally expand person fields within
+  let expandParam = 'fields';
+  if (expandFields.length > 0) {
+    expandParam = `fields($expand=${expandFields.join(',')})`;
+  }
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=${expandParam}&$top=${top}`;
   if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
   const items = [];
   while (url) {
@@ -1463,8 +1468,8 @@ async function loadPage(page) {
 // ─────────────────────────────────────────────
 async function refreshCache() {
   const [cal, acts, bill, fees, clients, lastinv] = await Promise.all([
-    getItems('calendar'),
-    getItems('activities'),
+    getItems('calendar', '', 5000, ['PSPMEmber']),
+    getItems('activities', '', 5000, ['PSPMEmber']),
     getItems('billing'),
     getItems('fees'),
     getItems('clients'),
@@ -1477,28 +1482,14 @@ async function refreshCache() {
   cache.clients = clients;
   cache.lastinv = lastinv;
   if (cal.length > 0) {
-    const fields = Object.keys(cal[0]);
-    console.log('[PSP_HUB] Calendar fields (' + fields.length + '):', fields.join(', '));
-    console.log('[PSP_HUB] Sample item (full):', JSON.stringify(cal[0], null, 2));
-    // Log specific fields we care about
-    const sample = cal[0];
-    // Find PSPMember variant
-    const memberFields = fields.filter(f => f.toLowerCase().includes('member') || f.toLowerCase().includes('psp'));
-    console.log('[PSP_HUB] Member/PSP fields:', memberFields);
-    console.log('[PSP_HUB] Key field check:', {
-      Order: sample.Order, Order0: sample.Order0,
-      PSPMember: sample.PSPMember, PSPMEmber: sample.PSPMEmber,
-      Act_Status: sample.Act_Status, Act_x0020_Status: sample.Act_x0020_Status,
-      ActivityDateTime: sample.ActivityDateTime,
-      FinishDateTime: sample.FinishDateTime,
-      PayEndDate: sample.PayEndDate,
-      PayrollYear: sample.PayrollYear,
-    });
+    const s = cal[0];
+    console.log('[PSP_HUB] PSPMEmber (expanded):', s.PSPMEmber, '| LookupId:', s.PSPMEmberLookupId);
+    console.log('[PSP_HUB] Order0:', s.Order0, '| Act_Status:', s.Act_Status);
   }
 }
 
 async function refreshCalendarCache() {
-  cache.calendar = await getItems('calendar');
+  cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
 }
 
 // ─────────────────────────────────────────────
@@ -1642,16 +1633,17 @@ function renderMyActivities() {
 }
 
 function getPSPMember(item) {
-  // PSPMember is a Person field in SharePoint
-  // Graph API may return it as:
-  //   item.PSPMember = "Name" (if text)
-  //   item.PSPMEmber = "Name" (typo in SP column name)  
-  //   item.PSPMember = { LookupValue: "Name" } (if expanded)
-  //   item.PSPMemberLookupId = 123 (lookup ID only)
-  const raw = item.PSPMember || item.PSPMEmber || item['PSP_x0020_Member'];
-  if (!raw) return '—';
-  if (typeof raw === 'object' && raw.LookupValue) return raw.LookupValue;
-  if (typeof raw === 'string') return raw;
+  // PSPMEmber is a Person field (note the typo in the SP column name: PSPMEmber not PSPMember)
+  // When expanded via Graph API ($expand=PSPMEmber), returns:
+  //   { LookupId: "29", LookupValue: "Philip Waliman" }
+  // When not expanded, returns PSPMEmberLookupId: "29" (ID only)
+  const expanded = item.PSPMEmber || item.PSPMember;
+  if (expanded) {
+    if (typeof expanded === 'object' && expanded.LookupValue) return expanded.LookupValue;
+    if (typeof expanded === 'string' && expanded.length > 0) return expanded;
+  }
+  // Fallback: if we only have the ID, return a placeholder
+  if (item.PSPMEmberLookupId) return `User #${item.PSPMEmberLookupId}`;
   return '—';
 }
 function getPayGroup(item) {
@@ -1915,7 +1907,7 @@ async function generateCalendar() {
       ActivityMilestone: t.ActivityMilestone,
       Offset: t.Offset,
       ActivityDateTime: actDate.toISOString(),
-      PSPMember: t.PSPMember,
+      PSPMEmberLookupId: t.PSPMEmberLookupId || null,
       Act_Status: 'Not Started',
       ClientBAU: t.ClientBAU,
       IntExt: t.IntExt,
