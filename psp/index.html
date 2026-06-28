@@ -1174,11 +1174,9 @@
       <div class="form-group">
         <label>New Status</label>
         <select id="sm-status">
-          <option value="Not Started">Not Started</option>
-          <option value="Started">Started</option>
-          <option value="Delayed">Delayed</option>
-          <option value="Finished">Finished</option>
-        </select>
+          <!-- Options populated dynamically based on current status -->
+          </select>
+        </div>
       </div>
       <div class="form-group" id="sm-comments-group">
         <label>Comments</label>
@@ -1950,9 +1948,43 @@ function openStatusModalById(id) {
 
 function openStatusModal(item) {
   statusEditItem = item;
+  const current = getActStatus(item) || 'Not Started';
+
+  // Allowed transitions per status
+  const transitions = {
+    'Not Started': ['Started', 'Delayed'],
+    'Started':     ['Delayed', 'Finished'],
+    'Delayed':     ['Started'],
+    'Finished':    [],
+  };
+  const allowed = transitions[current] || [];
+
+  // Build select options
+  const sel = document.getElementById('sm-status');
+  if (allowed.length === 0) {
+    sel.innerHTML = `<option value="${current}">${current}</option>`;
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = allowed.map(s => `<option value="${s}">${s}</option>`).join('');
+  }
+
+  // Show current status as read-only context
+  const currentBadge = document.getElementById('sm-current-status');
+  if (currentBadge) {
+    currentBadge.innerHTML = statusBadge(current);
+  }
+
   document.getElementById('sm-milestone').value = item.ActivityMilestone || '';
-  document.getElementById('sm-status').value = getActStatus(item) || 'Not Started';
   document.getElementById('sm-comments').value = '';
+
+  // If Finished, show info message and disable save
+  const saveBtn = document.querySelector('#status-modal-overlay .modal-footer .btn-teal');
+  if (saveBtn) {
+    saveBtn.disabled = allowed.length === 0;
+    saveBtn.style.opacity = allowed.length === 0 ? '0.5' : '1';
+  }
+
   document.getElementById('status-modal-overlay').classList.add('open');
 }
 function closeStatusModal() {
@@ -1962,6 +1994,11 @@ function closeStatusModal() {
 
 async function saveStatus() {
   if (!statusEditItem) return;
+  const current = getActStatus(statusEditItem) || 'Not Started';
+  if (current === 'Finished') {
+    showToast('This activity is already Finished and cannot be changed.', 'error');
+    return;
+  }
   const newStatus = document.getElementById('sm-status').value;
   const comments = document.getElementById('sm-comments').value.trim();
   const now = new Date().toISOString();
