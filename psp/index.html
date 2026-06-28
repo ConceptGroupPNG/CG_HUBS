@@ -1703,11 +1703,16 @@ async function loadDashboard() {
       <div class="activity-row">
         <div class="activity-order ${st === 'Delayed' ? 'delayed' : ''}">${getOrder(i)}</div>
         <div>
-          <div class="activity-name">${i.ActivityMilestone || '—'}</div>
-          <div class="activity-meta">${i.PSPClient} · ${getPSPMember(i)}</div>
-          <div style="display:flex;gap:10px;margin-top:3px;align-items:center;">
-            <span style="font-size:11px;font-weight:700;color:var(--navy);"><i class="ti ti-calendar-event" style="font-size:11px;margin-right:2px;"></i>${dateStr}</span>
-            <span style="font-size:11px;color:var(--grey-500);"><i class="ti ti-clock" style="font-size:11px;margin-right:2px;"></i>${timeStr}</span>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;font-weight:800;color:var(--navy);">${getPayGroup(i)}</span>
+            <span style="font-size:12px;font-weight:700;color:var(--white);background:var(--navy);padding:1px 7px;border-radius:10px;">Pay ${i.PayNo || '—'}</span>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--grey-700);">${i.ActivityMilestone || '—'}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap;">
+            <span style="font-size:11px;color:var(--grey-500);">${i.PSPClient}</span>
+            <span style="font-size:10px;color:var(--grey-300);">·</span>
+            <span style="font-size:11px;font-weight:700;color:var(--navy);"><i class="ti ti-calendar-event" style="font-size:10px;margin-right:2px;"></i>${dateStr}</span>
+            <span style="font-size:11px;color:var(--grey-500);"><i class="ti ti-clock" style="font-size:10px;margin-right:2px;"></i>${timeStr}</span>
           </div>
         </div>
         ${statusBadge(st || 'Not Started')}
