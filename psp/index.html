@@ -697,7 +697,11 @@
         <div class="topbar-accent"></div>
         <h2 id="page-title">Dashboard</h2>
       </div>
-      <div class="topbar-actions" id="topbar-actions"></div>
+      <div class="topbar-actions" id="topbar-actions">
+        <button class="btn btn-outline btn-sm" id="btn-refresh" onclick="refreshPage()" title="Refresh data">
+          <i class="ti ti-refresh" id="refresh-icon"></i> Refresh
+        </button>
+      </div>
     </div>
     <div class="page-content">
 
@@ -1431,6 +1435,45 @@ function statusBadge(s) {
   return `<span class="badge badge-${cls}"><i class="ti ${icon}"></i> ${s || 'Not Started'}</span>`;
 }
 
+async function refreshPage() {
+  const icon = document.getElementById('refresh-icon');
+  const btn = document.getElementById('btn-refresh');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  icon.style.animation = 'spin 0.7s linear infinite';
+
+  try {
+    // Refresh relevant cache for current page
+    if (currentPage === 'dashboard' || currentPage === 'my-activities' ||
+        currentPage === 'all-activities' || currentPage === 'calendar' ||
+        currentPage === 'generate-calendar') {
+      cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+    }
+    if (currentPage === 'templates' || currentPage === 'generate-calendar') {
+      cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+    }
+    if (currentPage === 'billing-metrics' || currentPage === 'generate-invoice') {
+      cache.billing = await getItems('billing');
+    }
+    if (currentPage === 'generate-invoice') {
+      cache.clients = await getItems('clients');
+      cache.fees = await getItems('fees');
+      cache.lastinv = await getItems('lastinv');
+    }
+    if (currentPage === 'dashboard') {
+      // Dashboard needs everything
+      await refreshCache();
+    }
+    await loadPage(currentPage);
+    showToast('Refreshed', 'success');
+  } catch(e) {
+    showToast('Refresh failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    icon.style.animation = '';
+  }
+}
+
 function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1511,22 +1554,61 @@ async function loadDashboard() {
   document.getElementById('m-overdue').textContent = overdue.length;
   document.getElementById('badge-my-activities').textContent = myToday.filter(i => getActStatus(i) !== 'Finished').length;
 
-  // My activities today (first 5)
+  // My activities today — sorted by due time, with time-urgency colouring
   const dashMy = document.getElementById('dash-my-activities');
-  if (!myToday.length) {
+  const myTodaySorted = myToday
+    .filter(i => getActStatus(i) !== 'Finished')
+    .sort((a, b) => (spDateToDate(a.ActivityDateTime) || 0) - (spDateToDate(b.ActivityDateTime) || 0));
+
+  if (!myTodaySorted.length) {
     dashMy.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No activities scheduled for you today</p></div>';
   } else {
-    const rows = myToday.slice(0, 5).map(i => `
-      <div class="activity-row">
-        <div class="activity-order ${getActStatus(i).toLowerCase().replace(' ','-')}">${getOrder(i)}</div>
+    const now = new Date();
+    const rows = myTodaySorted.slice(0, 8).map(i => {
+      const due = spDateToDate(i.ActivityDateTime);
+      const st = getActStatus(i);
+      const diffMins = due ? (due - now) / 60000 : null;
+
+      // Time urgency band
+      let timeBand, timeColor, timeBg, timeIcon;
+      if (st === 'Finished') {
+        timeBand = 'Done'; timeColor = '#065f46'; timeBg = 'var(--success-light)'; timeIcon = 'ti-circle-check';
+      } else if (diffMins === null) {
+        timeBand = '—'; timeColor = 'var(--grey-500)'; timeBg = 'var(--grey-100)'; timeIcon = 'ti-clock';
+      } else if (diffMins < -60) {
+        // Overdue by more than 1 hour
+        timeBand = 'Overdue'; timeColor = '#fff'; timeBg = 'var(--red)'; timeIcon = 'ti-alert-circle';
+      } else if (diffMins < 0) {
+        // Overdue but within the last hour
+        timeBand = 'Due Now'; timeColor = '#92400e'; timeBg = '#fde68a'; timeIcon = 'ti-clock-exclamation';
+      } else if (diffMins <= 60) {
+        // Due within the next hour
+        timeBand = 'Due Soon'; timeColor = '#1e40af'; timeBg = '#bfdbfe'; timeIcon = 'ti-clock-bolt';
+      } else {
+        // Due later today
+        timeBand = 'Today'; timeColor = 'var(--navy)'; timeBg = 'var(--grey-100)'; timeIcon = 'ti-clock';
+      }
+
+      const timeStr = due ? due.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : '—';
+      const orderClass = st === 'Finished' ? 'finished' : st === 'Started' ? 'started' : st === 'Delayed' ? 'delayed' : '';
+
+      return `
+      <div style="display:grid;grid-template-columns:36px 1fr auto auto;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--grey-100);">
+        <div class="activity-order ${orderClass}">${getOrder(i)}</div>
         <div>
-          <div class="activity-name">${i.ActivityMilestone || '—'}</div>
-          <div class="activity-meta">${i.PSPClient} · ${getPayGroup(i)} Pay ${i.PayNo || "—"}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--navy);">${i.ActivityMilestone || '—'}</div>
+          <div style="font-size:11px;color:var(--grey-500);margin-top:1px;">${i.PSPClient} · ${getPayGroup(i)} Pay ${i.PayNo || '—'}</div>
         </div>
-        ${statusBadge(getActStatus(i) || 'Not Started')}
+        <div style="text-align:center;min-width:80px;">
+          <div style="font-size:16px;font-weight:800;color:${timeColor};background:${timeBg};border-radius:8px;padding:4px 8px;line-height:1.2;">${timeStr}</div>
+          <div style="font-size:10px;font-weight:700;color:${timeColor};margin-top:2px;display:flex;align-items:center;justify-content:center;gap:3px;">
+            <i class="ti ${timeIcon}" style="font-size:10px;"></i>${timeBand}
+          </div>
+        </div>
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
-      </div>`).join('');
-    dashMy.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
+      </div>`;
+    }).join('');
+    dashMy.innerHTML = `<div style="padding:4px 16px;">${rows}</div>`;
   }
 
   // Delayed & overdue — deduplicated, newest due date first
