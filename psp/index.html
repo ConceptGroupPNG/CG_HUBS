@@ -1483,8 +1483,23 @@ async function refreshCache() {
   cache.clients = clients;
   cache.lastinv = lastinv;
   if (cal.length > 0) {
-    console.log('[PSP_HUB] Calendar fields:', Object.keys(cal[0]));
-    console.log('[PSP_HUB] Sample item:', JSON.stringify(cal[0]).substring(0, 300));
+    const fields = Object.keys(cal[0]);
+    console.log('[PSP_HUB] Calendar fields (' + fields.length + '):', fields.join(', '));
+    console.log('[PSP_HUB] Sample item (full):', JSON.stringify(cal[0], null, 2));
+    // Log specific fields we care about
+    const sample = cal[0];
+    // Find PSPMember variant
+    const memberFields = fields.filter(f => f.toLowerCase().includes('member') || f.toLowerCase().includes('psp'));
+    console.log('[PSP_HUB] Member/PSP fields:', memberFields);
+    console.log('[PSP_HUB] Key field check:', {
+      Order: sample.Order, Order0: sample.Order0,
+      PSPMember: sample.PSPMember, PSPMEmber: sample.PSPMEmber,
+      Act_Status: sample.Act_Status, Act_x0020_Status: sample.Act_x0020_Status,
+      ActivityDateTime: sample.ActivityDateTime,
+      FinishDateTime: sample.FinishDateTime,
+      PayEndDate: sample.PayEndDate,
+      PayrollYear: sample.PayrollYear,
+    });
   }
 }
 
@@ -1501,11 +1516,11 @@ async function loadDashboard() {
   }
   const todayItems = cache.calendar.filter(i => isToday(i.ActivityDateTime));
   const myToday = todayItems.filter(i => i.PSPMember === currentUser.displayName);
-  const delayed = cache.calendar.filter(i => i.Act_Status === 'Delayed' && isToday(i.ActivityDateTime));
+  const delayed = cache.calendar.filter(i => getActStatus(i) === 'Delayed' && isToday(i.ActivityDateTime));
   const overdue = cache.calendar.filter(i => {
     if (i.FinishDateTime) return false;
-    const st = i.Act_Status || '';
-    if (st === 'Finished') return false;
+    const st = getActStatus(i);
+    if (st === 'Finished' || st === 'finished') return false;
     return isOverdue(i.ActivityDateTime, st);
   });
 
@@ -1513,7 +1528,7 @@ async function loadDashboard() {
   document.getElementById('m-all-today').textContent = todayItems.length;
   document.getElementById('m-delayed').textContent = delayed.length;
   document.getElementById('m-overdue').textContent = overdue.length;
-  document.getElementById('badge-my-activities').textContent = myToday.filter(i => i.Act_Status !== 'Finished').length;
+  document.getElementById('badge-my-activities').textContent = myToday.filter(i => getActStatus(i) !== 'Finished').length;
 
   // My activities today (first 5)
   const dashMy = document.getElementById('dash-my-activities');
@@ -1522,12 +1537,12 @@ async function loadDashboard() {
   } else {
     const rows = myToday.slice(0, 5).map(i => `
       <div class="activity-row">
-        <div class="activity-order ${(i.Act_Status||'').toLowerCase().replace(' ','-')}">${i.Order || '?'}</div>
+        <div class="activity-order ${(getActStatus(i).toLowerCase().replace(' ','-')}">${getOrder(i)}</div>
         <div>
           <div class="activity-name">${i.ActivityMilestone || '—'}</div>
           <div class="activity-meta">${i.PSPClient} · ${getPayGroup(i)} Pay ${i.PayNo || "—"}</div>
         </div>
-        ${statusBadge(i.Act_Status || 'Not Started')}
+        ${statusBadge(getActStatus(i) || 'Not Started')}
         <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
       </div>`).join('');
     dashMy.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
@@ -1541,12 +1556,12 @@ async function loadDashboard() {
   } else {
     const rows = issues.slice(0, 6).map(i => `
       <div class="activity-row">
-        <div class="activity-order delayed">${i.Order || '?'}</div>
+        <div class="activity-order delayed">${getOrder(i)}</div>
         <div>
           <div class="activity-name">${i.ActivityMilestone || '—'}</div>
           <div class="activity-meta">${i.PSPClient} · ${getPSPMember(i)}</div>
         </div>
-        ${statusBadge(i.Act_Status || 'Not Started')}
+        ${statusBadge(getActStatus(i) || 'Not Started')}
         <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
       </div>`).join('');
     dashDel.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
@@ -1570,7 +1585,7 @@ function renderMyActivities() {
   let items = cache.calendar.filter(i => {
     if (getPSPMember(i) !== currentUser.displayName) return false;
     if (i.FinishDateTime) return false;
-    if ((i.Act_Status || '') === 'Finished') return false;
+    if ((getActStatus(i)) === 'Finished') return false;
     return true;
   });
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
@@ -1601,15 +1616,15 @@ function renderMyActivities() {
     const [client, pg, payno] = key.split('||');
     const ppe = grpItems[0]?.PayEndDate;
     const rows = grpItems.map(i => {
-      const overdue = isOverdue(i.ActivityDateTime, i.Act_Status);
+      const overdue = isOverdue(i.ActivityDateTime, getActStatus(i));
       return `
       <div class="activity-row">
-        <div class="activity-order ${getStatusClass(i.Act_Status)}">${i.Order}</div>
+        <div class="activity-order ${getStatusClass(getActStatus(i))}">${getOrder(i)}</div>
         <div>
           <div class="activity-name">${i.ActivityMilestone}${overdue ? ' <span style="color:var(--danger);font-size:11px;">⚠ Overdue</span>' : ''}</div>
           <div class="activity-meta">Scheduled: ${fmtDateTime(i.ActivityDateTime)} · <span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'Int'}</span> · Contact: ${i.Contact||'—'}</div>
         </div>
-        ${statusBadge(i.Act_Status || 'Not Started')}
+        ${statusBadge(getActStatus(i) || 'Not Started')}
         <div class="activity-actions">
           <button class="btn btn-xs btn-teal" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
         </div>
@@ -1623,7 +1638,7 @@ function renderMyActivities() {
           <h3>${client} — ${pg}</h3>
           <div class="sub">Pay No ${payno} · PPE: ${fmtDate(ppe)}</div>
         </div>
-        <span class="progress-pill ${grpItems.filter(i=>i.Act_Status==='Finished').length===grpItems.length?'all-done':''}">${grpItems.filter(i=>i.Act_Status==='Finished').length}/${grpItems.length} done</span>
+        <span class="progress-pill ${grpItems.filter(i=>getActStatus(i)==='Finished').length===grpItems.length?'all-done':''}">${grpItems.filter(i=>getActStatus(i)==='Finished').length}/${grpItems.length} done</span>
       </div>
       <div style="padding:8px 16px;">${rows}</div>
     </div>`;
@@ -1633,10 +1648,27 @@ function renderMyActivities() {
 }
 
 function getPSPMember(item) {
-  return item.PSPMember || item['PSP_x0020_Member'] || '—';
+  // PSPMember is a Person field in SharePoint
+  // Graph API may return it as:
+  //   item.PSPMember = "Name" (if text)
+  //   item.PSPMEmber = "Name" (typo in SP column name)  
+  //   item.PSPMember = { LookupValue: "Name" } (if expanded)
+  //   item.PSPMemberLookupId = 123 (lookup ID only)
+  const raw = item.PSPMember || item.PSPMEmber || item['PSP_x0020_Member'];
+  if (!raw) return '—';
+  if (typeof raw === 'object' && raw.LookupValue) return raw.LookupValue;
+  if (typeof raw === 'string') return raw;
+  return '—';
 }
 function getPayGroup(item) {
   return item.PayGroup || item['Pay_x0020_Group'] || '—';
+}
+function getOrder(item) {
+  // SharePoint renames 'Order' to 'Order0' as Order is a reserved SQL word
+  return item.Order0 !== undefined ? item.Order0 : (item.Order !== undefined ? item.Order : '?');
+}
+function getActStatus(item) {
+  return item.Act_Status || item['Act_x0020_Status'] || '';
 }
 function getStatusClass(status) {
   if (status === 'Finished') return 'finished';
@@ -1667,7 +1699,7 @@ function renderAllActivities() {
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
   if (member) items = items.filter(i => getPSPMember(i) === member);
   if (client) items = items.filter(i => i.PSPClient === client);
-  if (status) items = items.filter(i => (i.Act_Status || 'Not Started') === status);
+  if (status) items = items.filter(i => (getActStatus(i) || 'Not Started') === status);
   if (search) items = items.filter(i =>
     (i.ActivityMilestone||'').toLowerCase().includes(search) ||
     (i.PSPClient||'').toLowerCase().includes(search)
@@ -1675,7 +1707,7 @@ function renderAllActivities() {
   items.sort((a, b) => {
     if (a.PSPClient < b.PSPClient) return -1;
     if (a.PSPClient > b.PSPClient) return 1;
-    return (a.Order || 0) - (b.Order || 0);
+    return (getOrder(a) || 0) - (getOrder(b) || 0);
   });
 
   const tbody = document.getElementById('all-activities-tbody');
@@ -1688,13 +1720,13 @@ function renderAllActivities() {
       <td>${i.PSPClient || '—'}</td>
       <td><strong>${i.PayGroup || '—'}</strong></td>
       <td>${i.PayNo || '—'}</td>
-      <td>${i.Order || '—'}</td>
+      <td>${getOrder(i)}</td>
       <td>${i.ActivityMilestone || '—'}</td>
       <td>${fmtDateTime(i.ActivityDateTime)}</td>
       <td>${getPSPMember(i)}</td>
       <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
       <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
-      <td>${statusBadge(i.Act_Status || 'Not Started')}</td>
+      <td>${statusBadge(getActStatus(i) || 'Not Started')}</td>
       <td>
         <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
       </td>
@@ -1719,7 +1751,7 @@ function renderCalendar() {
   let items = [...cache.calendar];
   if (client) items = items.filter(i => i.PSPClient === client);
   if (pg) items = items.filter(i => i.PayGroup === pg);
-  if (status) items = items.filter(i => (i.Act_Status||'Not Started') === status);
+  if (status) items = items.filter(i => (getActStatus(i)||'Not Started') === status);
   items.sort((a,b) => {
     if (a.PSPClient < b.PSPClient) return -1;
     if (a.PSPClient > b.PSPClient) return 1;
@@ -1737,11 +1769,11 @@ function renderCalendar() {
       <td><strong>${i.PayGroup||'—'}</strong></td>
       <td>${i.PayNo||'—'}</td>
       <td>${fmtDate(i.PayEndDate)}</td>
-      <td>${i.Order||'—'}</td>
+      <td>${getOrder(i)}</td>
       <td>${i.ActivityMilestone||'—'}</td>
       <td>${fmtDateTime(i.ActivityDateTime)}</td>
       <td>${getPSPMember(i)}</td>
-      <td>${statusBadge(i.Act_Status||'Not Started')}</td>
+      <td>${statusBadge(getActStatus(i)||'Not Started')}</td>
       <td>${fmtDateTime(i.StartDateTime)}</td>
       <td>${fmtDateTime(i.FinishDateTime)}</td>
       <td>
@@ -1757,7 +1789,7 @@ function renderCalendar() {
 function openStatusModal(item) {
   statusEditItem = item;
   document.getElementById('sm-milestone').value = item.ActivityMilestone || '';
-  document.getElementById('sm-status').value = item.Act_Status || 'Not Started';
+  document.getElementById('sm-status').value = getActStatus(item) || 'Not Started';
   document.getElementById('sm-comments').value = '';
   document.getElementById('status-modal-overlay').classList.add('open');
 }
@@ -1837,11 +1869,11 @@ function onGenPayGroupChange() {
   // Preview
   const rows = tmpl.map(t => `
     <tr>
-      <td>${t.Order}</td>
+      <td>${getOrder(t)}</td>
       <td>${t.ActivityMilestone}</td>
       <td>${t.Offset > 0 ? '+' : ''}${t.Offset}</td>
       <td><span class="intext ${(t.IntExt||'internal').toLowerCase()}">${t.IntExt||'Int'}</span></td>
-      <td>${t.PSPMember||'—'}</td>
+      <td>${getPSPMember(t)}</td>
     </tr>`).join('');
   document.getElementById('template-preview-container').innerHTML = `
     <div class="table-wrap">
@@ -1864,7 +1896,7 @@ async function generateCalendar() {
 
   const payEndDate = new Date(payEndDateStr);
   const payEndSerial = dateToExcelSerial(payEndDate);
-  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b)=>(a.Order||0)-(b.Order||0));
+  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b)=>(getOrder(a)||0)-(getOrder(b)||0));
 
   if (!tmpl.length) { showToast('No template found', 'error'); return; }
 
@@ -1879,7 +1911,7 @@ async function generateCalendar() {
       PayGroup: t.PayGroup,
       PayNo: payno,
       PayEndDate: payEndDate.toISOString(),
-      Order: t.Order,
+      Order0: getOrder(t),
       ActivityMilestone: t.ActivityMilestone,
       Offset: t.Offset,
       ActivityDateTime: actDate.toISOString(),
@@ -1897,7 +1929,7 @@ async function generateCalendar() {
       await createItem('calendar', fields);
       created++;
     } catch(e) {
-      showToast(`Error creating activity ${t.Order}: ${e.message}`, 'error');
+      showToast(`Error creating activity ${getOrder(t)}: ${e.message}`, 'error');
     }
   }
 
@@ -1937,7 +1969,7 @@ function renderTemplates() {
       <td>${i.PSPClient||'—'}</td>
       <td><strong>${i.PayGroup||'—'}</strong></td>
       <td>${i.Cycle||'—'}</td>
-      <td>${i.Order||'—'}</td>
+      <td>${getOrder(i)}</td>
       <td>${i.ActivityMilestone||'—'}</td>
       <td>${i.Offset > 0 ? '+' : ''}${i.Offset||0}</td>
       <td>${i.PSPMember||'—'}</td>
