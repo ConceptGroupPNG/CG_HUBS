@@ -1529,22 +1529,33 @@ async function loadDashboard() {
     dashMy.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
   }
 
-  // Delayed & overdue
+  // Delayed & overdue — deduplicated, newest due date first
   const dashDel = document.getElementById('dash-delayed');
-  const issues = [...delayed, ...overdue.slice(0, 5)];
+  const issues = [...new Map([...delayed, ...overdue].map(i => [i.id, i])).values()]
+    .sort((a, b) => (spDateToDate(b.ActivityDateTime) || 0) - (spDateToDate(a.ActivityDateTime) || 0));
   if (!issues.length) {
     dashDel.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No delays or overdue activities</p></div>';
   } else {
-    const rows = issues.slice(0, 6).map(i => `
+    const rows = issues.slice(0, 8).map(i => {
+      const d = spDateToDate(i.ActivityDateTime);
+      const dateStr = d ? d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}) : '—';
+      const timeStr = d ? d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : '—';
+      const st = getActStatus(i);
+      return `
       <div class="activity-row">
-        <div class="activity-order delayed">${getOrder(i)}</div>
+        <div class="activity-order ${st === 'Delayed' ? 'delayed' : ''}">${getOrder(i)}</div>
         <div>
           <div class="activity-name">${i.ActivityMilestone || '—'}</div>
           <div class="activity-meta">${i.PSPClient} · ${getPSPMember(i)}</div>
+          <div style="display:flex;gap:10px;margin-top:3px;align-items:center;">
+            <span style="font-size:11px;font-weight:700;color:var(--navy);"><i class="ti ti-calendar-event" style="font-size:11px;margin-right:2px;"></i>${dateStr}</span>
+            <span style="font-size:11px;color:var(--grey-500);"><i class="ti ti-clock" style="font-size:11px;margin-right:2px;"></i>${timeStr}</span>
+          </div>
         </div>
-        ${statusBadge(getActStatus(i) || 'Not Started')}
+        ${statusBadge(st || 'Not Started')}
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     dashDel.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
   }
 }
