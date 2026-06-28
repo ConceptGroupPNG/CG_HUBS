@@ -2533,13 +2533,15 @@ async function openTemplateForm(item = null) {
     <div class="form-row">
       <div class="form-group">
         <label>Client *</label>
-        <select id="f-client">
+        <select id="f-client" onchange="onTmplClientChange()">
           ${clients.map(c => `<option ${item && (item.PSPClient===c)?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
         <label>Pay Group *</label>
-        <input type="text" id="f-paygroup" value="${item?.PayGroup||''}">
+        <select id="f-paygroup" onchange="onTmplPayGroupChange()">
+          <option value="">Select Pay Group...</option>
+        </select>
       </div>
     </div>
     <div class="form-row">
@@ -2599,7 +2601,40 @@ async function openTemplateForm(item = null) {
   document.getElementById('modal-overlay').classList.add('open');
   // Wire user picker
   userPickerSelected = item ? { displayName: getPSPMember(item) } : {};
-  setTimeout(() => renderUserPicker('f-member', 'f-member-dropdown', 'f-member-selected', null), 50);
+  setTimeout(() => {
+    renderUserPicker('f-member', 'f-member-dropdown', 'f-member-selected', null);
+    // Populate pay groups for selected client
+    populateTmplPayGroups(item?.PayGroup || '');
+  }, 50);
+}
+
+function onTmplClientChange() {
+  populateTmplPayGroups('');
+}
+
+function onTmplPayGroupChange() {
+  // Auto-fill cycle when pay group is selected
+  const client = document.getElementById('f-client')?.value;
+  const pg = document.getElementById('f-paygroup')?.value;
+  if (!client || !pg) return;
+  const match = cache.activities.find(a => a.PSPClient === client && a.PayGroup === pg);
+  const cycleEl = document.getElementById('f-cycle');
+  if (match && cycleEl) cycleEl.value = match.Cycle || '';
+}
+
+function populateTmplPayGroups(selectedPG) {
+  const clientEl = document.getElementById('f-client');
+  const pgEl = document.getElementById('f-paygroup');
+  if (!clientEl || !pgEl) return;
+  const client = clientEl.value;
+  // Get pay groups from existing templates for this client
+  const paygroups = [...new Set(
+    cache.activities.filter(a => a.PSPClient === client).map(a => a.PayGroup).filter(Boolean)
+  )].sort();
+  pgEl.innerHTML = '<option value="">Select Pay Group...</option>' +
+    paygroups.map(pg => `<option value="${pg}" ${pg === selectedPG ? 'selected' : ''}>${pg}</option>`).join('');
+  // Trigger cycle auto-fill if editing
+  if (selectedPG) onTmplPayGroupChange();
 }
 
 async function saveModal() {
