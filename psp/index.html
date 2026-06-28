@@ -1481,11 +1481,7 @@ async function refreshCache() {
   cache.fees = fees;
   cache.clients = clients;
   cache.lastinv = lastinv;
-  if (cal.length > 0) {
-    const s = cal[0];
-    console.log('[PSP_HUB] PSPMEmber (expanded):', s.PSPMEmber, '| LookupId:', s.PSPMEmberLookupId);
-    console.log('[PSP_HUB] Order0:', s.Order0, '| Act_Status:', s.Act_Status);
-  }
+
 }
 
 async function refreshCalendarCache() {
@@ -1500,7 +1496,7 @@ async function loadDashboard() {
     try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); return; }
   }
   const todayItems = cache.calendar.filter(i => isToday(i.ActivityDateTime));
-  const myToday = todayItems.filter(i => i.PSPMember === currentUser.displayName);
+  const myToday = todayItems.filter(i => getPSPMember(i) === currentUser.displayName);
   const delayed = cache.calendar.filter(i => getActStatus(i) === 'Delayed' && isToday(i.ActivityDateTime));
   const overdue = cache.calendar.filter(i => {
     if (i.FinishDateTime) return false;
@@ -1509,8 +1505,8 @@ async function loadDashboard() {
     return isOverdue(i.ActivityDateTime, st);
   });
 
-  document.getElementById('m-my-today').textContent = myToday.length;
-  document.getElementById('m-all-today').textContent = todayItems.length;
+  document.getElementById('m-my-today').textContent = myToday.filter(i => getActStatus(i) !== 'Finished').length;
+  document.getElementById('m-all-today').textContent = todayItems.filter(i => getActStatus(i) !== 'Finished').length;
   document.getElementById('m-delayed').textContent = delayed.length;
   document.getElementById('m-overdue').textContent = overdue.length;
   document.getElementById('badge-my-activities').textContent = myToday.filter(i => getActStatus(i) !== 'Finished').length;
