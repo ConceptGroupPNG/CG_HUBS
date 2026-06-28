@@ -1933,6 +1933,179 @@ async function loadGenerateCalendar() {
   document.getElementById('btn-generate').disabled = true;
 }
 
+function renderTemplatePreview(client, pg, tmplOverride) {
+  const tmpl = tmplOverride || cache.activities
+    .filter(i => i.PSPClient === (client || document.getElementById('gen-client').value) &&
+                 i.PayGroup === (pg || document.getElementById('gen-paygroup').value))
+    .sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
+
+  const container = document.getElementById('template-preview-container');
+  if (!tmpl.length) {
+    container.innerHTML = '<div class="empty-state"><i class="ti ti-template"></i><p>No template activities found</p></div>';
+    return;
+  }
+
+  const rows = tmpl.map(t => `
+    <tr>
+      <td style="font-weight:700;">${getOrder(t)}</td>
+      <td>${t.ActivityMilestone||'—'}</td>
+      <td>${t.Offset > 0 ? '+' : ''}${t.Offset||0}</td>
+      <td><span class="intext ${(t.IntExt||'internal').toLowerCase()}">${t.IntExt||'—'}</span></td>
+      <td>${getPSPMember(t)||'—'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openGenTemplateForm('${t.id}')">
+          <i class="ti ti-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-danger" onclick="deleteGenTemplate('${t.id}')">
+          <i class="ti ti-trash"></i>
+        </button>
+      </td>
+    </tr>`).join('');
+
+  container.innerHTML = `
+    <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--grey-200);">
+      <span style="font-size:12px;font-weight:700;color:var(--grey-500);">${tmpl.length} ACTIVITIES</span>
+      <button class="btn btn-xs btn-teal" onclick="openGenTemplateForm(null)">
+        <i class="ti ti-plus"></i> Add Activity
+      </button>
+    </div>
+    <div class="table-wrap" style="max-height:380px;overflow-y:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Order</th><th>Milestone</th><th>Offset</th>
+            <th>Int/Ext</th><th>Pay Master</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function openGenTemplateForm(id) {
+  const client = document.getElementById('gen-client').value;
+  const pg = document.getElementById('gen-paygroup').value;
+  const cycle = document.getElementById('gen-cycle').value;
+  const item = id ? cache.activities.find(a => String(a.id) === String(id)) : null;
+
+  document.getElementById('modal-title').textContent = item ? 'Edit Template Activity' : 'Add Template Activity';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:var(--grey-50);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--grey-700);">
+      <strong>${client}</strong> · ${pg} · ${cycle}
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Order *</label>
+        <input type="number" id="gtf-order" value="${getOrder(item)||''}">
+      </div>
+      <div class="form-group">
+        <label>Offset (days from PPE) *</label>
+        <input type="number" id="gtf-offset" value="${item?.Offset !== undefined ? item.Offset : ''}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Milestone *</label>
+      <input type="text" id="gtf-milestone" value="${item?.ActivityMilestone||''}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pay Master</label>
+        <input type="text" id="gtf-member" value="${getPSPMember(item)||''}">
+      </div>
+      <div class="form-group">
+        <label>Contact</label>
+        <input type="text" id="gtf-contact" value="${item?.Contact||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Int/Ext</label>
+        <select id="gtf-intext">
+          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Client BAU</label>
+        <input type="text" id="gtf-clientbau" value="${item?.ClientBAU||''}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="gtf-sla" ${item?.SLA?'checked':''}> SLA Milestone</label>
+    </div>`;
+
+  document.getElementById('modal-save-btn').textContent = item ? 'Save Changes' : 'Add Activity';
+  document.getElementById('modal-save-btn').className = 'btn btn-teal';
+  document.getElementById('modal-save-btn').setAttribute('data-id', id || '');
+  document.getElementById('modal-save-btn').onclick = () => saveGenTemplate(client, pg, cycle, id);
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveGenTemplate(client, pg, cycle, id) {
+  const orderVal = parseInt(document.getElementById('gtf-order').value);
+  const milestone = document.getElementById('gtf-milestone').value.trim();
+  if (!orderVal || !milestone) { showToast('Order and Milestone are required', 'error'); return; }
+
+  const fields = {
+    PSPClient: client,
+    PayGroup: pg,
+    Cycle: cycle,
+    Order0: orderVal,
+    Offset: parseInt(document.getElementById('gtf-offset').value) || 0,
+    ActivityMilestone: milestone,
+    PSPMember: document.getElementById('gtf-member').value,
+    Contact: document.getElementById('gtf-contact').value,
+    IntExt: document.getElementById('gtf-intext').value,
+    ClientBAU: document.getElementById('gtf-clientbau').value,
+    SLA: document.getElementById('gtf-sla').checked,
+    Template: true,
+  };
+
+  try {
+    await saveWithFieldFallback(!!id, 'activities', id || '', fields);
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+    closeModal();
+    // Re-render preview with updated data
+    const tmpl = cache.activities
+      .filter(i => i.PSPClient === client && i.PayGroup === pg)
+      .sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
+    renderTemplatePreview(client, pg, tmpl);
+    showToast(id ? 'Activity updated' : 'Activity added', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteGenTemplate(id) {
+  const item = cache.activities.find(a => String(a.id) === String(id));
+  const client = document.getElementById('gen-client').value;
+  const pg = document.getElementById('gen-paygroup').value;
+  const name = item?.ActivityMilestone || id;
+
+  document.getElementById('modal-title').textContent = 'Confirm Delete';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="alert alert-warning">
+      <i class="ti ti-alert-triangle"></i>
+      <div>Delete template activity <strong>${name}</strong>? This cannot be undone.</div>
+    </div>`;
+  document.getElementById('modal-save-btn').textContent = 'Delete';
+  document.getElementById('modal-save-btn').className = 'btn btn-danger';
+  document.getElementById('modal-save-btn').onclick = async () => {
+    try {
+      await deleteItem('activities', id);
+      cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+      closeModal();
+      const tmpl = cache.activities
+        .filter(i => i.PSPClient === client && i.PayGroup === pg)
+        .sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
+      renderTemplatePreview(client, pg, tmpl);
+      document.getElementById('modal-save-btn').textContent = 'Save';
+      document.getElementById('modal-save-btn').className = 'btn btn-teal';
+      document.getElementById('modal-save-btn').onclick = saveModal;
+      showToast('Activity deleted', 'success');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  };
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
 function onGenClientChange() {
   const client = document.getElementById('gen-client').value;
   const paygroups = [...new Set(cache.activities.filter(i => i.PSPClient === client).map(i => i.PayGroup))].sort();
@@ -1984,22 +2157,8 @@ function onGenPayGroupChange() {
   document.getElementById('gen-payno-hint').textContent = paynoHint;
   document.getElementById('gen-ppe-hint').textContent = ppeHint;
 
-  // Preview
-  const rows = tmpl.map(t => `
-    <tr>
-      <td>${getOrder(t)}</td>
-      <td>${t.ActivityMilestone}</td>
-      <td>${t.Offset > 0 ? '+' : ''}${t.Offset}</td>
-      <td><span class="intext ${(t.IntExt||'internal').toLowerCase()}">${t.IntExt||'Int'}</span></td>
-      <td>${getPSPMember(t)}</td>
-    </tr>`).join('');
-  document.getElementById('template-preview-container').innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Order</th><th>Milestone</th><th>Offset</th><th>Int/Ext</th><th>Pay Master</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
+  // Preview with Add/Edit/Delete
+  renderTemplatePreview(client, pg, tmpl);
 }
 
 async function generateCalendar() {
