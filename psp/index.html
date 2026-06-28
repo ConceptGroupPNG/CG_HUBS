@@ -2071,3 +2071,675 @@ async function generateCalendar() {
 }
 
 
+
+async function loadGenerateCalendar() {
+  if (!cache.activities.length) {
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  }
+  const clientSel = document.getElementById('gen-client');
+  const clients = [...new Set(cache.activities.map(i => i.PSPClient))].sort();
+  clientSel.innerHTML = '<option value="">Select Client...</option>' + clients.map(c => `<option>${c}</option>`).join('');
+  document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
+  document.getElementById('btn-generate').disabled = true;
+}
+
+function onGenClientChange() {
+  const client = document.getElementById('gen-client').value;
+  const paygroups = [...new Set(cache.activities.filter(i => i.PSPClient === client).map(i => i.PayGroup))].sort();
+  const sel = document.getElementById('gen-paygroup');
+  sel.innerHTML = '<option value="">Select Pay Group...</option>' + paygroups.map(p => `<option>${p}</option>`).join('');
+  document.getElementById('gen-cycle').value = '';
+  document.getElementById('template-preview-container').innerHTML = '<div class="empty-state"><i class="ti ti-template"></i><p>Select a pay group to preview</p></div>';
+  document.getElementById('btn-generate').disabled = true;
+  document.getElementById('gen-payno-hint').textContent = '';
+  document.getElementById('gen-ppe-hint').textContent = '';
+}
+
+// ─────────────────────────────────────────────
+// TEMPLATES
+// ─────────────────────────────────────────────
+async function loadTemplates() {
+  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  populateClientFilter('filter-tmpl-client', cache.activities);
+  populatePayGroupFilter('filter-tmpl-paygroup', cache.activities);
+  renderTemplates();
+}
+
+function renderTemplates() {
+  const client = document.getElementById('filter-tmpl-client').value;
+  const pg = document.getElementById('filter-tmpl-paygroup').value;
+  let items = [...cache.activities];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (pg) items = items.filter(i => i.PayGroup === pg);
+  items.sort((a,b) => {
+    if (a.PSPClient < b.PSPClient) return -1;
+    if (a.PSPClient > b.PSPClient) return 1;
+    if (a.PayGroup < b.PayGroup) return -1;
+    if (a.PayGroup > b.PayGroup) return 1;
+    return (getOrder(a)||0)-(getOrder(b)||0);
+  });
+  const tbody = document.getElementById('templates-tbody');
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ti ti-template"></i><p>No templates found</p></div></td></tr>'; return; }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${getPayGroup(i)||'—'}</strong></td>
+      <td>${i.Cycle||'—'}</td>
+      <td>${getOrder(i)||'—'}</td>
+      <td>${i.ActivityMilestone||'—'}</td>
+      <td>${i.Offset > 0 ? '+' : ''}${i.Offset||0}</td>
+      <td>${getPSPMember(i)||'—'}</td>
+      <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
+      <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openTemplateFormById('${i.id}')">Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('activities','${i.id}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openTemplateFormById(id) {
+  const item = cache.activities.find(a => String(a.id) === String(id));
+  if (!item) { showToast('Template not found', 'error'); return; }
+  openTemplateForm(item);
+}
+
+function openTemplateForm(item = null) {
+  modalEntity = 'activities';
+  modalIsEdit = !!item;
+  const title = item ? 'Edit Template Activity' : 'Add Template Activity';
+  const clients = [...new Set(cache.clients.map(c => c.PSPClient))].sort();
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Client *</label>
+        <select id="f-client">
+          ${clients.map(c => `<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Pay Group *</label>
+        <input type="text" id="f-paygroup" value="${item?.PayGroup||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Order *</label>
+        <input type="number" id="f-order" value="${getOrder(item)||''}">
+      </div>
+      <div class="form-group">
+        <label>Offset (days from PPE)</label>
+        <input type="number" id="f-offset" value="${item?.Offset||0}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Milestone *</label>
+      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pay Master</label>
+        <input type="text" id="f-member" value="${getPSPMember(item)||''}">
+      </div>
+      <div class="form-group">
+        <label>Contact</label>
+        <input type="text" id="f-contact" value="${item?.Contact||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cycle</label>
+        <select id="f-cycle">
+          <option ${item?.Cycle==='FORTNIGHT'?'selected':''}>FORTNIGHT</option>
+          <option ${item?.Cycle==='MONTH'?'selected':''}>MONTH</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Int/Ext</label>
+        <select id="f-intext">
+          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Client BAU</label>
+      <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone</label>
+    </div>`;
+  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveModal() {
+  if (modalEntity === 'activities') {
+    const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+    const fields = {
+      PSPClient: document.getElementById('f-client').value,
+      PayGroup: document.getElementById('f-paygroup').value,
+      Order0: parseInt(document.getElementById('f-order').value),
+      Offset: parseInt(document.getElementById('f-offset').value),
+      ActivityMilestone: document.getElementById('f-milestone').value,
+      PSPMember: document.getElementById('f-member').value,
+      Contact: document.getElementById('f-contact').value,
+      Cycle: document.getElementById('f-cycle').value,
+      IntExt: document.getElementById('f-intext').value,
+      ClientBAU: document.getElementById('f-clientbau').value,
+      SLA: document.getElementById('f-sla').checked,
+      Template: true,
+    };
+    if (!fields.PSPClient || !fields.PayGroup || !fields.ActivityMilestone) {
+      showToast('Please fill required fields', 'error'); return;
+    }
+    try {
+      await saveWithFieldFallback(modalIsEdit, 'activities', id, fields);
+      cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+      closeModal();
+      renderTemplates();
+      showToast(modalIsEdit ? 'Template updated' : 'Template added', 'success');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  } else if (modalEntity === 'billing') {
+    await saveBillingMetrics();
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  modalEntity = null;
+}
+
+// ─────────────────────────────────────────────
+// BILLING METRICS
+// ─────────────────────────────────────────────
+async function loadBillingMetrics() {
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  populateClientFilter('filter-bm-client', cache.billing);
+  renderBillingMetrics();
+}
+
+function renderBillingMetrics() {
+  const client = document.getElementById('filter-bm-client').value;
+  const year = document.getElementById('filter-bm-year').value;
+  const billed = document.getElementById('filter-bm-billed').value;
+  let items = [...cache.billing];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (year) items = items.filter(i => String(i.PayrollYear) === year);
+  if (billed === 'true') items = items.filter(i => i.Billing);
+  if (billed === 'false') items = items.filter(i => !i.Billing);
+  items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
+  const tbody = document.getElementById('billing-metrics-tbody');
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${getPayGroup(i)}</strong></td>
+      <td>${i.PayNo||'—'}</td>
+      <td>${fmtDate(i.PayEnddate)}</td>
+      <td>${i.Payrun||'—'}</td>
+      <td>${i.EmployeesPayslips||0}</td>
+      <td>${i.NewHires||0}</td>
+      <td>${i.Terminations||0}</td>
+      <td>${i.NonUpdateCharge||0}</td>
+      <td>${i.NominateForBilling ? '<span class="badge badge-started">Yes</span>' : '<span class="badge badge-not-started">No</span>'}</td>
+      <td>${i.Billing ? '<span class="badge badge-finished">Billed</span>' : '<span class="badge badge-not-started">Unbilled</span>'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openBillingFormById('${i.id}')">Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('billing','${i.id}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openBillingFormById(id) {
+  const item = cache.billing.find(b => String(b.id) === String(id));
+  if (!item) { showToast('Billing record not found', 'error'); return; }
+  openBillingForm(item);
+}
+
+function openBillingForm(item = null) {
+  modalEntity = 'billing';
+  modalIsEdit = !!item;
+  const clients = cache.clients.map(c => c.PSPClient).sort();
+  document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Billing Metrics';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Client *</label>
+        <select id="fb-client">
+          ${clients.map(c=>`<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Pay Group *</label>
+        <input type="text" id="fb-paygroup" value="${getPayGroup(item)||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pay No *</label>
+        <input type="number" id="fb-payno" value="${item?.PayNo||''}">
+      </div>
+      <div class="form-group">
+        <label>Pay End Date *</label>
+        <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Payrun Number</label>
+        <input type="text" id="fb-payrun" value="${item?.Payrun||''}">
+      </div>
+      <div class="form-group">
+        <label>Employees / Payslips *</label>
+        <input type="number" id="fb-employees" value="${item?.EmployeesPayslips||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nationals</label>
+        <input type="number" id="fb-nationals" value="${item?.Nationals||0}">
+      </div>
+      <div class="form-group">
+        <label>Expatriates</label>
+        <input type="number" id="fb-expats" value="${item?.Expatriate||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>New Hires</label>
+        <input type="number" id="fb-newhires" value="${item?.NewHires||0}">
+      </div>
+      <div class="form-group">
+        <label>Terminations</label>
+        <input type="number" id="fb-terms" value="${item?.Terminations||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Non-Update Charges</label>
+        <input type="number" id="fb-nonupdate" value="${item?.NonUpdateCharge||0}">
+      </div>
+      <div class="form-group">
+        <label>Lay-Offs</label>
+        <input type="number" id="fb-layoff" value="${item?.LayOff||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cease Lay-Offs (Re-Hires)</label>
+        <input type="number" id="fb-ceaselay" value="${item?.CeaseLayOff||0}">
+      </div>
+      <div class="form-group">
+        <label>Billing Month</label>
+        <input type="text" id="fb-billmonth" value="${item?.BillingMonth||''}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Comments</label>
+      <textarea id="fb-comments">${item?.Comments||''}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label><input type="checkbox" id="fb-nominate" ${item?.NominateForBilling?'checked':''}> Nominate for Billing</label>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" id="fb-process" ${item?.Process?'checked':''}> Process</label>
+      </div>
+    </div>`;
+  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveBillingMetrics() {
+  const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+  const ppeVal = document.getElementById('fb-ppe').value;
+  const ppe = ppeVal ? new Date(ppeVal).toISOString() : null;
+  const fields = {
+    PSPClient: document.getElementById('fb-client').value,
+    'Pay_x0020_Group': document.getElementById('fb-paygroup').value,
+    PayNo: parseInt(document.getElementById('fb-payno').value) || 0,
+    PayEnddate: ppe,
+    Payrun: document.getElementById('fb-payrun').value,
+    EmployeesPayslips: parseInt(document.getElementById('fb-employees').value) || 0,
+    Nationals: parseInt(document.getElementById('fb-nationals').value) || 0,
+    Expatriate: parseInt(document.getElementById('fb-expats').value) || 0,
+    NewHires: parseInt(document.getElementById('fb-newhires').value) || 0,
+    Terminations: parseInt(document.getElementById('fb-terms').value) || 0,
+    NonUpdateCharge: parseInt(document.getElementById('fb-nonupdate').value) || 0,
+    LayOff: parseInt(document.getElementById('fb-layoff').value) || 0,
+    CeaseLayOff: parseInt(document.getElementById('fb-ceaselay').value) || 0,
+    BillingMonth: document.getElementById('fb-billmonth').value,
+    Comments: document.getElementById('fb-comments').value,
+    NominateForBilling: document.getElementById('fb-nominate').checked,
+    Process: document.getElementById('fb-process').checked,
+    Metrics: true,
+    PayrollYear: ppeVal ? new Date(ppeVal).getFullYear() : null,
+  };
+  try {
+    await saveWithFieldFallback(modalIsEdit, 'billing', id, fields);
+    cache.billing = await getItems('billing');
+    closeModal();
+    renderBillingMetrics();
+    showToast(modalIsEdit ? 'Billing record updated' : 'Billing record added', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────────
+// GENERATE INVOICE
+// ─────────────────────────────────────────────
+async function loadGenerateInvoice() {
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  if (!cache.fees.length) cache.fees = await getItems('fees');
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+  if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
+  const sel = document.getElementById('inv-client');
+  sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${c.PSPClient}</option>`).join('');
+  const now = new Date();
+  const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
+  const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  document.getElementById('inv-date').value = lastDayPrev.toISOString().slice(0, 10);
+  document.getElementById('inv-due').value = lastDayCurr.toISOString().slice(0, 10);
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('inv-month').value = monthNames[lastDayPrev.getMonth()];
+}
+
+function onInvClientChange() {
+  document.getElementById('inv-nominated-records').innerHTML = '';
+  document.getElementById('btn-gen-inv').disabled = true;
+  document.getElementById('invoice-preview').innerHTML = '<div class="empty-state"><i class="ti ti-file-invoice"></i><p>Select a client and calculate to preview the invoice</p></div>';
+  document.getElementById('btn-export-inv').style.display = 'none';
+  invoiceLines = [];
+  nominatedRecords = [];
+}
+
+async function loadNominatedRecords() {
+  const client = document.getElementById('inv-client').value;
+  if (!client) { showToast('Please select a client', 'error'); return; }
+  const records = cache.billing.filter(i =>
+    i.PSPClient === client && i.NominateForBilling === true && i.Process === true && i.Metrics === true && !i.Billing
+  );
+  nominatedRecords = records;
+  const container = document.getElementById('inv-nominated-records');
+  if (!records.length) {
+    container.innerHTML = '<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i><div>No nominated, unbilled records found for this client.</div></div>';
+    document.getElementById('btn-gen-inv').disabled = true;
+    return;
+  }
+  container.innerHTML = `<div class="alert alert-info"><i class="ti ti-info-circle"></i><div>${records.length} pay run(s) nominated:<br>${records.map(r=>`<strong>${getPayGroup(r)}</strong> Pay ${r.PayNo} (${fmtDate(r.PayEnddate)})`).join(', ')}</div></div>`;
+  document.getElementById('btn-gen-inv').disabled = false;
+}
+
+function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, dueDate, month) {
+  const lines = [];
+  const calcMethod = fees.CalcMethod;
+  const currency = clientDetails.Currency || 'PGK';
+  const taxType = clientDetails.TaxType || 'Tax on Sales';
+  const taxRate = taxType === 'Zero Rated' ? 0 : 0.1;
+  const emp = billingRecord.EmployeesPayslips || 0;
+  const pg = getPayGroup(billingRecord);
+  const payno = billingRecord.PayNo || '';
+  const ppeStr = fmtDate(billingRecord.PayEnddate);
+  const ppeDDMMYY = ppeStr.replace(/(\d+)\s(\w{3})\s(\d+)/, (m,d,mo,y)=>{
+    const months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+    return `${d.padStart(2,'0')}/${months[mo]}/${y.slice(-2)}`;
+  });
+  const payrun = billingRecord.Payrun || '';
+  const ref = fees.ShowAltReference ? (fees.AltReference || '') : `Payroll Processing ${month}`;
+  const baseFields = {
+    InvoiceNumber: invNo, Reference: ref, InvoiceDate: invDate, DueDate: dueDate,
+    ContactName: clientDetails.ClientInvoiceName, EmailAddress: clientDetails.EmailAddress,
+    POAddressLine1: clientDetails.POAddressLine1||'', POAddressLine2: clientDetails.POAddressLine2||'',
+    POCity: clientDetails.POCity||'', PORegion: clientDetails.PORegion||'', POCountry: clientDetails.POCountry||'',
+    InventoryItemCode: clientDetails.InventoryItemCode||'Bureau', AccountCode: clientDetails.AccountCode||'201',
+    TaxType: taxType, TrackingName1: clientDetails.TrackingName1||'Department',
+    TrackingOption1: clientDetails.TrackingOption1||'Bureau/PSP', Currency: currency,
+  };
+  let qty = 1, unitAmt = 0, desc = '';
+  if (calcMethod==='A') { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees: Standard Charge`; }
+  else if (calcMethod==='B') { qty=emp; unitAmt=fees.Each||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${fees.Each} Per Payslip`; }
+  else if (calcMethod==='C') {
+    if (emp>(fees.Max||0)) { qty=1; unitAmt=(fees.PayRun||0)+(emp-(fees.Max||0))*(fees.Extra||0); desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min ${currency}${fees.PayRun} + ${emp-fees.Max} x ${currency}${fees.Extra}`; }
+    else { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${fees.PayRun}`; }
+  } else if (calcMethod==='D') {
+    if (emp>(fees.Max||0)) { qty=emp; unitAmt=fees.Extra||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${fees.Extra} (above ${fees.Max})`; }
+    else { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${fees.PayRun}`; }
+  } else if (calcMethod==='E') { qty=1; unitAmt=fees.PayRun||0; desc=`Standard Monthly Charge Pay ${payno} PPE: ${ppeStr}`; }
+  const sub = qty*unitAmt, tax = Math.round(sub*taxRate*100)/100;
+  lines.push({...baseFields, Order:1, PayGroup:pg, PayNo:payno, PPE:ppeStr, Category:'Processing Charges:', Quantity:qty, Description:desc, UnitAmount:unitAmt, SubTotal:sub, TaxAmount:tax, Total:0});
+  const addLine = (order,cat,q,u,d) => { if(!q||!u) return; const s=q*u,t=Math.round(s*taxRate*100)/100; lines.push({...baseFields,Order:order,PayGroup:pg,PayNo:payno,PPE:ppeStr,Category:cat,Quantity:q,Description:d,UnitAmount:u,SubTotal:s,TaxAmount:t,Total:0}); };
+  const nh=billingRecord.NewHires||0, terms=billingRecord.Terminations||0, nonUpd=billingRecord.NonUpdateCharge||0, layoff=billingRecord.LayOff||0, rehire=billingRecord.CeaseLayOff||0;
+  if (nh&&fees.NewHire) addLine(2,'New Hire(s)',nh,fees.NewHire,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nh} New Hire(s) x ${currency}${fees.NewHire}`);
+  if (terms&&fees.Term) addLine(3,'Termination(s)',terms,fees.Term,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${terms} Termination(s) x ${currency}${fees.Term}`);
+  if (nonUpd&&fees['3NoN']) addLine(4,'Non-Update(s)',nonUpd,fees['3NoN'],`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nonUpd} Non-Update(s) x ${currency}${fees['3NoN']}`);
+  if (layoff&&fees.LO) addLine(5,'Lay-Off(s)',layoff,fees.LO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${layoff} Lay-Off(s) x ${currency}${fees.LO}`);
+  if (rehire&&fees.CLO) addLine(6,'Re-Hire(s)',rehire,fees.CLO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${rehire} Re-Hire(s) x ${currency}${fees.CLO}`);
+  return lines;
+}
+
+async function generateInvoice() {
+  const clientName = document.getElementById('inv-client').value;
+  const month = document.getElementById('inv-month').value;
+  const invDate = document.getElementById('inv-date').value;
+  const dueDate = document.getElementById('inv-due').value;
+  if (!nominatedRecords.length) { showToast('No nominated records loaded', 'error'); return; }
+  const lastInvRecord = cache.lastinv[0];
+  const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
+  const invNo = `INV-${lastNo + 1}`;
+  const clientDetails = cache.clients.find(c => c.PSPClient === clientName);
+  if (!clientDetails) { showToast('Client details not found', 'error'); return; }
+  invoiceLines = [];
+  const methodEGroups = {};
+  for (const rec of nominatedRecords) {
+    const pg = getPayGroup(rec);
+    const fees = cache.fees.find(f => f.Title === clientName && f.PayGroup === pg);
+    if (!fees) { showToast(`No fee schedule for ${clientName} / ${pg}`, 'error'); continue; }
+    if (fees.CalcMethod === 'E') {
+      const key = rec.PayNo;
+      if (!methodEGroups[key]) methodEGroups[key] = { rec, fees, descs: [] };
+      methodEGroups[key].descs.push(`${pg} Pay ${rec.PayNo} PPE: ${fmtDate(rec.PayEnddate)}`);
+    } else {
+      invoiceLines.push(...calcInvoiceLines(rec, fees, clientDetails, invNo, invDate, dueDate, month));
+    }
+  }
+  for (const [payNo, group] of Object.entries(methodEGroups)) {
+    const unitAmt = group.fees.PayRun || 0;
+    const taxRate = clientDetails.TaxType === 'Zero Rated' ? 0 : 0.1;
+    const tax = Math.round(unitAmt * taxRate * 100) / 100;
+    invoiceLines.push({
+      InvoiceNumber: invNo, Reference: '', InvoiceDate: invDate, DueDate: dueDate,
+      ContactName: clientDetails.ClientInvoiceName, EmailAddress: clientDetails.EmailAddress,
+      POAddressLine1: clientDetails.POAddressLine1||'', POAddressLine2: clientDetails.POAddressLine2||'',
+      POCity: clientDetails.POCity||'', PORegion: clientDetails.PORegion||'', POCountry: clientDetails.POCountry||'',
+      InventoryItemCode: clientDetails.InventoryItemCode||'Bureau', AccountCode: clientDetails.AccountCode||'201',
+      TaxType: clientDetails.TaxType, TrackingName1: clientDetails.TrackingName1||'Department',
+      TrackingOption1: clientDetails.TrackingOption1||'Bureau/PSP', Currency: clientDetails.Currency||'PGK',
+      Order:9, PayGroup:'', PayNo:payNo, PPE:fmtDate(group.rec.PayEnddate), Category:'Processing Charges:',
+      Quantity:1, Description:group.descs.join('\n'), UnitAmount:unitAmt, SubTotal:unitAmt, TaxAmount:tax, Total:0,
+    });
+  }
+  const total = invoiceLines.reduce((s,l) => s+l.SubTotal+l.TaxAmount, 0);
+  invoiceLines.forEach(l => l.Total = Math.round(total*100)/100);
+  const rows = invoiceLines.map(l => `
+    <tr>
+      <td>${l.PayGroup||'—'}</td><td>${l.PayNo||'—'}</td><td>${l.Category||'—'}</td>
+      <td style="max-width:300px;font-size:11px;">${(l.Description||'').replace(/\n/g,'<br>')}</td>
+      <td style="text-align:right;">${l.Quantity}</td>
+      <td style="text-align:right;">${l.UnitAmount?.toFixed(2)}</td>
+      <td style="text-align:right;">${l.TaxAmount?.toFixed(2)}</td>
+      <td style="text-align:right;">${l.SubTotal?.toFixed(2)}</td>
+    </tr>`).join('');
+  document.getElementById('invoice-preview').innerHTML = `
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--navy);">${invNo}</div>
+          <div style="font-size:12px;color:var(--grey-500);">${clientDetails.ClientInvoiceName}</div>
+          <div style="font-size:12px;color:var(--grey-500);">Date: ${invDate} · Due: ${dueDate}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:12px;color:var(--grey-500);">Currency: ${clientDetails.Currency} · Tax: ${clientDetails.TaxType}</div>
+          <div style="font-size:18px;font-weight:800;color:var(--navy);">${clientDetails.Currency} ${total.toFixed(2)}</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table style="font-size:12px;">
+          <thead><tr><th>Pay Group</th><th>Pay No</th><th>Category</th><th>Description</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit</th><th style="text-align:right;">Tax</th><th style="text-align:right;">Sub Total</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr style="border-top:2px solid var(--grey-200);">
+            <td colspan="7" style="text-align:right;font-weight:700;padding:10px 14px;">TOTAL (incl. tax)</td>
+            <td style="text-align:right;font-weight:800;color:var(--navy);padding:10px 14px;">${clientDetails.Currency} ${total.toFixed(2)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>`;
+  document.getElementById('btn-export-inv').style.display = '';
+}
+
+function exportInvoiceCSV() {
+  if (!invoiceLines.length) return;
+  const headers = ['ContactName','EmailAddress','POAddressLine11','POCity','POCountry','PORegion','InvoiceNumber','Reference','InvoiceDate','DueDate','Total','InventoryItemCode','Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount','TrackingName1','TrackingOption1','Currency'];
+  const rows = invoiceLines.map(l => headers.map(h => {
+    const map = {'POAddressLine11': l.POAddressLine1};
+    const val = map[h] !== undefined ? map[h] : l[h];
+    const str = val === null || val === undefined ? '' : String(val);
+    return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g,'""')}"` : str;
+  }).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(invoiceLines[0]?.ContactName||'invoice').replace(/[^a-z0-9]/gi,'_')}_${invoiceLines[0]?.InvoiceNumber}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  markAsBilled();
+}
+
+async function markAsBilled() {
+  const invNo = invoiceLines[0]?.InvoiceNumber;
+  const total = invoiceLines[0]?.Total;
+  for (const rec of nominatedRecords) {
+    try { await saveWithFieldFallback(true, 'billing', rec.id, {Billing:true, InvNo:invNo, Amount:total}); }
+    catch(e) { console.warn('Could not mark as billed:', e); }
+  }
+  const lastInvRecord = cache.lastinv[0];
+  if (lastInvRecord) {
+    const newNo = parseInt(invNo.replace('INV-',''));
+    try {
+      await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, {LastInvoiceNo: newNo});
+      cache.lastinv[0].LastInvoiceNo = newNo;
+    } catch(e) { console.warn('Could not update last invoice no:', e); }
+  }
+  cache.billing = await getItems('billing');
+  showToast(`Invoice ${invNo} exported and records marked as billed`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// DELETE CONFIRM
+// ─────────────────────────────────────────────
+function confirmDelete(entity, id, name) {
+  let displayName = name || id;
+  if (!name || name === 'item') {
+    const cacheMap = {calendar:'ActivityMilestone', activities:'ActivityMilestone', billing:'PSPClient'};
+    const field = cacheMap[entity] || 'id';
+    const rec = (cache[entity]||[]).find(r => String(r.id) === String(id));
+    displayName = rec ? (rec[field]||id) : id;
+  }
+  document.getElementById('modal-title').textContent = 'Confirm Delete';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="alert alert-warning">
+      <i class="ti ti-alert-triangle"></i>
+      <div>Are you sure you want to delete <strong>${displayName}</strong>? This cannot be undone.</div>
+    </div>`;
+  document.getElementById('modal-save-btn').textContent = 'Delete';
+  document.getElementById('modal-save-btn').className = 'btn btn-danger';
+  document.getElementById('modal-save-btn').onclick = async () => {
+    try {
+      await deleteItem(entity, id);
+      cache[entity] = entity === 'calendar' ? await getItems(entity,'',5000,['PSPMEmber']) : await getItems(entity);
+      closeModal();
+      showToast('Deleted successfully', 'success');
+      loadPage(currentPage);
+      document.getElementById('modal-save-btn').textContent = 'Save';
+      document.getElementById('modal-save-btn').className = 'btn btn-teal';
+      document.getElementById('modal-save-btn').onclick = saveModal;
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  };
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+// ─────────────────────────────────────────────
+// FILTER HELPERS
+// ─────────────────────────────────────────────
+function populateClientFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const clients = [...new Set(items.map(i => i.PSPClient).filter(Boolean))].sort();
+  el.innerHTML = '<option value="">All Clients</option>' + clients.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+function populatePayGroupFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const pgs = [...new Set(items.map(i => getPayGroup(i)).filter(Boolean))].sort();
+  el.innerHTML = '<option value="">All Pay Groups</option>' + pgs.map(p => `<option ${p===cur?'selected':''}>${p}</option>`).join('');
+}
+function populateMemberFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const members = [...new Set(items.map(i => getPSPMember(i)).filter(m => m && m !== '—'))].sort();
+  el.innerHTML = '<option value="">All Pay Masters</option>' + members.map(m => `<option ${m===cur?'selected':''}>${m}</option>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+async function initApp(token) {
+  accessToken = token;
+  const me = await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName');
+  currentUser = me;
+  const initials = me.displayName.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('user-avatar').textContent = initials;
+  document.getElementById('user-name').textContent = me.displayName;
+  document.getElementById('user-email').textContent = me.mail || me.userPrincipalName;
+  document.getElementById('sidebar-logo-img').src = document.getElementById('auth-logo-img').src;
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); }
+  await loadDashboard();
+}
+
+// ─────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────
+(async function boot() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  if (code && state === sessionStorage.getItem('pkce_state')) {
+    try {
+      const token = await exchangeCode(code);
+      await initApp(token);
+    } catch(e) { showToast('Sign-in failed: ' + e.message, 'error'); }
+    return;
+  }
+  const stored = localStorage.getItem('psp_access_token');
+  if (stored) {
+    try {
+      accessToken = stored;
+      await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName');
+      await initApp(stored);
+      return;
+    } catch {
+      const refreshed = await refreshToken();
+      if (refreshed) { await initApp(refreshed); return; }
+    }
+  }
+  document.getElementById('auth-screen').style.display = 'flex';
+})();
+</script>
+</body>
+</html>
