@@ -2470,7 +2470,10 @@ function onGenClientChange() {
 // TEMPLATES
 // ─────────────────────────────────────────────
 async function loadTemplates() {
-  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  const fetches = [];
+  if (!cache.activities.length) fetches.push(getItems('activities', '', 5000, ['PSPMEmber']).then(d => cache.activities = d));
+  if (!cache.clients.length) fetches.push(getItems('clients').then(d => cache.clients = d));
+  await Promise.all(fetches);
   populateClientFilter('filter-tmpl-client', cache.activities);
   populatePayGroupFilter('filter-tmpl-paygroup', cache.activities);
   renderTemplates();
@@ -2509,16 +2512,17 @@ function renderTemplates() {
     </tr>`).join('');
 }
 
-function openTemplateFormById(id) {
+async function openTemplateFormById(id) {
   const item = cache.activities.find(a => String(a.id) === String(id));
   if (!item) { showToast('Template not found', 'error'); return; }
-  openTemplateForm(item);
+  await openTemplateForm(item);
 }
 
-function openTemplateForm(item = null) {
+async function openTemplateForm(item = null) {
   modalEntity = 'activities';
   modalIsEdit = !!item;
   const title = item ? 'Edit Template Activity' : 'Add Template Activity';
+  if (!cache.clients.length) cache.clients = await getItems('clients');
   const clients = [...new Set(cache.clients.map(c => c.PSPClient))].sort();
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = `
