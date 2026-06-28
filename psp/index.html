@@ -1161,7 +1161,7 @@
 
 <!-- STATUS UPDATE MODAL -->
 <div class="modal-overlay" id="status-modal-overlay">
-  <div class="modal" style="max-width:440px;">
+  <div class="modal" style="max-width:460px;">
     <div class="modal-header">
       <h3 id="status-modal-title">Update Activity Status</h3>
       <button class="modal-close" onclick="closeStatusModal()">×</button>
@@ -1169,13 +1169,20 @@
     <div class="modal-body">
       <div class="form-group">
         <label>Activity</label>
-        <input type="text" id="sm-milestone" readonly>
+        <input type="text" id="sm-milestone" readonly style="font-weight:700;color:var(--navy);">
       </div>
-      <div class="form-group">
-        <label>New Status</label>
-        <select id="sm-status">
-          <!-- Options populated dynamically based on current status -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:6px;">Current Status</div>
+          <div id="sm-current-status"></div>
+        </div>
+        <div style="font-size:24px;color:var(--grey-300);font-weight:300;padding-top:18px;">→</div>
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:6px;">New Status</div>
+          <select id="sm-status" style="width:100%;padding:9px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--grey-900);background:var(--grey-50);outline:none;">
+            <!-- Options populated dynamically based on current status -->
           </select>
+          <div id="sm-finished-msg" style="display:none;font-size:12px;color:var(--grey-500);margin-top:6px;font-style:italic;">This activity is complete — no further changes allowed.</div>
         </div>
       </div>
       <div class="form-group" id="sm-comments-group">
@@ -1185,7 +1192,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeStatusModal()">Cancel</button>
-      <button class="btn btn-teal" onclick="saveStatus()"><i class="ti ti-check"></i> Update Status</button>
+      <button class="btn btn-teal" id="sm-save-btn" onclick="saveStatus()"><i class="ti ti-check"></i> Update Status</button>
     </div>
   </div>
 </div>
@@ -1978,11 +1985,15 @@ function openStatusModal(item) {
   document.getElementById('sm-milestone').value = item.ActivityMilestone || '';
   document.getElementById('sm-comments').value = '';
 
-  // If Finished, show info message and disable save
-  const saveBtn = document.querySelector('#status-modal-overlay .modal-footer .btn-teal');
-  if (saveBtn) {
-    saveBtn.disabled = allowed.length === 0;
-    saveBtn.style.opacity = allowed.length === 0 ? '0.5' : '1';
+  // Show/hide finished message and toggle save button
+  const saveBtn = document.getElementById('sm-save-btn');
+  const finishedMsg = document.getElementById('sm-finished-msg');
+  if (allowed.length === 0) {
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; }
+    if (finishedMsg) finishedMsg.style.display = 'block';
+  } else {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; }
+    if (finishedMsg) finishedMsg.style.display = 'none';
   }
 
   document.getElementById('status-modal-overlay').classList.add('open');
