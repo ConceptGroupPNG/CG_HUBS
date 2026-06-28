@@ -1745,8 +1745,8 @@ function getPayGroup(item) {
   return item.PayGroup || item['Pay_x0020_Group'] || '—';
 }
 function getOrder(item) {
-  // SharePoint renames 'Order' to 'Order0' as Order is a reserved SQL word
-  return item.Order0 !== undefined ? item.Order0 : (item.Order !== undefined ? item.Order : '?');
+  if (!item) return '';
+  return item.Order0 !== undefined ? item.Order0 : (item.Order !== undefined ? item.Order : '');
 }
 function getActStatus(item) {
   return item.Act_Status || item['Act_x0020_Status'] || '';
@@ -1996,42 +1996,42 @@ function openGenTemplateForm(id) {
     <div class="form-row">
       <div class="form-group">
         <label>Order *</label>
-        <input type="number" id="gtf-order" value="${getOrder(item)||''}">
+        <input type="number" id="gtf-order" value="${item ? getOrder(item) : ''}">
       </div>
       <div class="form-group">
         <label>Offset (days from PPE) *</label>
-        <input type="number" id="gtf-offset" value="${item?.Offset !== undefined ? item.Offset : ''}">
+        <input type="number" id="gtf-offset" value="${item && item.Offset !== undefined ? item.Offset : ''}">
       </div>
     </div>
     <div class="form-group">
       <label>Milestone *</label>
-      <input type="text" id="gtf-milestone" value="${item?.ActivityMilestone||''}">
+      <input type="text" id="gtf-milestone" value="${item ? (item.ActivityMilestone||'') : ''}">
     </div>
     <div class="form-row">
       <div class="form-group">
         <label>Pay Master</label>
-        <input type="text" id="gtf-member" value="${getPSPMember(item)||''}">
+        <input type="text" id="gtf-member" value="${item ? (getPSPMember(item)||'') : ''}">
       </div>
       <div class="form-group">
         <label>Contact</label>
-        <input type="text" id="gtf-contact" value="${item?.Contact||''}">
+        <input type="text" id="gtf-contact" value="${item ? (item.Contact||'') : ''}">
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label>Int/Ext</label>
         <select id="gtf-intext">
-          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
-          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+          <option ${item && item.IntExt==='Internal' ? 'selected' : ''}>Internal</option>
+          <option ${item && item.IntExt==='External' ? 'selected' : ''}>External</option>
         </select>
       </div>
       <div class="form-group">
         <label>Client BAU</label>
-        <input type="text" id="gtf-clientbau" value="${item?.ClientBAU||''}">
+        <input type="text" id="gtf-clientbau" value="${item ? (item.ClientBAU||'') : ''}">
       </div>
     </div>
     <div class="form-group">
-      <label><input type="checkbox" id="gtf-sla" ${item?.SLA?'checked':''}> SLA Milestone</label>
+      <label><input type="checkbox" id="gtf-sla" ${item && item.SLA ? 'checked' : ''}> SLA Milestone</label>
     </div>`;
 
   document.getElementById('modal-save-btn').textContent = item ? 'Save Changes' : 'Add Activity';
