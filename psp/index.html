@@ -1,1 +1,2546 @@
-<!-- PSP HUB coming soon -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PSP HUB — Payroll Services PNG</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+  :root {
+    --navy: #1a2744;
+    --navy-dark: #111c33;
+    --navy-light: #243160;
+    --teal: #0e9f6e;
+    --teal-dark: #0b7a54;
+    --teal-light: #d1fae5;
+    --white: #ffffff;
+    --grey-50: #f8fafc;
+    --grey-100: #f1f5f9;
+    --grey-200: #e2e8f0;
+    --grey-300: #cbd5e1;
+    --grey-500: #64748b;
+    --grey-700: #334155;
+    --grey-900: #0f172a;
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --warning: #f59e0b;
+    --warning-light: #fef3c7;
+    --info: #3b82f6;
+    --info-light: #dbeafe;
+    --success: #10b981;
+    --success-light: #d1fae5;
+    --sidebar-w: 240px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--grey-100);
+    color: var(--grey-900);
+    display: flex;
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── AUTH SCREEN ── */
+  #auth-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    width: 100%;
+    background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 60%, var(--navy-light) 100%);
+  }
+  .auth-card {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 48px 40px;
+    width: 380px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .auth-logo {
+    width: 64px; height: 64px;
+    background: var(--navy);
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+  }
+  .auth-logo i { font-size: 32px; color: var(--teal); }
+  .auth-card h1 { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .auth-card p { color: var(--grey-500); margin-bottom: 32px; font-size: 13px; }
+  .btn-signin {
+    width: 100%;
+    background: var(--navy);
+    color: var(--white);
+    border: none;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: background 0.2s;
+  }
+  .btn-signin:hover { background: var(--navy-light); }
+
+  /* ── APP SHELL ── */
+  #app { display: none; width: 100%; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--navy);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 100;
+    overflow-y: auto;
+  }
+  .sidebar-logo {
+    padding: 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sidebar-logo .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--teal);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .sidebar-logo .logo-icon i { font-size: 20px; color: var(--white); }
+  .sidebar-logo .logo-text { line-height: 1.2; }
+  .sidebar-logo .logo-text strong { display: block; color: var(--white); font-size: 14px; }
+  .sidebar-logo .logo-text span { color: rgba(255,255,255,0.5); font-size: 11px; }
+
+  .sidebar-section { padding: 12px 0; }
+  .sidebar-label {
+    padding: 4px 16px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px;
+    color: rgba(255,255,255,0.65);
+    cursor: pointer;
+    border-radius: 0;
+    transition: all 0.15s;
+    font-size: 13px;
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: var(--white); }
+  .nav-item.active {
+    background: rgba(14,159,110,0.15);
+    color: var(--teal);
+    border-left-color: var(--teal);
+    font-weight: 600;
+  }
+  .nav-item i { font-size: 18px; flex-shrink: 0; }
+  .nav-badge {
+    margin-left: auto;
+    background: var(--teal);
+    color: var(--white);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+  }
+
+  .sidebar-user {
+    margin-top: auto;
+    padding: 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .user-avatar {
+    width: 32px; height: 32px;
+    background: var(--teal);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--white);
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .user-info { flex: 1; min-width: 0; }
+  .user-info strong { display: block; color: var(--white); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-info span { color: rgba(255,255,255,0.4); font-size: 11px; }
+  .btn-signout { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; border-radius: 4px; }
+  .btn-signout:hover { color: var(--white); }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    margin-left: var(--sidebar-w);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  .topbar {
+    background: var(--white);
+    border-bottom: 1px solid var(--grey-200);
+    padding: 0 24px;
+    height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topbar h2 { font-size: 16px; font-weight: 700; color: var(--navy); }
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+  .page-content { padding: 24px; flex: 1; }
+
+  /* ── PAGES ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--white);
+    border-radius: 12px;
+    border: 1px solid var(--grey-200);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--grey-200);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-header h3 { font-size: 14px; font-weight: 700; color: var(--navy); }
+  .card-body { padding: 20px; }
+
+  /* ── METRIC CARDS ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    background: var(--white);
+    border-radius: 12px;
+    border: 1px solid var(--grey-200);
+    padding: 20px;
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .metric-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .metric-icon i { font-size: 22px; }
+  .metric-icon.teal { background: var(--teal-light); color: var(--teal); }
+  .metric-icon.navy { background: rgba(26,39,68,0.1); color: var(--navy); }
+  .metric-icon.warning { background: var(--warning-light); color: var(--warning); }
+  .metric-icon.danger { background: var(--danger-light); color: var(--danger); }
+  .metric-info { flex: 1; }
+  .metric-value { font-size: 26px; font-weight: 800; color: var(--navy); line-height: 1; margin-bottom: 4px; }
+  .metric-label { font-size: 12px; color: var(--grey-500); }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: var(--navy); color: var(--white); }
+  .btn-primary:hover { background: var(--navy-light); }
+  .btn-teal { background: var(--teal); color: var(--white); }
+  .btn-teal:hover { background: var(--teal-dark); }
+  .btn-outline { background: transparent; color: var(--navy); border: 1.5px solid var(--grey-300); }
+  .btn-outline:hover { border-color: var(--navy); background: var(--grey-50); }
+  .btn-danger { background: var(--danger); color: var(--white); }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-xs { padding: 3px 8px; font-size: 11px; border-radius: 6px; }
+
+  /* ── STATUS BADGES ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge-not-started { background: var(--grey-100); color: var(--grey-500); }
+  .badge-started { background: var(--info-light); color: var(--info); }
+  .badge-delayed { background: var(--warning-light); color: var(--warning); }
+  .badge-finished { background: var(--success-light); color: var(--success); }
+
+  /* ── TABLES ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--grey-500);
+    padding: 10px 14px;
+    background: var(--grey-50);
+    border-bottom: 1px solid var(--grey-200);
+    white-space: nowrap;
+  }
+  td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--grey-100);
+    vertical-align: middle;
+    font-size: 13px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--grey-50); }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    display: flex; gap: 10px; align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .filter-bar input, .filter-bar select {
+    padding: 8px 12px;
+    border: 1.5px solid var(--grey-200);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--grey-900);
+    background: var(--white);
+    outline: none;
+  }
+  .filter-bar input:focus, .filter-bar select:focus { border-color: var(--teal); }
+  .filter-bar input { min-width: 200px; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--white);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--grey-200);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .modal-header h3 { font-size: 16px; font-weight: 700; color: var(--navy); }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--grey-500); padding: 2px; }
+  .modal-close:hover { color: var(--grey-900); }
+  .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+  .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--grey-200);
+    display: flex; justify-content: flex-end; gap: 10px;
+    flex-shrink: 0;
+  }
+
+  /* ── FORM FIELDS ── */
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--grey-700); margin-bottom: 6px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1.5px solid var(--grey-200);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--grey-900);
+    outline: none;
+    transition: border-color 0.15s;
+    background: var(--white);
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--teal); }
+  .form-group textarea { resize: vertical; min-height: 80px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-hint { font-size: 11px; color: var(--grey-500); margin-top: 4px; }
+
+  /* ── ACTIVITY TIMELINE CARD ── */
+  .activity-group { margin-bottom: 20px; }
+  .activity-group-header {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--grey-500);
+    padding: 8px 0 6px;
+    border-bottom: 1px solid var(--grey-200);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .activity-row {
+    display: grid;
+    grid-template-columns: 40px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--grey-100);
+  }
+  .activity-row:last-child { border-bottom: none; }
+  .activity-order {
+    width: 28px; height: 28px;
+    background: var(--grey-100);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--grey-500);
+    flex-shrink: 0;
+  }
+  .activity-order.finished { background: var(--success-light); color: var(--success); }
+  .activity-order.started { background: var(--info-light); color: var(--info); }
+  .activity-order.delayed { background: var(--warning-light); color: var(--warning); }
+  .activity-name { font-size: 13px; font-weight: 600; color: var(--navy); }
+  .activity-meta { font-size: 11px; color: var(--grey-500); margin-top: 2px; }
+  .activity-actions { display: flex; gap: 6px; align-items: center; }
+
+  /* ── TOAST ── */
+  #toast-container {
+    position: fixed; bottom: 24px; right: 24px;
+    z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .toast {
+    background: var(--navy);
+    color: var(--white);
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    animation: slideIn 0.2s ease;
+    max-width: 340px;
+  }
+  .toast.success { background: var(--teal); }
+  .toast.error { background: var(--danger); }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ── LOADING ── */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px;
+    color: var(--grey-500);
+    gap: 12px;
+    flex-direction: column;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--grey-200);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--grey-500);
+  }
+  .empty-state i { font-size: 48px; color: var(--grey-300); margin-bottom: 12px; display: block; }
+  .empty-state p { font-size: 14px; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--grey-200); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--grey-500);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--navy); }
+  .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+  /* ── SLA INDICATOR ── */
+  .sla-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .sla-dot.yes { background: var(--teal); }
+  .sla-dot.no { background: var(--grey-300); }
+
+  /* ── INT/EXT BADGE ── */
+  .intext {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .intext.internal { background: rgba(26,39,68,0.08); color: var(--navy); }
+  .intext.external { background: rgba(245,158,11,0.12); color: #b45309; }
+
+  /* Grid layouts */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  /* Alert box */
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .alert-warning { background: var(--warning-light); color: #92400e; border: 1px solid #fcd34d; }
+  .alert-info { background: var(--info-light); color: #1e40af; border: 1px solid #93c5fd; }
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo"><i class="ti ti-building-bank"></i></div>
+    <h1>PSP HUB</h1>
+    <p>Payroll Services PNG — Operations & Billing</p>
+    <button class="btn-signin" onclick="signIn()">
+      <i class="ti ti-brand-windows"></i>
+      Sign in with Microsoft 365
+    </button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><i class="ti ti-building-bank"></i></div>
+      <div class="logo-text">
+        <strong>PSP HUB</strong>
+        <span>Payroll Services PNG</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Operations</div>
+      <div class="nav-item active" onclick="navigate('dashboard')">
+        <i class="ti ti-layout-dashboard"></i> Dashboard
+      </div>
+      <div class="nav-item" onclick="navigate('my-activities')">
+        <i class="ti ti-checklist"></i> My Activities
+        <span class="nav-badge" id="badge-my-activities">0</span>
+      </div>
+      <div class="nav-item" onclick="navigate('all-activities')">
+        <i class="ti ti-users"></i> All Activities
+      </div>
+      <div class="nav-item" onclick="navigate('calendar')">
+        <i class="ti ti-calendar"></i> Pay Calendar
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Admin</div>
+      <div class="nav-item" onclick="navigate('generate-calendar')">
+        <i class="ti ti-calendar-plus"></i> Generate Calendar
+      </div>
+      <div class="nav-item" onclick="navigate('templates')">
+        <i class="ti ti-template"></i> Activity Templates
+      </div>
+      <div class="nav-item" onclick="navigate('billing-metrics')">
+        <i class="ti ti-chart-bar"></i> Billing Metrics
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Finance</div>
+      <div class="nav-item" onclick="navigate('generate-invoice')">
+        <i class="ti ti-file-invoice"></i> Generate Invoice
+      </div>
+    </div>
+
+    <div class="sidebar-user">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-info">
+        <strong id="user-name">Loading...</strong>
+        <span id="user-email"></span>
+      </div>
+      <button class="btn-signout" onclick="signOut()" title="Sign out">
+        <i class="ti ti-logout"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </div>
+    <div class="page-content">
+
+      <!-- DASHBOARD PAGE -->
+      <div class="page active" id="page-dashboard">
+        <div class="metrics-grid" id="dashboard-metrics">
+          <div class="metric-card">
+            <div class="metric-icon teal"><i class="ti ti-checklist"></i></div>
+            <div class="metric-info">
+              <div class="metric-value" id="m-my-today">—</div>
+              <div class="metric-label">My Activities Today</div>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon navy"><i class="ti ti-users"></i></div>
+            <div class="metric-info">
+              <div class="metric-value" id="m-all-today">—</div>
+              <div class="metric-label">All Activities Today</div>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon warning"><i class="ti ti-alert-triangle"></i></div>
+            <div class="metric-info">
+              <div class="metric-value" id="m-delayed">—</div>
+              <div class="metric-label">Delayed Today</div>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon danger"><i class="ti ti-clock-x"></i></div>
+            <div class="metric-info">
+              <div class="metric-value" id="m-overdue">—</div>
+              <div class="metric-label">Overdue (Not Started)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>My Activities Today</h3>
+              <button class="btn btn-sm btn-outline" onclick="navigate('my-activities')">View All</button>
+            </div>
+            <div id="dash-my-activities"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Delayed &amp; Overdue</h3>
+            </div>
+            <div id="dash-delayed"><div class="loading"><div class="spinner"></div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MY ACTIVITIES PAGE -->
+      <div class="page" id="page-my-activities">
+        <div class="filter-bar">
+          <select id="filter-my-date" onchange="renderMyActivities()">
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="all">All Open</option>
+          </select>
+          <select id="filter-my-client" onchange="renderMyActivities()">
+            <option value="">All Clients</option>
+          </select>
+          <input type="text" id="filter-my-search" placeholder="Search activities..." oninput="renderMyActivities()">
+        </div>
+        <div id="my-activities-container"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
+      <!-- ALL ACTIVITIES PAGE -->
+      <div class="page" id="page-all-activities">
+        <div class="filter-bar">
+          <select id="filter-all-date" onchange="renderAllActivities()">
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="all">All Open</option>
+          </select>
+          <select id="filter-all-member" onchange="renderAllActivities()">
+            <option value="">All Pay Masters</option>
+          </select>
+          <select id="filter-all-client" onchange="renderAllActivities()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="filter-all-status" onchange="renderAllActivities()">
+            <option value="">All Statuses</option>
+            <option value="Not Started">Not Started</option>
+            <option value="Started">Started</option>
+            <option value="Delayed">Delayed</option>
+            <option value="Finished">Finished</option>
+          </select>
+          <input type="text" id="filter-all-search" placeholder="Search..." oninput="renderAllActivities()">
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table id="all-activities-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Pay Group</th>
+                  <th>Pay No</th>
+                  <th>Order</th>
+                  <th>Milestone</th>
+                  <th>Scheduled</th>
+                  <th>Pay Master</th>
+                  <th>Int/Ext</th>
+                  <th>SLA</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="all-activities-tbody">
+                <tr><td colspan="11"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALENDAR PAGE -->
+      <div class="page" id="page-calendar">
+        <div class="filter-bar">
+          <select id="filter-cal-client" onchange="renderCalendar()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="filter-cal-paygroup" onchange="renderCalendar()">
+            <option value="">All Pay Groups</option>
+          </select>
+          <select id="filter-cal-status" onchange="renderCalendar()">
+            <option value="">All Statuses</option>
+            <option value="Not Started">Not Started</option>
+            <option value="Started">Started</option>
+            <option value="Delayed">Delayed</option>
+            <option value="Finished">Finished</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Pay Group</th>
+                  <th>Pay No</th>
+                  <th>PPE</th>
+                  <th>Order</th>
+                  <th>Milestone</th>
+                  <th>Scheduled</th>
+                  <th>Pay Master</th>
+                  <th>Status</th>
+                  <th>Start</th>
+                  <th>Finish</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="calendar-tbody">
+                <tr><td colspan="12"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- GENERATE CALENDAR PAGE -->
+      <div class="page" id="page-generate-calendar">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Generate Pay Run Calendar</h3></div>
+            <div class="card-body">
+              <div class="alert alert-info">
+                <i class="ti ti-info-circle"></i>
+                <div>Select a client, pay group and pay details. Activities will be generated from the template and appended to PSP_Act_Calendar with calculated dates.</div>
+              </div>
+              <div class="form-group">
+                <label>Client</label>
+                <select id="gen-client" onchange="onGenClientChange()">
+                  <option value="">Select Client...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Pay Group</label>
+                <select id="gen-paygroup" onchange="onGenPayGroupChange()">
+                  <option value="">Select Pay Group...</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Pay No</label>
+                  <input type="number" id="gen-payno" min="1" placeholder="e.g. 12">
+                </div>
+                <div class="form-group">
+                  <label>Pay End Date</label>
+                  <input type="date" id="gen-payenddate">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Cycle</label>
+                <input type="text" id="gen-cycle" readonly placeholder="Auto-detected from template">
+              </div>
+              <div id="gen-template-preview" style="margin-bottom:16px;"></div>
+              <button class="btn btn-teal" onclick="generateCalendar()" id="btn-generate" disabled>
+                <i class="ti ti-calendar-plus"></i> Generate Calendar
+              </button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Template Preview</h3></div>
+            <div id="template-preview-container">
+              <div class="empty-state">
+                <i class="ti ti-template"></i>
+                <p>Select a pay group to preview its activity template</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEMPLATES PAGE -->
+      <div class="page" id="page-templates">
+        <div class="filter-bar">
+          <select id="filter-tmpl-client" onchange="renderTemplates()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="filter-tmpl-paygroup" onchange="renderTemplates()">
+            <option value="">All Pay Groups</option>
+          </select>
+          <button class="btn btn-teal" onclick="openTemplateForm()">
+            <i class="ti ti-plus"></i> Add Template
+          </button>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Pay Group</th>
+                  <th>Cycle</th>
+                  <th>Order</th>
+                  <th>Milestone</th>
+                  <th>Offset</th>
+                  <th>Pay Master</th>
+                  <th>Int/Ext</th>
+                  <th>SLA</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="templates-tbody">
+                <tr><td colspan="10"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- BILLING METRICS PAGE -->
+      <div class="page" id="page-billing-metrics">
+        <div class="filter-bar">
+          <select id="filter-bm-client" onchange="renderBillingMetrics()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="filter-bm-year" onchange="renderBillingMetrics()">
+            <option value="">All Years</option>
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+          </select>
+          <select id="filter-bm-billed" onchange="renderBillingMetrics()">
+            <option value="">All Records</option>
+            <option value="false">Unbilled Only</option>
+            <option value="true">Billed</option>
+          </select>
+          <button class="btn btn-teal" onclick="openBillingForm()">
+            <i class="ti ti-plus"></i> Add Metrics
+          </button>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Pay Group</th>
+                  <th>Pay No</th>
+                  <th>PPE</th>
+                  <th>Payrun</th>
+                  <th>Employees</th>
+                  <th>New Hires</th>
+                  <th>Terms</th>
+                  <th>Non-Updates</th>
+                  <th>Nominate</th>
+                  <th>Billed</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="billing-metrics-tbody">
+                <tr><td colspan="12"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- GENERATE INVOICE PAGE -->
+      <div class="page" id="page-generate-invoice">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Invoice Configuration</h3></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>Client</label>
+                <select id="inv-client" onchange="onInvClientChange()">
+                  <option value="">Select Client...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Billing Month</label>
+                <select id="inv-month">
+                  <option value="January">January</option>
+                  <option value="February">February</option>
+                  <option value="March">March</option>
+                  <option value="April">April</option>
+                  <option value="May">May</option>
+                  <option value="June">June</option>
+                  <option value="July">July</option>
+                  <option value="August">August</option>
+                  <option value="September">September</option>
+                  <option value="October">October</option>
+                  <option value="November">November</option>
+                  <option value="December">December</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Invoice Date</label>
+                <input type="date" id="inv-date">
+              </div>
+              <div class="form-group">
+                <label>Due Date</label>
+                <input type="date" id="inv-due">
+              </div>
+              <div id="inv-nominated-records" style="margin-bottom:16px;"></div>
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-outline" onclick="loadNominatedRecords()" id="btn-load-nominated">
+                  <i class="ti ti-refresh"></i> Load Nominated Records
+                </button>
+                <button class="btn btn-teal" onclick="generateInvoice()" id="btn-gen-inv" disabled>
+                  <i class="ti ti-file-invoice"></i> Calculate &amp; Preview
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Invoice Preview</h3>
+              <button class="btn btn-sm btn-teal" onclick="exportInvoiceCSV()" id="btn-export-inv" style="display:none;">
+                <i class="ti ti-download"></i> Export CSV
+              </button>
+            </div>
+            <div id="invoice-preview">
+              <div class="empty-state">
+                <i class="ti ti-file-invoice"></i>
+                <p>Select a client and calculate to preview the invoice</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /page-content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- GENERIC MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Modal</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" id="modal-save-btn" onclick="saveModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS UPDATE MODAL -->
+<div class="modal-overlay" id="status-modal-overlay">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 id="status-modal-title">Update Activity Status</h3>
+      <button class="modal-close" onclick="closeStatusModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Activity</label>
+        <input type="text" id="sm-milestone" readonly>
+      </div>
+      <div class="form-group">
+        <label>New Status</label>
+        <select id="sm-status">
+          <option value="Not Started">Not Started</option>
+          <option value="Started">Started</option>
+          <option value="Delayed">Delayed</option>
+          <option value="Finished">Finished</option>
+        </select>
+      </div>
+      <div class="form-group" id="sm-comments-group">
+        <label>Comments</label>
+        <textarea id="sm-comments" placeholder="Optional comments..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeStatusModal()">Cancel</button>
+      <button class="btn btn-teal" onclick="saveStatus()"><i class="ti ti-check"></i> Update Status</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+const CLIENT_ID = 'd5aef866-584f-4226-ab11-c941888fb519';
+const TENANT_ID = 'ea9e105c-2df6-47ef-a8e3-b4aa1d788423';
+const REDIRECT_URI = 'https://marcusappdev.github.io/CG_Training/psp-hub/';
+const SCOPES = ['Sites.ReadWrite.All', 'User.Read', 'offline_access'];
+const SITE_URL = 'https://conceptcompg.sharepoint.com/sites/PSP_Test';
+let SITE_ID = null;
+
+const LISTS = {
+  activities:  'PSP_Activities_Templates',
+  calendar:    'PSP_Act_Calendar',
+  billing:     'PSP_Billing',
+  fees:        'PSP_Processing_Fees',
+  clients:     'PSP_Client_Details',
+  lastinv:     'PSP_Last_Invoice',
+};
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let accessToken = null;
+let currentUser = null;
+let currentPage = 'dashboard';
+let statusEditItem = null;
+let modalEntity = null;
+let modalIsEdit = false;
+let invoiceLines = [];
+let nominatedRecords = [];
+
+const cache = {
+  calendar: [],
+  activities: [],
+  billing: [],
+  fees: [],
+  clients: [],
+  lastinv: [],
+  listsMap: {},
+};
+
+// ─────────────────────────────────────────────
+// AUTH — PKCE
+// ─────────────────────────────────────────────
+function base64URLEncode(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+async function generatePKCE() {
+  const verifier = base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return { verifier, challenge: base64URLEncode(hash) };
+}
+
+async function signIn() {
+  const { verifier, challenge } = await generatePKCE();
+  const state = base64URLEncode(crypto.getRandomValues(new Uint8Array(8)));
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state', state);
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES.join(' '),
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state,
+    prompt: 'select_account',
+  });
+  window.location = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+}
+
+async function exchangeCode(code) {
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: verifier,
+    scope: SCOPES.join(' '),
+  });
+  const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+    method: 'POST', body,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+  const data = await r.json();
+  if (data.access_token) {
+    localStorage.setItem('psp_access_token', data.access_token);
+    localStorage.setItem('psp_refresh_token', data.refresh_token || '');
+    sessionStorage.removeItem('pkce_verifier');
+    sessionStorage.removeItem('pkce_state');
+    window.history.replaceState({}, '', REDIRECT_URI);
+    return data.access_token;
+  }
+  throw new Error('Token exchange failed: ' + JSON.stringify(data));
+}
+
+async function refreshToken() {
+  const rt = localStorage.getItem('psp_refresh_token');
+  if (!rt) return null;
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: 'refresh_token',
+    refresh_token: rt,
+    scope: SCOPES.join(' '),
+  });
+  const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+    method: 'POST', body,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+  const data = await r.json();
+  if (data.access_token) {
+    localStorage.setItem('psp_access_token', data.access_token);
+    if (data.refresh_token) localStorage.setItem('psp_refresh_token', data.refresh_token);
+    return data.access_token;
+  }
+  return null;
+}
+
+function signOut() {
+  localStorage.removeItem('psp_access_token');
+  localStorage.removeItem('psp_refresh_token');
+  window.location = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+}
+
+// ─────────────────────────────────────────────
+// GRAPH API
+// ─────────────────────────────────────────────
+async function graphFetch(url, opts = {}) {
+  if (!accessToken) throw new Error('No access token');
+  const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  let r = await fetch(url, { ...opts, headers });
+  if (r.status === 401) {
+    const newToken = await refreshToken();
+    if (newToken) {
+      accessToken = newToken;
+      headers.Authorization = `Bearer ${accessToken}`;
+      r = await fetch(url, { ...opts, headers });
+    }
+  }
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Graph error ${r.status}: ${err}`);
+  }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+async function getSiteId() {
+  if (SITE_ID) return SITE_ID;
+  const host = 'conceptcompg.sharepoint.com';
+  const path = '/sites/PSP_Test';
+  const data = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${host}:${path}`);
+  SITE_ID = data.id;
+  return SITE_ID;
+}
+
+async function getListId(listName) {
+  if (cache.listsMap[listName]) return cache.listsMap[listName];
+  const siteId = await getSiteId();
+  const data = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$filter=displayName eq '${listName}'&$select=id,displayName`);
+  const list = data.value[0];
+  if (!list) throw new Error(`List not found: ${listName}`);
+  cache.listsMap[listName] = list.id;
+  return list.id;
+}
+
+async function getItems(entity, filter = '', top = 5000) {
+  const siteId = await getSiteId();
+  const listId = await getListId(LISTS[entity]);
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=${top}`;
+  if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
+  const items = [];
+  while (url) {
+    const data = await graphFetch(url);
+    items.push(...(data.value || []));
+    url = data['@odata.nextLink'] || null;
+  }
+  return items.map(i => ({ id: i.id, ...i.fields }));
+}
+
+async function createItem(entity, fields) {
+  const siteId = await getSiteId();
+  const listId = await getListId(LISTS[entity]);
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
+  return graphFetch(url, { method: 'POST', body: JSON.stringify({ fields }) });
+}
+
+async function saveWithFieldFallback(isUpdate, entity, id, fields) {
+  const siteId = await getSiteId();
+  const listId = await getListId(LISTS[entity]);
+  const url = isUpdate
+    ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${id}/fields`
+    : `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
+  const body = isUpdate ? fields : { fields };
+  try {
+    const r = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) return r.status === 204 ? null : r.json();
+    const errText = await r.text();
+    if (errText.includes('invalidRequest') || errText.includes('Field') || errText.includes('column')) {
+      const badField = errText.match(/"([^"]+)"\s+field/)?.[1] || errText.match(/field '([^']+)'/)?.[1];
+      if (badField && fields[badField] !== undefined) {
+        const reduced = { ...fields };
+        delete reduced[badField];
+        return saveWithFieldFallback(isUpdate, entity, id, reduced);
+      }
+    }
+    throw new Error(errText);
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function deleteItem(entity, id) {
+  const siteId = await getSiteId();
+  const listId = await getListId(LISTS[entity]);
+  return graphFetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${id}`, { method: 'DELETE' });
+}
+
+// ─────────────────────────────────────────────
+// DATE HELPERS
+// ─────────────────────────────────────────────
+function spDateToDate(val) {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    return new Date((val - 25569) * 86400000);
+  }
+  return new Date(val);
+}
+function fmtDate(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return '—';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function fmtDateTime(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return '—';
+  return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function toISODate(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return null;
+  return d.toISOString();
+}
+function today() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function isToday(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return false;
+  const t = today();
+  return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+}
+function isThisWeek(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return false;
+  const t = today();
+  const weekEnd = new Date(t); weekEnd.setDate(t.getDate() + 6);
+  return d >= t && d <= weekEnd;
+}
+function isOverdue(val, status) {
+  if (status === 'Finished') return false;
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return false;
+  return d < today();
+}
+
+// date offset calculation: PayEndDate (as Excel serial) + offset days
+function calcActivityDate(payEndDateSerial, offsetDays, timeOfDay = 9) {
+  const base = new Date((payEndDateSerial - 25569) * 86400000);
+  base.setDate(base.getDate() + offsetDays);
+  base.setHours(timeOfDay, 0, 0, 0);
+  return base;
+}
+
+function dateToExcelSerial(date) {
+  return (date.getTime() / 86400000) + 25569;
+}
+
+// ─────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────
+function showToast(msg, type = 'default') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  const icon = type === 'success' ? 'ti-circle-check' : type === 'error' ? 'ti-circle-x' : 'ti-info-circle';
+  t.innerHTML = `<i class="ti ${icon}"></i> ${msg}`;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+function statusBadge(s) {
+  const cls = s === 'Finished' ? 'finished' : s === 'Started' ? 'started' : s === 'Delayed' ? 'delayed' : 'not-started';
+  const icon = s === 'Finished' ? 'ti-circle-check' : s === 'Started' ? 'ti-player-play' : s === 'Delayed' ? 'ti-clock-pause' : 'ti-clock';
+  return `<span class="badge badge-${cls}"><i class="ti ${icon}"></i> ${s || 'Not Started'}</span>`;
+}
+
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${page}`)?.classList.add('active');
+  document.querySelector(`[onclick="navigate('${page}')"]`)?.classList.add('active');
+  currentPage = page;
+  const titles = {
+    'dashboard': 'Dashboard',
+    'my-activities': 'My Activities',
+    'all-activities': 'All Activities',
+    'calendar': 'Pay Calendar',
+    'generate-calendar': 'Generate Calendar',
+    'templates': 'Activity Templates',
+    'billing-metrics': 'Billing Metrics',
+    'generate-invoice': 'Generate Invoice',
+  };
+  document.getElementById('page-title').textContent = titles[page] || page;
+  document.getElementById('topbar-actions').innerHTML = '';
+  loadPage(page);
+}
+
+async function loadPage(page) {
+  if (page === 'dashboard') await loadDashboard();
+  else if (page === 'my-activities') await loadMyActivities();
+  else if (page === 'all-activities') await loadAllActivities();
+  else if (page === 'calendar') await loadCalendar();
+  else if (page === 'generate-calendar') await loadGenerateCalendar();
+  else if (page === 'templates') await loadTemplates();
+  else if (page === 'billing-metrics') await loadBillingMetrics();
+  else if (page === 'generate-invoice') await loadGenerateInvoice();
+}
+
+// ─────────────────────────────────────────────
+// DATA LOADING
+// ─────────────────────────────────────────────
+async function refreshCache() {
+  const [cal, acts, bill, fees, clients, lastinv] = await Promise.all([
+    getItems('calendar'),
+    getItems('activities'),
+    getItems('billing'),
+    getItems('fees'),
+    getItems('clients'),
+    getItems('lastinv'),
+  ]);
+  cache.calendar = cal;
+  cache.activities = acts;
+  cache.billing = bill;
+  cache.fees = fees;
+  cache.clients = clients;
+  cache.lastinv = lastinv;
+}
+
+async function refreshCalendarCache() {
+  cache.calendar = await getItems('calendar');
+}
+
+// ─────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────
+async function loadDashboard() {
+  if (!cache.calendar.length) {
+    try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); return; }
+  }
+  const todayItems = cache.calendar.filter(i => isToday(i.ActivityDateTime));
+  const myToday = todayItems.filter(i => i.PSPMember === currentUser.displayName);
+  const delayed = cache.calendar.filter(i => i.Act_Status === 'Delayed' && isToday(i.ActivityDateTime));
+  const overdue = cache.calendar.filter(i => (!i.Act_Status || i.Act_Status === 'Not Started') && isOverdue(i.ActivityDateTime, i.Act_Status));
+
+  document.getElementById('m-my-today').textContent = myToday.length;
+  document.getElementById('m-all-today').textContent = todayItems.length;
+  document.getElementById('m-delayed').textContent = delayed.length;
+  document.getElementById('m-overdue').textContent = overdue.length;
+  document.getElementById('badge-my-activities').textContent = myToday.filter(i => i.Act_Status !== 'Finished').length;
+
+  // My activities today (first 5)
+  const dashMy = document.getElementById('dash-my-activities');
+  if (!myToday.length) {
+    dashMy.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No activities scheduled for you today</p></div>';
+  } else {
+    const rows = myToday.slice(0, 5).map(i => `
+      <div class="activity-row">
+        <div class="activity-order ${(i.Act_Status||'').toLowerCase().replace(' ','-')}">${i.Order || '?'}</div>
+        <div>
+          <div class="activity-name">${i.ActivityMilestone || '—'}</div>
+          <div class="activity-meta">${i.PSPClient} · ${i.PayGroup} Pay ${i.PayNo}</div>
+        </div>
+        ${statusBadge(i.Act_Status || 'Not Started')}
+        <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
+      </div>`).join('');
+    dashMy.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
+  }
+
+  // Delayed & overdue
+  const dashDel = document.getElementById('dash-delayed');
+  const issues = [...delayed, ...overdue.slice(0, 5)];
+  if (!issues.length) {
+    dashDel.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No delays or overdue activities</p></div>';
+  } else {
+    const rows = issues.slice(0, 6).map(i => `
+      <div class="activity-row">
+        <div class="activity-order delayed">${i.Order || '?'}</div>
+        <div>
+          <div class="activity-name">${i.ActivityMilestone || '—'}</div>
+          <div class="activity-meta">${i.PSPClient} · ${i.PSPMember}</div>
+        </div>
+        ${statusBadge(i.Act_Status || 'Not Started')}
+        <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
+      </div>`).join('');
+    dashDel.innerHTML = `<div style="padding:8px 16px;">${rows}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// MY ACTIVITIES
+// ─────────────────────────────────────────────
+async function loadMyActivities() {
+  if (!cache.calendar.length) await refreshCalendarCache();
+  populateClientFilter('filter-my-client', cache.calendar);
+  renderMyActivities();
+}
+
+function renderMyActivities() {
+  const dateFilter = document.getElementById('filter-my-date').value;
+  const client = document.getElementById('filter-my-client').value;
+  const search = document.getElementById('filter-my-search').value.toLowerCase();
+
+  let items = cache.calendar.filter(i => i.PSPMember === currentUser.displayName && i.Act_Status !== 'Finished');
+  if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
+  else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (search) items = items.filter(i =>
+    (i.ActivityMilestone||'').toLowerCase().includes(search) ||
+    (i.PSPClient||'').toLowerCase().includes(search) ||
+    (i.PayGroup||'').toLowerCase().includes(search)
+  );
+
+  // Group by Client + PayGroup + PayNo
+  const groups = {};
+  items.forEach(i => {
+    const key = `${i.PSPClient}||${i.PayGroup}||${i.PayNo}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(i);
+  });
+  Object.values(groups).forEach(g => g.sort((a, b) => (a.Order || 0) - (b.Order || 0)));
+
+  const container = document.getElementById('my-activities-container');
+  if (!items.length) {
+    container.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No activities match your filters</p></div>';
+    return;
+  }
+
+  const html = Object.entries(groups).map(([key, grpItems]) => {
+    const [client, pg, payno] = key.split('||');
+    const ppe = grpItems[0]?.PayEndDate;
+    const rows = grpItems.map(i => {
+      const overdue = isOverdue(i.ActivityDateTime, i.Act_Status);
+      return `
+      <div class="activity-row">
+        <div class="activity-order ${getStatusClass(i.Act_Status)}">${i.Order}</div>
+        <div>
+          <div class="activity-name">${i.ActivityMilestone}${overdue ? ' <span style="color:var(--danger);font-size:11px;">⚠ Overdue</span>' : ''}</div>
+          <div class="activity-meta">Scheduled: ${fmtDateTime(i.ActivityDateTime)} · <span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'Int'}</span> · Contact: ${i.Contact||'—'}</div>
+        </div>
+        ${statusBadge(i.Act_Status || 'Not Started')}
+        <div class="activity-actions">
+          <button class="btn btn-xs btn-teal" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div>
+          <h3>${client} — ${pg}</h3>
+          <div style="font-size:12px;color:var(--grey-500);margin-top:2px;">Pay No ${payno} · PPE: ${fmtDate(ppe)}</div>
+        </div>
+        <div>${grpItems.filter(i=>i.Act_Status==='Finished').length}/${grpItems.length} complete</div>
+      </div>
+      <div style="padding:8px 16px;">${rows}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function getStatusClass(status) {
+  if (status === 'Finished') return 'finished';
+  if (status === 'Started') return 'started';
+  if (status === 'Delayed') return 'delayed';
+  return '';
+}
+
+// ─────────────────────────────────────────────
+// ALL ACTIVITIES
+// ─────────────────────────────────────────────
+async function loadAllActivities() {
+  if (!cache.calendar.length) await refreshCalendarCache();
+  populateClientFilter('filter-all-client', cache.calendar);
+  populateMemberFilter('filter-all-member', cache.calendar);
+  renderAllActivities();
+}
+
+function renderAllActivities() {
+  const dateFilter = document.getElementById('filter-all-date').value;
+  const member = document.getElementById('filter-all-member').value;
+  const client = document.getElementById('filter-all-client').value;
+  const status = document.getElementById('filter-all-status').value;
+  const search = document.getElementById('filter-all-search').value.toLowerCase();
+
+  let items = [...cache.calendar];
+  if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
+  else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
+  if (member) items = items.filter(i => i.PSPMember === member);
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (status) items = items.filter(i => (i.Act_Status || 'Not Started') === status);
+  if (search) items = items.filter(i =>
+    (i.ActivityMilestone||'').toLowerCase().includes(search) ||
+    (i.PSPClient||'').toLowerCase().includes(search)
+  );
+  items.sort((a, b) => {
+    if (a.PSPClient < b.PSPClient) return -1;
+    if (a.PSPClient > b.PSPClient) return 1;
+    return (a.Order || 0) - (b.Order || 0);
+  });
+
+  const tbody = document.getElementById('all-activities-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-search"></i><p>No activities match filters</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient || '—'}</td>
+      <td><strong>${i.PayGroup || '—'}</strong></td>
+      <td>${i.PayNo || '—'}</td>
+      <td>${i.Order || '—'}</td>
+      <td>${i.ActivityMilestone || '—'}</td>
+      <td>${fmtDateTime(i.ActivityDateTime)}</td>
+      <td>${i.PSPMember || '—'}</td>
+      <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
+      <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
+      <td>${statusBadge(i.Act_Status || 'Not Started')}</td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
+      </td>
+    </tr>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// CALENDAR
+// ─────────────────────────────────────────────
+async function loadCalendar() {
+  if (!cache.calendar.length) await refreshCalendarCache();
+  populateClientFilter('filter-cal-client', cache.calendar);
+  populatePayGroupFilter('filter-cal-paygroup', cache.calendar);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const client = document.getElementById('filter-cal-client').value;
+  const pg = document.getElementById('filter-cal-paygroup').value;
+  const status = document.getElementById('filter-cal-status').value;
+
+  let items = [...cache.calendar];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (pg) items = items.filter(i => i.PayGroup === pg);
+  if (status) items = items.filter(i => (i.Act_Status||'Not Started') === status);
+  items.sort((a,b) => {
+    if (a.PSPClient < b.PSPClient) return -1;
+    if (a.PSPClient > b.PSPClient) return 1;
+    return (spDateToDate(a.ActivityDateTime)||0) - (spDateToDate(b.ActivityDateTime)||0);
+  });
+
+  const tbody = document.getElementById('calendar-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar"></i><p>No calendar items found</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${i.PayGroup||'—'}</strong></td>
+      <td>${i.PayNo||'—'}</td>
+      <td>${fmtDate(i.PayEndDate)}</td>
+      <td>${i.Order||'—'}</td>
+      <td>${i.ActivityMilestone||'—'}</td>
+      <td>${fmtDateTime(i.ActivityDateTime)}</td>
+      <td>${i.PSPMember||'—'}</td>
+      <td>${statusBadge(i.Act_Status||'Not Started')}</td>
+      <td>${fmtDateTime(i.StartDateTime)}</td>
+      <td>${fmtDateTime(i.FinishDateTime)}</td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openStatusModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Update</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('calendar','${i.id}','${(i.ActivityMilestone||'').replace(/'/g,"\\'")}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// STATUS UPDATE MODAL
+// ─────────────────────────────────────────────
+function openStatusModal(item) {
+  statusEditItem = item;
+  document.getElementById('sm-milestone').value = item.ActivityMilestone || '';
+  document.getElementById('sm-status').value = item.Act_Status || 'Not Started';
+  document.getElementById('sm-comments').value = '';
+  document.getElementById('status-modal-overlay').classList.add('open');
+}
+function closeStatusModal() {
+  document.getElementById('status-modal-overlay').classList.remove('open');
+  statusEditItem = null;
+}
+
+async function saveStatus() {
+  if (!statusEditItem) return;
+  const newStatus = document.getElementById('sm-status').value;
+  const comments = document.getElementById('sm-comments').value.trim();
+  const now = new Date().toISOString();
+  const fields = { Act_Status: newStatus };
+
+  if (newStatus === 'Started' && !statusEditItem.StartDateTime) fields.StartDateTime = now;
+  if (newStatus === 'Delayed') {
+    fields.DelayDateTime = now;
+    if (comments) fields.Comments = (statusEditItem.Comments || '') + ` ! Delayed on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})} PM ${comments}`;
+  }
+  if (newStatus === 'Finished') {
+    fields.FinishDateTime = now;
+    if (!statusEditItem.StartDateTime) fields.StartDateTime = now;
+  }
+  if (newStatus === 'Started' && statusEditItem.Act_Status === 'Delayed') {
+    if (comments) fields.Comments = (statusEditItem.Comments || '') + ` ! Restarted at ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})}`;
+  }
+  if (comments && newStatus !== 'Delayed') fields.Comments = comments;
+
+  try {
+    await saveWithFieldFallback(true, 'calendar', statusEditItem.id, fields);
+    // update cache
+    const idx = cache.calendar.findIndex(i => i.id === statusEditItem.id);
+    if (idx >= 0) Object.assign(cache.calendar[idx], fields);
+    showToast('Status updated', 'success');
+    closeStatusModal();
+    loadPage(currentPage);
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ─────────────────────────────────────────────
+// GENERATE CALENDAR
+// ─────────────────────────────────────────────
+async function loadGenerateCalendar() {
+  if (!cache.activities.length) {
+    cache.activities = await getItems('activities');
+  }
+  const clientSel = document.getElementById('gen-client');
+  const clients = [...new Set(cache.activities.map(i => i.PSPClient))].sort();
+  clientSel.innerHTML = '<option value="">Select Client...</option>' + clients.map(c => `<option>${c}</option>`).join('');
+  document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
+  document.getElementById('btn-generate').disabled = true;
+}
+
+function onGenClientChange() {
+  const client = document.getElementById('gen-client').value;
+  const paygroups = [...new Set(cache.activities.filter(i => i.PSPClient === client).map(i => i.PayGroup))].sort();
+  const sel = document.getElementById('gen-paygroup');
+  sel.innerHTML = '<option value="">Select Pay Group...</option>' + paygroups.map(p => `<option>${p}</option>`).join('');
+  document.getElementById('gen-cycle').value = '';
+  document.getElementById('template-preview-container').innerHTML = '<div class="empty-state"><i class="ti ti-template"></i><p>Select a pay group to preview</p></div>';
+  document.getElementById('btn-generate').disabled = true;
+}
+
+function onGenPayGroupChange() {
+  const client = document.getElementById('gen-client').value;
+  const pg = document.getElementById('gen-paygroup').value;
+  if (!pg) return;
+  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b) => (a.Order||0)-(b.Order||0));
+  if (!tmpl.length) return;
+  const cycle = tmpl[0].Cycle || '—';
+  document.getElementById('gen-cycle').value = cycle;
+  document.getElementById('btn-generate').disabled = false;
+
+  // Preview
+  const rows = tmpl.map(t => `
+    <tr>
+      <td>${t.Order}</td>
+      <td>${t.ActivityMilestone}</td>
+      <td>${t.Offset > 0 ? '+' : ''}${t.Offset}</td>
+      <td><span class="intext ${(t.IntExt||'internal').toLowerCase()}">${t.IntExt||'Int'}</span></td>
+      <td>${t.PSPMember||'—'}</td>
+    </tr>`).join('');
+  document.getElementById('template-preview-container').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Order</th><th>Milestone</th><th>Offset</th><th>Int/Ext</th><th>Pay Master</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function generateCalendar() {
+  const client = document.getElementById('gen-client').value;
+  const pg = document.getElementById('gen-paygroup').value;
+  const payno = parseInt(document.getElementById('gen-payno').value);
+  const payEndDateStr = document.getElementById('gen-payenddate').value;
+
+  if (!client || !pg || !payno || !payEndDateStr) {
+    showToast('Please fill all fields', 'error'); return;
+  }
+
+  const payEndDate = new Date(payEndDateStr);
+  const payEndSerial = dateToExcelSerial(payEndDate);
+  const tmpl = cache.activities.filter(i => i.PSPClient === client && i.PayGroup === pg).sort((a,b)=>(a.Order||0)-(b.Order||0));
+
+  if (!tmpl.length) { showToast('No template found', 'error'); return; }
+
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true; btn.textContent = 'Generating...';
+
+  let created = 0;
+  for (const t of tmpl) {
+    const actDate = calcActivityDate(payEndSerial, t.Offset || 0, 9);
+    const fields = {
+      PSPClient: t.PSPClient,
+      PayGroup: t.PayGroup,
+      PayNo: payno,
+      PayEndDate: payEndDate.toISOString(),
+      Order: t.Order,
+      ActivityMilestone: t.ActivityMilestone,
+      Offset: t.Offset,
+      ActivityDateTime: actDate.toISOString(),
+      PSPMember: t.PSPMember,
+      Act_Status: 'Not Started',
+      ClientBAU: t.ClientBAU,
+      IntExt: t.IntExt,
+      Contact: t.Contact,
+      SLA: t.SLA,
+      Cycle: t.Cycle,
+      ActivityDateTimeNo: parseInt(actDate.toISOString().replace(/[-T:]/g,'').slice(0,8)),
+      PayrollYear: payEndDate.getFullYear(),
+    };
+    try {
+      await createItem('calendar', fields);
+      created++;
+    } catch(e) {
+      showToast(`Error creating activity ${t.Order}: ${e.message}`, 'error');
+    }
+  }
+
+  cache.calendar = await getItems('calendar');
+  btn.disabled = false; btn.textContent = 'Generate Calendar';
+  showToast(`✓ Created ${created} activities for ${pg} Pay ${payno}`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// TEMPLATES
+// ─────────────────────────────────────────────
+async function loadTemplates() {
+  if (!cache.activities.length) cache.activities = await getItems('activities');
+  populateClientFilter('filter-tmpl-client', cache.activities);
+  populatePayGroupFilter('filter-tmpl-paygroup', cache.activities);
+  renderTemplates();
+}
+
+function renderTemplates() {
+  const client = document.getElementById('filter-tmpl-client').value;
+  const pg = document.getElementById('filter-tmpl-paygroup').value;
+  let items = [...cache.activities];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (pg) items = items.filter(i => i.PayGroup === pg);
+  items.sort((a,b) => {
+    if (a.PSPClient < b.PSPClient) return -1;
+    if (a.PSPClient > b.PSPClient) return 1;
+    if (a.PayGroup < b.PayGroup) return -1;
+    if (a.PayGroup > b.PayGroup) return 1;
+    return (a.Order||0)-(b.Order||0);
+  });
+
+  const tbody = document.getElementById('templates-tbody');
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ti ti-template"></i><p>No templates found</p></div></td></tr>'; return; }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${i.PayGroup||'—'}</strong></td>
+      <td>${i.Cycle||'—'}</td>
+      <td>${i.Order||'—'}</td>
+      <td>${i.ActivityMilestone||'—'}</td>
+      <td>${i.Offset > 0 ? '+' : ''}${i.Offset||0}</td>
+      <td>${i.PSPMember||'—'}</td>
+      <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
+      <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openTemplateForm(${JSON.stringify(i).replace(/"/g,'&quot;')})">Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('activities','${i.id}','${(i.ActivityMilestone||'').replace(/'/g,"\\'")}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openTemplateForm(item = null) {
+  modalEntity = 'activities';
+  modalIsEdit = !!item;
+  const title = item ? 'Edit Template Activity' : 'Add Template Activity';
+  const clients = [...new Set(cache.clients.map(c => c.PSPClient))].sort();
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Client *</label>
+        <select id="f-client">
+          ${clients.map(c => `<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Pay Group *</label>
+        <input type="text" id="f-paygroup" value="${item?.PayGroup||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Order *</label>
+        <input type="number" id="f-order" value="${item?.Order||''}">
+      </div>
+      <div class="form-group">
+        <label>Offset (days from PPE)</label>
+        <input type="number" id="f-offset" value="${item?.Offset||0}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Milestone *</label>
+      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pay Master</label>
+        <input type="text" id="f-member" value="${item?.PSPMember||''}">
+      </div>
+      <div class="form-group">
+        <label>Contact</label>
+        <input type="text" id="f-contact" value="${item?.Contact||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cycle</label>
+        <select id="f-cycle">
+          <option ${item?.Cycle==='FORTNIGHT'?'selected':''}>FORTNIGHT</option>
+          <option ${item?.Cycle==='MONTH'?'selected':''}>MONTH</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Int/Ext</label>
+        <select id="f-intext">
+          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Client BAU</label>
+      <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone</label>
+    </div>`;
+  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveModal() {
+  if (modalEntity === 'activities') {
+    const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+    const fields = {
+      PSPClient: document.getElementById('f-client').value,
+      PayGroup: document.getElementById('f-paygroup').value,
+      Order: parseInt(document.getElementById('f-order').value),
+      Offset: parseInt(document.getElementById('f-offset').value),
+      ActivityMilestone: document.getElementById('f-milestone').value,
+      PSPMember: document.getElementById('f-member').value,
+      Contact: document.getElementById('f-contact').value,
+      Cycle: document.getElementById('f-cycle').value,
+      IntExt: document.getElementById('f-intext').value,
+      ClientBAU: document.getElementById('f-clientbau').value,
+      SLA: document.getElementById('f-sla').checked,
+      Template: true,
+    };
+    if (!fields.PSPClient || !fields.PayGroup || !fields.ActivityMilestone) {
+      showToast('Please fill required fields', 'error'); return;
+    }
+    try {
+      await saveWithFieldFallback(modalIsEdit, 'activities', id, fields);
+      cache.activities = await getItems('activities');
+      closeModal();
+      renderTemplates();
+      showToast(modalIsEdit ? 'Template updated' : 'Template added', 'success');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  } else if (modalEntity === 'billing') {
+    await saveBillingMetrics();
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  modalEntity = null;
+}
+
+// ─────────────────────────────────────────────
+// BILLING METRICS
+// ─────────────────────────────────────────────
+async function loadBillingMetrics() {
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  populateClientFilter('filter-bm-client', cache.billing);
+  renderBillingMetrics();
+}
+
+function renderBillingMetrics() {
+  const client = document.getElementById('filter-bm-client').value;
+  const year = document.getElementById('filter-bm-year').value;
+  const billed = document.getElementById('filter-bm-billed').value;
+
+  let items = [...cache.billing];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (year) items = items.filter(i => String(i.PayrollYear) === year);
+  if (billed === 'true') items = items.filter(i => i.Billing);
+  if (billed === 'false') items = items.filter(i => !i.Billing);
+  items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
+
+  const tbody = document.getElementById('billing-metrics-tbody');
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${i['Pay_x0020_Group']||i.PayGroup||'—'}</strong></td>
+      <td>${i.PayNo||'—'}</td>
+      <td>${fmtDate(i.PayEnddate)}</td>
+      <td>${i.Payrun||'—'}</td>
+      <td>${i.EmployeesPayslips||0}</td>
+      <td>${i.NewHires||0}</td>
+      <td>${i.Terminations||0}</td>
+      <td>${i.NonUpdateCharge||0}</td>
+      <td>${i.NominateForBilling ? '<span class="badge badge-started">Yes</span>' : '<span class="badge badge-not-started">No</span>'}</td>
+      <td>${i.Billing ? '<span class="badge badge-finished">Billed</span>' : '<span class="badge badge-not-started">Unbilled</span>'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openBillingForm(${JSON.stringify(i).replace(/"/g,'&quot;')})">Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('billing','${i.id}','${i.PSPClient}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openBillingForm(item = null) {
+  modalEntity = 'billing';
+  modalIsEdit = !!item;
+  const clients = cache.clients.map(c => c.PSPClient).sort();
+  document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Billing Metrics';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Client *</label>
+        <select id="fb-client">
+          ${clients.map(c=>`<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Pay Group *</label>
+        <input type="text" id="fb-paygroup" value="${item?.['Pay_x0020_Group']||item?.PayGroup||''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pay No *</label>
+        <input type="number" id="fb-payno" value="${item?.PayNo||''}">
+      </div>
+      <div class="form-group">
+        <label>Pay End Date *</label>
+        <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Payrun Number</label>
+        <input type="text" id="fb-payrun" value="${item?.Payrun||''}">
+      </div>
+      <div class="form-group">
+        <label>Employees / Payslips *</label>
+        <input type="number" id="fb-employees" value="${item?.EmployeesPayslips||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nationals</label>
+        <input type="number" id="fb-nationals" value="${item?.Nationals||0}">
+      </div>
+      <div class="form-group">
+        <label>Expatriates</label>
+        <input type="number" id="fb-expats" value="${item?.Expatriate||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>New Hires</label>
+        <input type="number" id="fb-newhires" value="${item?.NewHires||0}">
+      </div>
+      <div class="form-group">
+        <label>Terminations</label>
+        <input type="number" id="fb-terms" value="${item?.Terminations||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Non-Update Charges</label>
+        <input type="number" id="fb-nonupdate" value="${item?.NonUpdateCharge||0}">
+      </div>
+      <div class="form-group">
+        <label>Lay-Offs</label>
+        <input type="number" id="fb-layoff" value="${item?.LayOff||0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cease Lay-Offs (Re-Hires)</label>
+        <input type="number" id="fb-ceaselay" value="${item?.CeaseLayOff||0}">
+      </div>
+      <div class="form-group">
+        <label>Billing Month</label>
+        <input type="text" id="fb-billmonth" value="${item?.BillingMonth||''}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Comments</label>
+      <textarea id="fb-comments">${item?.Comments||''}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label><input type="checkbox" id="fb-nominate" ${item?.NominateForBilling?'checked':''}> Nominate for Billing</label>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" id="fb-process" ${item?.Process?'checked':''}> Process</label>
+      </div>
+    </div>`;
+  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveBillingMetrics() {
+  const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+  const ppeVal = document.getElementById('fb-ppe').value;
+  const ppe = ppeVal ? new Date(ppeVal).toISOString() : null;
+  const fields = {
+    PSPClient: document.getElementById('fb-client').value,
+    'Pay_x0020_Group': document.getElementById('fb-paygroup').value,
+    PayNo: parseInt(document.getElementById('fb-payno').value) || 0,
+    PayEnddate: ppe,
+    Payrun: document.getElementById('fb-payrun').value,
+    EmployeesPayslips: parseInt(document.getElementById('fb-employees').value) || 0,
+    Nationals: parseInt(document.getElementById('fb-nationals').value) || 0,
+    Expatriate: parseInt(document.getElementById('fb-expats').value) || 0,
+    NewHires: parseInt(document.getElementById('fb-newhires').value) || 0,
+    Terminations: parseInt(document.getElementById('fb-terms').value) || 0,
+    NonUpdateCharge: parseInt(document.getElementById('fb-nonupdate').value) || 0,
+    LayOff: parseInt(document.getElementById('fb-layoff').value) || 0,
+    CeaseLayOff: parseInt(document.getElementById('fb-ceaselay').value) || 0,
+    BillingMonth: document.getElementById('fb-billmonth').value,
+    Comments: document.getElementById('fb-comments').value,
+    NominateForBilling: document.getElementById('fb-nominate').checked,
+    Process: document.getElementById('fb-process').checked,
+    Metrics: true,
+    PayrollYear: ppeVal ? new Date(ppeVal).getFullYear() : null,
+  };
+  try {
+    await saveWithFieldFallback(modalIsEdit, 'billing', id, fields);
+    cache.billing = await getItems('billing');
+    closeModal();
+    renderBillingMetrics();
+    showToast(modalIsEdit ? 'Billing record updated' : 'Billing record added', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────────
+// GENERATE INVOICE
+// ─────────────────────────────────────────────
+async function loadGenerateInvoice() {
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  if (!cache.fees.length) cache.fees = await getItems('fees');
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+  if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
+
+  const sel = document.getElementById('inv-client');
+  sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${c.PSPClient}</option>`).join('');
+
+  // Default dates: last day of prev month, last day of current month
+  const now = new Date();
+  const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
+  const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  document.getElementById('inv-date').value = lastDayPrev.toISOString().slice(0, 10);
+  document.getElementById('inv-due').value = lastDayCurr.toISOString().slice(0, 10);
+
+  // Default month
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('inv-month').value = monthNames[lastDayPrev.getMonth()];
+}
+
+function onInvClientChange() {
+  document.getElementById('inv-nominated-records').innerHTML = '';
+  document.getElementById('btn-gen-inv').disabled = true;
+  document.getElementById('invoice-preview').innerHTML = '<div class="empty-state"><i class="ti ti-file-invoice"></i><p>Select a client and calculate to preview the invoice</p></div>';
+  document.getElementById('btn-export-inv').style.display = 'none';
+  invoiceLines = [];
+  nominatedRecords = [];
+}
+
+async function loadNominatedRecords() {
+  const client = document.getElementById('inv-client').value;
+  if (!client) { showToast('Please select a client', 'error'); return; }
+
+  const records = cache.billing.filter(i =>
+    i.PSPClient === client &&
+    i.NominateForBilling === true &&
+    i.Process === true &&
+    i.Metrics === true &&
+    !i.Billing
+  );
+
+  nominatedRecords = records;
+  const container = document.getElementById('inv-nominated-records');
+  if (!records.length) {
+    container.innerHTML = '<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i><div>No nominated, unbilled records found for this client.</div></div>';
+    document.getElementById('btn-gen-inv').disabled = true;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <i class="ti ti-info-circle"></i>
+      <div>${records.length} pay run(s) nominated for billing:<br>
+        ${records.map(r=>`<strong>${r['Pay_x0020_Group']||r.PayGroup}</strong> Pay ${r.PayNo} (${fmtDate(r.PayEnddate)})`).join(', ')}
+      </div>
+    </div>`;
+  document.getElementById('btn-gen-inv').disabled = false;
+}
+
+function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, dueDate, month) {
+  const lines = [];
+  const calcMethod = fees.CalcMethod;
+  const currency = clientDetails.Currency || 'PGK';
+  const taxType = clientDetails.TaxType || 'Tax on Sales';
+  const taxExempt = taxType === 'Zero Rated';
+  const taxRate = taxExempt ? 0 : 0.1;
+  const emp = billingRecord.EmployeesPayslips || 0;
+  const showAlt = fees.ShowAltReference;
+  const pg = billingRecord['Pay_x0020_Group'] || billingRecord.PayGroup || '';
+  const payno = billingRecord.PayNo || '';
+  const ppeStr = fmtDate(billingRecord.PayEnddate);
+  const ppeDDMMYY = ppeStr.replace(/(\d+)\s(\w{3})\s(\d+)/, (m,d,mo,y)=>{
+    const months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+    return `${d.padStart(2,'0')}/${months[mo]}/${y.slice(-2)}`;
+  });
+  const payrun = billingRecord.Payrun || '';
+  const ref = showAlt ? (fees.AltReference || '') : `Payroll Processing ${month}`;
+
+  const baseFields = {
+    InvoiceNumber: invNo,
+    Reference: ref,
+    InvoiceDate: invDate,
+    DueDate: dueDate,
+    ContactName: clientDetails.ClientInvoiceName,
+    EmailAddress: clientDetails.EmailAddress,
+    POAddressLine1: clientDetails.POAddressLine1 || '',
+    POAddressLine2: clientDetails.POAddressLine2 || '',
+    POCity: clientDetails.POCity || '',
+    PORegion: clientDetails.PORegion || '',
+    POCountry: clientDetails.POCountry || '',
+    InventoryItemCode: clientDetails.InventoryItemCode || 'Bureau',
+    AccountCode: clientDetails.AccountCode || '201',
+    TaxType: taxType,
+    TrackingName1: clientDetails.TrackingName1 || 'Department',
+    TrackingOption1: clientDetails.TrackingOption1 || 'Bureau/PSP',
+    Currency: currency,
+  };
+
+  // PROCESSING CHARGE
+  let qty = 1, unitAmt = 0, desc = '';
+  if (calcMethod === 'A') {
+    qty = 1; unitAmt = fees.PayRun || 0;
+    desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid: Standard Processing Charge (Payrun: ${payrun})`;
+  } else if (calcMethod === 'B') {
+    qty = emp; unitAmt = fees.Each || 0;
+    desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid X ${currency}${fees.Each} Per Payslip (Payrun: ${payrun})`;
+  } else if (calcMethod === 'C') {
+    if (emp > (fees.Max || 0)) {
+      qty = 1; unitAmt = (fees.PayRun || 0) + (emp - (fees.Max || 0)) * (fees.Extra || 0);
+      desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid. More than ${fees.Max} Employees. Min Charge of ${currency}${fees.PayRun} + ${emp - fees.Max} X ${currency}${fees.Extra} = ${currency}${unitAmt}`;
+    } else {
+      qty = 1; unitAmt = fees.PayRun || 0;
+      desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid. Min Charge of ${currency}${fees.PayRun} (Payrun: ${payrun})`;
+    }
+  } else if (calcMethod === 'D') {
+    if (emp > (fees.Max || 0)) {
+      qty = emp; unitAmt = fees.Extra || 0;
+      desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid. (Payrun: ${payrun}) More than ${fees.Max} Employees. ${emp} X ${currency}${fees.Extra} = ${currency}${emp * (fees.Extra||0)}`;
+    } else {
+      qty = 1; unitAmt = fees.PayRun || 0;
+      desc = `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees Paid. (Payrun: ${payrun}) Min Charge of ${currency}${fees.PayRun}`;
+    }
+  } else if (calcMethod === 'E') {
+    // Method E: one flat monthly charge, desc built from all pay groups later
+    qty = 1; unitAmt = fees.PayRun || 0;
+    desc = `Standard Monthly Charge Pay No: ${payno} PPE: ${ppeStr}`;
+  }
+
+  const subTotal = qty * unitAmt;
+  const taxAmt = Math.round(subTotal * taxRate * 100) / 100;
+  lines.push({ ...baseFields, Order: 1, PayGroup: pg, PayNo: payno, PPE: ppeStr, Category: 'Processing Charges:', Quantity: qty, Description: desc, UnitAmount: unitAmt, SubTotal: subTotal, TaxAmount: taxAmt, Total: 0 });
+
+  // ADDITIONAL CHARGES
+  const addLine = (order, category, qty, unitAmt, desc) => {
+    if (!qty || !unitAmt) return;
+    const sub = qty * unitAmt;
+    const tax = Math.round(sub * taxRate * 100) / 100;
+    lines.push({ ...baseFields, Order: order, PayGroup: pg, PayNo: payno, PPE: ppeStr, Category: category, Quantity: qty, Description: desc, UnitAmount: unitAmt, SubTotal: sub, TaxAmount: tax, Total: 0 });
+  };
+
+  const nh = billingRecord.NewHires || 0;
+  const terms = billingRecord.Terminations || 0;
+  const nonUpd = billingRecord.NonUpdateCharge || 0;
+  const layoff = billingRecord.LayOff || 0;
+  const rehire = billingRecord.CeaseLayOff || 0;
+
+  if (nh && fees.NewHire) addLine(2, 'New Hire(s)', nh, fees.NewHire, `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nh} New Hire(s) X ${currency}${fees.NewHire} = ${currency}${nh*fees.NewHire}`);
+  if (terms && fees.Term) addLine(3, 'Termination(s)', terms, fees.Term, `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${terms} Termination(s) X ${currency}${fees.Term} = ${currency}${terms*fees.Term}`);
+  if (nonUpd && fees['3NoN']) addLine(4, 'Additional Non-Update(s)', nonUpd, fees['3NoN'], `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nonUpd} Non-Update(s) X ${currency}${fees['3NoN']} = ${currency}${nonUpd*fees['3NoN']}`);
+  if (layoff && fees.LO) addLine(5, 'Lay-Off(s)', layoff, fees.LO, `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${layoff} Lay-Off(s) X ${currency}${fees.LO} = ${currency}${layoff*fees.LO}`);
+  if (rehire && fees.CLO) addLine(6, 'Re-Hire(s)', rehire, fees.CLO, `${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${rehire} Re-Hire(s) X ${currency}${fees.CLO} = ${currency}${rehire*fees.CLO}`);
+
+  return lines;
+}
+
+async function generateInvoice() {
+  const clientName = document.getElementById('inv-client').value;
+  const month = document.getElementById('inv-month').value;
+  const invDate = document.getElementById('inv-date').value;
+  const dueDate = document.getElementById('inv-due').value;
+
+  if (!nominatedRecords.length) { showToast('No nominated records loaded', 'error'); return; }
+
+  const lastInvRecord = cache.lastinv[0];
+  const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
+  const invNo = `INV-${lastNo + 1}`;
+
+  const clientDetails = cache.clients.find(c => c.PSPClient === clientName);
+  if (!clientDetails) { showToast('Client details not found', 'error'); return; }
+
+  invoiceLines = [];
+  const methodEGroups = {};
+
+  for (const rec of nominatedRecords) {
+    const pg = rec['Pay_x0020_Group'] || rec.PayGroup || '';
+    const fees = cache.fees.find(f => f.Title === clientName && f.PayGroup === pg);
+    if (!fees) { showToast(`No fee schedule found for ${clientName} / ${pg}`, 'error'); continue; }
+
+    if (fees.CalcMethod === 'E') {
+      // Group Method E by PayNo
+      const key = rec.PayNo;
+      if (!methodEGroups[key]) methodEGroups[key] = { rec, fees, descs: [] };
+      methodEGroups[key].descs.push(`${pg} Pay ${rec.PayNo} PPE: ${fmtDate(rec.PayEnddate)} (Payrun: ${rec.Payrun})`);
+    } else {
+      const lines = calcInvoiceLines(rec, fees, clientDetails, invNo, invDate, dueDate, month);
+      invoiceLines.push(...lines);
+    }
+  }
+
+  // Handle Method E consolidation
+  for (const [payNo, group] of Object.entries(methodEGroups)) {
+    const consolidatedDesc = group.descs.join('\n') + `\nStandard Monthly Charge Pay No: ${payNo} PPE: ${fmtDate(group.rec.PayEnddate)}`;
+    const unitAmt = group.fees.PayRun || 0;
+    const taxRate = clientDetails.TaxType === 'Zero Rated' ? 0 : 0.1;
+    const tax = Math.round(unitAmt * taxRate * 100) / 100;
+    invoiceLines.push({
+      InvoiceNumber: invNo,
+      Reference: '',
+      InvoiceDate: invDate,
+      DueDate: dueDate,
+      ContactName: clientDetails.ClientInvoiceName,
+      EmailAddress: clientDetails.EmailAddress,
+      POAddressLine1: clientDetails.POAddressLine1 || '',
+      POAddressLine2: clientDetails.POAddressLine2 || '',
+      POCity: clientDetails.POCity || '',
+      PORegion: clientDetails.PORegion || '',
+      POCountry: clientDetails.POCountry || '',
+      InventoryItemCode: clientDetails.InventoryItemCode || 'Bureau',
+      AccountCode: clientDetails.AccountCode || '201',
+      TaxType: clientDetails.TaxType,
+      TrackingName1: clientDetails.TrackingName1 || 'Department',
+      TrackingOption1: clientDetails.TrackingOption1 || 'Bureau/PSP',
+      Currency: clientDetails.Currency || 'PGK',
+      Order: 9,
+      PayGroup: '',
+      PayNo: payNo,
+      PPE: fmtDate(group.rec.PayEnddate),
+      Category: 'Processing Charges:',
+      Quantity: 1,
+      Description: consolidatedDesc,
+      UnitAmount: unitAmt,
+      SubTotal: unitAmt,
+      TaxAmount: tax,
+      Total: 0,
+    });
+  }
+
+  const total = invoiceLines.reduce((s, l) => s + l.SubTotal + l.TaxAmount, 0);
+  invoiceLines.forEach(l => l.Total = Math.round(total * 100) / 100);
+
+  // Render preview
+  const rows = invoiceLines.map(l => `
+    <tr>
+      <td>${l.PayGroup||'—'}</td>
+      <td>${l.PayNo||'—'}</td>
+      <td>${l.Category||'—'}</td>
+      <td style="max-width:300px;font-size:11px;">${(l.Description||'').replace(/\n/g,'<br>')}</td>
+      <td style="text-align:right;">${l.Quantity}</td>
+      <td style="text-align:right;">${l.UnitAmount?.toFixed(2)}</td>
+      <td style="text-align:right;">${l.TaxAmount?.toFixed(2)}</td>
+      <td style="text-align:right;">${l.SubTotal?.toFixed(2)}</td>
+    </tr>`).join('');
+
+  document.getElementById('invoice-preview').innerHTML = `
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--navy);">${invNo}</div>
+          <div style="font-size:12px;color:var(--grey-500);">${clientDetails.ClientInvoiceName}</div>
+          <div style="font-size:12px;color:var(--grey-500);">Date: ${invDate} · Due: ${dueDate}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:12px;color:var(--grey-500);">Currency: ${clientDetails.Currency}</div>
+          <div style="font-size:12px;color:var(--grey-500);">Tax: ${clientDetails.TaxType}</div>
+          <div style="font-size:18px;font-weight:800;color:var(--navy);">${clientDetails.Currency} ${total.toFixed(2)}</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table style="font-size:12px;">
+          <thead>
+            <tr>
+              <th>Pay Group</th><th>Pay No</th><th>Category</th><th>Description</th>
+              <th style="text-align:right;">Qty</th><th style="text-align:right;">Unit</th>
+              <th style="text-align:right;">Tax</th><th style="text-align:right;">Sub Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--grey-200);">
+              <td colspan="7" style="text-align:right;font-weight:700;padding:10px 14px;">TOTAL (incl. tax)</td>
+              <td style="text-align:right;font-weight:800;color:var(--navy);padding:10px 14px;">${clientDetails.Currency} ${total.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('btn-export-inv').style.display = '';
+}
+
+function exportInvoiceCSV() {
+  if (!invoiceLines.length) return;
+  const headers = ['ContactName','EmailAddress','POAddressLine11','POCity','POCountry','PORegion','InvoiceNumber','Reference','InvoiceDate','DueDate','Total','InventoryItemCode','Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount','TrackingName1','TrackingOption1','Currency'];
+  const rows = invoiceLines.map(l => headers.map(h => {
+    const map = { 'POAddressLine11': l.POAddressLine1 };
+    const val = map[h] !== undefined ? map[h] : l[h];
+    const str = val === null || val === undefined ? '' : String(val);
+    return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g,'""')}"` : str;
+  }).join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${invoiceLines[0]?.ContactName?.replace(/[^a-z0-9]/gi,'_')}_${invoiceLines[0]?.InvoiceNumber}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+
+  // Mark billing records as billed and update invoice number
+  markAsBilled();
+}
+
+async function markAsBilled() {
+  const invNo = invoiceLines[0]?.InvoiceNumber;
+  const total = invoiceLines[0]?.Total;
+  // Update billing records
+  for (const rec of nominatedRecords) {
+    try {
+      await saveWithFieldFallback(true, 'billing', rec.id, { Billing: true, InvNo: invNo, Amount: total });
+    } catch(e) { console.warn('Could not mark record as billed:', e); }
+  }
+  // Update last invoice number
+  const lastInvRecord = cache.lastinv[0];
+  if (lastInvRecord) {
+    const newNo = parseInt(invNo.replace('INV-', ''));
+    try {
+      await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, { LastInvoiceNo: newNo });
+      cache.lastinv[0].LastInvoiceNo = newNo;
+    } catch(e) { console.warn('Could not update last invoice no:', e); }
+  }
+  cache.billing = await getItems('billing');
+  showToast(`Invoice ${invNo} exported and records marked as billed`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// DELETE CONFIRM
+// ─────────────────────────────────────────────
+function confirmDelete(entity, id, name) {
+  document.getElementById('modal-title').textContent = 'Confirm Delete';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="alert alert-warning">
+      <i class="ti ti-alert-triangle"></i>
+      <div>Are you sure you want to delete <strong>${name}</strong>? This cannot be undone.</div>
+    </div>`;
+  document.getElementById('modal-save-btn').textContent = 'Delete';
+  document.getElementById('modal-save-btn').className = 'btn btn-danger';
+  document.getElementById('modal-save-btn').onclick = async () => {
+    try {
+      await deleteItem(entity, id);
+      cache[entity] = await getItems(entity);
+      closeModal();
+      showToast('Deleted successfully', 'success');
+      loadPage(currentPage);
+      document.getElementById('modal-save-btn').textContent = 'Save';
+      document.getElementById('modal-save-btn').className = 'btn btn-teal';
+      document.getElementById('modal-save-btn').onclick = saveModal;
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  };
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+// ─────────────────────────────────────────────
+// FILTER HELPERS
+// ─────────────────────────────────────────────
+function populateClientFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const clients = [...new Set(items.map(i => i.PSPClient).filter(Boolean))].sort();
+  el.innerHTML = '<option value="">All Clients</option>' + clients.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+function populatePayGroupFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const pgs = [...new Set(items.map(i => i.PayGroup).filter(Boolean))].sort();
+  el.innerHTML = '<option value="">All Pay Groups</option>' + pgs.map(p => `<option ${p===cur?'selected':''}>${p}</option>`).join('');
+}
+function populateMemberFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const members = [...new Set(items.map(i => i.PSPMember).filter(Boolean))].sort();
+  el.innerHTML = '<option value="">All Pay Masters</option>' + members.map(m => `<option ${m===cur?'selected':''}>${m}</option>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+async function initApp(token) {
+  accessToken = token;
+  // Get user info
+  const me = await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName');
+  currentUser = me;
+  const initials = me.displayName.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('user-avatar').textContent = initials;
+  document.getElementById('user-name').textContent = me.displayName;
+  document.getElementById('user-email').textContent = me.mail || me.userPrincipalName;
+
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  // Load initial data
+  try {
+    await refreshCache();
+  } catch(e) {
+    showToast('Error loading data: ' + e.message, 'error');
+  }
+
+  await loadDashboard();
+}
+
+// ─────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────
+(async function boot() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+
+  if (code && state === sessionStorage.getItem('pkce_state')) {
+    try {
+      const token = await exchangeCode(code);
+      await initApp(token);
+    } catch(e) {
+      showToast('Sign-in failed: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  const stored = localStorage.getItem('psp_access_token');
+  if (stored) {
+    try {
+      accessToken = stored;
+      await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName');
+      await initApp(stored);
+      return;
+    } catch {
+      const refreshed = await refreshToken();
+      if (refreshed) { await initApp(refreshed); return; }
+    }
+  }
+
+  // Show auth screen
+  document.getElementById('auth-screen').style.display = 'flex';
+})();
+</script>
+</body>
+</html>
