@@ -1680,7 +1680,11 @@ async function createItem(entity, fields) {
   const siteId = await getSiteId();
   const listId = await getListId(LISTS[entity]);
   const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
-  return graphFetch(url, { method: 'POST', body: JSON.stringify({ fields }) });
+  const result = await graphFetch(url, { method: 'POST', body: JSON.stringify({ fields }) });
+  // Return with id accessible at top level
+  if (result && result.id) return result;
+  if (result && result.fields) return { id: result.fields.id, ...result.fields };
+  return result;
 }
 
 async function saveWithFieldFallback(isUpdate, entity, id, fields) {
@@ -4040,38 +4044,49 @@ async function markAsBilled() {
     .map(r => `${getPayGroup(r)} Pay ${r.PayNo} PPE:${fmtDate(r.PayEnddate)}`)
     .join(', ');
 
-  // Save full invoice to PSP_Invoices
+  // Save invoice to PSP_Invoices — core fields first, then large text fields
   try {
-    await createItem('invoices', {
+    // Step A: core fields (no large text blobs)
+    const coreFields = {
       Title: invNo,
       InvoiceDate: invDate ? new Date(invDate).toISOString() : null,
       DueDate: dueDate ? new Date(dueDate).toISOString() : null,
       BillingMonth: billingMonth,
       PSPClient: clientName,
-      ContactName: clientDetails.ClientInvoiceName || clientName,
-      EmailAddress: clientDetails.EmailAddress || '',
-      Currency: clientDetails.Currency || 'PGK',
-      TaxType: clientDetails.TaxType || 'Tax on Sales',
+      ContactName: (clientDetails.ClientInvoiceName || clientName).substring(0, 255),
+      EmailAddress: (clientDetails.EmailAddress || '').substring(0, 255),
+      Currency: (clientDetails.Currency || 'PGK').substring(0, 10),
+      TaxType: (clientDetails.TaxType || 'Tax on Sales').substring(0, 50),
       SubTotal: Math.round(total * 100) / 100,
       TaxAmount: Math.round(taxTotal * 100) / 100,
       TotalAmount: Math.round(grandTotal * 100) / 100,
-      AccountCode: clientDetails.AccountCode || '',
-      Reference: invoiceLines[0]?.Reference || '',
-      LineItems: JSON.stringify(invoiceLines.map(l => ({
+      AccountCode: (clientDetails.AccountCode || '').substring(0, 50),
+      Reference: (invoiceLines[0]?.Reference || '').substring(0, 255),
+      ExportedBy: (currentUser?.displayName || '').substring(0, 255),
+      ExportedDate: new Date().toISOString(),
+      Status: 'Draft',
+    };
+    const newInv = await createItem('invoices', coreFields);
+    console.log('[PSP_HUB] Invoice core fields saved');
+
+    // Step B: large text fields via PATCH (unlimited length columns)
+    if (newInv?.id) {
+      const lineItemsJson = JSON.stringify(invoiceLines.map(l => ({
         PayGroup: l.PayGroup, PayNo: l.PayNo, PPE: l.PPE,
         Category: l.Category, Description: l.Description,
         Quantity: l.Quantity, UnitAmount: l.UnitAmount,
         SubTotal: l.SubTotal, TaxAmount: l.TaxAmount,
-      }))),
-      PayRuns: payRunsSummary,
-      BillingRecordIDs: billingRecordIDs.join(','),
-      ExportedBy: currentUser?.displayName || '',
-      ExportedDate: new Date().toISOString(),
-      Status: 'Draft',
-    });
-    console.log('[PSP_HUB] Invoice saved to PSP_Invoices');
+      })));
+      await saveWithFieldFallback(true, 'invoices', newInv.id, {
+        LineItems: lineItemsJson,
+        PayRuns: payRunsSummary.substring(0, 1000),
+        BillingRecordIDs: billingRecordIDs.join(','),
+      });
+      console.log('[PSP_HUB] Invoice line items saved');
+    }
   } catch(e) {
     console.warn('Could not save to PSP_Invoices:', e.message);
+    console.warn('Full error:', e);
     showToast('Warning: Invoice exported but could not save to PSP_Invoices: ' + e.message, 'error');
   }
 
