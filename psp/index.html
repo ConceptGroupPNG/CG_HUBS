@@ -1072,11 +1072,19 @@
             </div>
           </div>
 
-          <!-- Charts Row 2 -->
-          <div class="grid-2" style="margin-bottom:20px;">
+          <!-- Charts Row 2 — Revenue by Client (full width) -->
+          <div style="margin-bottom:20px;">
             <div class="card">
               <div class="card-header"><h3>Revenue by Client (PGK YTD)</h3></div>
               <div class="card-body" style="overflow-x:auto;"><canvas id="chart-client-revenue"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Charts Row 2b — Payslips Last Pay Period (left) + Payslips YTD (right) -->
+          <div class="grid-2" style="margin-bottom:20px;align-items:start;">
+            <div class="card">
+              <div class="card-header"><h3>Payslips — Last Pay Period</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-last-payperiod"></canvas></div>
             </div>
             <div class="card">
               <div class="card-header"><h3>Payslips by Client YTD</h3></div>
@@ -1093,14 +1101,6 @@
             <div class="card">
               <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
               <div class="card-body"><canvas id="chart-lo-rh" height="200"></canvas></div>
-            </div>
-          </div>
-
-          <!-- Charts Row 4 — Last Pay Period -->
-          <div style="margin-bottom:20px;">
-            <div class="card">
-              <div class="card-header"><h3>Payslips by Client — Last Pay Period</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-last-payperiod"></canvas></div>
             </div>
           </div>
 
@@ -4715,7 +4715,10 @@ async function loadFinanceDashboard() {
     plugins: { legend: { display: false } },
     scales: {
       x: { beginAtZero: true },
-      y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
+      y: {
+        ticks: { font: { size: 11 }, crossAlign: 'far' },
+        afterFit(axis) { axis.width = 160; }
+      }
     }
   });
 
@@ -4851,9 +4854,13 @@ async function loadFinanceDashboard() {
     plugins: { legend: { display: false } },
     scales: {
       x: { beginAtZero: true },
-      y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
+      y: {
+        ticks: { font: { size: 11 }, crossAlign: 'far' },
+        afterFit(axis) { axis.width = 260; }
+      }
     }
   });
+
 
   // ── BILLING PIPELINE TABLE ──
   const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort();
