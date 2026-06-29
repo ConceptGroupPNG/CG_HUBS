@@ -3772,6 +3772,10 @@ function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, du
   const feeReRun     = fees.field_15 !== undefined ? fees.field_15 : 0;
   const feeShowAlt   = !!fees.ShowAltReference;
   const feeAltRef    = fees.AltReference || '';
+  // Client and tax details
+  const currency = clientDetails.Currency || 'PGK';
+  const taxType  = clientDetails.TaxType || 'Tax on Sales';
+  const taxRate  = taxType === 'Zero Rated' ? 0 : 0.1;
   const emp = billingRecord.EmployeesPayslips || 0;
   const pg = getPayGroup(billingRecord);
   const payno = billingRecord.PayNo || '';
