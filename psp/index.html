@@ -1947,7 +1947,8 @@ function getPSPMember(item) {
   return '';
 }
 function getPayGroup(item) {
-  return item.PayGroup || item['Pay_x0020_Group'] || '—';
+  if (!item) return '';
+  return item.PayGroup || item['Pay_x0020_Group'] || '';
 }
 function getClientName(clientRecord) {
   // PSP_Client_Details uses ContactName as the primary client identifier
@@ -3143,91 +3144,104 @@ function openBillingForm(item = null) {
   const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
   document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Billing Metrics';
   document.getElementById('modal-body').innerHTML = `
-    <div class="form-row">
-      <div class="form-group">
-        <label>Client *</label>
-        <select id="fb-client">
-          ${clients.map(c=>`<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
-        </select>
+    <div style="padding:0 0 20px 0;">
+
+      <!-- Context strip -->
+      <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);padding:14px 20px;margin:-24px -24px 20px -24px;border-radius:0;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Billing Metrics Entry</div>
+        <div style="font-size:13px;font-weight:700;color:var(--white);">${item ? item.PSPClient + ' · ' + getPayGroup(item) + ' Pay ' + item.PayNo : 'New Record'}</div>
       </div>
-      <div class="form-group">
-        <label>Pay Group *</label>
-        <input type="text" id="fb-paygroup" value="${getPayGroup(item)||''}">
+
+      <!-- Pay Run Identity -->
+      <div style="background:var(--grey-50);border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--grey-200);">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal);margin-bottom:10px;">Pay Run</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label>Client *</label>
+            <select id="fb-client">
+              ${clients.map(c=>`<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Pay Group *</label>
+            <input type="text" id="fb-paygroup" value="${item ? getPayGroup(item) : ''}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Pay No *</label>
+            <input type="number" id="fb-payno" value="${item?.PayNo||''}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Pay End Date *</label>
+            <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}"
+              oninput="const d=new Date(this.value);const el=document.getElementById('fb-billmonth');if(el&&!isNaN(d))el.value=d.toLocaleDateString('en-GB',{month:'long'});">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Payrun Number</label>
+            <input type="text" id="fb-payrun" value="${item?.Payrun||''}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Billing Month <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span></label>
+            <input type="text" id="fb-billmonth" readonly style="background:var(--grey-100);color:var(--grey-500);"
+              value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item?.BillingMonth||'')}">
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Pay No *</label>
-        <input type="number" id="fb-payno" value="${item?.PayNo||''}">
+
+      <!-- Headcount -->
+      <div style="background:var(--grey-50);border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--grey-200);">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal);margin-bottom:10px;">Headcount</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label>Employees / Payslips *</label>
+            <input type="number" id="fb-employees" value="${item?.EmployeesPayslips||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Nationals</label>
+            <input type="number" id="fb-nationals" value="${item?.Nationals||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Expatriates</label>
+            <input type="number" id="fb-expats" value="${item?.Expatriate||0}">
+          </div>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Pay End Date *</label>
-        <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}"
-          oninput="const d=new Date(this.value);const el=document.getElementById('fb-billmonth');if(el&&!isNaN(d))el.value=d.toLocaleDateString('en-GB',{month:'long'});">
+
+      <!-- Variations -->
+      <div style="background:var(--grey-50);border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--grey-200);">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal);margin-bottom:10px;">Variations</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label>New Hires</label>
+            <input type="number" id="fb-newhires" value="${item?.NewHires||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Terminations</label>
+            <input type="number" id="fb-terms" value="${item?.Terminations||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Non-Update Charges</label>
+            <input type="number" id="fb-nonupdate" value="${item?.NonUpdateCharge||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Lay-Offs</label>
+            <input type="number" id="fb-layoff" value="${item?.LayOff||0}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Re-Hires (Cease Lay-Offs)</label>
+            <input type="number" id="fb-ceaselay" value="${item?.CeaseLayOff||0}">
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Payrun Number</label>
-        <input type="text" id="fb-payrun" value="${item?.Payrun||''}">
+
+      <!-- Comments -->
+      <div class="form-group" style="margin:0;">
+        <label>Comments</label>
+        <textarea id="fb-comments" style="min-height:60px;">${item?.Comments||''}</textarea>
       </div>
-      <div class="form-group">
-        <label>Employees / Payslips *</label>
-        <input type="number" id="fb-employees" value="${item?.EmployeesPayslips||0}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Nationals</label>
-        <input type="number" id="fb-nationals" value="${item?.Nationals||0}">
-      </div>
-      <div class="form-group">
-        <label>Expatriates</label>
-        <input type="number" id="fb-expats" value="${item?.Expatriate||0}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>New Hires</label>
-        <input type="number" id="fb-newhires" value="${item?.NewHires||0}">
-      </div>
-      <div class="form-group">
-        <label>Terminations</label>
-        <input type="number" id="fb-terms" value="${item?.Terminations||0}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Non-Update Charges</label>
-        <input type="number" id="fb-nonupdate" value="${item?.NonUpdateCharge||0}">
-      </div>
-      <div class="form-group">
-        <label>Lay-Offs</label>
-        <input type="number" id="fb-layoff" value="${item?.LayOff||0}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Cease Lay-Offs (Re-Hires)</label>
-        <input type="number" id="fb-ceaselay" value="${item?.CeaseLayOff||0}">
-      </div>
-      <div class="form-group">
-        <label>Billing Month <span style="font-weight:400;color:var(--grey-500);text-transform:none;letter-spacing:0;font-size:11px;">(auto-calculated from PPE)</span></label>
-        <input type="text" id="fb-billmonth" readonly style="background:var(--grey-100);color:var(--grey-500);"
-          value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item?.BillingMonth||'')}">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Comments</label>
-      <textarea id="fb-comments">${item?.Comments||''}</textarea>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label><input type="checkbox" id="fb-nominate" ${item?.NominateForBilling?'checked':''}> Nominate for Billing</label>
-      </div>
-      <div class="form-group">
-        <label><input type="checkbox" id="fb-process" ${item?.Process?'checked':''}> Process</label>
-      </div>
+
+      <!-- Hidden fields to preserve values on save -->
+      <input type="hidden" id="fb-nominate" value="${item?.NominateForBilling?'true':'false'}">
+      <input type="hidden" id="fb-process" value="${item?.Process?'true':'false'}">
     </div>`;
   document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
   document.getElementById('modal-overlay').classList.add('open');
@@ -3257,8 +3271,8 @@ async function saveBillingMetrics() {
       return document.getElementById('fb-billmonth')?.value || '';
     })(),
     Comments: document.getElementById('fb-comments').value,
-    NominateForBilling: document.getElementById('fb-nominate').checked,
-    Process: document.getElementById('fb-process').checked,
+    NominateForBilling: document.getElementById('fb-nominate').value === 'true',
+    Process: document.getElementById('fb-process').value === 'true',
     Metrics: true,
     PayrollYear: ppeVal ? new Date(ppeVal).getFullYear() : null,
   };
