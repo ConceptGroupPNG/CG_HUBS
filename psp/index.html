@@ -1125,41 +1125,69 @@
 
       <!-- BILLING METRICS PAGE -->
       <div class="page" id="page-billing-metrics">
-        <div class="filter-bar">
-          <select id="filter-bm-client" onchange="onBmClientChange()">
-            <option value="">All Clients</option>
-          </select>
-          <select id="filter-bm-paygroup" onchange="renderBillingMetrics()">
-            <option value="">All Pay Groups</option>
-          </select>
-          <select id="filter-bm-month" onchange="renderBillingMetrics()">
-            <option value="">All Months</option>
-            <option>January</option><option>February</option><option>March</option>
-            <option>April</option><option>May</option><option>June</option>
-            <option>July</option><option>August</option><option>September</option>
-            <option>October</option><option>November</option><option>December</option>
-          </select>
-          <select id="filter-bm-year" onchange="renderBillingMetrics()">
-            <option value="">All Years</option>
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-          </select>
-          <select id="filter-bm-billed" onchange="renderBillingMetrics()">
-            <option value="">All Records</option>
-            <option value="false">Unbilled Only</option>
-            <option value="true">Billed</option>
-          </select>
-          <button class="btn btn-teal" onclick="openBillingForm()">
-            <i class="ti ti-plus"></i> Add Metrics
-          </button>
+
+        <!-- Client selection state -->
+        <div id="bm-client-picker" style="max-width:560px;margin:60px auto;text-align:center;">
+          <div style="background:var(--white);border-radius:16px;border:1px solid var(--grey-200);padding:40px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+            <div style="width:56px;height:56px;background:var(--teal-light);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+              <i class="ti ti-building" style="font-size:28px;color:var(--teal);"></i>
+            </div>
+            <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px;">Select a Client</h3>
+            <p style="color:var(--grey-500);font-size:13px;margin-bottom:24px;">Choose a client to view and manage their billing metrics</p>
+            <select id="bm-client-select" style="width:100%;padding:12px 14px;border:2px solid var(--grey-200);border-radius:10px;font-size:14px;font-weight:600;color:var(--navy);background:var(--white);outline:none;margin-bottom:16px;"
+              onchange="onBmClientSelect()">
+              <option value="">— Select Client —</option>
+            </select>
+          </div>
         </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Pay Group</th>
+
+        <!-- Client metrics view (hidden until client selected) -->
+        <div id="bm-metrics-view" style="display:none;">
+
+          <!-- Client header banner -->
+          <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Billing Metrics</div>
+              <div id="bm-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="bmClearClient()" style="color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.3);">
+              <i class="ti ti-x"></i> Change Client
+            </button>
+          </div>
+
+          <!-- Filters -->
+          <div class="filter-bar" style="margin-bottom:16px;">
+            <select id="filter-bm-paygroup" onchange="renderBillingMetrics()">
+              <option value="">All Pay Groups</option>
+            </select>
+            <select id="filter-bm-month" onchange="renderBillingMetrics()">
+              <option value="">All Months</option>
+              <option>January</option><option>February</option><option>March</option>
+              <option>April</option><option>May</option><option>June</option>
+              <option>July</option><option>August</option><option>September</option>
+              <option>October</option><option>November</option><option>December</option>
+            </select>
+            <select id="filter-bm-year" onchange="renderBillingMetrics()">
+              <option value="">All Years</option>
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+            </select>
+            <select id="filter-bm-billed" onchange="renderBillingMetrics()">
+              <option value="">All Records</option>
+              <option value="false">Unbilled Only</option>
+              <option value="true">Billed</option>
+            </select>
+            <button class="btn btn-teal" onclick="openBillingForm()">
+              <i class="ti ti-plus"></i> Add Metrics
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pay Group</th>
                   <th style="width:55px;">Pay No</th>
                   <th>PPE</th>
                   <th>Payrun</th>
@@ -3069,16 +3097,52 @@ function closeModal() {
 async function loadBillingMetrics() {
   if (!cache.billing.length) cache.billing = await getItems('billing');
   if (!cache.clients.length) cache.clients = await getItems('clients');
-  populateClientFilter('filter-bm-client', cache.billing);
-  populatePayGroupFilter('filter-bm-paygroup', cache.billing);
+
+  // Populate the client picker dropdown
+  const sel = document.getElementById('bm-client-select');
+  if (sel) {
+    const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">— Select Client —</option>' +
+      clients.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
+
+  // If a client was previously selected, restore view
+  if (bmSelectedClient) {
+    showBmClientView(bmSelectedClient);
+  } else {
+    document.getElementById('bm-client-picker').style.display = '';
+    document.getElementById('bm-metrics-view').style.display = 'none';
+  }
+}
+
+let bmSelectedClient = '';
+
+function onBmClientSelect() {
+  const client = document.getElementById('bm-client-select').value;
+  if (!client) return;
+  showBmClientView(client);
+}
+
+function showBmClientView(client) {
+  bmSelectedClient = client;
+  document.getElementById('bm-client-picker').style.display = 'none';
+  document.getElementById('bm-metrics-view').style.display = 'block';
+  document.getElementById('bm-client-label').textContent = client;
+
+  // Populate pay group filter for this client
+  const clientItems = cache.billing.filter(i => i.PSPClient === client);
+  populatePayGroupFilter('filter-bm-paygroup', clientItems);
+
   renderBillingMetrics();
 }
 
-function onBmClientChange() {
-  const client = document.getElementById('filter-bm-client').value;
-  const items = client ? cache.billing.filter(i => i.PSPClient === client) : cache.billing;
-  populatePayGroupFilter('filter-bm-paygroup', items);
-  renderBillingMetrics();
+function bmClearClient() {
+  bmSelectedClient = '';
+  document.getElementById('bm-client-picker').style.display = '';
+  document.getElementById('bm-metrics-view').style.display = 'none';
+  // Reset filters
+  const pg = document.getElementById('filter-bm-paygroup');
+  if (pg) pg.innerHTML = '<option value="">All Pay Groups</option>';
 }
 
 function getBillingMonth(item) {
@@ -3089,13 +3153,12 @@ function getBillingMonth(item) {
 }
 
 function renderBillingMetrics() {
-  const client = document.getElementById('filter-bm-client').value;
   const pg = document.getElementById('filter-bm-paygroup')?.value || '';
   const month = document.getElementById('filter-bm-month')?.value || '';
   const year = document.getElementById('filter-bm-year').value;
   const billed = document.getElementById('filter-bm-billed').value;
   let items = [...cache.billing];
-  if (client) items = items.filter(i => i.PSPClient === client);
+  if (bmSelectedClient) items = items.filter(i => i.PSPClient === bmSelectedClient);
   if (pg) items = items.filter(i => getPayGroup(i) === pg);
   if (month) items = items.filter(i => getBillingMonth(i) === month);
   if (year) items = items.filter(i => String(i.PayrollYear) === year);
@@ -3103,12 +3166,11 @@ function renderBillingMetrics() {
   if (billed === 'false') items = items.filter(i => !i.Billing);
   items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
   const tbody = document.getElementById('billing-metrics-tbody');
-  if (!items.length) { tbody.innerHTML = '<tr><td colspan="18"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="17"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
   const tick = '<i class="ti ti-check" style="color:var(--teal);font-size:14px;"></i>';
   const cross = '<span style="color:var(--grey-300);font-size:14px;">—</span>';
   tbody.innerHTML = items.map(i => `
     <tr>
-      <td style="white-space:nowrap;">${i.PSPClient||'—'}</td>
       <td><strong>${getPayGroup(i)}</strong></td>
       <td style="text-align:center;">${i.PayNo||'—'}</td>
       <td style="white-space:nowrap;">${fmtDate(i.PayEnddate)}</td>
@@ -3159,7 +3221,7 @@ function openBillingForm(item = null) {
           <div class="form-group" style="margin:0;">
             <label>Client *</label>
             <select id="fb-client">
-              ${clients.map(c=>`<option ${item?.PSPClient===c?'selected':''}>${c}</option>`).join('')}
+              ${clients.map(c=>`<option ${(item?.PSPClient||bmSelectedClient)===c?'selected':''}>${c}</option>`).join('')}
             </select>
           </div>
           <div class="form-group" style="margin:0;">
