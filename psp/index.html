@@ -3209,12 +3209,12 @@ function openBillingForm(item = null) {
     <div style="padding:0 0 20px 0;">
 
       <!-- Context strip -->
-      <div style="background:linear-gradient(135deg,var(--teal) 0%,var(--teal-dark) 100%);padding:16px 20px;margin:-24px -24px 20px -24px;border-radius:0;position:relative;overflow:hidden;">
-        <div style="position:absolute;right:-20px;top:-20px;width:100px;height:100px;background:rgba(255,255,255,0.08);border-radius:50%;"></div>
-        <div style="position:absolute;right:30px;bottom:-30px;width:80px;height:80px;background:rgba(255,255,255,0.06);border-radius:50%;"></div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.65);margin-bottom:5px;">Billing Metrics Entry</div>
-        <div style="font-size:15px;font-weight:800;color:var(--white);">${item ? item.PSPClient + ' · ' + getPayGroup(item) + ' · Pay ' + item.PayNo : 'New Record'}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:3px;">${item ? 'PPE: ' + (item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—') : 'Fill in the pay run details below'}</div>
+      <div style="background:linear-gradient(135deg,#e6f9f3 0%,#d1fae5 100%);padding:16px 20px;margin:-24px -24px 20px -24px;border-radius:0;position:relative;overflow:hidden;border-bottom:2px solid var(--teal-light);">
+        <div style="position:absolute;right:-20px;top:-20px;width:100px;height:100px;background:rgba(14,159,110,0.12);border-radius:50%;"></div>
+        <div style="position:absolute;right:30px;bottom:-30px;width:80px;height:80px;background:rgba(14,159,110,0.08);border-radius:50%;"></div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--teal-dark);margin-bottom:5px;">Billing Metrics Entry</div>
+        <div style="font-size:15px;font-weight:800;color:var(--navy);">${item ? item.PSPClient + ' · ' + getPayGroup(item) + ' · Pay ' + item.PayNo : 'New Record'}</div>
+        <div style="font-size:11px;color:var(--teal-dark);margin-top:3px;">${item ? 'PPE: ' + (item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—') : 'Fill in the pay run details below'}</div>
       </div>
 
       <!-- Pay Run Identity — display only when editing, editable when adding -->
@@ -3301,7 +3301,7 @@ function openBillingForm(item = null) {
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
           <div class="form-group" style="margin:0;">
-            <label>Employees / Payslips *</label>
+            <label>Employees/Payslips *</label>
             <input type="number" id="fb-employees" value="${item?.EmployeesPayslips||0}">
           </div>
           <div class="form-group" style="margin:0;">
