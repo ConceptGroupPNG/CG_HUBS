@@ -945,8 +945,11 @@
           <select id="filter-all-member" onchange="renderAllActivities()">
             <option value="">All Pay Masters</option>
           </select>
-          <select id="filter-all-client" onchange="renderAllActivities()">
+          <select id="filter-all-client" onchange="onAllClientChange()">
             <option value="">All Clients</option>
+          </select>
+          <select id="filter-all-paygroup" onchange="renderAllActivities()">
+            <option value="">All Pay Groups</option>
           </select>
           <select id="filter-all-status" onchange="renderAllActivities()">
             <option value="">All Statuses</option>
@@ -1123,8 +1126,18 @@
       <!-- BILLING METRICS PAGE -->
       <div class="page" id="page-billing-metrics">
         <div class="filter-bar">
-          <select id="filter-bm-client" onchange="renderBillingMetrics()">
+          <select id="filter-bm-client" onchange="onBmClientChange()">
             <option value="">All Clients</option>
+          </select>
+          <select id="filter-bm-paygroup" onchange="renderBillingMetrics()">
+            <option value="">All Pay Groups</option>
+          </select>
+          <select id="filter-bm-month" onchange="renderBillingMetrics()">
+            <option value="">All Months</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
           </select>
           <select id="filter-bm-year" onchange="renderBillingMetrics()">
             <option value="">All Years</option>
@@ -1150,10 +1163,13 @@
                   <th>Pay No</th>
                   <th>PPE</th>
                   <th>Payrun</th>
+                  <th>Billing Month</th>
                   <th>Employees</th>
                   <th>New Hires</th>
                   <th>Terms</th>
                   <th>Non-Updates</th>
+                  <th>Process</th>
+                  <th>Metrics</th>
                   <th>Nominate</th>
                   <th>Billed</th>
                   <th>Actions</th>
@@ -1937,7 +1953,15 @@ function getStatusClass(status) {
 async function loadAllActivities() {
   if (!cache.calendar.length) await refreshCalendarCache();
   populateClientFilter('filter-all-client', cache.calendar);
+  populatePayGroupFilter('filter-all-paygroup', cache.calendar);
   populateMemberFilter('filter-all-member', cache.calendar);
+  renderAllActivities();
+}
+
+function onAllClientChange() {
+  const client = document.getElementById('filter-all-client').value;
+  const items = client ? cache.calendar.filter(i => i.PSPClient === client) : cache.calendar;
+  populatePayGroupFilter('filter-all-paygroup', items);
   renderAllActivities();
 }
 
@@ -1945,6 +1969,7 @@ function renderAllActivities() {
   const dateFilter = document.getElementById('filter-all-date').value;
   const member = document.getElementById('filter-all-member').value;
   const client = document.getElementById('filter-all-client').value;
+  const pg = document.getElementById('filter-all-paygroup')?.value || '';
   const status = document.getElementById('filter-all-status').value;
   const search = document.getElementById('filter-all-search').value.toLowerCase();
 
@@ -1952,6 +1977,7 @@ function renderAllActivities() {
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
   if (member) items = items.filter(i => getPSPMember(i) === member);
+  if (pg) items = items.filter(i => getPayGroup(i) === pg);
   if (client) items = items.filter(i => i.PSPClient === client);
   if (status) items = items.filter(i => (getActStatus(i) || 'Not Started') === status);
   if (search) items = items.filter(i =>
@@ -2253,6 +2279,16 @@ function openStatusModal(item) {
   statusEditItem = item;
   const current = getActStatus(item) || 'Not Started';
 
+  // Calculate order position within this pay run
+  const payRunItems = cache.calendar.filter(i =>
+    i.PSPClient === item.PSPClient &&
+    getPayGroup(i) === getPayGroup(item) &&
+    i.PayNo === item.PayNo
+  );
+  const maxOrder = payRunItems.reduce((max, i) => Math.max(max, getOrder(i) || 0), 0);
+  const thisOrder = getOrder(item) || '?';
+  document.getElementById('status-modal-title').textContent = `Update Activity Status — ${thisOrder} of ${maxOrder}`;
+
   // Allowed transitions per status
   const transitions = {
     'Not Started': ['Started', 'Delayed'],
@@ -2330,7 +2366,43 @@ async function saveStatus() {
     // update cache
     const idx = cache.calendar.findIndex(i => i.id === statusEditItem.id);
     if (idx >= 0) Object.assign(cache.calendar[idx], fields);
-    showToast('Status updated', 'success');
+
+    // Check if this was the last unfinished activity in the pay run
+    if (newStatus === 'Finished') {
+      const payRunItems = cache.calendar.filter(i =>
+        i.PSPClient === statusEditItem.PSPClient &&
+        getPayGroup(i) === getPayGroup(statusEditItem) &&
+        i.PayNo === statusEditItem.PayNo
+      );
+      const allFinished = payRunItems.every(i =>
+        i.id === statusEditItem.id || getActStatus(i) === 'Finished' || i.FinishDateTime
+      );
+      if (allFinished) {
+        // Find matching billing record and set Process = true
+        const billingRec = cache.billing.find(b =>
+          b.PSPClient === statusEditItem.PSPClient &&
+          getPayGroup(b) === getPayGroup(statusEditItem) &&
+          b.PayNo === statusEditItem.PayNo
+        );
+        if (billingRec && !billingRec.Process) {
+          try {
+            await saveWithFieldFallback(true, 'billing', billingRec.id, { Process: true });
+            const bIdx = cache.billing.findIndex(b => b.id === billingRec.id);
+            if (bIdx >= 0) cache.billing[bIdx].Process = true;
+            showToast('Pay run complete — Billing record marked for processing', 'success');
+          } catch(e) {
+            console.warn('Could not set Process flag:', e);
+          }
+        } else {
+          showToast('Pay run complete! All activities finished.', 'success');
+        }
+      } else {
+        showToast('Status updated', 'success');
+      }
+    } else {
+      showToast('Status updated', 'success');
+    }
+
     closeStatusModal();
     loadPage(currentPage);
   } catch(e) {
@@ -2977,21 +3049,40 @@ async function loadBillingMetrics() {
   if (!cache.billing.length) cache.billing = await getItems('billing');
   if (!cache.clients.length) cache.clients = await getItems('clients');
   populateClientFilter('filter-bm-client', cache.billing);
+  populatePayGroupFilter('filter-bm-paygroup', cache.billing);
   renderBillingMetrics();
+}
+
+function onBmClientChange() {
+  const client = document.getElementById('filter-bm-client').value;
+  const items = client ? cache.billing.filter(i => i.PSPClient === client) : cache.billing;
+  populatePayGroupFilter('filter-bm-paygroup', items);
+  renderBillingMetrics();
+}
+
+function getBillingMonth(item) {
+  // Derive billing month from PayEnddate (month name of the period end date)
+  const d = spDateToDate(item.PayEnddate);
+  if (!d) return item.BillingMonth || '';
+  return d.toLocaleDateString('en-GB', {month: 'long'});
 }
 
 function renderBillingMetrics() {
   const client = document.getElementById('filter-bm-client').value;
+  const pg = document.getElementById('filter-bm-paygroup')?.value || '';
+  const month = document.getElementById('filter-bm-month')?.value || '';
   const year = document.getElementById('filter-bm-year').value;
   const billed = document.getElementById('filter-bm-billed').value;
   let items = [...cache.billing];
   if (client) items = items.filter(i => i.PSPClient === client);
+  if (pg) items = items.filter(i => getPayGroup(i) === pg);
+  if (month) items = items.filter(i => getBillingMonth(i) === month);
   if (year) items = items.filter(i => String(i.PayrollYear) === year);
   if (billed === 'true') items = items.filter(i => i.Billing);
   if (billed === 'false') items = items.filter(i => !i.Billing);
   items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
   const tbody = document.getElementById('billing-metrics-tbody');
-  if (!items.length) { tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="15"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
   tbody.innerHTML = items.map(i => `
     <tr>
       <td>${i.PSPClient||'—'}</td>
@@ -2999,12 +3090,15 @@ function renderBillingMetrics() {
       <td>${i.PayNo||'—'}</td>
       <td>${fmtDate(i.PayEnddate)}</td>
       <td>${i.Payrun||'—'}</td>
+      <td>${getBillingMonth(i)||'—'}</td>
       <td>${i.EmployeesPayslips||0}</td>
       <td>${i.NewHires||0}</td>
       <td>${i.Terminations||0}</td>
       <td>${i.NonUpdateCharge||0}</td>
+      <td>${i.Process ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Done</span>' : '<span class="badge badge-not-started">Pending</span>'}</td>
+      <td>${i.Metrics ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Set</span>' : '<span class="badge badge-not-started">Not Set</span>'}</td>
       <td>${i.NominateForBilling ? '<span class="badge badge-started">Yes</span>' : '<span class="badge badge-not-started">No</span>'}</td>
-      <td>${i.Billing ? '<span class="badge badge-finished">Billed</span>' : '<span class="badge badge-not-started">Unbilled</span>'}</td>
+      <td>${i.Billing ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Billed</span>' : '<span class="badge badge-not-started">Unbilled</span>'}</td>
       <td>
         <button class="btn btn-xs btn-outline" onclick="openBillingFormById('${i.id}')">Edit</button>
         <button class="btn btn-xs btn-danger" onclick="confirmDelete('billing','${i.id}')">Del</button>
@@ -3043,7 +3137,8 @@ function openBillingForm(item = null) {
       </div>
       <div class="form-group">
         <label>Pay End Date *</label>
-        <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
+        <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}"
+          oninput="const d=new Date(this.value);const el=document.getElementById('fb-billmonth');if(el&&!isNaN(d))el.value=d.toLocaleDateString('en-GB',{month:'long'});">
       </div>
     </div>
     <div class="form-row">
@@ -3092,8 +3187,9 @@ function openBillingForm(item = null) {
         <input type="number" id="fb-ceaselay" value="${item?.CeaseLayOff||0}">
       </div>
       <div class="form-group">
-        <label>Billing Month</label>
-        <input type="text" id="fb-billmonth" value="${item?.BillingMonth||''}">
+        <label>Billing Month <span style="font-weight:400;color:var(--grey-500);text-transform:none;letter-spacing:0;font-size:11px;">(auto-calculated from PPE)</span></label>
+        <input type="text" id="fb-billmonth" readonly style="background:var(--grey-100);color:var(--grey-500);"
+          value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item?.BillingMonth||'')}">
       </div>
     </div>
     <div class="form-group">
@@ -3130,7 +3226,11 @@ async function saveBillingMetrics() {
     NonUpdateCharge: parseInt(document.getElementById('fb-nonupdate').value) || 0,
     LayOff: parseInt(document.getElementById('fb-layoff').value) || 0,
     CeaseLayOff: parseInt(document.getElementById('fb-ceaselay').value) || 0,
-    BillingMonth: document.getElementById('fb-billmonth').value,
+    BillingMonth: (() => {
+      const ppeVal2 = document.getElementById('fb-ppe').value;
+      if (ppeVal2) return new Date(ppeVal2).toLocaleDateString('en-GB', {month:'long'});
+      return document.getElementById('fb-billmonth')?.value || '';
+    })(),
     Comments: document.getElementById('fb-comments').value,
     NominateForBilling: document.getElementById('fb-nominate').checked,
     Process: document.getElementById('fb-process').checked,
@@ -3139,10 +3239,12 @@ async function saveBillingMetrics() {
   };
   try {
     await saveWithFieldFallback(modalIsEdit, 'billing', id, fields);
+    // Stage 2: Metrics flag is set to true on save (field is included in fields object above)
     cache.billing = await getItems('billing');
     closeModal();
     renderBillingMetrics();
-    showToast(modalIsEdit ? 'Billing record updated' : 'Billing record added', 'success');
+    const msg = modalIsEdit ? 'Billing metrics updated' : 'Billing metrics added — record marked as Metrics ready';
+    showToast(msg, 'success');
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
@@ -3338,10 +3440,26 @@ function exportInvoiceCSV() {
 async function markAsBilled() {
   const invNo = invoiceLines[0]?.InvoiceNumber;
   const total = invoiceLines[0]?.Total;
+
+  // Stage 3: Set Billing = true on all nominated records
   for (const rec of nominatedRecords) {
-    try { await saveWithFieldFallback(true, 'billing', rec.id, {Billing:true, InvNo:invNo, Amount:total}); }
-    catch(e) { console.warn('Could not mark as billed:', e); }
+    try {
+      await saveWithFieldFallback(true, 'billing', rec.id, {
+        Billing: true,
+        InvNo: invNo,
+        Amount: total,
+      });
+      // Update local cache immediately
+      const bIdx = cache.billing.findIndex(b => b.id === rec.id);
+      if (bIdx >= 0) {
+        cache.billing[bIdx].Billing = true;
+        cache.billing[bIdx].InvNo = invNo;
+        cache.billing[bIdx].Amount = total;
+      }
+    } catch(e) { console.warn('Could not mark as billed:', e); }
   }
+
+  // Update last invoice number
   const lastInvRecord = cache.lastinv[0];
   if (lastInvRecord) {
     const newNo = parseInt(invNo.replace('INV-',''));
@@ -3350,8 +3468,10 @@ async function markAsBilled() {
       cache.lastinv[0].LastInvoiceNo = newNo;
     } catch(e) { console.warn('Could not update last invoice no:', e); }
   }
+
+  // Refresh billing cache from SharePoint
   cache.billing = await getItems('billing');
-  showToast(`Invoice ${invNo} exported and records marked as billed`, 'success');
+  showToast(`Invoice ${invNo} exported — ${nominatedRecords.length} record(s) marked as billed`, 'success');
 }
 
 // ─────────────────────────────────────────────
