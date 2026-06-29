@@ -3243,7 +3243,14 @@ function openBillingForm(item = null) {
             <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</div>
           </div>
         </div>
-        <!-- Hidden fields to carry values through save -->
+        <!-- Payrun Number — editable even in edit mode -->
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--teal-light);">
+          <div class="form-group" style="margin:0;">
+            <label>Payrun Number</label>
+            <input type="text" id="fb-payrun" value="${item.Payrun||''}" placeholder="e.g. 2026-01">
+          </div>
+        </div>
+        <!-- Hidden fields to carry identity values through save -->
         <input type="hidden" id="fb-client" value="${item.PSPClient||''}">
         <input type="hidden" id="fb-paygroup" value="${getPayGroup(item)}">
         <input type="hidden" id="fb-payno" value="${item.PayNo||''}">
