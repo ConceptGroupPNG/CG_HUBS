@@ -172,6 +172,43 @@
   }
   #print-area { display: none; }
 
+  /* ── INVOICE NOMINATION ── */
+  .inv-paygroup-header {
+    background: linear-gradient(90deg,var(--grey-50) 0%,var(--white) 100%);
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--grey-200);
+    font-size: 13px; font-weight: 800; color: var(--navy);
+    position: sticky; top: 0; z-index: 1;
+  }
+  .inv-paygroup-header .pg-badge {
+    background: var(--navy); color: white;
+    font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 10px;
+  }
+  .inv-payrun-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 90px 100px 60px 60px 60px 60px 60px;
+    gap: 8px; align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--grey-100);
+    font-size: 13px;
+    transition: background 0.1s;
+  }
+  .inv-payrun-row:hover { background: var(--grey-50); }
+  .inv-payrun-row.nominated { background: #f0fdf8; }
+  .inv-payrun-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--teal); }
+  .inv-col-hdr {
+    display: grid;
+    grid-template-columns: 40px 1fr 90px 100px 60px 60px 60px 60px 60px;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--grey-50);
+    border-bottom: 2px solid var(--grey-200);
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--grey-500);
+  }
+
 </style>
 <style>
   :root {
@@ -1218,66 +1255,97 @@
 
       <!-- GENERATE INVOICE PAGE -->
       <div class="page" id="page-generate-invoice">
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header"><h3>Invoice Configuration</h3></div>
-            <div class="card-body">
-              <div class="form-group">
-                <label>Client</label>
-                <select id="inv-client" onchange="onInvClientChange()">
-                  <option value="">Select Client...</option>
-                </select>
+
+        <!-- Step 1: Client selection -->
+        <div id="inv-step-1">
+          <div style="max-width:520px;margin:60px auto;text-align:center;">
+            <div style="background:var(--white);border-radius:16px;border:1px solid var(--grey-200);padding:40px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+              <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--teal-light),#d1fae5);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                <i class="ti ti-file-invoice" style="font-size:28px;color:var(--teal);"></i>
               </div>
-              <div class="form-group">
-                <label>Billing Month</label>
-                <select id="inv-month">
-                  <option value="January">January</option>
-                  <option value="February">February</option>
-                  <option value="March">March</option>
-                  <option value="April">April</option>
-                  <option value="May">May</option>
-                  <option value="June">June</option>
-                  <option value="July">July</option>
-                  <option value="August">August</option>
-                  <option value="September">September</option>
-                  <option value="October">October</option>
-                  <option value="November">November</option>
-                  <option value="December">December</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Invoice Date</label>
-                <input type="date" id="inv-date">
-              </div>
-              <div class="form-group">
-                <label>Due Date</label>
-                <input type="date" id="inv-due">
-              </div>
-              <div id="inv-nominated-records" style="margin-bottom:16px;"></div>
-              <div style="display:flex;gap:10px;">
-                <button class="btn btn-outline" onclick="loadNominatedRecords()" id="btn-load-nominated">
-                  <i class="ti ti-refresh"></i> Load Nominated Records
-                </button>
-                <button class="btn btn-teal" onclick="generateInvoice()" id="btn-gen-inv" disabled>
-                  <i class="ti ti-file-invoice"></i> Calculate &amp; Preview
+              <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px;">Generate Invoice</h3>
+              <p style="color:var(--grey-500);font-size:13px;margin-bottom:24px;">Select a client to view eligible pay runs and create an invoice</p>
+              <select id="inv-client" style="width:100%;padding:12px 14px;border:2px solid var(--grey-200);border-radius:10px;font-size:14px;font-weight:600;color:var(--navy);background:var(--white);outline:none;margin-bottom:16px;"
+                onchange="onInvClientChange()">
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Nominate pay runs -->
+        <div id="inv-step-2" style="display:none;">
+
+          <!-- Client header -->
+          <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Generate Invoice</div>
+              <div id="inv-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="invClearClient()" style="color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.3);">
+              <i class="ti ti-x"></i> Change Client
+            </button>
+          </div>
+
+          <!-- Invoice settings bar -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-body" style="padding:16px 20px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:14px;align-items:end;">
+                <div class="form-group" style="margin:0;">
+                  <label>Billing Month</label>
+                  <select id="inv-month">
+                    <option>January</option><option>February</option><option>March</option>
+                    <option>April</option><option>May</option><option>June</option>
+                    <option>July</option><option>August</option><option>September</option>
+                    <option>October</option><option>November</option><option>December</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Invoice Date</label>
+                  <input type="date" id="inv-date">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Due Date</label>
+                  <input type="date" id="inv-due">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Invoice No</label>
+                  <input type="text" id="inv-number" readonly style="background:var(--grey-100);color:var(--grey-500);font-weight:700;width:110px;">
+                </div>
+                <button class="btn btn-teal" onclick="generateInvoice()" id="btn-gen-inv" disabled style="white-space:nowrap;">
+                  <i class="ti ti-file-invoice"></i> Preview Invoice
                 </button>
               </div>
             </div>
           </div>
-          <div class="card">
+
+          <!-- Eligible pay runs -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h3>Eligible Pay Runs <span id="inv-eligible-count" style="font-weight:400;color:var(--grey-500);font-size:13px;"></span></h3>
+              <span style="font-size:12px;color:var(--grey-500);">Process ✓ &nbsp; Metrics ✓ &nbsp; Not yet billed</span>
+            </div>
+            <div id="inv-payrun-list">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
+
+          <!-- Invoice preview -->
+          <div class="card" id="inv-preview-card" style="display:none;">
             <div class="card-header">
               <h3>Invoice Preview</h3>
-              <button class="btn btn-sm btn-teal" onclick="exportInvoiceCSV()" id="btn-export-inv" style="display:none;">
-                <i class="ti ti-download"></i> Export CSV
-              </button>
-            </div>
-            <div id="invoice-preview">
-              <div class="empty-state">
-                <i class="ti ti-file-invoice"></i>
-                <p>Select a client and calculate to preview the invoice</p>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-outline" onclick="confirmInvoiceNo()" id="btn-confirm-invno">
+                  <i class="ti ti-pencil"></i> Edit Invoice No
+                </button>
+                <button class="btn btn-sm btn-teal" onclick="exportInvoiceCSV()" id="btn-export-inv">
+                  <i class="ti ti-download"></i> Export CSV
+                </button>
               </div>
             </div>
+            <div id="invoice-preview"></div>
           </div>
+
         </div>
       </div>
 
@@ -3497,30 +3565,181 @@ async function loadGenerateInvoice() {
   }
 }
 
-function onInvClientChange() {
-  document.getElementById('inv-nominated-records').innerHTML = '';
+async function onInvClientChange() {
+  const client = document.getElementById('inv-client').value;
+  if (!client) return;
+  invoiceLines = [];
+  nominatedRecords = [];
+
+  // Show step 2
+  document.getElementById('inv-step-1').style.display = 'none';
+  document.getElementById('inv-step-2').style.display = 'block';
+  document.getElementById('inv-client-label').textContent = client;
+  document.getElementById('inv-preview-card').style.display = 'none';
   document.getElementById('btn-gen-inv').disabled = true;
-  document.getElementById('invoice-preview').innerHTML = '<div class="empty-state"><i class="ti ti-file-invoice"></i><p>Select a client and calculate to preview the invoice</p></div>';
-  document.getElementById('btn-export-inv').style.display = 'none';
+
+  // Set invoice number
+  const lastNo = (cache.lastinv[0]?.LastInvoiceNo || 5000);
+  document.getElementById('inv-number').value = 'INV-' + (lastNo + 1);
+
+  await loadEligiblePayRuns(client);
+}
+
+function invClearClient() {
+  document.getElementById('inv-step-1').style.display = 'block';
+  document.getElementById('inv-step-2').style.display = 'none';
+  document.getElementById('inv-client').value = '';
   invoiceLines = [];
   nominatedRecords = [];
 }
 
-async function loadNominatedRecords() {
-  const client = document.getElementById('inv-client').value;
-  if (!client) { showToast('Please select a client', 'error'); return; }
-  const records = cache.billing.filter(i =>
-    i.PSPClient === client && i.NominateForBilling === true && i.Process === true && i.Metrics === true && !i.Billing
-  );
-  nominatedRecords = records;
-  const container = document.getElementById('inv-nominated-records');
-  if (!records.length) {
-    container.innerHTML = '<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i><div>No nominated, unbilled records found for this client.</div></div>';
-    document.getElementById('btn-gen-inv').disabled = true;
+async function loadEligiblePayRuns(client) {
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+
+  // All eligible: Process=true, Metrics=true, Billing=false
+  const eligible = cache.billing.filter(i =>
+    i.PSPClient === client && i.Process === true && i.Metrics === true && !i.Billing
+  ).sort((a,b) => {
+    if (getPayGroup(a) < getPayGroup(b)) return -1;
+    if (getPayGroup(a) > getPayGroup(b)) return 1;
+    return (a.PayNo||0) - (b.PayNo||0);
+  });
+
+  const container = document.getElementById('inv-payrun-list');
+  const countEl = document.getElementById('inv-eligible-count');
+
+  if (!eligible.length) {
+    countEl.textContent = '(0 eligible)';
+    container.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No eligible pay runs found. All records are either billed, or awaiting Process/Metrics flags.</p></div>';
     return;
   }
-  container.innerHTML = `<div class="alert alert-info"><i class="ti ti-info-circle"></i><div>${records.length} pay run(s) nominated:<br>${records.map(r=>`<strong>${getPayGroup(r)}</strong> Pay ${r.PayNo} (${fmtDate(r.PayEnddate)})`).join(', ')}</div></div>`;
-  document.getElementById('btn-gen-inv').disabled = false;
+
+  countEl.textContent = `(${eligible.length} eligible)`;
+
+  // Group by pay group
+  const groups = {};
+  eligible.forEach(i => {
+    const pg = getPayGroup(i);
+    if (!groups[pg]) groups[pg] = [];
+    groups[pg].push(i);
+  });
+
+  let html = `<div class="inv-col-hdr">
+    <div></div>
+    <div>Pay No / PPE</div>
+    <div>Billing Month</div>
+    <div>Payrun</div>
+    <div style="text-align:center;">Emp</div>
+    <div style="text-align:center;">NH</div>
+    <div style="text-align:center;">Term</div>
+    <div style="text-align:center;">Non-Upd</div>
+    <div style="text-align:center;">LO</div>
+  </div>`;
+
+  Object.entries(groups).forEach(([pg, items]) => {
+    const allNominated = items.every(i => i.NominateForBilling);
+    html += `<div class="inv-paygroup-header">
+      <input type="checkbox" ${allNominated?'checked':''} onchange="togglePayGroupSelection('${pg}',this.checked)" id="pg-chk-${pg.replace(/[^a-z0-9]/gi,'_')}">
+      <span class="pg-badge">${pg}</span>
+      <span style="color:var(--grey-500);font-weight:500;">${items.length} pay run${items.length>1?'s':''}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--grey-500);">Select All</span>
+    </div>`;
+    items.forEach(i => {
+      html += `<div class="inv-payrun-row ${i.NominateForBilling?'nominated':''}" id="inv-row-${i.id}">
+        <input type="checkbox" ${i.NominateForBilling?'checked':''} onchange="togglePayRunNomination('${i.id}',this.checked)">
+        <div>
+          <div style="font-weight:700;color:var(--navy);">Pay ${i.PayNo}</div>
+          <div style="font-size:11px;color:var(--grey-500);">${fmtDate(i.PayEnddate)}</div>
+        </div>
+        <div style="font-size:12px;">${getBillingMonth(i)||'—'}</div>
+        <div style="font-size:12px;">${i.Payrun||'—'}</div>
+        <div style="text-align:center;font-weight:700;">${i.EmployeesPayslips||0}</div>
+        <div style="text-align:center;">${i.NewHires||0}</div>
+        <div style="text-align:center;">${i.Terminations||0}</div>
+        <div style="text-align:center;">${i.NonUpdateCharge||0}</div>
+        <div style="text-align:center;">${i.LayOff||0}</div>
+      </div>`;
+    });
+  });
+
+  container.innerHTML = html;
+  updateGenerateButton();
+}
+
+async function togglePayRunNomination(id, nominated) {
+  // Save NominateForBilling to SharePoint
+  try {
+    await saveWithFieldFallback(true, 'billing', id, { NominateForBilling: nominated });
+    const idx = cache.billing.findIndex(b => String(b.id) === String(id));
+    if (idx >= 0) cache.billing[idx].NominateForBilling = nominated;
+    // Update row styling
+    const row = document.getElementById('inv-row-' + id);
+    if (row) row.classList.toggle('nominated', nominated);
+    // Refresh pay group header checkbox
+    const rec = cache.billing.find(b => String(b.id) === String(id));
+    if (rec) refreshPayGroupCheckbox(getPayGroup(rec));
+    updateGenerateButton();
+  } catch(e) { showToast('Error saving nomination: ' + e.message, 'error'); }
+}
+
+async function togglePayGroupSelection(pg, checked) {
+  const client = document.getElementById('inv-client-label').textContent;
+  const items = cache.billing.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg && i.Process && i.Metrics && !i.Billing
+  );
+  for (const item of items) {
+    try {
+      await saveWithFieldFallback(true, 'billing', item.id, { NominateForBilling: checked });
+      const idx = cache.billing.findIndex(b => String(b.id) === String(item.id));
+      if (idx >= 0) cache.billing[idx].NominateForBilling = checked;
+      const row = document.getElementById('inv-row-' + item.id);
+      if (row) {
+        row.classList.toggle('nominated', checked);
+        const chk = row.querySelector('input[type=checkbox]');
+        if (chk) chk.checked = checked;
+      }
+    } catch(e) { console.warn('Error updating nomination:', e); }
+  }
+  updateGenerateButton();
+}
+
+function refreshPayGroupCheckbox(pg) {
+  const client = document.getElementById('inv-client-label').textContent;
+  const items = cache.billing.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg && i.Process && i.Metrics && !i.Billing
+  );
+  const allNominated = items.length > 0 && items.every(i => i.NominateForBilling);
+  const chk = document.getElementById('pg-chk-' + pg.replace(/[^a-z0-9]/gi,'_'));
+  if (chk) chk.checked = allNominated;
+}
+
+function updateGenerateButton() {
+  const client = document.getElementById('inv-client-label').textContent;
+  const nominated = cache.billing.filter(i =>
+    i.PSPClient === client && i.NominateForBilling && i.Process && i.Metrics && !i.Billing
+  );
+  nominatedRecords = nominated;
+  const btn = document.getElementById('btn-gen-inv');
+  if (btn) {
+    btn.disabled = nominated.length === 0;
+    btn.innerHTML = nominated.length > 0
+      ? `<i class="ti ti-file-invoice"></i> Preview Invoice (${nominated.length} Pay Run${nominated.length>1?'s':''})`
+      : `<i class="ti ti-file-invoice"></i> Preview Invoice`;
+  }
+}
+
+function confirmInvoiceNo() {
+  const current = document.getElementById('inv-number').value;
+  const newNo = prompt('Edit Invoice Number:', current);
+  if (newNo && newNo.trim()) {
+    document.getElementById('inv-number').value = newNo.trim();
+  }
+}
+
+async function loadNominatedRecords() {
+  // Legacy function - now handled by loadEligiblePayRuns
+  const client = document.getElementById('inv-client-label')?.textContent;
+  if (client) await loadEligiblePayRuns(client);
 }
 
 function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, dueDate, month) {
@@ -3571,14 +3790,12 @@ function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, du
 }
 
 async function generateInvoice() {
-  const clientName = document.getElementById('inv-client').value;
+  const clientName = document.getElementById('inv-client-label').textContent;
   const month = document.getElementById('inv-month').value;
   const invDate = document.getElementById('inv-date').value;
   const dueDate = document.getElementById('inv-due').value;
-  if (!nominatedRecords.length) { showToast('No nominated records loaded', 'error'); return; }
-  const lastInvRecord = cache.lastinv[0];
-  const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
-  const invNo = `INV-${lastNo + 1}`;
+  if (!nominatedRecords.length) { showToast('Please nominate at least one pay run', 'error'); return; }
+  const invNo = document.getElementById('inv-number').value || ('INV-' + ((cache.lastinv[0]?.LastInvoiceNo || 5000) + 1));
   const clientDetails = cache.clients.find(c => getClientName(c) === clientName);
   if (!clientDetails) { showToast('Client details not found', 'error'); return; }
   invoiceLines = [];
@@ -3646,7 +3863,10 @@ async function generateInvoice() {
         </table>
       </div>
     </div>`;
+  document.getElementById('inv-preview-card').style.display = 'block';
   document.getElementById('btn-export-inv').style.display = '';
+  // Scroll to preview
+  document.getElementById('inv-preview-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function exportInvoiceCSV() {
@@ -3701,7 +3921,19 @@ async function markAsBilled() {
 
   // Refresh billing cache from SharePoint
   cache.billing = await getItems('billing');
+  // Update last invoice number display
+  const newNo = parseInt(invNo.replace('INV-',''));
+  if (!isNaN(newNo)) {
+    const numEl = document.getElementById('inv-number');
+    if (numEl) numEl.value = 'INV-' + (newNo + 1);
+  }
   showToast(`Invoice ${invNo} exported — ${nominatedRecords.length} record(s) marked as billed`, 'success');
+  // Reload eligible pay runs to reflect updated state
+  const client = document.getElementById('inv-client-label')?.textContent;
+  if (client) await loadEligiblePayRuns(client);
+  document.getElementById('inv-preview-card').style.display = 'none';
+  invoiceLines = [];
+  nominatedRecords = [];
 }
 
 // ─────────────────────────────────────────────
