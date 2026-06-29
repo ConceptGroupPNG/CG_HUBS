@@ -1187,8 +1187,8 @@
               <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Billing Metrics</div>
               <div id="bm-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
             </div>
-            <button class="btn btn-sm btn-outline" onclick="bmClearClient()" style="color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.3);">
-              <i class="ti ti-x"></i> Change Client
+            <button class="btn btn-sm btn-red" onclick="bmClearClient()" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;padding:8px 16px;">
+              <i class="ti ti-refresh"></i> Change Client
             </button>
           </div>
 
@@ -1282,8 +1282,8 @@
               <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Generate Invoice</div>
               <div id="inv-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
             </div>
-            <button class="btn btn-sm btn-outline" onclick="invClearClient()" style="color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.3);">
-              <i class="ti ti-x"></i> Change Client
+            <button class="btn btn-sm btn-red" onclick="invClearClient()" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;padding:8px 16px;">
+              <i class="ti ti-refresh"></i> Change Client
             </button>
           </div>
 
@@ -2565,7 +2565,7 @@ async function loadGenerateCalendar() {
     cache.activities = await getItems('activities');
   }
   const clientSel = document.getElementById('gen-client');
-  const clients = [...new Set(cache.activities.map(i => i.PSPClient))].sort();
+  const clients = [...new Set(cache.activities.map(i => i.PSPClient).filter(Boolean))].sort((a,b) => a.localeCompare(b));
   clientSel.innerHTML = '<option value="">Select Client...</option>' + clients.map(c => `<option>${c}</option>`).join('');
   document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
   document.getElementById('btn-generate').disabled = true;
@@ -2839,7 +2839,7 @@ async function deleteGenTemplate(id) {
 
 function onGenClientChange() {
   const client = document.getElementById('gen-client').value;
-  const paygroups = [...new Set(cache.activities.filter(i => i.PSPClient === client).map(i => i.PayGroup))].sort();
+  const paygroups = [...new Set(cache.activities.filter(i => i.PSPClient === client).map(i => i.PayGroup).filter(Boolean))].sort((a,b) => a.localeCompare(b));
   const sel = document.getElementById('gen-paygroup');
   sel.innerHTML = '<option value="">Select Pay Group...</option>' + paygroups.map(p => `<option>${p}</option>`).join('');
   document.getElementById('gen-cycle').value = '';
@@ -3069,7 +3069,7 @@ async function openTemplateForm(item = null) {
   modalIsEdit = !!item;
   const title = item ? 'Edit Template Activity' : 'Add Template Activity';
   if (!cache.clients.length) cache.clients = await getItems('clients');
-  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
+  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = `
     <div class="form-row">
@@ -3227,7 +3227,7 @@ async function loadBillingMetrics() {
   // Populate the client picker dropdown
   const sel = document.getElementById('bm-client-select');
   if (sel) {
-    const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort();
+    const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort((a,b) => a.localeCompare(b));
     sel.innerHTML = '<option value="">— Select Client —</option>' +
       clients.map(c => `<option value="${c}">${c}</option>`).join('');
   }
@@ -3341,7 +3341,7 @@ function openBillingFormById(id) {
 function openBillingForm(item = null) {
   modalEntity = 'billing';
   modalIsEdit = !!item;
-  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
+  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
   document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Pay Run';
   document.getElementById('modal-body').innerHTML = `
     <div style="padding:0 0 20px 0;">
@@ -3549,7 +3549,8 @@ async function loadGenerateInvoice() {
     if (!cache.billing.length) cache.billing = await getItems('billing');
     if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
     const sel = document.getElementById('inv-client');
-    sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${getClientName(c)}</option>`).join('');
+    const sortedClients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">Select Client...</option>' + sortedClients.map(c => `<option>${c}</option>`).join('');
     const now = new Date();
     const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
     const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -4030,7 +4031,7 @@ function populateClientFilter(elId, items) {
   const el = document.getElementById(elId);
   if (!el) return;
   const cur = el.value;
-  const clients = [...new Set(items.map(i => i.PSPClient).filter(Boolean))].sort();
+  const clients = [...new Set(items.map(i => i.PSPClient).filter(Boolean))].sort((a,b) => a.localeCompare(b));
   el.innerHTML = '<option value="">All Clients</option>' + clients.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
 }
 function populatePayGroupFilter(elId, items) {
