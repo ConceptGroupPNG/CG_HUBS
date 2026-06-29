@@ -1855,10 +1855,7 @@ async function refreshCache() {
   cache.fees = fees;
   cache.clients = clients;
   cache.lastinv = lastinv;
-  if (fees.length > 0) {
-    console.log('[PSP_HUB] Fees fields:', Object.keys(fees[0]));
-    console.log('[PSP_HUB] Fees sample:', JSON.stringify(fees[0]).substring(0, 400));
-  }
+
 }
 
 async function refreshCalendarCache() {
@@ -3754,9 +3751,27 @@ async function loadNominatedRecords() {
 function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, dueDate, month) {
   const lines = [];
   const calcMethod = fees.CalcMethod;
-  const currency = clientDetails.Currency || 'PGK';
-  const taxType = clientDetails.TaxType || 'Tax on Sales';
-  const taxRate = taxType === 'Zero Rated' ? 0 : 0.1;
+  // PSP_Processing_Fees field mapping (confirmed from SharePoint schema):
+  // field_1=PayGroup, field_2=Tier, field_3=Min, field_4=Max, field_5=PayRun
+  // field_6=Each, field_7=Extra, field_8=WSS, field_9=CLO, field_10=LO
+  // field_11=NewHire, field_12=Term, field_13=Excpt, field_14=3NoN, field_15=ReRun
+  const feePayGroup  = fees.field_1  || fees.PayGroup  || '';
+  const feeTier      = fees.field_2  !== undefined ? fees.field_2  : 1;
+  const feeMin       = fees.field_3  !== undefined ? fees.field_3  : 0;
+  const feeMax       = fees.field_4  !== undefined ? fees.field_4  : 0;
+  const feePayRun    = fees.field_5  !== undefined ? fees.field_5  : 0;
+  const feeEach      = fees.field_6  !== undefined ? fees.field_6  : 0;
+  const feeExtra     = fees.field_7  !== undefined ? fees.field_7  : 0;
+  const feeWSS       = fees.field_8  !== undefined ? fees.field_8  : 0;
+  const feeCLO       = fees.field_9  !== undefined ? fees.field_9  : 0;
+  const feeLO        = fees.field_10 !== undefined ? fees.field_10 : 0;
+  const feeNewHire   = fees.field_11 !== undefined ? fees.field_11 : 0;
+  const feeTerm      = fees.field_12 !== undefined ? fees.field_12 : 0;
+  const feeExcpt     = fees.field_13 !== undefined ? fees.field_13 : 0;
+  const fee3NoN      = fees.field_14 !== undefined ? fees.field_14 : 0;
+  const feeReRun     = fees.field_15 !== undefined ? fees.field_15 : 0;
+  const feeShowAlt   = !!fees.ShowAltReference;
+  const feeAltRef    = fees.AltReference || '';
   const emp = billingRecord.EmployeesPayslips || 0;
   const pg = getPayGroup(billingRecord);
   const payno = billingRecord.PayNo || '';
@@ -3766,7 +3781,7 @@ function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, du
     return `${d.padStart(2,'0')}/${months[mo]}/${y.slice(-2)}`;
   });
   const payrun = billingRecord.Payrun || '';
-  const ref = fees.ShowAltReference ? (fees.AltReference || '') : `Payroll Processing ${month}`;
+  const ref = feeShowAlt ? (feeAltRef || '') : `Payroll Processing ${month}`;
   const baseFields = {
     InvoiceNumber: invNo, Reference: ref, InvoiceDate: invDate, DueDate: dueDate,
     ContactName: clientDetails.ClientInvoiceName, EmailAddress: clientDetails.EmailAddress,
@@ -3777,24 +3792,24 @@ function calcInvoiceLines(billingRecord, fees, clientDetails, invNo, invDate, du
     TrackingOption1: clientDetails.TrackingOption1||'Bureau/PSP', Currency: currency,
   };
   let qty = 1, unitAmt = 0, desc = '';
-  if (calcMethod==='A') { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees: Standard Charge`; }
-  else if (calcMethod==='B') { qty=emp; unitAmt=fees.Each||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${fees.Each} Per Payslip`; }
+  if (calcMethod==='A') { qty=1; unitAmt=feePayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees: Standard Charge`; }
+  else if (calcMethod==='B') { qty=emp; unitAmt=feeEach||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${feeEach} Per Payslip`; }
   else if (calcMethod==='C') {
-    if (emp>(fees.Max||0)) { qty=1; unitAmt=(fees.PayRun||0)+(emp-(fees.Max||0))*(fees.Extra||0); desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min ${currency}${fees.PayRun} + ${emp-fees.Max} x ${currency}${fees.Extra}`; }
-    else { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${fees.PayRun}`; }
+    if (emp>(feeMax||0)) { qty=1; unitAmt=(feePayRun||0)+(emp-(feeMax||0))*(feeExtra||0); desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min ${currency}${feePayRun} + ${emp-feeMax} x ${currency}${feeExtra}`; }
+    else { qty=1; unitAmt=feePayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${feePayRun}`; }
   } else if (calcMethod==='D') {
-    if (emp>(fees.Max||0)) { qty=emp; unitAmt=fees.Extra||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${fees.Extra} (above ${fees.Max})`; }
-    else { qty=1; unitAmt=fees.PayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${fees.PayRun}`; }
-  } else if (calcMethod==='E') { qty=1; unitAmt=fees.PayRun||0; desc=`Standard Monthly Charge Pay ${payno} PPE: ${ppeStr}`; }
+    if (emp>(feeMax||0)) { qty=emp; unitAmt=feeExtra||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} x ${currency}${feeExtra} (above ${feeMax})`; }
+    else { qty=1; unitAmt=feePayRun||0; desc=`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${emp} Employees. Min Charge ${currency}${feePayRun}`; }
+  } else if (calcMethod==='E') { qty=1; unitAmt=feePayRun||0; desc=`Standard Monthly Charge Pay ${payno} PPE: ${ppeStr}`; }
   const sub = qty*unitAmt, tax = Math.round(sub*taxRate*100)/100;
   lines.push({...baseFields, Order:1, PayGroup:pg, PayNo:payno, PPE:ppeStr, Category:'Processing Charges:', Quantity:qty, Description:desc, UnitAmount:unitAmt, SubTotal:sub, TaxAmount:tax, Total:0});
   const addLine = (order,cat,q,u,d) => { if(!q||!u) return; const s=q*u,t=Math.round(s*taxRate*100)/100; lines.push({...baseFields,Order:order,PayGroup:pg,PayNo:payno,PPE:ppeStr,Category:cat,Quantity:q,Description:d,UnitAmount:u,SubTotal:s,TaxAmount:t,Total:0}); };
   const nh=billingRecord.NewHires||0, terms=billingRecord.Terminations||0, nonUpd=billingRecord.NonUpdateCharge||0, layoff=billingRecord.LayOff||0, rehire=billingRecord.CeaseLayOff||0;
-  if (nh&&fees.NewHire) addLine(2,'New Hire(s)',nh,fees.NewHire,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nh} New Hire(s) x ${currency}${fees.NewHire}`);
-  if (terms&&fees.Term) addLine(3,'Termination(s)',terms,fees.Term,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${terms} Termination(s) x ${currency}${fees.Term}`);
-  if (nonUpd&&fees['3NoN']) addLine(4,'Non-Update(s)',nonUpd,fees['3NoN'],`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nonUpd} Non-Update(s) x ${currency}${fees['3NoN']}`);
-  if (layoff&&fees.LO) addLine(5,'Lay-Off(s)',layoff,fees.LO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${layoff} Lay-Off(s) x ${currency}${fees.LO}`);
-  if (rehire&&fees.CLO) addLine(6,'Re-Hire(s)',rehire,fees.CLO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${rehire} Re-Hire(s) x ${currency}${fees.CLO}`);
+  if (nh&&feeNewHire) addLine(2,'New Hire(s)',nh,feeNewHire,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nh} New Hire(s) x ${currency}${feeNewHire}`);
+  if (terms&&feeTerm) addLine(3,'Termination(s)',terms,feeTerm,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${terms} Termination(s) x ${currency}${feeTerm}`);
+  if (nonUpd&&fee3NoN) addLine(4,'Non-Update(s)',nonUpd,fee3NoN,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${nonUpd} Non-Update(s) x ${currency}${fee3NoN}`);
+  if (layoff&&feeLO) addLine(5,'Lay-Off(s)',layoff,feeLO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${layoff} Lay-Off(s) x ${currency}${feeLO}`);
+  if (rehire&&feeCLO) addLine(6,'Re-Hire(s)',rehire,feeCLO,`${pg} Pay ${payno} PPE: ${ppeDDMMYY}, ${rehire} Re-Hire(s) x ${currency}${feeCLO}`);
   return lines;
 }
 
@@ -3811,7 +3826,7 @@ async function generateInvoice() {
   const methodEGroups = {};
   for (const rec of nominatedRecords) {
     const pg = getPayGroup(rec);
-    const fees = cache.fees.find(f => f.Title === clientName && f.PayGroup === pg);
+    const fees = cache.fees.find(f => f.Title === clientName && (f.field_1 === pg || f.PayGroup === pg));
     if (!fees) { showToast(`No fee schedule for ${clientName} / ${pg}`, 'error'); continue; }
     if (fees.CalcMethod === 'E') {
       const key = rec.PayNo;
@@ -3822,7 +3837,7 @@ async function generateInvoice() {
     }
   }
   for (const [payNo, group] of Object.entries(methodEGroups)) {
-    const unitAmt = group.fees.PayRun || 0;
+    const unitAmt = group.feePayRun || 0;
     const taxRate = clientDetails.TaxType === 'Zero Rated' ? 0 : 0.1;
     const tax = Math.round(unitAmt * taxRate * 100) / 100;
     invoiceLines.push({
