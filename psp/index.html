@@ -1458,6 +1458,7 @@ let modalEntity = null;
 let modalIsEdit = false;
 let invoiceLines = [];
 let nominatedRecords = [];
+let invoiceRefreshTimer = null;
 
 const cache = {
   calendar: [],
@@ -3685,6 +3686,8 @@ async function togglePayRunNomination(id, nominated) {
     const rec = cache.billing.find(b => String(b.id) === String(id));
     if (rec) refreshPayGroupCheckbox(getPayGroup(rec));
     updateGenerateButton();
+    // Auto-refresh invoice preview if it's currently visible
+    scheduleInvoiceRefresh();
   } catch(e) { showToast('Error saving nomination: ' + e.message, 'error'); }
 }
 
@@ -3707,6 +3710,7 @@ async function togglePayGroupSelection(pg, checked) {
     } catch(e) { console.warn('Error updating nomination:', e); }
   }
   updateGenerateButton();
+  scheduleInvoiceRefresh();
 }
 
 function refreshPayGroupCheckbox(pg) {
@@ -3717,6 +3721,27 @@ function refreshPayGroupCheckbox(pg) {
   const allNominated = items.length > 0 && items.every(i => i.NominateForBilling);
   const chk = document.getElementById('pg-chk-' + pg.replace(/[^a-z0-9]/gi,'_'));
   if (chk) chk.checked = allNominated;
+}
+
+function scheduleInvoiceRefresh() {
+  const previewCard = document.getElementById('inv-preview-card');
+  if (!previewCard || previewCard.style.display === 'none') return;
+  // Show recalculating indicator
+  const previewEl = document.getElementById('invoice-preview');
+  if (previewEl) {
+    previewEl.style.opacity = '0.4';
+    previewEl.style.pointerEvents = 'none';
+  }
+  const header = document.querySelector('#inv-preview-card .card-header h3');
+  if (header) header.innerHTML = 'Invoice Preview <span style="font-size:11px;color:var(--grey-500);font-weight:400;"><i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite;font-size:11px;"></i> Recalculating...</span>';
+  // Debounce - wait 800ms after last change
+  clearTimeout(invoiceRefreshTimer);
+  invoiceRefreshTimer = setTimeout(async () => {
+    await generateInvoice();
+    if (previewEl) { previewEl.style.opacity = '1'; previewEl.style.pointerEvents = ''; }
+    const hdr = document.querySelector('#inv-preview-card .card-header h3');
+    if (hdr) hdr.textContent = 'Invoice Preview';
+  }, 800);
 }
 
 function updateGenerateButton() {
