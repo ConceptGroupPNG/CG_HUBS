@@ -1065,11 +1065,11 @@
           <div class="grid-2" style="margin-bottom:20px;">
             <div class="card">
               <div class="card-header"><h3>Monthly Revenue (PGK)</h3></div>
-              <div class="card-body"><canvas id="chart-revenue" height="200"></canvas></div>
+              <div class="card-body" style="padding:12px 16px;"><canvas id="chart-revenue" height="160"></canvas></div>
             </div>
             <div class="card">
               <div class="card-header"><h3>New Hires vs Terminations</h3></div>
-              <div class="card-body"><canvas id="chart-nh-term" height="200"></canvas></div>
+              <div class="card-body" style="padding:12px 16px;"><canvas id="chart-nh-term" height="160"></canvas></div>
             </div>
           </div>
 
@@ -1101,7 +1101,7 @@
             </div>
             <div class="card">
               <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
-              <div class="card-body"><canvas id="chart-lo-rh" height="200"></canvas></div>
+              <div class="card-body" style="padding:12px 16px;"><canvas id="chart-lo-rh" height="160"></canvas></div>
             </div>
           </div>
 
@@ -4686,12 +4686,12 @@ async function loadFinanceDashboard() {
   const crHeight = Math.max(200, crSorted.length * 30);
   document.getElementById('chart-client-revenue').height = crHeight;
   const crCanvas = document.getElementById('chart-client-revenue');
-  if (crCanvas) crCanvas.height = Math.max(260, crSorted.length * 36);
+  if (crCanvas) crCanvas.height = Math.max(180, crSorted.length * 26);
   mkChart('chart-client-revenue', 'bar', {
     labels: crSorted.map(([c]) => c),
     datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v),
       backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
-      borderRadius: 4, barThickness: 22 }]
+      borderRadius: 4, barThickness: 16 }]
   }, {
     indexAxis: 'y',
     plugins: {
@@ -4718,12 +4718,12 @@ async function loadFinanceDashboard() {
   });
   const cpSorted = Object.entries(clientPayslips).sort((a,b) => b[1]-a[1]);
   const cpCanvas = document.getElementById('chart-client-payslips');
-  if (cpCanvas) cpCanvas.height = Math.max(260, cpSorted.length * 36);
+  if (cpCanvas) cpCanvas.height = Math.max(180, cpSorted.length * 26);
   mkChart('chart-client-payslips', 'bar', {
     labels: cpSorted.map(([c]) => c),
     datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v),
       backgroundColor: cpSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
-      borderRadius: 4, barThickness: 22 }]
+      borderRadius: 4, barThickness: 16 }]
   }, {
     indexAxis: 'y',
     plugins: {
@@ -4796,11 +4796,11 @@ async function loadFinanceDashboard() {
     data: members.map(m => memberPGPayslips[m]?.[pg] || 0),
     backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
     borderRadius: 3,
-    barThickness: 24,
+    barThickness: 18,
   }));
 
   const mpCanvas = document.getElementById('chart-member-payslips');
-  if (mpCanvas) mpCanvas.height = Math.max(200, members.length * 40);
+  if (mpCanvas) mpCanvas.height = Math.max(160, members.length * 32);
 
   mkChart('chart-member-payslips', 'bar', {
     labels: members,
@@ -4876,7 +4876,7 @@ async function loadFinanceDashboard() {
     .sort((a,b) => b[1].payslips - a[1].payslips);
 
   const lpCanvas = document.getElementById('chart-last-payperiod');
-  if (lpCanvas) lpCanvas.height = Math.max(200, lpClients.length * 34);
+  if (lpCanvas) lpCanvas.height = Math.max(160, lpClients.length * 26);
 
   mkChart('chart-last-payperiod', 'bar', {
     labels: lpClients.map(([c, d]) => `${c}  (${d.pg} Pay ${d.payNo} • ${d.ppeStr})`),
@@ -4885,7 +4885,7 @@ async function loadFinanceDashboard() {
       data: lpClients.map(([,d]) => d.payslips),
       backgroundColor: lpClients.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
       borderRadius: 4,
-      barThickness: 24,
+      barThickness: 18,
     }]
   }, {
     indexAxis: 'y',
