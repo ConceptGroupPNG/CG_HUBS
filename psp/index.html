@@ -2847,6 +2847,32 @@ async function generateCalendar() {
         showToast(`Error on Pay ${currentPayNo} step ${getOrder(t)}: ${e.message}`, 'error');
       }
     }
+    // Create one PSP_Billing stub record for this pay period
+    try {
+      await createItem('billing', {
+        PSPClient: client,
+        'Pay_x0020_Group': pg,
+        PayNo: currentPayNo,
+        PayEnddate: currentPPE.toISOString(),
+        BillingMonth: currentPPE.toLocaleDateString('en-GB', {month: 'long'}),
+        PayrollYear: currentPPE.getFullYear(),
+        EmployeesPayslips: 0,
+        Nationals: 0,
+        Expatriate: 0,
+        NewHires: 0,
+        Terminations: 0,
+        NonUpdateCharge: 0,
+        LayOff: 0,
+        CeaseLayOff: 0,
+        Process: false,
+        Metrics: false,
+        NominateForBilling: false,
+        Billing: false,
+      });
+    } catch(e) {
+      console.warn(`Could not create billing stub for Pay ${currentPayNo}:`, e);
+    }
+
     btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Generated Pay ${currentPayNo} (${p+1}/${periods})...`;
     currentPayNo++;
     const nextPPE = new Date(currentPPE);
@@ -2856,10 +2882,11 @@ async function generateCalendar() {
   }
 
   cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+  cache.billing = await getItems('billing');
   btn.disabled = false;
   btn.innerHTML = '<i class="ti ti-calendar-plus"></i> Generate Calendar';
   const label = periods > 1 ? `Pay ${startPayNo}–${currentPayNo-1}` : `Pay ${startPayNo}`;
-  showToast(`✓ Created ${totalCreated} activities for ${pg} ${label}`, 'success');
+  showToast(`✓ Created ${totalCreated} activities for ${pg} ${label} — billing records initialised`, 'success');
 }
 
 
