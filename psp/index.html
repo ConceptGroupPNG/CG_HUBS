@@ -3153,6 +3153,7 @@ function closeModal() {
 async function loadBillingMetrics() {
   if (!cache.billing.length) cache.billing = await getItems('billing');
   if (!cache.clients.length) cache.clients = await getItems('clients');
+  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
 
   // Populate the client picker dropdown
   const sel = document.getElementById('bm-client-select');
@@ -3172,6 +3173,18 @@ async function loadBillingMetrics() {
 }
 
 let bmSelectedClient = '';
+
+function onBillingFormClientChange() {
+  const clientEl = document.getElementById('fb-client');
+  const pgEl = document.getElementById('fb-paygroup');
+  if (!clientEl || !pgEl) return;
+  const client = clientEl.value;
+  const paygroups = [...new Set(
+    cache.activities.filter(a => a.PSPClient === client).map(a => a.PayGroup).filter(Boolean)
+  )].sort();
+  pgEl.innerHTML = '<option value="">Select Pay Group...</option>' +
+    paygroups.map(pg => `<option value="${pg}">${pg}</option>`).join('');
+}
 
 function onBmClientSelect() {
   const client = document.getElementById('bm-client-select').value;
@@ -3321,13 +3334,15 @@ function openBillingForm(item = null) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="margin:0;">
             <label>Client *</label>
-            <select id="fb-client">
+            <select id="fb-client" onchange="onBillingFormClientChange()">
               ${clients.map(c=>`<option ${(bmSelectedClient)===c?'selected':''}>${c}</option>`).join('')}
             </select>
           </div>
           <div class="form-group" style="margin:0;">
             <label>Pay Group *</label>
-            <input type="text" id="fb-paygroup" value="">
+            <select id="fb-paygroup">
+              <option value="">Select Pay Group...</option>
+            </select>
           </div>
           <div class="form-group" style="margin:0;">
             <label>Pay No *</label>
