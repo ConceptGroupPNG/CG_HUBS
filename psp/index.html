@@ -1178,7 +1178,7 @@
               <option value="true">Billed</option>
             </select>
             <button class="btn btn-teal" onclick="openBillingForm()">
-              <i class="ti ti-plus"></i> Add Metrics
+              <i class="ti ti-plus"></i> Add Pay Run
             </button>
           </div>
 
@@ -3204,7 +3204,7 @@ function openBillingForm(item = null) {
   modalEntity = 'billing';
   modalIsEdit = !!item;
   const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort();
-  document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Billing Metrics';
+  document.getElementById('modal-title').textContent = item ? 'Edit Billing Metrics' : 'Add Pay Run';
   document.getElementById('modal-body').innerHTML = `
     <div style="padding:0 0 20px 0;">
 
@@ -3217,7 +3217,39 @@ function openBillingForm(item = null) {
         <div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:3px;">${item ? 'PPE: ' + (item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—') : 'Fill in the pay run details below'}</div>
       </div>
 
-      <!-- Pay Run Identity -->
+      <!-- Pay Run Identity — display only when editing, editable when adding -->
+      ${item ? `
+      <div style="background:linear-gradient(135deg,#f0fdf8 0%,#e6f9f3 100%);border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1.5px solid var(--teal-light);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);"></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal-dark);">Pay Run</div>
+          <span style="font-size:10px;color:var(--grey-500);margin-left:4px;">(read only)</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Client</div>
+            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PSPClient||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay Group</div>
+            <div style="font-size:13px;font-weight:700;color:var(--navy);">${getPayGroup(item)}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay No</div>
+            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PayNo||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay End Date</div>
+            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</div>
+          </div>
+        </div>
+        <!-- Hidden fields to carry values through save -->
+        <input type="hidden" id="fb-client" value="${item.PSPClient||''}">
+        <input type="hidden" id="fb-paygroup" value="${getPayGroup(item)}">
+        <input type="hidden" id="fb-payno" value="${item.PayNo||''}">
+        <input type="hidden" id="fb-ppe" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
+        <input type="hidden" id="fb-billmonth" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item.BillingMonth||'')}">
+      </div>` : `
       <div style="background:linear-gradient(135deg,#f0fdf8 0%,#e6f9f3 100%);border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1.5px solid var(--teal-light);">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);"></div>
@@ -3227,33 +3259,32 @@ function openBillingForm(item = null) {
           <div class="form-group" style="margin:0;">
             <label>Client *</label>
             <select id="fb-client">
-              ${clients.map(c=>`<option ${(item?.PSPClient||bmSelectedClient)===c?'selected':''}>${c}</option>`).join('')}
+              ${clients.map(c=>`<option ${(bmSelectedClient)===c?'selected':''}>${c}</option>`).join('')}
             </select>
           </div>
           <div class="form-group" style="margin:0;">
             <label>Pay Group *</label>
-            <input type="text" id="fb-paygroup" value="${item ? getPayGroup(item) : ''}">
+            <input type="text" id="fb-paygroup" value="">
           </div>
           <div class="form-group" style="margin:0;">
             <label>Pay No *</label>
-            <input type="number" id="fb-payno" value="${item?.PayNo||''}">
+            <input type="number" id="fb-payno" value="">
           </div>
           <div class="form-group" style="margin:0;">
             <label>Pay End Date *</label>
-            <input type="date" id="fb-ppe" value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}"
+            <input type="date" id="fb-ppe"
               oninput="const d=new Date(this.value);const el=document.getElementById('fb-billmonth');if(el&&!isNaN(d))el.value=d.toLocaleDateString('en-GB',{month:'long'});">
           </div>
           <div class="form-group" style="margin:0;">
             <label>Payrun Number</label>
-            <input type="text" id="fb-payrun" value="${item?.Payrun||''}">
+            <input type="text" id="fb-payrun" value="">
           </div>
           <div class="form-group" style="margin:0;">
             <label>Billing Month <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span></label>
-            <input type="text" id="fb-billmonth" readonly style="background:var(--grey-100);color:var(--grey-500);"
-              value="${item?.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item?.BillingMonth||'')}">
+            <input type="text" id="fb-billmonth" readonly style="background:var(--grey-100);color:var(--grey-500);" value="">
           </div>
         </div>
-      </div>
+      </div>`}
 
       <!-- Headcount -->
       <div style="background:linear-gradient(135deg,#eff6ff 0%,#e8f2ff 100%);border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1.5px solid #bfdbfe;">
