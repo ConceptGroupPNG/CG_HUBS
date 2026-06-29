@@ -188,7 +188,7 @@
   }
   .inv-payrun-row {
     display: grid;
-    grid-template-columns: 40px 1fr 90px 100px 60px 60px 60px 60px 60px;
+    grid-template-columns: 40px 1fr 70px 80px 50px 45px 45px 45px 50px 60px 45px 45px;
     gap: 8px; align-items: center;
     padding: 10px 16px;
     border-bottom: 1px solid var(--grey-100);
@@ -200,7 +200,7 @@
   .inv-payrun-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--teal); }
   .inv-col-hdr {
     display: grid;
-    grid-template-columns: 40px 1fr 90px 100px 60px 60px 60px 60px 60px;
+    grid-template-columns: 40px 1fr 70px 80px 50px 45px 45px 45px 50px 60px 45px 45px;
     gap: 8px;
     padding: 8px 16px;
     background: var(--grey-50);
@@ -3627,13 +3627,16 @@ async function loadEligiblePayRuns(client) {
   let html = `<div class="inv-col-hdr">
     <div></div>
     <div>Pay No / PPE</div>
-    <div>Billing Month</div>
+    <div>Month</div>
     <div>Payrun</div>
-    <div style="text-align:center;">Emp</div>
-    <div style="text-align:center;">NH</div>
-    <div style="text-align:center;">Term</div>
-    <div style="text-align:center;">Non-Upd</div>
-    <div style="text-align:center;">LO</div>
+    <div style="text-align:center;" title="Employees/Payslips">Emp</div>
+    <div style="text-align:center;" title="Nationals">Nat</div>
+    <div style="text-align:center;" title="Expatriates">Exp</div>
+    <div style="text-align:center;" title="New Hires">NH</div>
+    <div style="text-align:center;" title="Terminations">Term</div>
+    <div style="text-align:center;" title="Non-Update Charges">Non-Upd</div>
+    <div style="text-align:center;" title="Lay-Offs">LO</div>
+    <div style="text-align:center;" title="Re-Hires / Cease Lay-Offs">RH</div>
   </div>`;
 
   Object.entries(groups).forEach(([pg, items]) => {
@@ -3653,11 +3656,14 @@ async function loadEligiblePayRuns(client) {
         </div>
         <div style="font-size:12px;">${getBillingMonth(i)||'—'}</div>
         <div style="font-size:12px;">${i.Payrun||'—'}</div>
-        <div style="text-align:center;font-weight:700;">${i.EmployeesPayslips||0}</div>
-        <div style="text-align:center;">${i.NewHires||0}</div>
-        <div style="text-align:center;">${i.Terminations||0}</div>
-        <div style="text-align:center;">${i.NonUpdateCharge||0}</div>
-        <div style="text-align:center;">${i.LayOff||0}</div>
+        <div style="text-align:center;font-weight:700;color:var(--navy);">${i.EmployeesPayslips||0}</div>
+        <div style="text-align:center;">${i.Nationals||0}</div>
+        <div style="text-align:center;">${i.Expatriate||0}</div>
+        <div style="text-align:center;${i.NewHires?'color:var(--teal);font-weight:700;':''}">${i.NewHires||0}</div>
+        <div style="text-align:center;${i.Terminations?'color:var(--red);font-weight:700;':''}">${i.Terminations||0}</div>
+        <div style="text-align:center;${i.NonUpdateCharge?'color:var(--warning);font-weight:700;':''}">${i.NonUpdateCharge||0}</div>
+        <div style="text-align:center;${i.LayOff?'color:var(--warning);font-weight:700;':''}">${i.LayOff||0}</div>
+        <div style="text-align:center;${i.CeaseLayOff?'color:var(--teal);font-weight:700;':''}">${i.CeaseLayOff||0}</div>
       </div>`;
     });
   });
