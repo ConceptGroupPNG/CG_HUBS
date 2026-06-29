@@ -1096,6 +1096,14 @@
             </div>
           </div>
 
+          <!-- Charts Row 4 — Last Pay Period -->
+          <div style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>Payslips by Client — Last Pay Period</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-last-payperiod"></canvas></div>
+            </div>
+          </div>
+
           <!-- Billing Pipeline Table -->
           <div class="card">
             <div class="card-header"><h3>Billing Pipeline by Client</h3></div>
@@ -4803,6 +4811,49 @@ async function loadFinanceDashboard() {
       { label: 'Re-Hires',  data: monthlyRH, backgroundColor: '#3b82f6', borderRadius: 4 },
     ]
   }, { scales: { y: { beginAtZero: true } } });
+
+  // ── CHART 7: Payslips by Client — Last Pay Period ──
+  // For each client, find the most recently completed pay run (highest PayNo with Process=true)
+  const lastPeriodByClient = {};
+  cache.billing.filter(i => i.Process && i.EmployeesPayslips).forEach(i => {
+    const client = i.PSPClient;
+    if (!client) return;
+    const existing = lastPeriodByClient[client];
+    const ppe = spDateToDate(i.PayEnddate);
+    if (!existing || (ppe && (!existing.ppe || ppe > existing.ppe))) {
+      lastPeriodByClient[client] = {
+        payslips: i.EmployeesPayslips,
+        pg: getPayGroup(i),
+        payNo: i.PayNo,
+        ppe,
+        ppeStr: fmtDate(i.PayEnddate),
+      };
+    }
+  });
+
+  const lpClients = Object.entries(lastPeriodByClient)
+    .sort((a,b) => b[1].payslips - a[1].payslips);
+
+  const lpCanvas = document.getElementById('chart-last-payperiod');
+  if (lpCanvas) lpCanvas.height = Math.max(200, lpClients.length * 34);
+
+  mkChart('chart-last-payperiod', 'bar', {
+    labels: lpClients.map(([c, d]) => `${c}  (${d.pg} Pay ${d.payNo} • ${d.ppeStr})`),
+    datasets: [{
+      label: 'Payslips',
+      data: lpClients.map(([,d]) => d.payslips),
+      backgroundColor: lpClients.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
+      borderRadius: 4,
+      barThickness: 24,
+    }]
+  }, {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { beginAtZero: true },
+      y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
+    }
+  });
 
   // ── BILLING PIPELINE TABLE ──
   const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort();
