@@ -209,6 +209,20 @@
     letter-spacing: 0.06em; color: var(--grey-500);
   }
 
+  /* ── FINANCE DASHBOARD ── */
+  .fin-pipeline-bar {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .fin-pip-dot {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; color: white;
+  }
+  .fin-pip-dot.complete { background: var(--teal); }
+  .fin-pip-dot.metrics  { background: var(--info); }
+  .fin-pip-dot.ready    { background: var(--warning); }
+  .fin-pip-dot.invoiced { background: var(--navy); }
+
 </style>
 <style>
   :root {
@@ -814,6 +828,7 @@
     background: var(--teal);
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -910,52 +925,196 @@
 
       <!-- DASHBOARD PAGE -->
       <div class="page active" id="page-dashboard">
-        <div class="metrics-grid" id="dashboard-metrics">
-          <div class="metric-card mc-teal">
-            <div class="metric-icon"><i class="ti ti-checklist"></i></div>
-            <div class="metric-info">
-              <div class="metric-value" id="m-my-today">—</div>
-              <div class="metric-label">My Activities Today</div>
+
+        <!-- Dashboard tab switcher -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <div class="tabs" style="margin:0;border:none;">
+            <div class="tab active" id="dash-tab-ops" onclick="switchDashTab('ops')">
+              <i class="ti ti-checklist" style="font-size:14px;margin-right:4px;"></i> Operations
+            </div>
+            <div class="tab" id="dash-tab-finance" onclick="switchDashTab('finance')">
+              <i class="ti ti-chart-bar" style="font-size:14px;margin-right:4px;"></i> Finance
             </div>
           </div>
-          <div class="metric-card mc-navy">
-            <div class="metric-icon"><i class="ti ti-users"></i></div>
-            <div class="metric-info">
-              <div class="metric-value" id="m-all-today">—</div>
-              <div class="metric-label">All Activities Today</div>
+          <div id="fin-year-filter" style="display:none;">
+            <select id="fin-year-sel" onchange="loadFinanceDashboard()" style="padding:6px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--navy);background:var(--white);outline:none;">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- OPERATIONS TAB -->
+        <div id="dash-ops-content">
+          <div class="metrics-grid" id="dashboard-metrics">
+            <div class="metric-card mc-teal">
+              <div class="metric-icon"><i class="ti ti-checklist"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="m-my-today">—</div>
+                <div class="metric-label">My Activities Today</div>
+              </div>
+            </div>
+            <div class="metric-card mc-navy">
+              <div class="metric-icon"><i class="ti ti-users"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="m-all-today">—</div>
+                <div class="metric-label">All Activities Today</div>
+              </div>
+            </div>
+            <div class="metric-card mc-warning">
+              <div class="metric-icon"><i class="ti ti-clock-pause"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="m-delayed">—</div>
+                <div class="metric-label">Delayed Today</div>
+              </div>
+            </div>
+            <div class="metric-card mc-red">
+              <div class="metric-icon"><i class="ti ti-clock-x"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="m-overdue">—</div>
+                <div class="metric-label">Overdue (Not Started)</div>
+              </div>
             </div>
           </div>
-          <div class="metric-card mc-warning">
-            <div class="metric-icon"><i class="ti ti-clock-pause"></i></div>
-            <div class="metric-info">
-              <div class="metric-value" id="m-delayed">—</div>
-              <div class="metric-label">Delayed Today</div>
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header">
+                <h3>My Activities Today</h3>
+                <button class="btn btn-sm btn-outline" onclick="navigate('my-activities')">View All</button>
+              </div>
+              <div id="dash-my-activities"><div class="loading"><div class="spinner"></div></div></div>
             </div>
-          </div>
-          <div class="metric-card mc-red">
-            <div class="metric-icon"><i class="ti ti-clock-x"></i></div>
-            <div class="metric-info">
-              <div class="metric-value" id="m-overdue">—</div>
-              <div class="metric-label">Overdue (Not Started)</div>
+            <div class="card">
+              <div class="card-header"><h3>Delayed &amp; Overdue</h3></div>
+              <div id="dash-delayed"><div class="loading"><div class="spinner"></div></div></div>
             </div>
           </div>
         </div>
 
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header">
-              <h3>My Activities Today</h3>
-              <button class="btn btn-sm btn-outline" onclick="navigate('my-activities')">View All</button>
+        <!-- FINANCE TAB -->
+        <div id="dash-finance-content" style="display:none;">
+
+          <!-- KPI Cards Row 1 — Billing -->
+          <div style="margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--grey-500);">Billing</div>
+          <div class="metrics-grid" style="margin-bottom:24px;" id="fin-billing-cards">
+            <div class="metric-card mc-teal">
+              <div class="metric-icon"><i class="ti ti-cash"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-ytd-revenue">—</div>
+                <div class="metric-label">Revenue YTD (PGK)</div>
+              </div>
             </div>
-            <div id="dash-my-activities"><div class="loading"><div class="spinner"></div></div></div>
+            <div class="metric-card mc-navy">
+              <div class="metric-icon"><i class="ti ti-file-invoice"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-inv-count">—</div>
+                <div class="metric-label">Invoices This Year</div>
+              </div>
+            </div>
+            <div class="metric-card mc-warning">
+              <div class="metric-icon"><i class="ti ti-clock-dollar"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-pipeline">—</div>
+                <div class="metric-label">Pipeline (Ready to Invoice)</div>
+              </div>
+            </div>
+            <div class="metric-card mc-red">
+              <div class="metric-icon"><i class="ti ti-chart-line"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-avg-payslip">—</div>
+                <div class="metric-label">Avg Charge / Payslip (PGK)</div>
+              </div>
+            </div>
           </div>
-          <div class="card">
-            <div class="card-header">
-              <h3>Delayed &amp; Overdue</h3>
+
+          <!-- KPI Cards Row 2 — Metrics -->
+          <div style="margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--grey-500);">Payroll Metrics</div>
+          <div class="metrics-grid" style="margin-bottom:24px;">
+            <div class="metric-card mc-teal">
+              <div class="metric-icon"><i class="ti ti-users"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-payslips-ytd">—</div>
+                <div class="metric-label">Total Payslips YTD</div>
+              </div>
             </div>
-            <div id="dash-delayed"><div class="loading"><div class="spinner"></div></div></div>
+            <div class="metric-card mc-navy">
+              <div class="metric-icon"><i class="ti ti-user-plus"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-nh-ytd">—</div>
+                <div class="metric-label">New Hires YTD</div>
+              </div>
+            </div>
+            <div class="metric-card mc-warning">
+              <div class="metric-icon"><i class="ti ti-user-minus"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-term-ytd">—</div>
+                <div class="metric-label">Terminations YTD</div>
+              </div>
+            </div>
+            <div class="metric-card mc-red">
+              <div class="metric-icon"><i class="ti ti-trending-up"></i></div>
+              <div class="metric-info">
+                <div class="metric-value" id="fin-net-hc">—</div>
+                <div class="metric-label">Net Headcount Change</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Row 1 -->
+          <div class="grid-2" style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>Monthly Revenue (PGK)</h3></div>
+              <div class="card-body"><canvas id="chart-revenue" height="200"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>New Hires vs Terminations</h3></div>
+              <div class="card-body"><canvas id="chart-nh-term" height="200"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Charts Row 2 -->
+          <div class="grid-2" style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>Revenue by Client (PGK YTD)</h3></div>
+              <div class="card-body" style="max-height:320px;overflow-y:auto;"><canvas id="chart-client-revenue"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>Payslips by Client YTD</h3></div>
+              <div class="card-body" style="max-height:320px;overflow-y:auto;"><canvas id="chart-client-payslips"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Charts Row 3 -->
+          <div class="grid-2" style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>Payslips by Pay Master</h3></div>
+              <div class="card-body"><canvas id="chart-member-payslips" height="200"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
+              <div class="card-body"><canvas id="chart-lo-rh" height="200"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Billing Pipeline Table -->
+          <div class="card">
+            <div class="card-header"><h3>Billing Pipeline by Client</h3></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr>
+                  <th>Client</th>
+                  <th style="text-align:center;">Pay Runs Complete</th>
+                  <th style="text-align:center;">Metrics Added</th>
+                  <th style="text-align:center;">Ready to Invoice</th>
+                  <th style="text-align:center;">Invoiced This Year</th>
+                  <th style="text-align:right;">Revenue YTD (PGK)</th>
+                </tr></thead>
+                <tbody id="fin-pipeline-tbody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
+
       </div>
 
       <!-- MY ACTIVITIES PAGE -->
@@ -1490,6 +1649,9 @@
 const CLIENT_ID = 'd5aef866-584f-4226-ab11-c941888fb519';
 const TENANT_ID = 'ea9e105c-2df6-47ef-a8e3-b4aa1d788423';
 const REDIRECT_URI = 'https://marcusappdev.github.io/CG_Training/psp-hub/';
+// Currency conversion rates to PGK
+const FX = { PGK: 1, AUD: 1/0.33, USD: 1/0.23 };
+function toPGK(amount, currency) { return amount * (FX[currency] || 1); }
 const SCOPES = ['Sites.ReadWrite.All', 'User.Read', 'offline_access'];
 const SITE_URL = 'https://conceptcompg.sharepoint.com/sites/PSP_Test';
 let SITE_ID = null;
@@ -1833,6 +1995,11 @@ async function refreshPage() {
       cache.lastinv = await getItems('lastinv');
     }
     if (currentPage === 'dashboard') {
+    if (currentDashTab === 'finance') {
+      cache.invoices = await getItems('invoices');
+      cache.billing = await getItems('billing');
+      await loadFinanceDashboard();
+    }
       // Dashboard needs everything
       await refreshCache();
     }
@@ -4375,6 +4542,223 @@ function populateMemberFilter(elId, items) {
 // ─────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// FINANCE DASHBOARD
+// ─────────────────────────────────────────────
+let finCharts = {};
+let currentDashTab = 'ops';
+
+function switchDashTab(tab) {
+  currentDashTab = tab;
+  ['ops','finance'].forEach(t => {
+    document.getElementById('dash-tab-' + t).classList.toggle('active', t === tab);
+    document.getElementById('dash-' + t + '-content').style.display = t === tab ? '' : 'none';
+  });
+  const yearFilter = document.getElementById('fin-year-filter');
+  if (yearFilter) yearFilter.style.display = tab === 'finance' ? '' : 'none';
+  if (tab === 'finance') loadFinanceDashboard();
+}
+
+function getFinYear() {
+  return parseInt(document.getElementById('fin-year-sel')?.value || new Date().getFullYear());
+}
+
+function destroyCharts() {
+  Object.values(finCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
+  finCharts = {};
+}
+
+function mkChart(id, type, data, options = {}) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (finCharts[id]) { try { finCharts[id].destroy(); } catch(e) {} }
+  finCharts[id] = new Chart(ctx, { type, data, options: {
+    responsive: true,
+    plugins: { legend: { position: 'top', labels: { font: { size: 11 }, padding: 10 } } },
+    ...options
+  }});
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const CHART_COLORS = [
+  '#0e9f6e','#1a2744','#3b82f6','#f59e0b','#cc1f2d',
+  '#8b5cf6','#06b6d4','#84cc16','#f97316','#ec4899',
+  '#64748b','#0891b2','#65a30d','#dc2626','#7c3aed',
+];
+
+async function loadFinanceDashboard() {
+  const year = getFinYear();
+  destroyCharts();
+
+  // Ensure data is loaded
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+  if (!cache.invoices.length) cache.invoices = await getItems('invoices');
+  if (!cache.calendar.length) cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+
+  // Filter billing records for selected year
+  const billingYear = cache.billing.filter(i => {
+    if (!i.PayEnddate) return false;
+    return spDateToDate(i.PayEnddate)?.getFullYear() === year;
+  });
+
+  // Filter invoices for selected year
+  const invoicesYear = cache.invoices.filter(i => {
+    if (!i.InvoiceDate) return false;
+    return new Date(i.InvoiceDate).getFullYear() === year;
+  });
+
+  // ── BILLING KPIs ──
+  const revenueYTD = invoicesYear.reduce((s,i) => s + toPGK(i.TotalAmount||0, i.Currency||'PGK'), 0);
+  const payslipsYTD = billingYear.reduce((s,i) => s + (i.EmployeesPayslips||0), 0);
+  const pipelineRecs = cache.billing.filter(i => i.Metrics && i.Process && !i.Billing);
+  // Pipeline value: use avg charge per payslip * pipeline payslips as estimate
+  const pipelinePayslips = pipelineRecs.reduce((s,i) => s + (i.EmployeesPayslips||0), 0);
+  const avgPerPayslip = payslipsYTD > 0 ? revenueYTD / payslipsYTD : 0;
+  const pipelineValue = pipelinePayslips * avgPerPayslip;
+
+  document.getElementById('fin-ytd-revenue').textContent = 'K' + (revenueYTD/1000).toFixed(0);
+  document.getElementById('fin-inv-count').textContent = invoicesYear.length;
+  document.getElementById('fin-pipeline').textContent = 'K' + (pipelineValue/1000).toFixed(0);
+  document.getElementById('fin-avg-payslip').textContent = avgPerPayslip.toFixed(2);
+
+  // ── METRICS KPIs ──
+  const nhYTD = billingYear.reduce((s,i) => s + (i.NewHires||0), 0);
+  const termYTD = billingYear.reduce((s,i) => s + (i.Terminations||0), 0);
+  const netHC = nhYTD - termYTD;
+  document.getElementById('fin-payslips-ytd').textContent = payslipsYTD.toLocaleString();
+  document.getElementById('fin-nh-ytd').textContent = nhYTD;
+  document.getElementById('fin-term-ytd').textContent = termYTD;
+  const netEl = document.getElementById('fin-net-hc');
+  netEl.textContent = (netHC >= 0 ? '+' : '') + netHC;
+  netEl.style.color = netHC >= 0 ? 'white' : '#ffd4d4';
+
+  // ── CHART 1: Monthly Revenue ──
+  const monthlyRevenue = Array(12).fill(0);
+  invoicesYear.forEach(i => {
+    const m = new Date(i.InvoiceDate).getMonth();
+    monthlyRevenue[m] += toPGK(i.TotalAmount||0, i.Currency||'PGK');
+  });
+  mkChart('chart-revenue', 'bar', {
+    labels: MONTHS,
+    datasets: [{ label: 'Revenue PGK', data: monthlyRevenue, backgroundColor: '#0e9f6e', borderRadius: 6 }]
+  }, { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => 'K'+(v/1000).toFixed(0) } } } });
+
+  // ── CHART 2: NH vs Terminations monthly ──
+  const monthlyNH   = Array(12).fill(0);
+  const monthlyTerm = Array(12).fill(0);
+  billingYear.forEach(i => {
+    const d = spDateToDate(i.PayEnddate);
+    if (!d) return;
+    const m = d.getMonth();
+    monthlyNH[m]   += i.NewHires||0;
+    monthlyTerm[m] += i.Terminations||0;
+  });
+  mkChart('chart-nh-term', 'bar', {
+    labels: MONTHS,
+    datasets: [
+      { label: 'New Hires',      data: monthlyNH,   backgroundColor: '#0e9f6e', borderRadius: 4 },
+      { label: 'Terminations',   data: monthlyTerm, backgroundColor: '#cc1f2d', borderRadius: 4 },
+    ]
+  }, { scales: { y: { beginAtZero: true } } });
+
+  // ── CHART 3: Revenue by Client ──
+  const clientRevenue = {};
+  invoicesYear.forEach(i => {
+    const c = i.PSPClient || 'Unknown';
+    clientRevenue[c] = (clientRevenue[c]||0) + toPGK(i.TotalAmount||0, i.Currency||'PGK');
+  });
+  const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
+  const crHeight = Math.max(200, crSorted.length * 30);
+  document.getElementById('chart-client-revenue').height = crHeight;
+  mkChart('chart-client-revenue', 'bar', {
+    labels: crSorted.map(([c]) => c),
+    datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v), backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]), borderRadius: 4 }]
+  }, {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { callback: v => 'K'+(v/1000).toFixed(0) } } }
+  });
+
+  // ── CHART 4: Payslips by Client ──
+  const clientPayslips = {};
+  billingYear.forEach(i => {
+    const c = i.PSPClient || 'Unknown';
+    clientPayslips[c] = (clientPayslips[c]||0) + (i.EmployeesPayslips||0);
+  });
+  const cpSorted = Object.entries(clientPayslips).sort((a,b) => b[1]-a[1]);
+  const cpHeight = Math.max(200, cpSorted.length * 30);
+  document.getElementById('chart-client-payslips').height = cpHeight;
+  mkChart('chart-client-payslips', 'bar', {
+    labels: cpSorted.map(([c]) => c),
+    datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v), backgroundColor: cpSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]), borderRadius: 4 }]
+  }, {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } }
+  });
+
+  // ── CHART 5: Payslips by Pay Master ──
+  const memberPayslips = {};
+  cache.calendar.filter(i => {
+    const d = spDateToDate(i.PayEndDate || i.ActivityDateTime);
+    return d && d.getFullYear() === year && getActStatus(i) === 'Finished';
+  }).forEach(i => {
+    const m = getPSPMember(i) || 'Unknown';
+    memberPayslips[m] = (memberPayslips[m]||0) + 1;
+  });
+  // Use billing data for payslips per member (match PSPMember from calendar to billing)
+  // Better: count pay runs finished per member
+  const mpSorted = Object.entries(memberPayslips).sort((a,b) => b[1]-a[1]);
+  mkChart('chart-member-payslips', 'bar', {
+    labels: mpSorted.map(([m]) => m),
+    datasets: [{ label: 'Activities Completed', data: mpSorted.map(([,v]) => v), backgroundColor: '#1a2744', borderRadius: 4 }]
+  }, {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } }
+  });
+
+  // ── CHART 6: Lay-Offs vs Re-Hires ──
+  const monthlyLO = Array(12).fill(0);
+  const monthlyRH = Array(12).fill(0);
+  billingYear.forEach(i => {
+    const d = spDateToDate(i.PayEnddate);
+    if (!d) return;
+    const m = d.getMonth();
+    monthlyLO[m] += i.LayOff||0;
+    monthlyRH[m] += i.CeaseLayOff||0;
+  });
+  mkChart('chart-lo-rh', 'bar', {
+    labels: MONTHS,
+    datasets: [
+      { label: 'Lay-Offs',  data: monthlyLO, backgroundColor: '#f59e0b', borderRadius: 4 },
+      { label: 'Re-Hires',  data: monthlyRH, backgroundColor: '#3b82f6', borderRadius: 4 },
+    ]
+  }, { scales: { y: { beginAtZero: true } } });
+
+  // ── BILLING PIPELINE TABLE ──
+  const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort();
+  const tbody = document.getElementById('fin-pipeline-tbody');
+
+  tbody.innerHTML = clients.map(client => {
+    const recs = cache.billing.filter(i => i.PSPClient === client);
+    const complete = recs.filter(i => i.Process).length;
+    const metrics  = recs.filter(i => i.Metrics).length;
+    const ready    = recs.filter(i => i.Metrics && i.Process && !i.Billing).length;
+    const invoiced = recs.filter(i => i.Billing).length;
+    const revenue  = invoicesYear.filter(i => i.PSPClient === client).reduce((s,i) => s + toPGK(i.TotalAmount||0, i.Currency||'PGK'), 0);
+    return `<tr>
+      <td style="font-weight:600;">${client}</td>
+      <td style="text-align:center;"><span class="fin-pip-dot complete" style="margin:0 auto;">${complete}</span></td>
+      <td style="text-align:center;"><span class="fin-pip-dot metrics" style="margin:0 auto;">${metrics}</span></td>
+      <td style="text-align:center;"><span class="fin-pip-dot ready" style="margin:0 auto;">${ready}</span></td>
+      <td style="text-align:center;"><span class="fin-pip-dot invoiced" style="margin:0 auto;">${invoiced}</span></td>
+      <td style="text-align:right;font-weight:700;">K${(revenue/1000).toFixed(1)}</td>
+    </tr>`;
+  }).join('');
+}
+
 async function initApp(token) {
   accessToken = token;
   const me = await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName');
