@@ -1076,11 +1076,11 @@
           <div class="grid-2" style="margin-bottom:20px;">
             <div class="card">
               <div class="card-header"><h3>Revenue by Client (PGK YTD)</h3></div>
-              <div class="card-body" style="max-height:320px;overflow-y:auto;"><canvas id="chart-client-revenue"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-client-revenue"></canvas></div>
             </div>
             <div class="card">
               <div class="card-header"><h3>Payslips by Client YTD</h3></div>
-              <div class="card-body" style="max-height:320px;overflow-y:auto;"><canvas id="chart-client-payslips"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-client-payslips"></canvas></div>
             </div>
           </div>
 
@@ -4671,13 +4671,21 @@ async function loadFinanceDashboard() {
   const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
   const crHeight = Math.max(200, crSorted.length * 30);
   document.getElementById('chart-client-revenue').height = crHeight;
+  const crCanvas = document.getElementById('chart-client-revenue');
+  if (crCanvas) crCanvas.height = Math.max(260, crSorted.length * 36);
   mkChart('chart-client-revenue', 'bar', {
     labels: crSorted.map(([c]) => c),
-    datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v), backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]), borderRadius: 4 }]
+    datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v),
+      backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
+      borderRadius: 4, barThickness: 22 }]
   }, {
     indexAxis: 'y',
     plugins: { legend: { display: false } },
-    scales: { x: { beginAtZero: true, ticks: { callback: v => 'K'+(v/1000).toFixed(0) } } }
+    layout: { padding: { left: 0 } },
+    scales: {
+      x: { beginAtZero: true, ticks: { callback: v => 'K'+(v/1000).toFixed(0) } },
+      y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
+    }
   });
 
   // ── CHART 4: Payslips by Client ──
@@ -4687,15 +4695,20 @@ async function loadFinanceDashboard() {
     clientPayslips[c] = (clientPayslips[c]||0) + (i.EmployeesPayslips||0);
   });
   const cpSorted = Object.entries(clientPayslips).sort((a,b) => b[1]-a[1]);
-  const cpHeight = Math.max(200, cpSorted.length * 30);
-  document.getElementById('chart-client-payslips').height = cpHeight;
+  const cpCanvas = document.getElementById('chart-client-payslips');
+  if (cpCanvas) cpCanvas.height = Math.max(260, cpSorted.length * 36);
   mkChart('chart-client-payslips', 'bar', {
     labels: cpSorted.map(([c]) => c),
-    datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v), backgroundColor: cpSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]), borderRadius: 4 }]
+    datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v),
+      backgroundColor: cpSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
+      borderRadius: 4, barThickness: 22 }]
   }, {
     indexAxis: 'y',
     plugins: { legend: { display: false } },
-    scales: { x: { beginAtZero: true } }
+    scales: {
+      x: { beginAtZero: true },
+      y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
+    }
   });
 
   // ── CHART 5: Payslips by Pay Master ──
