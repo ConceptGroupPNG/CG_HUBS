@@ -1497,6 +1497,8 @@ async function graphFetch(url, opts = {}) {
       accessToken = newToken;
       headers.Authorization = `Bearer ${accessToken}`;
       r = await fetch(url, { ...opts, headers });
+    } else {
+      throw new Error('401 Unauthorized — session expired');
     }
   }
   if (!r.ok) {
@@ -1729,15 +1731,40 @@ function navigate(page) {
   loadPage(page);
 }
 
+async function handleTokenExpiry() {
+  // Try to refresh the token silently
+  const newToken = await refreshToken();
+  if (newToken) {
+    accessToken = newToken;
+    showToast('Session refreshed — reloading...', 'success');
+    setTimeout(() => loadPage(currentPage), 500);
+  } else {
+    // Can't refresh — show session expired message and redirect to sign in
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    showToast('Session expired — please sign in again', 'error');
+    localStorage.removeItem('psp_access_token');
+    localStorage.removeItem('psp_refresh_token');
+  }
+}
+
 async function loadPage(page) {
-  if (page === 'dashboard') await loadDashboard();
-  else if (page === 'my-activities') await loadMyActivities();
-  else if (page === 'all-activities') await loadAllActivities();
-  else if (page === 'calendar') await loadCalendar();
-  else if (page === 'generate-calendar') await loadGenerateCalendar();
-  else if (page === 'templates') await loadTemplates();
-  else if (page === 'billing-metrics') await loadBillingMetrics();
-  else if (page === 'generate-invoice') await loadGenerateInvoice();
+  try {
+    if (page === 'dashboard') await loadDashboard();
+    else if (page === 'my-activities') await loadMyActivities();
+    else if (page === 'all-activities') await loadAllActivities();
+    else if (page === 'calendar') await loadCalendar();
+    else if (page === 'generate-calendar') await loadGenerateCalendar();
+    else if (page === 'templates') await loadTemplates();
+    else if (page === 'billing-metrics') await loadBillingMetrics();
+    else if (page === 'generate-invoice') await loadGenerateInvoice();
+  } catch(e) {
+    if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
+      await handleTokenExpiry();
+    } else {
+      showToast('Error loading page: ' + e.message, 'error');
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -3430,19 +3457,27 @@ async function saveBillingMetrics() {
 // GENERATE INVOICE
 // ─────────────────────────────────────────────
 async function loadGenerateInvoice() {
-  if (!cache.clients.length) cache.clients = await getItems('clients');
-  if (!cache.fees.length) cache.fees = await getItems('fees');
-  if (!cache.billing.length) cache.billing = await getItems('billing');
-  if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
-  const sel = document.getElementById('inv-client');
-  sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${getClientName(c)}</option>`).join('');
-  const now = new Date();
-  const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
-  const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  document.getElementById('inv-date').value = lastDayPrev.toISOString().slice(0, 10);
-  document.getElementById('inv-due').value = lastDayCurr.toISOString().slice(0, 10);
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  document.getElementById('inv-month').value = monthNames[lastDayPrev.getMonth()];
+  try {
+    if (!cache.clients.length) cache.clients = await getItems('clients');
+    if (!cache.fees.length) cache.fees = await getItems('fees');
+    if (!cache.billing.length) cache.billing = await getItems('billing');
+    if (!cache.lastinv.length) cache.lastinv = await getItems('lastinv');
+    const sel = document.getElementById('inv-client');
+    sel.innerHTML = '<option value="">Select Client...</option>' + cache.clients.map(c => `<option>${getClientName(c)}</option>`).join('');
+    const now = new Date();
+    const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastDayCurr = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    document.getElementById('inv-date').value = lastDayPrev.toISOString().slice(0, 10);
+    document.getElementById('inv-due').value = lastDayCurr.toISOString().slice(0, 10);
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    document.getElementById('inv-month').value = monthNames[lastDayPrev.getMonth()];
+  } catch(e) {
+    if (e.message && e.message.includes('401')) {
+      await handleTokenExpiry();
+    } else {
+      showToast('Error loading invoice data: ' + e.message, 'error');
+    }
+  }
 }
 
 function onInvClientChange() {
