@@ -1174,7 +1174,6 @@
                   <th style="width:45px;" title="Re-Hires / Cease Lay-Offs">RH</th>
                   <th style="width:60px;" title="Pay Run Complete">Process</th>
                   <th style="width:60px;" title="Billing Metrics Added">Metrics</th>
-                  <th style="width:60px;" title="Nominated for Billing">Nom</th>
                   <th style="width:60px;" title="Invoice Exported">Billed</th>
                   <th>Actions</th>
                 </tr>
@@ -3103,7 +3102,7 @@ function renderBillingMetrics() {
   if (billed === 'false') items = items.filter(i => !i.Billing);
   items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
   const tbody = document.getElementById('billing-metrics-tbody');
-  if (!items.length) { tbody.innerHTML = '<tr><td colspan="19"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="18"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
   const tick = '<i class="ti ti-check" style="color:var(--teal);font-size:14px;"></i>';
   const cross = '<span style="color:var(--grey-300);font-size:14px;">—</span>';
   tbody.innerHTML = items.map(i => `
@@ -3124,7 +3123,6 @@ function renderBillingMetrics() {
       <td style="text-align:center;">${i.CeaseLayOff||0}</td>
       <td style="text-align:center;">${i.Process ? tick : cross}</td>
       <td style="text-align:center;">${i.Metrics ? tick : cross}</td>
-      <td style="text-align:center;">${i.NominateForBilling ? tick : cross}</td>
       <td style="text-align:center;">${i.Billing ? tick : cross}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="openBillingFormById('${i.id}')">Edit</button>
