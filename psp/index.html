@@ -875,6 +875,9 @@
       <div class="nav-item" onclick="navigate('generate-invoice')">
         <i class="ti ti-file-invoice"></i> Generate Invoice
       </div>
+      <div class="nav-item" onclick="navigate('invoices')">
+        <i class="ti ti-receipt"></i> Invoices
+      </div>
     </div>
 
     <div class="sidebar-user">
@@ -1349,6 +1352,59 @@
         </div>
       </div>
 
+      <!-- INVOICES PAGE -->
+      <div class="page" id="page-invoices">
+        <div class="filter-bar">
+          <select id="filter-inv-client" onchange="renderInvoices()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="filter-inv-status" onchange="renderInvoices()">
+            <option value="">All Statuses</option>
+            <option>Draft</option>
+            <option>Issued</option>
+            <option>Voided</option>
+          </select>
+          <select id="filter-inv-month" onchange="renderInvoices()">
+            <option value="">All Months</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+          <select id="filter-inv-year" onchange="renderInvoices()">
+            <option value="">All Years</option>
+            <option>2026</option><option>2025</option>
+          </select>
+          <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice No</th>
+                  <th>Client</th>
+                  <th>Billing Month</th>
+                  <th>Invoice Date</th>
+                  <th>Due Date</th>
+                  <th>Pay Runs</th>
+                  <th style="text-align:right;">Sub Total</th>
+                  <th style="text-align:right;">Tax</th>
+                  <th style="text-align:right;">Total</th>
+                  <th>Currency</th>
+                  <th>Status</th>
+                  <th>Exported By</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="invoices-tbody">
+                <tr><td colspan="13"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /page-content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1445,6 +1501,7 @@ const LISTS = {
   fees:        'PSP_Processing_Fees',
   clients:     'PSP_Client_Details',
   lastinv:     'PSP_Last_Invoice',
+  invoices:    'PSP_Invoices',
 };
 
 // ─────────────────────────────────────────────
@@ -1467,6 +1524,7 @@ const cache = {
   fees: [],
   clients: [],
   lastinv: [],
+  invoices: [],
   listsMap: {},
 };
 
@@ -1762,7 +1820,10 @@ async function refreshPage() {
     if (currentPage === 'billing-metrics' || currentPage === 'generate-invoice') {
       cache.billing = await getItems('billing');
     }
-    if (currentPage === 'generate-invoice') {
+    if (currentPage === 'invoices') {
+    cache.invoices = await getItems('invoices');
+  }
+  if (currentPage === 'generate-invoice') {
       cache.clients = await getItems('clients');
       cache.fees = await getItems('fees');
       cache.lastinv = await getItems('lastinv');
@@ -1796,6 +1857,7 @@ function navigate(page) {
     'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
     'generate-invoice': 'Generate Invoice',
+    'invoices': 'Invoices',
   };
   document.getElementById('page-title').textContent = titles[page] || page;
   document.getElementById('topbar-actions').innerHTML = '';
@@ -1829,6 +1891,7 @@ async function loadPage(page) {
     else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
     else if (page === 'generate-invoice') await loadGenerateInvoice();
+  else if (page === 'invoices') await loadInvoices();
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
       await handleTokenExpiry();
@@ -3943,24 +4006,73 @@ function exportInvoiceCSV() {
 
 async function markAsBilled() {
   const invNo = invoiceLines[0]?.InvoiceNumber;
-  const total = invoiceLines[0]?.Total;
+  const total = invoiceLines.reduce((s,l) => s + (l.SubTotal||0), 0);
+  const taxTotal = invoiceLines.reduce((s,l) => s + (l.TaxAmount||0), 0);
+  const grandTotal = total + taxTotal;
+  const clientName = document.getElementById('inv-client-label')?.textContent || '';
+  const invDate = document.getElementById('inv-date')?.value || '';
+  const dueDate = document.getElementById('inv-due')?.value || '';
+  const billingMonth = document.getElementById('inv-month')?.value || '';
 
   // Stage 3: Set Billing = true on all nominated records
+  const billingRecordIDs = [];
   for (const rec of nominatedRecords) {
     try {
       await saveWithFieldFallback(true, 'billing', rec.id, {
         Billing: true,
         InvNo: invNo,
-        Amount: total,
+        Amount: Math.round(grandTotal * 100) / 100,
       });
-      // Update local cache immediately
+      billingRecordIDs.push(rec.id);
       const bIdx = cache.billing.findIndex(b => b.id === rec.id);
       if (bIdx >= 0) {
         cache.billing[bIdx].Billing = true;
         cache.billing[bIdx].InvNo = invNo;
-        cache.billing[bIdx].Amount = total;
       }
     } catch(e) { console.warn('Could not mark as billed:', e); }
+  }
+
+  // Find client details for invoice record
+  const clientDetails = cache.clients.find(c => getClientName(c) === clientName) || {};
+
+  // Build pay runs summary string
+  const payRunsSummary = nominatedRecords
+    .map(r => `${getPayGroup(r)} Pay ${r.PayNo} PPE:${fmtDate(r.PayEnddate)}`)
+    .join(', ');
+
+  // Save full invoice to PSP_Invoices
+  try {
+    await createItem('invoices', {
+      Title: invNo,
+      InvoiceDate: invDate ? new Date(invDate).toISOString() : null,
+      DueDate: dueDate ? new Date(dueDate).toISOString() : null,
+      BillingMonth: billingMonth,
+      PSPClient: clientName,
+      ContactName: clientDetails.ClientInvoiceName || clientName,
+      EmailAddress: clientDetails.EmailAddress || '',
+      Currency: clientDetails.Currency || 'PGK',
+      TaxType: clientDetails.TaxType || 'Tax on Sales',
+      SubTotal: Math.round(total * 100) / 100,
+      TaxAmount: Math.round(taxTotal * 100) / 100,
+      TotalAmount: Math.round(grandTotal * 100) / 100,
+      AccountCode: clientDetails.AccountCode || '',
+      Reference: invoiceLines[0]?.Reference || '',
+      LineItems: JSON.stringify(invoiceLines.map(l => ({
+        PayGroup: l.PayGroup, PayNo: l.PayNo, PPE: l.PPE,
+        Category: l.Category, Description: l.Description,
+        Quantity: l.Quantity, UnitAmount: l.UnitAmount,
+        SubTotal: l.SubTotal, TaxAmount: l.TaxAmount,
+      }))),
+      PayRuns: payRunsSummary,
+      BillingRecordIDs: billingRecordIDs.join(','),
+      ExportedBy: currentUser?.displayName || '',
+      ExportedDate: new Date().toISOString(),
+      Status: 'Draft',
+    });
+    console.log('[PSP_HUB] Invoice saved to PSP_Invoices');
+  } catch(e) {
+    console.warn('Could not save to PSP_Invoices:', e.message);
+    showToast('Warning: Invoice exported but could not save to PSP_Invoices: ' + e.message, 'error');
   }
 
   // Update last invoice number
@@ -3973,21 +4085,217 @@ async function markAsBilled() {
     } catch(e) { console.warn('Could not update last invoice no:', e); }
   }
 
-  // Refresh billing cache from SharePoint
   cache.billing = await getItems('billing');
-  // Update last invoice number display
+  cache.invoices = await getItems('invoices');
+
   const newNo = parseInt(invNo.replace('INV-',''));
   if (!isNaN(newNo)) {
     const numEl = document.getElementById('inv-number');
     if (numEl) numEl.value = 'INV-' + (newNo + 1);
   }
-  showToast(`Invoice ${invNo} exported — ${nominatedRecords.length} record(s) marked as billed`, 'success');
-  // Reload eligible pay runs to reflect updated state
-  const client = document.getElementById('inv-client-label')?.textContent;
-  if (client) await loadEligiblePayRuns(client);
+  showToast(`Invoice ${invNo} exported and saved to PSP_Invoices as Draft — import to Xero and mark as Issued`, 'success');
+  if (clientName) await loadEligiblePayRuns(clientName);
   document.getElementById('inv-preview-card').style.display = 'none';
   invoiceLines = [];
   nominatedRecords = [];
+}
+
+// ─────────────────────────────────────────────
+// INVOICES
+// ─────────────────────────────────────────────
+async function loadInvoices() {
+  if (!cache.invoices.length) cache.invoices = await getItems('invoices');
+  populateClientFilter('filter-inv-client', cache.invoices.map(i => ({PSPClient: i.PSPClient})));
+  renderInvoices();
+}
+
+function renderInvoices() {
+  const client = document.getElementById('filter-inv-client')?.value || '';
+  const status = document.getElementById('filter-inv-status')?.value || '';
+  const month  = document.getElementById('filter-inv-month')?.value || '';
+  const year   = document.getElementById('filter-inv-year')?.value || '';
+  const search = (document.getElementById('filter-inv-search')?.value || '').toLowerCase();
+
+  let items = [...cache.invoices];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (status) items = items.filter(i => (i.Status||'Issued') === status);
+  if (month)  items = items.filter(i => i.BillingMonth === month);
+  if (year)   items = items.filter(i => i.InvoiceDate && new Date(i.InvoiceDate).getFullYear() === parseInt(year));
+  if (search) items = items.filter(i =>
+    (i.Title||'').toLowerCase().includes(search) ||
+    (i.PSPClient||'').toLowerCase().includes(search) ||
+    (i.PayRuns||'').toLowerCase().includes(search)
+  );
+  items.sort((a,b) => (b.Title||'').localeCompare(a.Title||''));
+
+  const tbody = document.getElementById('invoices-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-receipt"></i><p>No invoices found</p></div></td></tr>';
+    return;
+  }
+
+  const statusBadgeInv = s => {
+    const cls = s==='Issued'?'finished':s==='Voided'?'delayed':'not-started';
+    return `<span class="badge badge-${cls}">${s||'Issued'}</span>`;
+  };
+
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td><strong style="color:var(--navy);">${i.Title||'—'}</strong></td>
+      <td>${i.PSPClient||'—'}</td>
+      <td>${i.BillingMonth||'—'}</td>
+      <td style="white-space:nowrap;">${fmtDate(i.InvoiceDate)}</td>
+      <td style="white-space:nowrap;">${fmtDate(i.DueDate)}</td>
+      <td style="font-size:11px;max-width:200px;">${i.PayRuns||'—'}</td>
+      <td style="text-align:right;">${(i.SubTotal||0).toFixed(2)}</td>
+      <td style="text-align:right;">${(i.TaxAmount||0).toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700;color:var(--navy);">${(i.TotalAmount||0).toFixed(2)}</td>
+      <td>${i.Currency||'PGK'}</td>
+      <td>${statusBadgeInv(i.Status)}</td>
+      <td style="font-size:11px;">${i.ExportedBy||'—'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-xs btn-outline" onclick="viewInvoiceById('${i.id}')">
+          <i class="ti ti-eye"></i> View
+        </button>
+        <button class="btn btn-xs btn-outline" onclick="editInvoiceStatus('${i.id}')">
+          <i class="ti ti-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-teal" onclick="reExportInvoice('${i.id}')">
+          <i class="ti ti-download"></i>
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+function viewInvoiceById(id) {
+  const inv = cache.invoices.find(i => String(i.id) === String(id));
+  if (!inv) return;
+  let lines = [];
+  try { lines = JSON.parse(inv.LineItems || '[]'); } catch(e) {}
+
+  const rows = lines.map(l => `
+    <tr>
+      <td>${l.PayGroup||'—'}</td><td>${l.PayNo||'—'}</td><td>${l.PPE||'—'}</td>
+      <td>${l.Category||'—'}</td>
+      <td style="font-size:11px;max-width:250px;">${(l.Description||'').replace(/\n/g,'<br>')}</td>
+      <td style="text-align:right;">${l.Quantity||0}</td>
+      <td style="text-align:right;">${(l.UnitAmount||0).toFixed(2)}</td>
+      <td style="text-align:right;">${(l.TaxAmount||0).toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700;">${(l.SubTotal||0).toFixed(2)}</td>
+    </tr>`).join('');
+
+  document.getElementById('modal-title').textContent = inv.Title + ' — ' + inv.PSPClient;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:linear-gradient(135deg,var(--teal-light),#e0faf2);border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1.5px solid var(--teal-light);">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:12px;">
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Invoice Date</div><strong>${fmtDate(inv.InvoiceDate)}</strong></div>
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Due Date</div><strong>${fmtDate(inv.DueDate)}</strong></div>
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Billing Month</div><strong>${inv.BillingMonth||'—'}</strong></div>
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Currency</div><strong>${inv.Currency||'PGK'}</strong></div>
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Tax Type</div><strong>${inv.TaxType||'—'}</strong></div>
+        <div><div style="color:var(--grey-500);font-size:10px;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Status</div><strong>${inv.Status||'Issued'}</strong></div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--grey-500);margin-bottom:12px;">${inv.PayRuns||''}</div>
+    <div class="table-wrap" style="margin-bottom:16px;">
+      <table style="font-size:12px;">
+        <thead><tr><th>Pay Group</th><th>Pay No</th><th>PPE</th><th>Category</th><th>Description</th>
+        <th style="text-align:right;">Qty</th><th style="text-align:right;">Unit</th>
+        <th style="text-align:right;">Tax</th><th style="text-align:right;">Sub Total</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--grey-200);">
+          <td colspan="8" style="text-align:right;font-weight:700;padding:10px 14px;">TOTAL (incl. tax)</td>
+          <td style="text-align:right;font-weight:800;color:var(--navy);padding:10px 14px;">${inv.Currency||'PGK'} ${(inv.TotalAmount||0).toFixed(2)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--grey-500);">Exported by ${inv.ExportedBy||'—'} on ${fmtDateTime(inv.ExportedDate)}</div>`;
+
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Close</button>
+    <button class="btn btn-teal" onclick="reExportInvoice('${id}');closeModal()"><i class="ti ti-download"></i> Re-export CSV</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function editInvoiceStatus(id) {
+  const inv = cache.invoices.find(i => String(i.id) === String(id));
+  if (!inv) return;
+  document.getElementById('modal-title').textContent = 'Update Invoice Status';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Invoice</label>
+      <input type="text" readonly value="${inv.Title} — ${inv.PSPClient}" style="font-weight:700;">
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="inv-status-sel">
+        <option ${inv.Status==='Draft'?'selected':''}>Draft</option>
+        <option ${inv.Status==='Issued'||!inv.Status?'selected':''}>Issued</option>
+        <option ${inv.Status==='Voided'?'selected':''}>Voided</option>
+      </select>
+    </div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-teal" onclick="saveInvoiceStatus('${id}')"><i class="ti ti-check"></i> Save</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveInvoiceStatus(id) {
+  const status = document.getElementById('inv-status-sel').value;
+  try {
+    await saveWithFieldFallback(true, 'invoices', id, { Status: status });
+    const idx = cache.invoices.findIndex(i => String(i.id) === String(id));
+    if (idx >= 0) cache.invoices[idx].Status = status;
+    closeModal();
+    renderInvoices();
+    showToast('Invoice status updated', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function reExportInvoice(id) {
+  const inv = cache.invoices.find(i => String(i.id) === String(id));
+  if (!inv) return;
+  let lines = [];
+  try { lines = JSON.parse(inv.LineItems || '[]'); } catch(e) {}
+  if (!lines.length) { showToast('No line items found for this invoice', 'error'); return; }
+
+  // Reconstruct full invoice lines with all CSV fields
+  const fullLines = lines.map(l => ({
+    ...l,
+    InvoiceNumber: inv.Title,
+    Reference: inv.Reference || '',
+    InvoiceDate: inv.InvoiceDate ? new Date(inv.InvoiceDate).toISOString().slice(0,10) : '',
+    DueDate: inv.DueDate ? new Date(inv.DueDate).toISOString().slice(0,10) : '',
+    ContactName: inv.ContactName || '',
+    EmailAddress: inv.EmailAddress || '',
+    AccountCode: inv.AccountCode || '201',
+    TaxType: inv.TaxType || 'Tax on Sales',
+    Currency: inv.Currency || 'PGK',
+    Total: inv.TotalAmount || 0,
+  }));
+
+  const headers = ['ContactName','EmailAddress','POAddressLine11','POCity','POCountry','PORegion',
+    'InvoiceNumber','Reference','InvoiceDate','DueDate','Total','InventoryItemCode',
+    'Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount',
+    'TrackingName1','TrackingOption1','Currency'];
+
+  const rows = fullLines.map(l => headers.map(h => {
+    const map = {'POAddressLine11': l.POAddressLine1||'', 'InventoryItemCode': l.InventoryItemCode||'Bureau',
+                 'TrackingName1': l.TrackingName1||'Department', 'TrackingOption1': l.TrackingOption1||'Bureau/PSP',
+                 'POCity':'','POCountry':'','PORegion':''};
+    const val = map[h] !== undefined ? map[h] : (l[h] !== undefined ? l[h] : '');
+    const s = String(val === null ? '' : val);
+    const needsQuote = s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0;
+    return needsQuote ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(inv.PSPClient||'').replace(/[^a-z0-9]/gi,'_')}_${inv.Title}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast(`Re-exported ${inv.Title}`, 'success');
 }
 
 // ─────────────────────────────────────────────
