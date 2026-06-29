@@ -4854,22 +4854,40 @@ async function loadFinanceDashboard() {
   }, { scales: { y: { beginAtZero: true } } });
 
   // ── CHART 7: Payslips by Client — Last Pay Period ──
-  // For each client, find the most recently completed pay run (highest PayNo with Process=true)
-  const lastPeriodByClient = {};
-  cache.billing.filter(i => i.Process && i.EmployeesPayslips).forEach(i => {
+  // For each client, find the latest PPE date across all pay groups (Process=true)
+  // then sum payslips for ALL pay runs sharing that same PPE date
+  const clientLatestPPE = {};
+  cache.billing.filter(i => i.Process && i.EmployeesPayslips && i.PSPClient).forEach(i => {
     const client = i.PSPClient;
-    if (!client) return;
-    const existing = lastPeriodByClient[client];
     const ppe = spDateToDate(i.PayEnddate);
-    if (!existing || (ppe && (!existing.ppe || ppe > existing.ppe))) {
+    if (!ppe) return;
+    if (!clientLatestPPE[client] || ppe > clientLatestPPE[client]) {
+      clientLatestPPE[client] = ppe;
+    }
+  });
+
+  const lastPeriodByClient = {};
+  cache.billing.filter(i => i.Process && i.EmployeesPayslips && i.PSPClient).forEach(i => {
+    const client = i.PSPClient;
+    const ppe = spDateToDate(i.PayEnddate);
+    if (!ppe || !clientLatestPPE[client]) return;
+    // Only include records matching the client's latest PPE
+    if (ppe.toDateString() !== clientLatestPPE[client].toDateString()) return;
+    if (!lastPeriodByClient[client]) {
       lastPeriodByClient[client] = {
-        payslips: i.EmployeesPayslips,
-        pg: getPayGroup(i),
+        payslips: 0,
+        payGroups: [],
         payNo: i.PayNo,
         ppe,
         ppeStr: fmtDate(i.PayEnddate),
       };
     }
+    const emp = i.EmployeesPayslips || 0;
+    if (emp > lastPeriodByClient[client].payslips) {
+      lastPeriodByClient[client].payslips = emp;
+      lastPeriodByClient[client].mainPayGroup = getPayGroup(i);
+    }
+    lastPeriodByClient[client].payGroups.push(getPayGroup(i));
   });
 
   const lpClients = Object.entries(lastPeriodByClient)
@@ -4879,7 +4897,7 @@ async function loadFinanceDashboard() {
   if (lpCanvas) lpCanvas.height = Math.max(160, lpClients.length * 26);
 
   mkChart('chart-last-payperiod', 'bar', {
-    labels: lpClients.map(([c, d]) => `${c}  (${d.pg} Pay ${d.payNo} • ${d.ppeStr})`),
+    labels: lpClients.map(([c, d]) => `${c}  (${d.mainPayGroup||''} • PPE: ${d.ppeStr})`),
     datasets: [{
       label: 'Payslips',
       data: lpClients.map(([,d]) => d.payslips),
