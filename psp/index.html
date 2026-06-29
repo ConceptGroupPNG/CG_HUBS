@@ -1269,38 +1269,55 @@
 
 <!-- STATUS UPDATE MODAL -->
 <div class="modal-overlay" id="status-modal-overlay">
-  <div class="modal" style="max-width:460px;">
+  <div class="modal" style="max-width:500px;">
     <div class="modal-header">
-      <h3 id="status-modal-title">Update Activity Status</h3>
+      <h3 id="status-modal-title" style="font-size:16px;">Update Activity Status</h3>
       <button class="modal-close" onclick="closeStatusModal()">×</button>
     </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Activity</label>
-        <input type="text" id="sm-milestone" readonly style="font-weight:700;color:var(--navy);">
+    <div class="modal-body" style="padding:0;">
+
+      <!-- Activity strip -->
+      <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);padding:16px 24px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Activity</div>
+        <div id="sm-milestone" style="font-size:15px;font-weight:800;color:var(--white);line-height:1.3;"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
-        <div style="flex:1;">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:6px;">Current Status</div>
-          <div id="sm-current-status"></div>
-        </div>
-        <div style="font-size:24px;color:var(--grey-300);font-weight:300;padding-top:18px;">→</div>
-        <div style="flex:1;">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:6px;">New Status</div>
-          <select id="sm-status" style="width:100%;padding:9px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--grey-900);background:var(--grey-50);outline:none;">
-            <!-- Options populated dynamically based on current status -->
-          </select>
-          <div id="sm-finished-msg" style="display:none;font-size:12px;color:var(--grey-500);margin-top:6px;font-style:italic;">This activity is complete — no further changes allowed.</div>
+
+      <!-- Status transition panel -->
+      <div style="padding:20px 24px 4px;">
+        <div style="display:flex;align-items:stretch;gap:0;border-radius:12px;overflow:hidden;border:1.5px solid var(--grey-200);">
+          <!-- Current -->
+          <div style="flex:1;background:var(--grey-50);padding:16px;border-right:1.5px solid var(--grey-200);">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);margin-bottom:10px;">Current Status</div>
+            <div id="sm-current-status"></div>
+          </div>
+          <!-- Arrow -->
+          <div style="display:flex;align-items:center;justify-content:center;width:44px;background:var(--grey-50);">
+            <i class="ti ti-arrow-right" style="font-size:20px;color:var(--grey-400);"></i>
+          </div>
+          <!-- New -->
+          <div style="flex:1;background:var(--white);padding:16px;">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);margin-bottom:10px;">New Status</div>
+            <select id="sm-status" style="width:100%;padding:8px 10px;border:1.5px solid var(--navy);border-radius:8px;font-size:13px;font-weight:700;color:var(--navy);background:var(--white);outline:none;">
+              <!-- Options populated dynamically -->
+            </select>
+            <div id="sm-finished-msg" style="display:none;font-size:11px;color:var(--grey-500);margin-top:8px;font-style:italic;"><i class="ti ti-lock" style="font-size:11px;"></i> No further changes allowed.</div>
+          </div>
         </div>
       </div>
-      <div class="form-group" id="sm-comments-group">
-        <label>Comments</label>
-        <textarea id="sm-comments" placeholder="Optional comments..."></textarea>
+
+      <!-- Comments -->
+      <div style="padding:16px 24px 20px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);margin-bottom:8px;">Comments <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+        <textarea id="sm-comments" placeholder="Add a note about this status change..."
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;color:var(--grey-900);resize:vertical;min-height:80px;outline:none;font-family:inherit;"
+          onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--grey-200)'"></textarea>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeStatusModal()">Cancel</button>
-      <button class="btn btn-teal" id="sm-save-btn" onclick="saveStatus()"><i class="ti ti-check"></i> Update Status</button>
+      <button class="btn btn-teal" id="sm-save-btn" onclick="saveStatus()">
+        <i class="ti ti-check"></i> Update Status
+      </button>
     </div>
   </div>
 </div>
@@ -2314,7 +2331,7 @@ function openStatusModal(item) {
     currentBadge.innerHTML = statusBadge(current);
   }
 
-  document.getElementById('sm-milestone').value = item.ActivityMilestone || '';
+  document.getElementById('sm-milestone').textContent = item.ActivityMilestone || '';
   document.getElementById('sm-comments').value = '';
 
   // Show/hide finished message and toggle save button
