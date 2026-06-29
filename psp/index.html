@@ -1160,18 +1160,22 @@
                 <tr>
                   <th>Client</th>
                   <th>Pay Group</th>
-                  <th>Pay No</th>
+                  <th style="width:55px;">Pay No</th>
                   <th>PPE</th>
                   <th>Payrun</th>
                   <th>Billing Month</th>
-                  <th>Employees</th>
-                  <th>New Hires</th>
-                  <th>Terms</th>
-                  <th>Non-Updates</th>
-                  <th>Process</th>
-                  <th>Metrics</th>
-                  <th>Nominate</th>
-                  <th>Billed</th>
+                  <th style="width:50px;" title="Employees / Payslips">Emp</th>
+                  <th style="width:45px;" title="Nationals">Nat</th>
+                  <th style="width:45px;" title="Expatriates">Exp</th>
+                  <th style="width:45px;" title="New Hires">NH</th>
+                  <th style="width:45px;" title="Terminations">Term</th>
+                  <th style="width:45px;" title="Non-Update Charges">Non-Upd</th>
+                  <th style="width:45px;" title="Lay-Offs">LO</th>
+                  <th style="width:45px;" title="Re-Hires / Cease Lay-Offs">RH</th>
+                  <th style="width:60px;" title="Pay Run Complete">Process</th>
+                  <th style="width:60px;" title="Billing Metrics Added">Metrics</th>
+                  <th style="width:60px;" title="Nominated for Billing">Nom</th>
+                  <th style="width:60px;" title="Invoice Exported">Billed</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -2304,7 +2308,7 @@ function openStatusModal(item) {
   );
   const maxOrder = payRunItems.reduce((max, i) => Math.max(max, getOrder(i) || 0), 0);
   const thisOrder = getOrder(item) || '?';
-  document.getElementById('status-modal-title').textContent = `Update Activity Status — ${thisOrder} of ${maxOrder}`;
+  document.getElementById('status-modal-title').textContent = `${getPayGroup(item)} Pay ${item.PayNo} — Activity ${thisOrder} of ${maxOrder}`;
 
   // Allowed transitions per status
   const transitions = {
@@ -3099,24 +3103,30 @@ function renderBillingMetrics() {
   if (billed === 'false') items = items.filter(i => !i.Billing);
   items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
   const tbody = document.getElementById('billing-metrics-tbody');
-  if (!items.length) { tbody.innerHTML = '<tr><td colspan="15"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="19"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
+  const tick = '<i class="ti ti-check" style="color:var(--teal);font-size:14px;"></i>';
+  const cross = '<span style="color:var(--grey-300);font-size:14px;">—</span>';
   tbody.innerHTML = items.map(i => `
     <tr>
-      <td>${i.PSPClient||'—'}</td>
+      <td style="white-space:nowrap;">${i.PSPClient||'—'}</td>
       <td><strong>${getPayGroup(i)}</strong></td>
-      <td>${i.PayNo||'—'}</td>
-      <td>${fmtDate(i.PayEnddate)}</td>
+      <td style="text-align:center;">${i.PayNo||'—'}</td>
+      <td style="white-space:nowrap;">${fmtDate(i.PayEnddate)}</td>
       <td>${i.Payrun||'—'}</td>
-      <td>${getBillingMonth(i)||'—'}</td>
-      <td>${i.EmployeesPayslips||0}</td>
-      <td>${i.NewHires||0}</td>
-      <td>${i.Terminations||0}</td>
-      <td>${i.NonUpdateCharge||0}</td>
-      <td>${i.Process ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Done</span>' : '<span class="badge badge-not-started">Pending</span>'}</td>
-      <td>${i.Metrics ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Set</span>' : '<span class="badge badge-not-started">Not Set</span>'}</td>
-      <td>${i.NominateForBilling ? '<span class="badge badge-started">Yes</span>' : '<span class="badge badge-not-started">No</span>'}</td>
-      <td>${i.Billing ? '<span class="badge badge-finished"><i class="ti ti-check"></i> Billed</span>' : '<span class="badge badge-not-started">Unbilled</span>'}</td>
-      <td>
+      <td style="white-space:nowrap;">${getBillingMonth(i)||'—'}</td>
+      <td style="text-align:center;font-weight:700;">${i.EmployeesPayslips||0}</td>
+      <td style="text-align:center;">${i.Nationals||0}</td>
+      <td style="text-align:center;">${i.Expatriate||0}</td>
+      <td style="text-align:center;">${i.NewHires||0}</td>
+      <td style="text-align:center;">${i.Terminations||0}</td>
+      <td style="text-align:center;">${i.NonUpdateCharge||0}</td>
+      <td style="text-align:center;">${i.LayOff||0}</td>
+      <td style="text-align:center;">${i.CeaseLayOff||0}</td>
+      <td style="text-align:center;">${i.Process ? tick : cross}</td>
+      <td style="text-align:center;">${i.Metrics ? tick : cross}</td>
+      <td style="text-align:center;">${i.NominateForBilling ? tick : cross}</td>
+      <td style="text-align:center;">${i.Billing ? tick : cross}</td>
+      <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="openBillingFormById('${i.id}')">Edit</button>
         <button class="btn btn-xs btn-danger" onclick="confirmDelete('billing','${i.id}')">Del</button>
       </td>
