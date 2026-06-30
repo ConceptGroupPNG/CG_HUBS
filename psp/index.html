@@ -6189,7 +6189,7 @@ async function loadGenerateQuote() {
   document.getElementById('gq-date').value = today.toISOString().slice(0,10);
   document.getElementById('gq-expiry').value = expiry.toISOString().slice(0,10);
 
-  const lastNo = cache.lastquote[0]?.LastQuoteNo;
+  const lastNo = cache.lastquote[0]?.LastQuoteNumber;
   const lastNoNum = parseInt(String(lastNo || '518').trim(), 10) || 518;
   const nextNo = (lastNoNum + 1).toString().padStart(4, '0');
   document.getElementById('gq-quoteno').value = 'QU-' + nextNo;
@@ -6415,12 +6415,20 @@ async function saveQuote() {
       const newNo = quoteNo.replace('QU-','');
       const lastRec = cache.lastquote[0];
       if (lastRec) {
-        await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNo: newNo });
-        cache.lastquote[0].LastQuoteNo = newNo;
-        console.log('[PSP_HUB] PSP_Last_Quote updated to', newNo);
+        const result = await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNumber: newNo });
+        // Re-fetch to verify the write actually took effect (saveWithFieldFallback may have
+        // silently stripped LastQuoteNumber itself if the column's internal name doesn't match)
+        cache.lastquote = await getItems('lastquote');
+        const verifyVal = cache.lastquote[0]?.LastQuoteNumber;
+        if (String(verifyVal) !== String(newNo)) {
+          console.error(`[PSP_HUB] WARNING: PSP_Last_Quote was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'. The next quote number will be wrong. Check that the LastQuoteNumber column's internal name matches its display name in SharePoint.`);
+          showToast(`Warning: Quote number tracking may not have saved correctly — please verify PSP_Last_Quote`, 'error');
+        } else {
+          console.log('[PSP_HUB] PSP_Last_Quote verified updated to', newNo);
+        }
       } else {
         // No row exists yet in PSP_Last_Quote — create one
-        const created = await createItem('lastquote', { Title: 'LastQuote', LastQuoteNo: newNo });
+        const created = await createItem('lastquote', { Title: 'LastQuote', LastQuoteNumber: newNo });
         cache.lastquote = await getItems('lastquote');
         console.log('[PSP_HUB] PSP_Last_Quote row created with', newNo);
       }
