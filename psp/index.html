@@ -4404,8 +4404,16 @@ async function markAsBilled() {
 function switchInvoiceTab(tab) {
   const tabs = { invoices: 'invoicetab-invoices-content', generate: 'invoicetab-generate-content', import: 'invoicetab-import-content' };
   Object.entries(tabs).forEach(([key, contentId]) => {
-    document.getElementById('fintab-' + key).classList.toggle('active', key === tab);
-    document.getElementById(contentId).style.display = key === tab ? '' : 'none';
+    const tabBtn = document.getElementById('fintab-' + key);
+    const contentEl = document.getElementById(contentId);
+    console.log('[switchInvoiceTab]', key, 'tabBtn:', !!tabBtn, 'contentEl:', !!contentEl, 'contentEl.children:', contentEl ? contentEl.children.length : 'N/A');
+    if (tabBtn) tabBtn.classList.toggle('active', key === tab);
+    if (contentEl) {
+      contentEl.style.display = key === tab ? '' : 'none';
+      if (key === tab) {
+        console.log('[switchInvoiceTab] Set display to visible. Computed display:', getComputedStyle(contentEl).display, 'offsetHeight:', contentEl.offsetHeight, 'innerHTML length:', contentEl.innerHTML.length);
+      }
+    }
   });
 }
 
