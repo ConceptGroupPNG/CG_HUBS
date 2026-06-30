@@ -889,6 +889,9 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Finance</div>
+      <div class="nav-item" onclick="navigate('quotes')">
+        <i class="ti ti-file-description"></i> Quotes
+      </div>
       <div class="nav-item" onclick="navigate('invoices')">
         <i class="ti ti-receipt"></i> Invoices
       </div>
@@ -1422,6 +1425,138 @@
 
         </div><!-- /bm-metrics-view -->
 
+      <!-- QUOTES & GENERATE QUOTE (TABBED) PAGE -->
+      <div class="page" id="page-quotes">
+        <div class="tabs" style="margin-bottom:16px;">
+          <div class="tab active" id="quotetab-quotes" onclick="switchQuoteTab('quotes')">
+            <i class="ti ti-file-description" style="font-size:14px;margin-right:4px;"></i> Quotes
+          </div>
+          <div class="tab" id="quotetab-generate" onclick="startNewQuote()">
+            <i class="ti ti-file-plus" style="font-size:14px;margin-right:4px;"></i> Generate Quote
+          </div>
+        </div>
+
+        <!-- TAB: QUOTES LIST -->
+        <div id="quotetab-quotes-content">
+          <div class="filter-bar">
+            <select id="filter-q-client" onchange="renderQuotes()">
+              <option value="">All Clients</option>
+            </select>
+            <select id="filter-q-status" onchange="renderQuotes()">
+              <option value="">All Statuses</option>
+              <option>Draft</option>
+              <option>Sent</option>
+              <option>Invoiced</option>
+              <option>Declined</option>
+              <option>Voided</option>
+            </select>
+            <input type="text" id="filter-q-search" placeholder="Search quote no, client, reference..." oninput="renderQuotes()">
+            <button class="btn btn-sm btn-outline" onclick="runHistoricalQuotesImport()" id="btn-historical-quotes-import" style="margin-left:auto;border-color:var(--warning);color:#92400e;">
+              <i class="ti ti-history"></i> Import Historical (Jan-Jun)
+            </button>
+          </div>
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Quote No</th>
+                    <th>Client</th>
+                    <th>Reference</th>
+                    <th>Quote Date</th>
+                    <th>Expiry</th>
+                    <th style="text-align:right;">Total</th>
+                    <th>Currency</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="quotes-tbody">
+                  <tr><td colspan="9"><div class="loading"><div class="spinner"></div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: GENERATE QUOTE -->
+        <div id="quotetab-generate-content" style="display:none;">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header"><h3>Quote Details</h3></div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Client *</label>
+                    <select id="gq-client" onchange="updateQuoteTotals()">
+                      <option value="">Select Client...</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Contact Person</label>
+                    <input type="text" id="gq-contact" placeholder="e.g. Jenny Tom" oninput="renderQuotePreview()">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Quote Date</label>
+                    <input type="date" id="gq-date" onchange="renderQuotePreview()">
+                  </div>
+                  <div class="form-group">
+                    <label>Expiry Date</label>
+                    <input type="date" id="gq-expiry" onchange="renderQuotePreview()">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Reference</label>
+                  <input type="text" id="gq-reference" placeholder="Short description of the work" oninput="renderQuotePreview()">
+                </div>
+                <div class="form-group">
+                  <label>Quote No <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span></label>
+                  <input type="text" id="gq-quoteno" readonly style="background:var(--grey-100);color:var(--grey-500);font-weight:700;">
+                </div>
+
+                <div style="margin:20px 0 10px;display:flex;align-items:center;justify-content:space-between;">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);">Line Items</div>
+                  <button class="btn btn-xs btn-teal" onclick="addQuoteLine()"><i class="ti ti-plus"></i> Add Line</button>
+                </div>
+                <div id="gq-lines-container"></div>
+
+                <div style="margin-top:16px;padding-top:16px;border-top:2px solid var(--grey-200);text-align:right;">
+                  <div style="font-size:12px;color:var(--grey-500);">Subtotal: <strong id="gq-subtotal" style="color:var(--navy);">0.00</strong></div>
+                  <div style="font-size:12px;color:var(--grey-500);">Tax: <strong id="gq-tax" style="color:var(--navy);">0.00</strong></div>
+                  <div style="font-size:16px;font-weight:800;color:var(--navy);margin-top:4px;">Total: <span id="gq-total">0.00</span></div>
+                </div>
+
+                <button class="btn btn-teal" onclick="saveQuote()" style="width:100%;margin-top:16px;">
+                  <i class="ti ti-device-floppy"></i> Save Quote
+                </button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3>Quote Preview</h3>
+                <div style="display:flex;gap:8px;">
+                  <button class="btn btn-sm btn-outline" onclick="printQuotePreview()" id="btn-print-quote" style="display:none;">
+                    <i class="ti ti-printer"></i> Print
+                  </button>
+                  <button class="btn btn-sm btn-outline" onclick="emailQuotePreview()" id="btn-email-quote" style="display:none;">
+                    <i class="ti ti-mail"></i> Email
+                  </button>
+                </div>
+              </div>
+              <div id="gq-preview">
+                <div class="empty-state">
+                  <i class="ti ti-file-description"></i>
+                  <p>Fill in client and line items to preview the quote</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- INVOICES & GENERATE INVOICE (TABBED) PAGE -->
       <div class="page" id="page-invoices">
         <div class="tabs" style="margin-bottom:16px;">
@@ -1768,6 +1903,1246 @@ const REDIRECT_URI = 'https://marcusappdev.github.io/CG_Training/psp-hub/';
 // Currency conversion rates to PGK
 const FX = { PGK: 1, AUD: 1/0.33, USD: 1/0.23 };
 function toPGK(amount, currency) { return amount * (FX[currency] || 1); }
+const CONCEPT_LOGO_URI = 'data:image/webp;base64,UklGRp4iAABXRUJQVlA4IJIiAABwdACdASo6AZMAPikSh0KhoQoM3rgMAUJZW7hc/Dl/X/Efk97O/LvZD4o8G/kPzZda+XVyP/kf7V+Svzh/xn+m9un5g/zPuAfq7/hOov+x/qA/m/9h/2v9x903/Dfrt7jP2K9gD+Sf1jrSP239gz9o/TB/Zb4Pv67/qf/L/p/gL/WT/q+wB//+Be6udsP9k/JHzx/Dvln6r/af2E/uX/m/z/S56A/5HoN/HfsN9m/sf7T/2/91fhj/LeB/w0/bvtM+QX8U/lX94/t37Rf3D9vfbd/qvyM8GLVP9V/rfUC9d/nP+J/tX+E/5H+I9ED+W/Lf3P/Of6x/r/y5/vX2AfyX+bf4v+3/uL/cf/x9N/4z/VeJv9t/vn+p/wn7c/3b7BP5Z/Pv8t/c/9B/uv9L/+Ptl/jf+L/kf8//2v9B7Wf0L+7f7//Lfu1/kv//+Av8n/n/+P/uv+a/6f+E////r+5D2Cftd7G/60/f0aQqIqEIADsnHmh4/H4/H4/H4/Hy3KhzDD8mDcm57KedWrKiUiuHTL7r9fr9fr2tzrNw5aYQ2kU1PXCaFsP1MOe0JmL1MYhsNGILeY+SkLSY/peBJx+U+icmMfxOOAKbzGB0CRWhy+VKuhX16RO1w93TQYOuWJEcj/t7lHwdL6sTDgjTk8VIjetk6fxHQnIyhBJ4jouUUmpSBVnJFsj3xdMaklkKxfQXbJjtL1pQXXGC9vw17t4xwJq/VBpeivU4+ni8eaTCV1yf2UTeREqEVqrwXDxTPKTpBocS6Uck3CUwnWyVpC8Zrp5mDKHdviwRnKyg3xXTsgq0w/QZylwXD+htq9QdWCUTT2rWx54zyJ4upzIsMPpzWwrsByH/Ee33HnuuQrf7p9zp3ZFZX/6dA0W8bmz1xG8VSUYsPo7pQV4PkTcRcueBZrHftLYvjDyeRlVXUzG7aXnfjsdTt6QsyPzaXZlH/ZbGn2ckcYGcg8/SMqnvUQ1ml31mILT7j2OGXDJNdi1JCyZTWhoujItBzYD0AthzVExdKPNrLUe4UeGA3VtLUf3tbRFVx5gTmLzsDVAKajQHtit5TUuJ8UAST/gwIpj7k/WR7wbI54vDy25XYM2PrU5363qMJDYGGm4gCvYklKFD5R6zNFffDtsR9n94VZbFetPqHxjqGwp3gIUjmGz+FCi/dKvgtqMfg9z8+daQLuwFg2mihc0gLgsF/aoZWl4RCXeHXjRux0cpP6fnFU9U2O78P5/P5/P5/P5/P7UAAP7/6TCUl4t6KL+fZ6v5K1UWJ55FKpSevToyhCjPkHauR3lQZ3H2rPx3LWHMv59exAAIHaQvzIBundQ/srcWKbeD+nC2xyQmqKacEv1iIHxTRd8xNXYKw5LwGiDbeY+Vpz5J12mVpDHBpN+ZpNEeL8t3hvAwogAALPsLOhnFIKk4lbfBcNt7D4vJ6E1hw66XkYQ3bknA+0RRYK4Io85P57FJVyY5OZww4pTdG+5DL5QZrwKeD3/vfoIL/cfNKrIeWzRoPOnH4QblGYTZA3Sot6uEnt3EW84F0S5UkUzwAZdMl0DaQgG4n9CSju0fGgHyJFpTBOb+6tOcfWxNJoFWeD9T9Wdfyt4fygMLKZUEfnL+3iFHDvIWbZJkM7xAm89fSf905f+U2iomqsjfxXu/P9V9xuY5L/4tZGhqjvfDwAA/5CPDrkMBrLhTOX1Qm+zsSSSe2ACwm3XWGOsKS2gVNSxYuTRv/jLveykVkQWxa4jP1Dlws3yE4RhNVKvpJJG+0W+CzIJ9W3XFlJW4TYGngotMRy/rcKPCd3UPyvpgUJMdS6XTapnCiUq1kavuX9HPD4xnr0Ke8i0vx7zRALCt85dU79Qq5dsvfGGTZliVsPEXvVSU3l2d3N/is+zmeDKb9gurK7Eyd/g+lb0/AAvP2yrsUDgHeHgGKFoKFk5UErKTj+Hj6pM4zDJ8s/D3M3VruxWP7GBaZx7nzIZ9vJPPVUCkTvrEAksXSdjHOuNi81+lC9ZIWHDuIip8CSzrglFSgbdlHF1dN0vzFJXs9T2RW7z7Em6cNN8GzDh9e9pt1yThFmGGXXEcrFFFcSnVjIqb1XKY9CMyjSyZ8J8gqk3VvVM/vi7fCWmUt+Nt5ytw9HGnTaj5Vc5YbAORO+HjnG8IBlaeLvKJ661DpxiMGtCZSaVrt//23sNTvcJNiHXP3gAB5/0NaC/4CjuoXEhaFR1KVZbPbTj0v7XbORyKsuZLz/O8Mj/VD5KioeIy+E//MvKH8EO4fo317MZadzSv3W6ptmP8z2QQM9eqGxG3A5xmcV1KOMOIyuUfKFyS+76ZrBzIDjboVXR0WNFKVGFG/Ou1/fpqfKTmduvQfcCFeycemt5UEYvlVWeFvmg/Tm/WyTOjYnsIlN2MkBCRPqsgJ1+RB2XUNIH/UspZF/mUXyVdexqp8c4zDQE8CVgaJ0n5l430eOKwedWkLFH72iSo3i5KbUjJ1ySrOOFgYapeW0n39xxxSVFto0xpJkiEhE5eoeHSLIYYtfyWPzannLDXE4GGU3f+acr+dZ6UGY57rBIyPXoCtsBzNj5WhhFhBXqrRC+6A8ANpD5otXJPjcfzE5xipCmMUgp/aSyS6vIDfYPnWTP/wgzKDMQ/sH2fZ5/jvX55HXVJkVPtiX3aqPGuZgQqdhN2btWS7LM6BgkmjCe7zWPn27of72/LaZEvDoKoyDtm7S43eiPgbrcXGtgVtr08JnavUqFPrW6UF/BH129i17KOvo/nqaNsbxXVmAg1uEKICWlqJeICZ47NxVfvc7btzCssqbfT7HQKEin69pcHfj3oWs1ZmrhwW8+S0uWIvx1pXbx5Lgw4wlyI6GjtRB6ggefA8mRULFJ5SJCgHXcvCLMqjPDZf+GOgRtGfc5hxebTgIbE3zUH0rbDdOnEHU9mYIsXsvR0ACcEzkOtNwVjbGvl1pGJc4JkGVhvNlee79f5L9Kqwb520XijlS7vPZ24OJLJaZfVWCcUEcfB06z2KCnv4OgBZGbzOXFQdPOWhPFYOj5h9mFPt1iAomz1kZCTeUXle0CRP9hL1g0INJVhsCShEX/B5QnwrZ+KTJuINgc3DjI2ftGkRdLcQvI8gO2C3wcRddskvZWqFU6zX0gLLf6h1l6x5p1bknPKWREEXucIxagbvVNK+Yso1XTArmzZsRu9K6HgJnlTiUTrrxpD4NJeoCzg3HiC5zY28gTI16HQJqdNmpr3JgmBsgFkgC0Tz9UuNj2EPdijTDJBUUptP7rSqzGbhHkieV14lyxMoo7exPN8GcWq580Jf/6MTq6ONa8R96FzAPEsCNKlYvXG3XDyavXpFL5rzfzWJwvRlCdPKj36rWKwODxagxlkMAHW+zZLIf6ir8drZQYePr7Gw4AlsBH+pd+nhCV0F7fIYlFLKEU4cDIpmQ/2Yq36g2/shr7clKwxGcpR9cfvImVSQ0EZ5nmb+w2PSlLAXu+fmZ3jMv4UK7vWlEy83IXIK9tZjocdothrQHxpVdWPeIthkMtQlS85bqpoLqHXlC1/qOYJ6TBv8bT+oMvPEOFsWttQ6wpcegqPw67kXF1i2JgJ41OWOITsjaHUPU4ht9eiKqAoRzq+Y/OWD9wncZM0I412e+42KVDjfVMB0q6ZmNs/a8JfAKLD57vqgFyX4kmi0Zlgb+VA9nMVf/YXc9/rWgLdMmEAtn9jCnceTRHCUa7UVl5IeTUq+4KE7X9YLsj+TWDnzbT+Gf/BLj2XIlobAWEDtliD+5PZrB48GaCFR7j8rWle8Jltf15J8rO/pKRVJF0g5QwXFqoN+T7o810AuJo7NXvBLeOcxkcCQn/0uVuUnTHbaYmNkM2MKKmJI1TnwSfvlb+p0R8DtTj2sc9FKLAY4wvZ7RBXXy69kOpCJbQbZ4N/apmwWW9TziZzqJ8PtGr61dorSt0+G3dQ6VXavZz9NfsPYXAEuvi19DDHf6igOKGN8uN5Y9474S7r3FIzRfB/TxVV+Ra5vYCRw2WMGVuQio3YdRAzRWI9gjSAsFzGjXYpdK2Y0NkodJY1KLBGNMkUOFKE5gIUYn/6OFHMIrhRJwEqTe4RAt6IkIRki/HD9mgkpwnbz+izDecwdM7cregX1rcl3yKldYUVXwFvoEyTg/+zpYLLUavSW7QAbj4x8+4dwlXN7NNqHaWkMALkvP4ipWgzFsUriQ1vSK60R7iwj5vKq2buFCXq0mH+MtwSMgN6hWvdjR2rZXSbRnj7ZQrZ4JwfgIOqQcYI2ZZv4mdkFK4532kA3g8VhMS7mNVAeArLLmzOYQfjM9tbmhQeB1Kjz10GB7GgQwBEGxO2QZIIBRkKs2ZNOtXL1n0TMrH9tOwhJ32M9bABIDfWFeB5o2hSO5QeNBLK2u3rQYbs15sdYGDuGckJnMtrN90/0IcLw5jeH4Iv7MGsKKIRg7ALDQX7Zf1iiavXUzGTqWIukln/wc62shhlDWm+8gEtIo9o5snZlvcPa2JEUN7m57SYS7U4sS44eRjaBrIHu55dMThcuUNoT2Q0L7V9bnp1rHoszhhg0P213hHCfSffAyRiLxLVppqK1diPigvd3Qhwf4PxuqE+o8xa0dwHNADsHKIE3euRbGfiDaW4byYIM86n+zeDBugC40creAdsa/ldW17x6WVLubhu8fuX3NLF2ZsaK8TiECrqAzeaSzqZfDTkjfjPaGvpdPf1E91B3E4NoMMp9/g8aa0wTOuKecGSNcibgB3mXK0XutSgz3jvElF0BnHJ0r7wZ6cVZqvHcHGzQQJLeFyogaLfm8OWFLy+ZH4z5l4JrwiCcVCw1Og7qEjNRbzZXZOsdZCsW2X4NvXf2x8bO/c7hJZ6/2Ov1/mAcxyyIa+5E5OEPc7E/dR1bGpIWbvLvbmnt0Twuh8EaE5lxUqCf+S8BUjUs9cIqO9YDRgsLXj1iRCi3KX/Z2hSJ0z68Y3D/BGnekK+gGqrRjH0IARL68ttjxDo5St2FFWWDMO823mM08FWOM5eUjYjSUG+V+v8WBMFzmOiQTR6i5rldlUeQsvFVuGs0Bi48msBDRsvPWIRNlQ1GuL2BVJlg1d5GKQ1XrP53UfVyBSVVt9SVY7VP3iy/mnUk5I5ikW8akKE7VtSXPPQ/5A2ojY0wE+qfZlfNUoVYfihhVAn9VUNf/O7vurF+Zaanxx/unyCvg0yNP8BragX84zwSgigAbVctH68MMwa40KUoLDIWbF3srGADNgj3yB+DXrHzWLVeoSIE9yp2B26o+65zZiaM6kS193qkmwQ37oP/0MY3sahND7H7NPBywcNe/JydImUdyWhON1gGT28EXTcIsfVZLV2NGenwtXc+ail0ATwE8ptMqDBQc/PLp+oPMFD1eCV2Z56McnqNPP9QFQQwX4kThjoXsQVZuRr+hlYDU14uuV24VpgGtL23MoOVVjcTw+Q9a+yuU1QSumdFXqtNHD9IseSRSJADe3Oa/uDN7CARJgQjVgFhtSh9BBg5L7q87HTbKISyqHRBUoo7Oj3zFaXCwGIIuu5LvmlaAWz6KhwBROW7GOi8qLDmLYNb12scmuFilJN94y0oby8PuqS2Q4RB19au7cWcFHhW0/0aivjUIxYel92kXyp0P8QOyuPx6sBUZE75S+hU9jRimNzdSCff9qObS/f3a2U2a1+um9JKhd1puCea59LZaBSprEEXIvNFXdQ18F3BmQcMBkh1jb6NOjeRBguGNgET68AZB3gXqxAhlI53idUj0pPTvjgSRSIc++7W4B7PQrxgd8KGiDakhWg5wK+an82VQx293wt1bZyz0ZXBdEBP8tG8UTYgdq85OQnSE1nk6uPw3+Ksvg32myX6LKBMR4IZIFzjD/EGVAhZ7y4aTzU2c1mkltc+zXc5+2RSImTexnjbgvt1uaS6mZIJhgkd/bN/9SGLt5PTVpcl13a7O2Gq9YLPjB/PiIZ7UCwxVmiEgqgR++3DopepnDydB5upGib6l0tD/tOxxeE8W8epEZ8uPX6uzLjD0i7k7xykIWqrlbxGPNPgV5RWF1rIAlxPNHJBsYnBT8Pa4aaLoDmCS+VBGXzOSX+QWwTwNHsCG2trLYRVL15D8Y55DZ/Yu3dHGzjN5xG757U6Ga2QO9S3HwZm7Q5PAUmn8j8RIivQ5opozedXiDtW8GBpcZs8em83HCRt/qn+MXM6XikxlRsg9srZVgeyohAZCauwvmS32AicgM+Gopfvm/Qp7wzvQ3/+9s+yScSayw2aBpcX4rrJSeWa3vCtWjwm0zMHdHWHqDRIIBuOaPxqIAg2OtkOkbYf+n/5+ATQuGdFVtHOICpwN7st3gEicmgRNaHN8NV8puUtTqMtMuFJ6V0cTuswgNPQBZTc+ZQGM6jxk98ZIzBkatkZLlozdqr8zvCFp9wgMHlcFBeQBqvJQIB4pOkQQhgBT4lshieSHtCFewQrCBXJQqQsJPLzspvhwhBj+FaY8OwzhXQyXWriya3/hJuuj3SQnqlMXynH2U7IcRXDGXV3k1Sdls8sAZXJp0N5wPqBcKkdu6jc1ts1TWiZEnwu+SKJafjN+w/0iXPgrwxaL5tabaeC9T6MHwDEk5fISJWsLuT4KfNh9YHSdNNVFkGxeRuUqzkdpAS6xrVCRxEI9/5SQXhBe4TD/dDAmQCFDc6mJ+A4H6juEyPKT0dBTGBt8CKSWDiAhg64+nLEj6Sus9HI5EmYDiqrknFkwNjTupLIKdKcrnbfl+neksIbnaYnoiuHWo7LXc4uRfQ4rvMeYrXkWolD9hDHIh6hwDXJs5Dw6hGIjTP5khkrwilz2ne6WHetKWWUCbDvcWMEnPSZOkx/3/xw6s20MzvL/wwRaR/ziypL4tZabKs0Nk0Su8qd7H3++FZSvCYG5CXOkiikCqlj54Oumlo8UHhzNVTg+F+Gmvgx/xJxjv94Sign80TclPYQ/n4uvEpirkq9xn3G36zymrJiBMyJ1XyOJJ+MkDs9bZK+ueJRueke965bvJ3qU3SkWaEHuy1fMJRM+uZZ0RR+Z0wll9cb9qIdtDHDePk2YPwlIeq074TagfZdZKZu5gJstTCgSiz/9cUNdcct9+JerpXwgjiAqOkbE8qDiusR+jq24WfvJ3dHIvNLsLR3ipsycM2Ga6+Dxw5iQc8HX2nfP05SkgiC7wo5y8bX6OfA6/UEwzosO/8w5CJ0Z3GoJerWZFaOqqBwaWsHt3BkGk4THGw5DJO+G6N4BxdPw6aSuSOBWZVjeGuXPDw+UbxBfdJx9AAoCHMqqG0iesg5SEpXhlYua85Ufbs825rS0MUynzZcl1adLv50bePyohWZeH7XfJ6cuLXES4dHfM4EVPqErzSMggWR+yP7OwF/pgP6RpYOnx/2yVvUg3Zu+s9VCPaah45OXB9ATMCvFQN/M3nIFwNB9wNAMxUt+DxQN76DGKWzekZXWn4rlhJE8ks3gVIsjQNV9RhldXhM0Ct/r/CH/wbLSwYz7csNKp8WqnjDI7tqEVyB07t0iB+wZ5qvon6aCG/JeRvckmiYYHNwlpkPGTRnxoBDheIgX4ZDcQ8uh3dU+NHQRCbWlm45AUWNXc5AE5HKAz5uzJEHqbcyYmg/O4pJYGzSNkeeBjoJmdwjNf5yuMe+jix8eSxIo1hC8bD4I16J6YN5083nTEtr/D/5MX10P0Vj2KW++cR1Pk2RCm8GE1dpFR55ZCu1tTj3hIN5H0oYDAIHgpHONBXuZ4nkNl5MtkfSlww4iItO05QQFVJXfoyfjwn9ZqLW3f6BhuI3XMrV7z3Ai0tG2ah9ls/ymMK98JWSfJ604xUSe30x0v9qu0sYnfINB+rrb6VOLOPmv8Ghx5FScdwbR8OSoMsoX2XgTIajEjzhTF0AdLNIrUrBa9OY6llwH+ohFMugQQTEMTBhQha+GCZIbtq8KvfwJ5P+LjY5WooJURP8nrOBvNYdKmcqBtQtyKuw6FttKTtECPxm+fhzdLZIAayaJ28F933/l3ll3cAWoEdjq41CNIbDjnYpBMK/wMFFaXktBJcEv12ktsSm0vHL5zbjhOA2BQfyqaH87vx07CV4cXvParftH5o4AcX8qJ/lkpEVipflzoCoVHG/E+0A1Y/qlWwlBlnJzfQoEOKGFYYYCgqr/h+7jgamNVE/bhydRRNXDzZ3o0oQt2H6+9TAdLDoIDnWvwR1xK7evEkUDV3L71alRzFK/2f4+g8RL0AcewzvXwXjHKhQAEtI4yo8LWIISYdf1WoaYzotKtYK3itbBlbjzWW6B1BeVesObPQmbtsDRX7rWiil1ngZsqyXyeQx3RrDSFW/l3TTuj/3m9qGYZHVPT3igMwp4Sp8fyPOPoFx6W3rzfFrDxl2dEdgCT3RXEi8akdM8HPPnMHHHBZz2fzAl22xL8wHAtLdiKJEBBZihSwsKB0vFLGPNDrmcCY8GvECOls+/7yWix3bpWZ+lUcHVsEiAhdkBYNyPUbyMMiTLSS1rrDCgD5jdiswM8YKX9NP5czxWbLb4ol8zhA2tcTWUX2QWajXtS43sJhxWLxmQxLOjjLTA34JntAXgPG6I1YVMQirYu6PmzX83WVXzgEwV2980YM+QhOY6zru0wSm6E2kDqE/oDdpv9maTB1ekh7srbX7erH+Il4wAALJn0CWGtBuNmPJlFUqVoEODfIEnqR5/v5AuezespFp7vocxhsMiCjqYG/i5cprPbV3ZoijJMgudh6gOlxDBgeCAiuG0Wk1iaOI9oZlq3UbhK6yAVjhqFYsjxRnPEqaV/CqQnkIOibSrPkw1OTfLbXED2V1nVdh6WiNTxe9HymtUGrqivYx8Q4wLVbz+ctyC2666mmZ0YRcfz9tZB0lSUmt+Hb/dBoOKoFq7HoJGyJiX0KEwsou8POSpSie0oh9e/2SQesCh6NHsSK3btAO1xtFP5Y/1F+3sjXZt2ZkTLfh1R0Y+rfrTxtFNWnBuagCDSTH+cOV9fxbCbKDTSlpNRtPBBR9LYdtqs/VJyyLCIBHEfA+Z1FpPnZQYGG7gmsgV1AOPEBMwgoOozo4zsgjGQBDCxpYL2zgH0DeP1kyoByr6qJFHwj4CiCawg/TKhnGZMQoPxfd8OUc5oG6JcZysUQjZ54oX2LIYbFZn/i/nODwDxdZ4RiC03utjSQ9nwqAtSPIERej6ySfZ/igZluyOrhw8aHgn6UUqfmttN6MFd+KHDBEExoAREdaKueIQ5dW2jG12q8ASqwJAkE/XZFiVtcxZJizcdNATgYAiw5QnZ0di8+k1kTB4zP/8GbyhWPmiWpFrHVQBRcXfcmlcekj+NNIrFEvDToMhKoIs2iaXCHQ9M/MVcQfZBIuBIlIRitaNxvjHtLOqMiEfZrTAmeW6ewuNvadXyaco7jSgEwTSXaudSCBjRBMLRR9FQ050AT2ezIaFeJ2u3euNeiJS25CchMw3HOOeCJN8XY3OeW2gEqautFslb4ieqoL/p7vWc3y1eGDjtGGyGL3nTaQ54WZp4Z9e4XXNJd4k7UBMThgnhNfu5q+5J5NzyKZ5Hmmc3LEjoBd8BnKkScRgfF9Op57ILfKCAX2aXkjkjqz7W82iERersspefy3oYEVqyqzq5qtggezP5Avb/is2GpUKp8fSdktbQNQrIwPRzC+Q4pG8+dJsaYZTvo61mR31m0/JZeg/ZbViawewy1fmxZo1TJjarXHVvlHLAcPmUE7fOeqmRP0gYyWflsc7CrUZTFWSOEAUXIzLPZRkzE26h5KSg4DGdtT+qn8ksOA4+HMKFY2Q3VBZ7/RmYP+sx2d0GbPWb8lw7uvEEnOoklfwwPFg/j8+NiJ617kvGT56vf46bC9106+Gf73W40Hio77iPAJDxDXF5kmPUo1eFoXbryib8hKGYgG5XPpohvAA2ErHUCOnTaKhSX87ql6FeV0jKnib6ci22AVw7UR4rqhQQG+r5JkefLSRhmibdLKnm/BO2cohW0W6JqFH9W1Sfw4eDIqksmLNAzB+b7Nh7MXArZ0ckirrAbvIGQvB3y/jC7pLkD1DC0+lSZuMWi0tXcHBnERg29C6TD1CK2ThkxJ2BJ1E/J2zfFwgcniAKTSQTIdQ6UPodUgobZ5eBAygqP+bViqh3DTLj5Ri/yVYuA+6OJ7P5nWPZuGbKm9t4VuHYU/1kf5nCPrePcdqg7dpHBRC2RR7GOUpSpiHsl28Jk4r8hkgBAvDQWGVpNzzkVc08+BEoUAvG0BWbb6t8wempxIT1mf4gCTokCopOLYpTuiLsXTobuKLzWPQ2LGf2Y8uoqkMq2CieCk5KPG3os/gfI/C8Xf4v9d4pUkaq8ArlPlC0fdLKXIK7vMSEHiqUbxWxUNsR7MIrzhiWF+MEXmVjcRmQMNa1d1umo5P5u+PbsWuOpy+JDgCZ/XZv379ymzfiOkdm+mosbc6hkM5sITP+14kCzlGGEe+BKnk34oQyY81CdcxSw8IJ0uBVqWz3mCyMU3mT+3X3V8rZ6KC7Nx1KCDHgNVsJN71UNoK6h+eTL1pULbKGbO6ARLvGjxeuhMSGxz4/WfJYXKF5AV+nzQ0hqIN6EWVCO8YkIv+KlTKPRjJv6fLbIxYwo5gVUAgeNY6f2jpaDPhfkwHfgeSmSUMu6bwZNd4PHuxlWOyaHxw7BWWiqIqaKapb4kWrw23C2DOxYvAgb+u2NWV/FWSRtGzxeZytL+Wj/xlsV8bH5600vaptgZUuqMIElEWwDEhGI7NuNGIqg/1N0Bjiot+87JRMaGVYhjF+HDPkDiJxK6BOyTqkiQMNFGJT8psP9ZepfRLGw4qbVR9OxWgEWflqjT1AlutFVx0FBogcXKi94ZiRDaBqvTZPoOuskCj8wBeM0h5D8ShKuGLV+RCH9Uu5y0gNJWG7tHJH7UvL7n2UiWCh2bgbrpK+KHtPcyIqosfWmoO3OPSJMTMpGKg2m3uYfF0f+Vp/2rYJYa4ahdCIXkWKx2V2iI+gWv6gmecPhuWBldfwsJkq0utiUVSNFA4f+eEmfL/Lx920x79psfJ0yLPxDUOAZV2x25QWtfTVe0i06pANZQJ9Z5YznQ+3+gHY8oOjDWThDS1Wv/F5wX/m8zCacLwtA+XbRjWAxuRb0yQfiRQ7q04s3DlKKnfzddnQzXcWI7VTy7JwZv0AOuXmajtluhAdKUvnxKp6LzY/MmfNhip9SCJqoBYFDo/0JLgnDNk7ste2VTWsHvm42UoKbWq7SHGxKCyIAGnZFtFrXwjBN20YuKgWXnzryJg5sssmH4bDSmh7Tm4ydBHSaX7xFAOItZBctj8gzMp0OCt2LWzYveRWS9T/Jt2X1/NL1v4lLbCjWjzr6uSvThad+ERuT7rrelpRaAhT0EHF/b8m33ZULvCwQhAgtoDOSNxh85wgzvfCjFeesEWKi9LzWcqsVnZYXRjiZ+XH2n6JJPX/gTAEyst+A0UfZsV7eADW4+JJQKQmu7ZaAhnYSRsIFMiV5XQ8b6y+DcaVwKYjRhiVNNNlyXUUVNerxxkzFZYj4UVfbT/3AI/EFVbZ+3x9yAoEbZivUmoGqN/r/qKTwqzlGtLJE70vN51cplFKLysMPRR5vOk3DAnw4vhSGC0RiFPR1+b05MP9EWV5t+tcS2a5yvfAHACtdsREN0ILsWe7yAM2nOpd3ZDNzq1CWNWyQxUDVhPVDkZ3f6AtsESN+Rg38eAq291JCHmJ1ifQAA5CamZRPDntZ9kT6zY3gD2xSttmXeWap+5rwG2e7S7Feb9v5ZkEQd19CE5iku+RtFWMQCxHM5FMkjJELOyHn4+4AHK1ul/gOrKfKZHqRtN7uRYRLhgIoUXrCAAA=';
+
+// One-time historical quotes import data (Jan-Jun 2026) - remove after import
+const HISTORICAL_QUOTES = [
+{
+"Title": "QU-0357",
+"PSPClient": "Independent Consumer & Competition Commission",
+"ClientInvoiceName": "Independent Consumer & Competition Commission",
+"QuoteDate": "2025-12-31",
+"ExpiryDate": "2026-01-07",
+"Reference": "SOE Processed - 2025",
+"Currency": "PGK",
+"SubTotal": 1125.0,
+"TaxAmount": 112.5,
+"TotalAmount": 1237.5,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025\", \"Quantity\": 1, \"UnitPrice\": 1125.0, \"TaxPercent\": 10, \"LineTotal\": 1237.5}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ftommarrah@iccc.gov.pg,lopiari@iccc.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0356",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2025-12-31",
+"ExpiryDate": "2026-01-13",
+"Reference": "SOE Processed - 2025",
+"Currency": "PGK",
+"SubTotal": 1665.0,
+"TaxAmount": 166.5,
+"TotalAmount": 1831.5,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025\", \"Quantity\": 1, \"UnitPrice\": 1665.0, \"TaxPercent\": 10, \"LineTotal\": 1831.5}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0362",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2025-12-31",
+"ExpiryDate": "2026-01-13",
+"Reference": "SOE Processed - 2025 - ANZ PNG",
+"Currency": "AUD",
+"SubTotal": 558.0,
+"TaxAmount": 0.0,
+"TotalAmount": 558.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025 - ANZ PNG\", \"Quantity\": 1, \"UnitPrice\": 558.0, \"TaxPercent\": 0, \"LineTotal\": 558.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0358",
+"PSPClient": "PNG Coffee Exporters",
+"ClientInvoiceName": "PNG Coffee Exporters",
+"QuoteDate": "2025-12-31",
+"ExpiryDate": "2026-01-07",
+"Reference": "SOE Processed - 2025",
+"Currency": "PGK",
+"SubTotal": 3893.0,
+"TaxAmount": 389.3,
+"TotalAmount": 4282.3,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025\", \"Quantity\": 1, \"UnitPrice\": 3893.0, \"TaxPercent\": 10, \"LineTotal\": 4282.3}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "chris.desilva@edfman.com,Elizabeth.bua@edfman.com,Rosita.Jaffa@edfman.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0359",
+"PSPClient": "PNG Registries Ltd",
+"ClientInvoiceName": "PNG Registries Ltd",
+"QuoteDate": "2025-12-31",
+"ExpiryDate": "2026-01-07",
+"Reference": "SOE Processed - 2025",
+"Currency": "PGK",
+"SubTotal": 500.0,
+"TaxAmount": 50.0,
+"TotalAmount": 550.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025\", \"Quantity\": 1, \"UnitPrice\": 500.0, \"TaxPercent\": 10, \"LineTotal\": 550.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Talitha.Kouga@linkgroup.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0361",
+"PSPClient": "G4S Secure Solutions (PNG) Ltd",
+"ClientInvoiceName": "G4S Secure Solutions (PNG) Ltd",
+"QuoteDate": "2026-01-06",
+"ExpiryDate": "2026-01-13",
+"Reference": "G4S Minimum Wages Increase Update",
+"Currency": "PGK",
+"SubTotal": 2000.0,
+"TaxAmount": 200.0,
+"TotalAmount": 2200.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"G4S Minimum Wages Increase Update\", \"Quantity\": 1, \"UnitPrice\": 2000.0, \"TaxPercent\": 10, \"LineTotal\": 2200.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "cathy.koyah@pg.g4s.com,archie.bugay@pg.g4s.com,barbra.yewa@pg.g4s.com,urania.samali@pg.g4s.com,victor.loi@pg.g4s.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0360",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-01-06",
+"ExpiryDate": "2026-01-13",
+"Reference": "Bank Code Definition",
+"Currency": "PGK",
+"SubTotal": 150.0,
+"TaxAmount": 15.0,
+"TotalAmount": 165.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Bank Code Definition\", \"Quantity\": 1, \"UnitPrice\": 150.0, \"TaxPercent\": 10, \"LineTotal\": 165.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0363",
+"PSPClient": "South Pacific Brewery",
+"ClientInvoiceName": "South Pacific Brewery",
+"QuoteDate": "2026-01-08",
+"ExpiryDate": "2026-01-15",
+"Reference": "January 2026 - Implementation of New PNG Tax Laws \u2013 Vehicle Benefit Tax (Income Tax Act 2025)",
+"Currency": "PGK",
+"SubTotal": 5440.0,
+"TaxAmount": 544.0,
+"TotalAmount": 5984.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"January 2026 - Implementation of New PNG Tax Laws \\u2013 Vehicle Benefit Tax (Income Tax Act 2025)\", \"Quantity\": 1, \"UnitPrice\": 5440.0, \"TaxPercent\": 10, \"LineTotal\": 5984.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Brennan.Philip@sp.com.pg,ap.pom@sp.com.pg,Belinda.Yapen@sp.com.pg,Jessica.Tabereng@sp.com.pg,Nathalie.Suagotsu@sp.com.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0364",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-01-09",
+"ExpiryDate": "2026-01-16",
+"Reference": "Exception Payrun for BOCPG_Leave Encashment_William Laparami",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Exception Payrun for BOCPG_Leave Encashment_William Laparami\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0365",
+"PSPClient": "Office of the Insurance Commissioner",
+"ClientInvoiceName": "Office of the Insurance Commissioner",
+"QuoteDate": "2026-01-14",
+"ExpiryDate": "2026-01-21",
+"Reference": "Reconciliation for Duplicate Payments",
+"Currency": "PGK",
+"SubTotal": 2400.0,
+"TaxAmount": 240.0,
+"TotalAmount": 2640.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Reconciliation for Duplicate Payments\", \"Quantity\": 1, \"UnitPrice\": 2400.0, \"TaxPercent\": 10, \"LineTotal\": 2640.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "",
+"NeedsClientReview": true
+},
+{
+"Title": "QU-0366",
+"PSPClient": "Office of the Insurance Commissioner",
+"ClientInvoiceName": "Office of the Insurance Commissioner",
+"QuoteDate": "2026-01-14",
+"ExpiryDate": "2026-01-21",
+"Reference": "3% Pay Increase",
+"Currency": "PGK",
+"SubTotal": 4800.0,
+"TaxAmount": 480.0,
+"TotalAmount": 5280.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"3% Pay Increase\", \"Quantity\": 1, \"UnitPrice\": 4800.0, \"TaxPercent\": 10, \"LineTotal\": 5280.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "",
+"NeedsClientReview": true
+},
+{
+"Title": "QU-0369",
+"PSPClient": "Total Oil PNG Ltd (TEM)",
+"ClientInvoiceName": "Total Oil PNG Ltd",
+"QuoteDate": "2026-01-16",
+"ExpiryDate": "2026-01-23",
+"Reference": "Total Energies (TEM)_Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 330.0,
+"TaxAmount": 33.0,
+"TotalAmount": 363.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Total Energies (TEM)_Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 330.0, \"TaxPercent\": 10, \"LineTotal\": 363.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ms.pg-ap@totalenergies.com,magdalyn.wehimbel@totalenergies.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0370",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-01-16",
+"ExpiryDate": "2026-01-23",
+"Reference": "National Parliament Services__Data Entry",
+"Currency": "PGK",
+"SubTotal": 6000.0,
+"TaxAmount": 600.0,
+"TotalAmount": 6600.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__Data Entry\", \"Quantity\": 1, \"UnitPrice\": 6000.0, \"TaxPercent\": 10, \"LineTotal\": 6600.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0367",
+"PSPClient": "South Pacific Brewery",
+"ClientInvoiceName": "South Pacific Brewery",
+"QuoteDate": "2026-01-16",
+"ExpiryDate": "2026-01-22",
+"Reference": "January 2026 - Exception Pay Run - PPE0118 (2026 LTIP Bonus Payments)",
+"Currency": "PGK",
+"SubTotal": 640.0,
+"TaxAmount": 64.0,
+"TotalAmount": 704.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"January 2026 - Exception Pay Run - PPE0118 (2026 LTIP Bonus Payments)\", \"Quantity\": 1, \"UnitPrice\": 640.0, \"TaxPercent\": 10, \"LineTotal\": 704.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Brennan.Philip@sp.com.pg,ap.pom@sp.com.pg,Belinda.Yapen@sp.com.pg,Jessica.Tabereng@sp.com.pg,Nathalie.Suagotsu@sp.com.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0371",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-01-19",
+"ExpiryDate": "2026-01-26",
+"Reference": "National Parliament Services__Pay Code Definition",
+"Currency": "PGK",
+"SubTotal": 150.0,
+"TaxAmount": 15.0,
+"TotalAmount": 165.0,
+"Status": "Declined",
+"LineItems": "[{\"Description\": \"National Parliament Services__Pay Code Definition\", \"Quantity\": 1, \"UnitPrice\": 150.0, \"TaxPercent\": 10, \"LineTotal\": 165.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0372",
+"PSPClient": "The ABC Media Development Initiative",
+"ClientInvoiceName": "The ABC Media Development Initiative",
+"QuoteDate": "2026-01-20",
+"ExpiryDate": "2026-01-27",
+"Reference": "SOE Processed - 2025",
+"Currency": "PGK",
+"SubTotal": 214.5,
+"TaxAmount": 21.45,
+"TotalAmount": 235.95,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"SOE Processed - 2025\", \"Quantity\": 1, \"UnitPrice\": 214.5, \"TaxPercent\": 10, \"LineTotal\": 235.95}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Haro.Hare@abc.net.au, Charlene@abc.net.au",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0373",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ Fiji)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-01-28",
+"ExpiryDate": "2026-02-04",
+"Reference": "ANZ Fiji [FJHUB] _Exception Pay",
+"Currency": "AUD",
+"SubTotal": 510.0,
+"TaxAmount": 0.0,
+"TotalAmount": 510.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ Fiji [FJHUB] _Exception Pay\", \"Quantity\": 1, \"UnitPrice\": 510.0, \"TaxPercent\": 0, \"LineTotal\": 510.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0374",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-01-29",
+"ExpiryDate": "2026-02-05",
+"Reference": "National Parliament Services__2026 Salary Scale Update",
+"Currency": "PGK",
+"SubTotal": 300.0,
+"TaxAmount": 30.0,
+"TotalAmount": 330.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__2026 Salary Scale Update\", \"Quantity\": 1, \"UnitPrice\": 300.0, \"TaxPercent\": 10, \"LineTotal\": 330.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0376",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-02-02",
+"ExpiryDate": "2026-02-09",
+"Reference": "ANZ PNG _Exception Pay_",
+"Currency": "AUD",
+"SubTotal": 510.0,
+"TaxAmount": 0.0,
+"TotalAmount": 510.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG _Exception Pay_\", \"Quantity\": 1, \"UnitPrice\": 510.0, \"TaxPercent\": 0, \"LineTotal\": 510.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0375",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-02-02",
+"ExpiryDate": "2026-02-09",
+"Reference": "ANZ PNG_ List of Motor vehicles and people details for payroll component build and testing",
+"Currency": "AUD",
+"SubTotal": 1280.0,
+"TaxAmount": 0.0,
+"TotalAmount": 1280.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG_ List of Motor vehicles and people details for payroll component build and testing\", \"Quantity\": 1, \"UnitPrice\": 1280.0, \"TaxPercent\": 0, \"LineTotal\": 1280.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0378",
+"PSPClient": "South Pacific Brewery",
+"ClientInvoiceName": "South Pacific Brewery",
+"QuoteDate": "2026-02-03",
+"ExpiryDate": "2026-02-10",
+"Reference": "February 2026 - SPB Salary Sacrifice (mortgage) Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 340.0,
+"TaxAmount": 34.0,
+"TotalAmount": 374.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"February 2026 - SPB Salary Sacrifice (mortgage) Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 340.0, \"TaxPercent\": 10, \"LineTotal\": 374.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Brennan.Philip@sp.com.pg,ap.pom@sp.com.pg,Belinda.Yapen@sp.com.pg,Jessica.Tabereng@sp.com.pg,Nathalie.Suagotsu@sp.com.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0377",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-02-03",
+"ExpiryDate": "2026-02-10",
+"Reference": "National Parliament Services__Salary Structure Adjustment -NP09.",
+"Currency": "PGK",
+"SubTotal": 300.0,
+"TaxAmount": 30.0,
+"TotalAmount": 330.0,
+"Status": "Declined",
+"LineItems": "[{\"Description\": \"National Parliament Services__Salary Structure Adjustment -NP09.\", \"Quantity\": 1, \"UnitPrice\": 300.0, \"TaxPercent\": 10, \"LineTotal\": 330.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0379",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ Fiji)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-02-04",
+"ExpiryDate": "2026-02-11",
+"Reference": "ANZ Fiji [FJBRN] _Exception Pay",
+"Currency": "AUD",
+"SubTotal": 510.0,
+"TaxAmount": 0.0,
+"TotalAmount": 510.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ Fiji [FJBRN] _Exception Pay\", \"Quantity\": 1, \"UnitPrice\": 510.0, \"TaxPercent\": 0, \"LineTotal\": 510.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0382",
+"PSPClient": "Total Oil PNG Ltd (TEM)",
+"ClientInvoiceName": "Total Oil PNG Ltd",
+"QuoteDate": "2026-02-19",
+"ExpiryDate": "2026-02-26",
+"Reference": "Total Energies (TEM)_Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 330.0,
+"TaxAmount": 33.0,
+"TotalAmount": 363.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Total Energies (TEM)_Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 330.0, \"TaxPercent\": 10, \"LineTotal\": 363.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ms.pg-ap@totalenergies.com,magdalyn.wehimbel@totalenergies.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0383",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-02-26",
+"ExpiryDate": "2026-03-03",
+"Reference": "ANZ PNG _Additional Work Request",
+"Currency": "AUD",
+"SubTotal": 6400.0,
+"TaxAmount": 0.0,
+"TotalAmount": 6400.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG _Additional Work Request\", \"Quantity\": 1, \"UnitPrice\": 6400.0, \"TaxPercent\": 0, \"LineTotal\": 6400.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0384",
+"PSPClient": "Office of the Insurance Commissioner",
+"ClientInvoiceName": "Office of the Insurance Commissioner",
+"QuoteDate": "2026-02-26",
+"ExpiryDate": "2026-03-05",
+"Reference": "OIC Staff Nambawan Super Contribution \u2013 Workshop",
+"Currency": "PGK",
+"SubTotal": 5000.0,
+"TaxAmount": 500.0,
+"TotalAmount": 5500.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"OIC Staff Nambawan Super Contribution \\u2013 Workshop\", \"Quantity\": 1, \"UnitPrice\": 5000.0, \"TaxPercent\": 10, \"LineTotal\": 5500.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "",
+"NeedsClientReview": true
+},
+{
+"Title": "QU-0386",
+"PSPClient": "National AIDS Council Secretariat",
+"ClientInvoiceName": "National AIDS Council Secretariat",
+"QuoteDate": "2026-02-27",
+"ExpiryDate": "2026-03-06",
+"Reference": "Salary Fixation Rates",
+"Currency": "PGK",
+"SubTotal": 1500.0,
+"TaxAmount": 150.0,
+"TotalAmount": 1650.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Salary Fixation Rates\", \"Quantity\": 1, \"UnitPrice\": 1500.0, \"TaxPercent\": 10, \"LineTotal\": 1650.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "panisb21@gmail.com,mhasu91@gmail.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0385",
+"PSPClient": "Independent Consumer & Competition Commission",
+"ClientInvoiceName": "Independent Consumer & Competition Commission",
+"QuoteDate": "2026-02-27",
+"ExpiryDate": "2026-03-06",
+"Reference": "Salary Fixation Rates",
+"Currency": "PGK",
+"SubTotal": 1600.0,
+"TaxAmount": 160.0,
+"TotalAmount": 1760.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Salary Fixation Rates\", \"Quantity\": 1, \"UnitPrice\": 1600.0, \"TaxPercent\": 10, \"LineTotal\": 1760.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ftommarrah@iccc.gov.pg,lopiari@iccc.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0393",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-03-03",
+"ExpiryDate": "2026-03-10",
+"Reference": "ANZ PNG _Pay 05 PPE 05-Mar-2026_01st Reports for Validation",
+"Currency": "AUD",
+"SubTotal": 320.0,
+"TaxAmount": 0.0,
+"TotalAmount": 320.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG _Pay 05 PPE 05-Mar-2026_01st Reports for Validation\", \"Quantity\": 1, \"UnitPrice\": 320.0, \"TaxPercent\": 0, \"LineTotal\": 320.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0394",
+"PSPClient": "PNG Coffee Exporters",
+"ClientInvoiceName": "PNG Coffee Exporters",
+"QuoteDate": "2026-03-03",
+"ExpiryDate": "2026-03-10",
+"Reference": "Pay Code Definition",
+"Currency": "PGK",
+"SubTotal": 300.0,
+"TaxAmount": 30.0,
+"TotalAmount": 330.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Pay Code Definition\", \"Quantity\": 1, \"UnitPrice\": 300.0, \"TaxPercent\": 10, \"LineTotal\": 330.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "chris.desilva@edfman.com,Elizabeth.bua@edfman.com,Rosita.Jaffa@edfman.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0398",
+"PSPClient": "Independent Consumer & Competition Commission",
+"ClientInvoiceName": "Independent Consumer & Competition Commission",
+"QuoteDate": "2026-03-06",
+"ExpiryDate": "2026-03-13",
+"Reference": "Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 660.0,
+"TaxAmount": 66.0,
+"TotalAmount": 726.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 660.0, \"TaxPercent\": 10, \"LineTotal\": 726.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ftommarrah@iccc.gov.pg,lopiari@iccc.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0399",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-03-11",
+"ExpiryDate": "2026-03-18",
+"Reference": "National Parliament Services__ Exception Pay",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Pay\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0400",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-03-16",
+"ExpiryDate": "2026-03-23",
+"Reference": "National Parliament Services__Data Entry",
+"Currency": "PGK",
+"SubTotal": 9600.0,
+"TaxAmount": 960.0,
+"TotalAmount": 10560.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__Data Entry\", \"Quantity\": 1, \"UnitPrice\": 9600.0, \"TaxPercent\": 10, \"LineTotal\": 10560.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0401",
+"PSPClient": "PNG Coffee Exporters",
+"ClientInvoiceName": "PNG Coffee Exporters",
+"QuoteDate": "2026-03-16",
+"ExpiryDate": "2026-03-23",
+"Reference": "Paycode Definition \u2013 AON Superannuation Contribution",
+"Currency": "PGK",
+"SubTotal": 300.0,
+"TaxAmount": 30.0,
+"TotalAmount": 330.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Paycode Definition \\u2013 AON Superannuation Contribution\", \"Quantity\": 1, \"UnitPrice\": 300.0, \"TaxPercent\": 10, \"LineTotal\": 330.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "chris.desilva@edfman.com,Elizabeth.bua@edfman.com,Rosita.Jaffa@edfman.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0403",
+"PSPClient": "G4S Secure Solutions (PNG) Ltd",
+"ClientInvoiceName": "G4S Secure Solutions (PNG) Ltd",
+"QuoteDate": "2026-03-19",
+"ExpiryDate": "2026-03-26",
+"Reference": "Reconciliation Breakdown",
+"Currency": "PGK",
+"SubTotal": 1000.0,
+"TaxAmount": 100.0,
+"TotalAmount": 1100.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Reconciliation Breakdown\", \"Quantity\": 1, \"UnitPrice\": 1000.0, \"TaxPercent\": 10, \"LineTotal\": 1100.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "cathy.koyah@pg.g4s.com,archie.bugay@pg.g4s.com,barbra.yewa@pg.g4s.com,urania.samali@pg.g4s.com,victor.loi@pg.g4s.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0404",
+"PSPClient": "BOC Solomon Islands Ltd",
+"ClientInvoiceName": "BOC Solomon Islands Ltd",
+"QuoteDate": "2026-03-20",
+"ExpiryDate": "2026-03-27",
+"Reference": "March 2026_ Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 0.0,
+"TotalAmount": 250.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"March 2026_ Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 0, \"LineTotal\": 250.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "Zyra.Santiago@boc.com,Payable@boc.com,rosemary.vuivagi@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0406",
+"PSPClient": "Total Oil PNG Ltd (TEM)",
+"ClientInvoiceName": "Total Oil PNG Ltd",
+"QuoteDate": "2026-03-24",
+"ExpiryDate": "2026-03-31",
+"Reference": "Total Energies (TEM)_Exception Payrun_Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 330.0,
+"TaxAmount": 33.0,
+"TotalAmount": 363.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Total Energies (TEM)_Exception Payrun_Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 330.0, \"TaxPercent\": 10, \"LineTotal\": 363.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ms.pg-ap@totalenergies.com,magdalyn.wehimbel@totalenergies.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0405",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ Fiji)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-03-25",
+"ExpiryDate": "2026-03-30",
+"Reference": "ANZ Fiji _Exception Payrun _ Redundancy Payouts",
+"Currency": "AUD",
+"SubTotal": 1020.0,
+"TaxAmount": 0.0,
+"TotalAmount": 1020.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ Fiji _Exception Payrun _ Redundancy Payouts\", \"Quantity\": 1, \"UnitPrice\": 1020.0, \"TaxPercent\": 0, \"LineTotal\": 1020.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0411",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-03-31",
+"ExpiryDate": "2026-04-08",
+"Reference": "BOC PNG_Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"BOC PNG_Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0420",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-04-09",
+"ExpiryDate": "2026-04-16",
+"Reference": "National Parliament Services__ Exception Pay",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Pay\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0412",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-04-10",
+"ExpiryDate": "2026-04-09",
+"Reference": "BOC PNG_Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 500.0,
+"TaxAmount": 50.0,
+"TotalAmount": 550.0,
+"Status": "Declined",
+"LineItems": "[{\"Description\": \"BOC PNG_Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 500.0, \"TaxPercent\": 10, \"LineTotal\": 550.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0423",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-04-14",
+"ExpiryDate": "2026-04-21",
+"Reference": "ANZ PNG _Configuration for Medical Benefit",
+"Currency": "AUD",
+"SubTotal": 3840.0,
+"TaxAmount": 0.0,
+"TotalAmount": 3840.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG _Configuration for Medical Benefit\", \"Quantity\": 1, \"UnitPrice\": 3840.0, \"TaxPercent\": 0, \"LineTotal\": 3840.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0421",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ PNG)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-04-14",
+"ExpiryDate": "2026-04-17",
+"Reference": "ANZ PNG _Configuration for PUDO Benefit",
+"Currency": "AUD",
+"SubTotal": 3200.0,
+"TaxAmount": 0.0,
+"TotalAmount": 3200.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ PNG _Configuration for PUDO Benefit\", \"Quantity\": 1, \"UnitPrice\": 3200.0, \"TaxPercent\": 0, \"LineTotal\": 3200.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com, Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0431",
+"PSPClient": "Office of the Insurance Commissioner",
+"ClientInvoiceName": "Office of the Insurance Commissioner",
+"QuoteDate": "2026-04-20",
+"ExpiryDate": "2026-04-27",
+"Reference": "Corrections for Incorrect Leave Accrual & Cessation of NSLS deduction",
+"Currency": "PGK",
+"SubTotal": 3000.0,
+"TaxAmount": 300.0,
+"TotalAmount": 3300.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Corrections for Incorrect Leave Accrual & Cessation of NSLS deduction\", \"Quantity\": 1, \"UnitPrice\": 3000.0, \"TaxPercent\": 10, \"LineTotal\": 3300.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "",
+"NeedsClientReview": true
+},
+{
+"Title": "QU-0430",
+"PSPClient": "South Pacific Brewery",
+"ClientInvoiceName": "South Pacific Brewery",
+"QuoteDate": "2026-04-21",
+"ExpiryDate": "2026-04-27",
+"Reference": "April 2026 - SPB Exception Pay_Bonus Payout",
+"Currency": "PGK",
+"SubTotal": 3835.0,
+"TaxAmount": 383.5,
+"TotalAmount": 4218.5,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"April 2026 - SPB Exception Pay_Bonus Payout\", \"Quantity\": 1, \"UnitPrice\": 3835.0, \"TaxPercent\": 10, \"LineTotal\": 4218.5}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Brennan.Philip@sp.com.pg,ap.pom@sp.com.pg,Belinda.Yapen@sp.com.pg,Jessica.Tabereng@sp.com.pg,Nathalie.Suagotsu@sp.com.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0449",
+"PSPClient": "G4S Secure Solutions (PNG) Ltd",
+"ClientInvoiceName": "G4S Secure Solutions (PNG) Ltd",
+"QuoteDate": "2026-04-27",
+"ExpiryDate": "2026-05-04",
+"Reference": "Adhoc Reports Request",
+"Currency": "PGK",
+"SubTotal": 1000.0,
+"TaxAmount": 100.0,
+"TotalAmount": 1100.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Adhoc Reports Request\", \"Quantity\": 1, \"UnitPrice\": 1000.0, \"TaxPercent\": 10, \"LineTotal\": 1100.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "cathy.koyah@pg.g4s.com,archie.bugay@pg.g4s.com,barbra.yewa@pg.g4s.com,urania.samali@pg.g4s.com,victor.loi@pg.g4s.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0453",
+"PSPClient": "South Pacific Brewery",
+"ClientInvoiceName": "South Pacific Brewery",
+"QuoteDate": "2026-04-28",
+"ExpiryDate": "2026-05-05",
+"Reference": "April 2026 - SPB Incentive Payments",
+"Currency": "PGK",
+"SubTotal": 5440.0,
+"TaxAmount": 544.0,
+"TotalAmount": 5984.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"April 2026 - SPB Incentive Payments\", \"Quantity\": 1, \"UnitPrice\": 5440.0, \"TaxPercent\": 10, \"LineTotal\": 5984.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Brennan.Philip@sp.com.pg,ap.pom@sp.com.pg,Belinda.Yapen@sp.com.pg,Jessica.Tabereng@sp.com.pg,Nathalie.Suagotsu@sp.com.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0451",
+"PSPClient": "Total Oil PNG Ltd (TEM)",
+"ClientInvoiceName": "Total Oil PNG Ltd",
+"QuoteDate": "2026-04-28",
+"ExpiryDate": "2026-05-05",
+"Reference": "Total Energies (TEM)_WSS Walk Through/Training",
+"Currency": "PGK",
+"SubTotal": 660.0,
+"TaxAmount": 66.0,
+"TotalAmount": 726.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Total Energies (TEM)_WSS Walk Through/Training\", \"Quantity\": 1, \"UnitPrice\": 660.0, \"TaxPercent\": 10, \"LineTotal\": 726.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "ms.pg-ap@totalenergies.com,magdalyn.wehimbel@totalenergies.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0458",
+"PSPClient": "The ABC Media Development Initiative",
+"ClientInvoiceName": "The ABC Media Development Initiative",
+"QuoteDate": "2026-04-30",
+"ExpiryDate": "2026-05-07",
+"Reference": "Exception Pay_Nigel Doe's missed Salary",
+"Currency": "PGK",
+"SubTotal": 165.0,
+"TaxAmount": 16.5,
+"TotalAmount": 181.5,
+"Status": "Declined",
+"LineItems": "[{\"Description\": \"Exception Pay_Nigel Doe's missed Salary\", \"Quantity\": 1, \"UnitPrice\": 165.0, \"TaxPercent\": 10, \"LineTotal\": 181.5}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Haro.Hare@abc.net.au, Charlene@abc.net.au",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0462",
+"PSPClient": "PNG Registries Ltd",
+"ClientInvoiceName": "PNG Registries Ltd",
+"QuoteDate": "2026-05-01",
+"ExpiryDate": "2026-05-08",
+"Reference": "May 2026 - Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 50.0,
+"TaxAmount": 5.0,
+"TotalAmount": 55.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"May 2026 - Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 50.0, \"TaxPercent\": 10, \"LineTotal\": 55.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "Talitha.Kouga@linkgroup.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0478",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-05-06",
+"ExpiryDate": "2026-05-13",
+"Reference": "National Parliament Services__ Exception Pay",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Pay\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0486",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-05-08",
+"ExpiryDate": "2026-05-15",
+"Reference": "BOC PNG_EXCEPTION PAY RUN - JOHN VATABU",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"BOC PNG_EXCEPTION PAY RUN - JOHN VATABU\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0493",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-05-21",
+"ExpiryDate": "2026-05-28",
+"Reference": "National Parliament Services__ Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0497",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ Fiji)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-05-26",
+"ExpiryDate": "2026-05-29",
+"Reference": "ANZ Fiji (FJBRN)_Exception Payrun",
+"Currency": "AUD",
+"SubTotal": 1310.0,
+"TaxAmount": 0.0,
+"TotalAmount": 1310.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ Fiji (FJBRN)_Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 1310.0, \"TaxPercent\": 0, \"LineTotal\": 1310.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0499",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ANZ Fiji)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-05-26",
+"ExpiryDate": "2026-06-02",
+"Reference": "ANZ Fiji (FJHUB)_Exception Payrun",
+"Currency": "AUD",
+"SubTotal": 1630.0,
+"TaxAmount": 0.0,
+"TotalAmount": 1630.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"ANZ Fiji (FJHUB)_Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 1630.0, \"TaxPercent\": 0, \"LineTotal\": 1630.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0502",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-06-03",
+"ExpiryDate": "2026-06-10",
+"Reference": "National Parliament Services__ Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0501",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-06-03",
+"ExpiryDate": "2026-06-03",
+"Reference": "BOC PNG_Paycode Definition",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"BOC PNG_Paycode Definition\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0504",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-06-08",
+"ExpiryDate": "2026-06-15",
+"Reference": "National Parliament Services__ Pay Code Definition",
+"Currency": "PGK",
+"SubTotal": 150.0,
+"TaxAmount": 15.0,
+"TotalAmount": 165.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Pay Code Definition\", \"Quantity\": 1, \"UnitPrice\": 150.0, \"TaxPercent\": 10, \"LineTotal\": 165.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0506",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (CIMIC)",
+"ClientInvoiceName": "Dayforce Regional Pay Pty Ltd",
+"QuoteDate": "2026-06-08",
+"ExpiryDate": null,
+"Reference": "June 2025_CIMIC Payroll (BAU) Processed & Submission of Regulatory Reports",
+"Currency": "AUD",
+"SubTotal": 1480.0,
+"TaxAmount": 0.0,
+"TotalAmount": 1480.0,
+"Status": "Voided",
+"LineItems": "[{\"Description\": \"June 2025_CIMIC Payroll (BAU) Processed & Submission of Regulatory Reports\", \"Quantity\": 1, \"UnitPrice\": 1480.0, \"TaxPercent\": 0, \"LineTotal\": 1480.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Zero Rated",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,accountspayable@dayforce.com,Jonathan.Pein@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0510",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-06-18",
+"ExpiryDate": "2026-06-25",
+"Reference": "National Parliament Services__ Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0511",
+"PSPClient": "Dayforce Regional Pay Pty Ltd (ORICA PNG)",
+"ClientInvoiceName": "Dayforce Australia Pty Ltd",
+"QuoteDate": "2026-06-19",
+"ExpiryDate": "2026-06-26",
+"Reference": "Orica Australia Pty Ltd_Payroll Processing_May 2026",
+"Currency": "AUD",
+"SubTotal": 854.31,
+"TaxAmount": 0.0,
+"TotalAmount": 854.31,
+"Status": "Draft",
+"LineItems": "[{\"Description\": \"Orica Australia Pty Ltd_Payroll Processing_May 2026\", \"Quantity\": 1, \"UnitPrice\": 854.31, \"TaxPercent\": 0, \"LineTotal\": 854.31}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "DonaLyn.Broncate@dayforce.com,Jonathan.Pein@dayforce.com,accountspayable@dayforce.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0513",
+"PSPClient": "National Parliament of PNG",
+"ClientInvoiceName": "National Parliament of PNG",
+"QuoteDate": "2026-06-24",
+"ExpiryDate": "2026-07-01",
+"Reference": "National Parliament Services__ Exception Payrun",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Sent",
+"LineItems": "[{\"Description\": \"National Parliament Services__ Exception Payrun\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "vali.mairi@parliament.gov.pg",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0516",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-06-25",
+"ExpiryDate": "2026-07-02",
+"Reference": "Exception Payrun for BOCPG_Finish Pay",
+"Currency": "PGK",
+"SubTotal": 265.0,
+"TaxAmount": 26.5,
+"TotalAmount": 291.5,
+"Status": "Sent",
+"LineItems": "[{\"Description\": \"Exception Payrun for BOCPG_Finish Pay\", \"Quantity\": 1, \"UnitPrice\": 265.0, \"TaxPercent\": 10, \"LineTotal\": 291.5}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0517",
+"PSPClient": "BOC PNG Ltd",
+"ClientInvoiceName": "BOC PNG Ltd",
+"QuoteDate": "2026-06-29",
+"ExpiryDate": "2026-07-06",
+"Reference": "BOC's Exception Pay Run - Appreciation Bonus Payment for Moy Mamarau",
+"Currency": "PGK",
+"SubTotal": 250.0,
+"TaxAmount": 25.0,
+"TotalAmount": 275.0,
+"Status": "Sent",
+"LineItems": "[{\"Description\": \"BOC's Exception Pay Run - Appreciation Bonus Payment for Moy Mamarau\", \"Quantity\": 1, \"UnitPrice\": 250.0, \"TaxPercent\": 10, \"LineTotal\": 275.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "lilly.apis@boc.com,rosemary.vuivagi@boc.com,Rae.Kalas@boc.com,Payable@boc.com",
+"NeedsClientReview": false
+},
+{
+"Title": "QU-0518",
+"PSPClient": "Department of Finance, PNG",
+"ClientInvoiceName": "Department of Finance, PNG",
+"QuoteDate": "2026-06-30",
+"ExpiryDate": "2026-07-07",
+"Reference": "Super Portal Specification & Template samples",
+"Currency": "PGK",
+"SubTotal": 37250.0,
+"TaxAmount": 3725.0,
+"TotalAmount": 40975.0,
+"Status": "Invoiced",
+"LineItems": "[{\"Description\": \"Super Portal Specification & Template samples\", \"Quantity\": 1, \"UnitPrice\": 37250.0, \"TaxPercent\": 10, \"LineTotal\": 40975.0}]",
+"LinkedInvoiceNo": "",
+"AccountCode": "201",
+"TaxType": "Tax on Sales",
+"EmailAddress": "",
+"NeedsClientReview": true
+}
+];
 const SCOPES = ['Sites.ReadWrite.All', 'User.Read', 'offline_access'];
 const SITE_URL = 'https://conceptcompg.sharepoint.com/sites/PSP_Test';
 let SITE_ID = null;
@@ -1780,6 +3155,8 @@ const LISTS = {
   clients:     'PSP_Client_Details',
   lastinv:     'PSP_Last_Invoice',
   invoices:    'PSP_Invoices',
+  quotes:      'PSP_Quotes',
+  lastquote:   'PSP_Last_Quote',
 };
 
 // ─────────────────────────────────────────────
@@ -1803,6 +3180,8 @@ const cache = {
   clients: [],
   lastinv: [],
   invoices: [],
+  quotes: [],
+  lastquote: [],
   listsMap: {},
 };
 
@@ -2143,6 +3522,7 @@ function navigate(page) {
     'generate-calendar': 'Generate Calendar',
     'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
+    'quotes': 'Quotes',
     'invoices': 'Invoices',
   };
   document.getElementById('page-title').textContent = titles[page] || page;
@@ -2176,7 +3556,11 @@ async function loadPage(page) {
     else if (page === 'generate-calendar') await loadGenerateCalendar();
     else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
-    else if (page === 'invoices') {
+    else if (page === 'quotes') {
+    await loadQuotes();
+    try { await loadGenerateQuote(); } catch(e) { console.warn('loadGenerateQuote failed:', e); }
+  }
+  else if (page === 'invoices') {
     await loadInvoices();
     try { await loadGenerateInvoice(); } catch(e) { console.warn('loadGenerateInvoice failed:', e); }
     try { await loadImportInvoices(); } catch(e) { console.warn('loadImportInvoices failed:', e); }
@@ -4683,6 +6067,565 @@ async function confirmImport() {
   showToast(`Import complete: ${imported} imported, ${failed} failed`, failed>0?'error':'success');
   clearImportFile();
   document.getElementById('imp-results').style.display = 'none';
+}
+
+// ─────────────────────────────────────────────
+// QUOTES
+// ─────────────────────────────────────────────
+let quoteLines = [];
+let quoteLineCounter = 0;
+let currentQuoteId = null;
+
+function switchQuoteTab(tab) {
+  const tabs = { quotes: 'quotetab-quotes-content', generate: 'quotetab-generate-content' };
+  Object.entries(tabs).forEach(([key, contentId]) => {
+    document.getElementById('quotetab-' + key).classList.toggle('active', key === tab);
+    document.getElementById(contentId).style.display = key === tab ? '' : 'none';
+  });
+}
+
+function startNewQuote() {
+  currentQuoteId = null;
+  quoteLines = [];
+  switchQuoteTab('generate');
+  document.getElementById('gq-client').value = '';
+  document.getElementById('gq-contact').value = '';
+  document.getElementById('gq-reference').value = '';
+  loadGenerateQuote();
+}
+
+async function loadQuotes() {
+  if (!cache.quotes.length) cache.quotes = await getItems('quotes');
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  populateClientFilter('filter-q-client', cache.quotes);
+  renderQuotes();
+}
+
+function renderQuotes() {
+  const client = document.getElementById('filter-q-client')?.value || '';
+  const status = document.getElementById('filter-q-status')?.value || '';
+  const search = (document.getElementById('filter-q-search')?.value || '').toLowerCase();
+
+  let items = [...cache.quotes];
+  if (client) items = items.filter(i => i.PSPClient === client);
+  if (status) items = items.filter(i => (i.Status||'Draft') === status);
+  if (search) items = items.filter(i =>
+    (i.Title||'').toLowerCase().includes(search) ||
+    (i.PSPClient||'').toLowerCase().includes(search) ||
+    (i.Reference||'').toLowerCase().includes(search)
+  );
+  items.sort((a,b) => (b.Title||'').localeCompare(a.Title||''));
+
+  const tbody = document.getElementById('quotes-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ti ti-file-description"></i><p>No quotes found</p></div></td></tr>';
+    return;
+  }
+
+  const statusBadgeQ = s => {
+    const map = { Draft:'not-started', Sent:'started', Invoiced:'finished', Declined:'delayed', Voided:'delayed' };
+    return `<span class="badge badge-${map[s]||'not-started'}">${s||'Draft'}</span>`;
+  };
+
+  tbody.innerHTML = items.map(i => {
+    const reviewFlag = i.NeedsClientReview ? ' <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:13px;" title="Client needs to be added to PSP_Client_Details"></i>' : '';
+    return `<tr>
+      <td><strong style="color:var(--navy);">${i.Title||'—'}</strong></td>
+      <td>${i.PSPClient||'—'}${reviewFlag}</td>
+      <td style="font-size:12px;max-width:240px;">${i.Reference||'—'}</td>
+      <td style="white-space:nowrap;">${fmtDate(i.QuoteDate)}</td>
+      <td style="white-space:nowrap;">${fmtDate(i.ExpiryDate)}</td>
+      <td style="text-align:right;font-weight:700;">${(i.TotalAmount||0).toFixed(2)}</td>
+      <td>${i.Currency||'PGK'}</td>
+      <td>${statusBadgeQ(i.Status)}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-xs btn-outline" onclick="viewQuoteById('${i.id}')"><i class="ti ti-eye"></i></button>
+        <button class="btn btn-xs btn-outline" onclick="editQuoteById('${i.id}')"><i class="ti ti-pencil"></i></button>
+        ${i.Status !== 'Invoiced' && i.Status !== 'Voided' ? `<button class="btn btn-xs btn-teal" onclick="convertQuoteToInvoice('${i.id}')" title="Convert to Draft Invoice"><i class="ti ti-arrow-right"></i></button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('quotes','${i.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── GENERATE QUOTE ──
+async function loadGenerateQuote() {
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  if (!cache.lastquote.length) cache.lastquote = await getItems('lastquote');
+
+  const sel = document.getElementById('gq-client');
+  const sortedClients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">Select Client...</option>' + sortedClients.map(c => `<option>${c}</option>`).join('');
+
+  const today = new Date();
+  const expiry = new Date(today); expiry.setDate(expiry.getDate() + 7);
+  document.getElementById('gq-date').value = today.toISOString().slice(0,10);
+  document.getElementById('gq-expiry').value = expiry.toISOString().slice(0,10);
+
+  const lastNo = cache.lastquote[0]?.LastQuoteNo || '0518';
+  const nextNo = (parseInt(lastNo) + 1).toString().padStart(4, '0');
+  document.getElementById('gq-quoteno').value = 'QU-' + nextNo;
+
+  if (!currentQuoteId) {
+    quoteLines = [];
+    quoteLineCounter = 0;
+    addQuoteLine();
+  }
+}
+
+function addQuoteLine(prefill = null) {
+  quoteLineCounter++;
+  const id = 'qline_' + quoteLineCounter;
+  quoteLines.push({
+    id,
+    description: prefill?.Description || '',
+    quantity: prefill?.Quantity || 1,
+    unitPrice: prefill?.UnitPrice || 0,
+    taxPercent: prefill?.TaxPercent !== undefined ? prefill.TaxPercent : 10,
+  });
+  renderQuoteLines();
+}
+
+function removeQuoteLine(id) {
+  quoteLines = quoteLines.filter(l => l.id !== id);
+  if (!quoteLines.length) addQuoteLine();
+  else renderQuoteLines();
+}
+
+function updateQuoteLine(id, field, value) {
+  const line = quoteLines.find(l => l.id === id);
+  if (!line) return;
+  if (field === 'description') line.description = value;
+  else line[field] = parseFloat(value) || 0;
+  renderQuoteLines();
+}
+
+function renderQuoteLines() {
+  const container = document.getElementById('gq-lines-container');
+  container.innerHTML = quoteLines.map(l => `
+    <div style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="text" placeholder="Description" value="${(l.description||'').replace(/"/g,'&quot;')}"
+        oninput="updateQuoteLine('${l.id}','description',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+      <input type="number" placeholder="Qty" value="${l.quantity}" min="0" step="0.5"
+        oninput="updateQuoteLine('${l.id}','quantity',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+      <input type="number" placeholder="Unit Price" value="${l.unitPrice}" min="0" step="0.01"
+        oninput="updateQuoteLine('${l.id}','unitPrice',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+      <input type="number" placeholder="Tax%" value="${l.taxPercent}" min="0" max="100"
+        oninput="updateQuoteLine('${l.id}','taxPercent',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
+      <button onclick="removeQuoteLine('${l.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;"><i class="ti ti-x"></i></button>
+    </div>`).join('');
+  updateQuoteTotals();
+}
+
+function updateQuoteTotals() {
+  let subtotal = 0, tax = 0;
+  quoteLines.forEach(l => {
+    const lineSub = (l.quantity||0) * (l.unitPrice||0);
+    subtotal += lineSub;
+    tax += lineSub * ((l.taxPercent||0)/100);
+  });
+  document.getElementById('gq-subtotal').textContent = subtotal.toFixed(2);
+  document.getElementById('gq-tax').textContent = tax.toFixed(2);
+  document.getElementById('gq-total').textContent = (subtotal+tax).toFixed(2);
+  renderQuotePreview();
+}
+
+function renderQuotePreview() {
+  const clientName = document.getElementById('gq-client')?.value;
+  const previewEl = document.getElementById('gq-preview');
+  if (!clientName || !quoteLines.some(l => l.description)) {
+    previewEl.innerHTML = '<div class="empty-state"><i class="ti ti-file-description"></i><p>Fill in client and line items to preview the quote</p></div>';
+    document.getElementById('btn-print-quote').style.display = 'none';
+    document.getElementById('btn-email-quote').style.display = 'none';
+    return;
+  }
+
+  const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
+  const currency = clientRecord?.Currency || 'PGK';
+  const quoteNo = document.getElementById('gq-quoteno').value;
+  const quoteDate = document.getElementById('gq-date').value;
+  const expiryDate = document.getElementById('gq-expiry').value;
+  const reference = document.getElementById('gq-reference').value;
+  const contact = document.getElementById('gq-contact').value;
+
+  const rows = quoteLines.filter(l => l.description).map(l => `
+    <tr>
+      <td style="padding:8px 4px;">${l.description}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.quantity}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.unitPrice.toFixed(2)}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.taxPercent}%</td>
+      <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
+  const tax = parseFloat(document.getElementById('gq-tax').textContent);
+  const total = parseFloat(document.getElementById('gq-total').textContent);
+
+  previewEl.innerHTML = buildQuoteDocumentHTML({
+    quoteNo, quoteDate, expiryDate, reference, contact,
+    clientName, clientRecord, currency, rows, subtotal, tax, total,
+  });
+
+  document.getElementById('btn-print-quote').style.display = '';
+  document.getElementById('btn-email-quote').style.display = '';
+}
+
+function buildQuoteDocumentHTML(d) {
+  const addr = d.clientRecord ? [d.clientRecord.POAddressLine1, d.clientRecord.POAddressLine2, d.clientRecord.POCity, d.clientRecord.POCountry].filter(Boolean).join('<br>') : '';
+  return `
+    <div id="quote-doc-content" style="padding:24px;background:white;font-family:Arial,sans-serif;color:#1a2744;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">
+        <div>
+          <div style="font-size:28px;font-weight:300;color:#333;">QUOTE</div>
+        </div>
+        <img src="${CONCEPT_LOGO_URI}" style="height:60px;">
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:24px;">
+        <div style="font-size:12px;line-height:1.6;">
+          <div style="font-weight:700;">${d.clientName}</div>
+          ${d.contact ? `<div>Attention: ${d.contact}</div>` : ''}
+          <div>${addr}</div>
+        </div>
+        <div style="font-size:12px;line-height:1.8;text-align:left;">
+          <div><strong>Date</strong><br>${d.quoteDate ? new Date(d.quoteDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : ''}</div>
+          <div style="margin-top:6px;"><strong>Expiry</strong><br>${d.expiryDate ? new Date(d.expiryDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : ''}</div>
+          <div style="margin-top:6px;"><strong>Quote Number</strong><br>${d.quoteNo}</div>
+          ${d.reference ? `<div style="margin-top:6px;"><strong>Reference</strong><br>${d.reference}</div>` : ''}
+        </div>
+        <div style="font-size:12px;line-height:1.6;text-align:right;">
+          <div style="font-weight:700;">Concept Group Limited</div>
+          <div>PO Box 190</div>
+          <div>Waigani</div>
+          <div>PORT MORESBY</div>
+          <div>PAPUA NEW GUINEA</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:2px solid #1a2744;">
+            <th style="text-align:left;padding:8px 4px;">Description</th>
+            <th style="text-align:right;padding:8px 4px;">Quantity</th>
+            <th style="text-align:right;padding:8px 4px;">Unit Price</th>
+            <th style="text-align:right;padding:8px 4px;">Tax</th>
+            <th style="text-align:right;padding:8px 4px;">Amount ${d.currency}</th>
+          </tr>
+        </thead>
+        <tbody>${d.rows}</tbody>
+      </table>
+      <div style="margin-top:16px;text-align:right;font-size:12px;">
+        <div style="padding:4px 0;border-top:1px solid #ccc;display:flex;justify-content:flex-end;gap:40px;"><span>Subtotal</span><span style="width:100px;">${d.subtotal.toFixed(2)}</span></div>
+        <div style="padding:4px 0;display:flex;justify-content:flex-end;gap:40px;"><span>Total Sales Tax</span><span style="width:100px;">${d.tax.toFixed(2)}</span></div>
+        <div style="padding:8px 0;border-top:2px solid #1a2744;font-weight:800;font-size:14px;display:flex;justify-content:flex-end;gap:40px;"><span>TOTAL ${d.currency}</span><span style="width:100px;">${d.total.toFixed(2)}</span></div>
+      </div>
+    </div>`;
+}
+
+async function saveQuote() {
+  const clientName = document.getElementById('gq-client').value;
+  if (!clientName) { showToast('Please select a client', 'error'); return; }
+  if (!quoteLines.some(l => l.description)) { showToast('Please add at least one line item', 'error'); return; }
+
+  const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
+  const quoteNo = document.getElementById('gq-quoteno').value;
+  const subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
+  const tax = parseFloat(document.getElementById('gq-tax').textContent);
+  const total = parseFloat(document.getElementById('gq-total').textContent);
+
+  const lines = quoteLines.filter(l => l.description).map(l => ({
+    Description: l.description, Quantity: l.quantity, UnitPrice: l.unitPrice,
+    TaxPercent: l.taxPercent, LineTotal: Math.round(l.quantity*l.unitPrice*(1+l.taxPercent/100)*100)/100,
+  }));
+
+  const fields = {
+    Title: quoteNo,
+    PSPClient: clientRecord?.PSPClient || clientName,
+    ClientInvoiceName: clientName,
+    ContactPerson: document.getElementById('gq-contact').value,
+    QuoteDate: document.getElementById('gq-date').value ? new Date(document.getElementById('gq-date').value).toISOString() : null,
+    ExpiryDate: document.getElementById('gq-expiry').value ? new Date(document.getElementById('gq-expiry').value).toISOString() : null,
+    Reference: document.getElementById('gq-reference').value,
+    Currency: clientRecord?.Currency || 'PGK',
+    TaxType: clientRecord?.TaxType || 'Tax on Sales',
+    AccountCode: String(clientRecord?.AccountCode || '201'),
+    SubTotal: Math.round(subtotal*100)/100,
+    TaxAmount: Math.round(tax*100)/100,
+    TotalAmount: Math.round(total*100)/100,
+    Status: currentQuoteId ? undefined : 'Draft', // only set on create; edits preserve existing status
+    EmailAddress: clientRecord?.EmailAddress || '',
+    CreatedBy: currentUser?.displayName || '',
+    NeedsClientReview: !clientRecord,
+  };
+  if (fields.Status === undefined) delete fields.Status;
+
+  try {
+    let qId = currentQuoteId;
+    if (qId) {
+      // EDIT: update core fields directly on the existing item
+      await saveWithFieldFallback(true, 'quotes', qId, fields);
+    } else {
+      // NEW: create the item, then patch in line items
+      const newQ = await createItem('quotes', fields);
+      qId = newQ?.id;
+    }
+    if (qId) {
+      await saveWithFieldFallback(true, 'quotes', qId, { LineItems: JSON.stringify(lines) });
+    }
+    // Increment last quote number only for brand-new quotes
+    if (!currentQuoteId) {
+      const lastRec = cache.lastquote[0];
+      const newNo = quoteNo.replace('QU-','');
+      if (lastRec) {
+        await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNo: newNo });
+        cache.lastquote[0].LastQuoteNo = newNo;
+      }
+    }
+    cache.quotes = await getItems('quotes');
+    showToast(`Quote ${quoteNo} saved`, 'success');
+    currentQuoteId = null;
+    quoteLines = [];
+    switchQuoteTab('quotes');
+    renderQuotes();
+  } catch(e) { showToast('Error saving quote: ' + e.message, 'error'); }
+}
+
+function editQuoteById(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  currentQuoteId = id;
+  switchQuoteTab('generate');
+  document.getElementById('gq-client').value = q.ClientInvoiceName || q.PSPClient || '';
+  document.getElementById('gq-contact').value = q.ContactPerson || '';
+  document.getElementById('gq-date').value = q.QuoteDate ? spDateToDate(q.QuoteDate)?.toISOString().slice(0,10) : '';
+  document.getElementById('gq-expiry').value = q.ExpiryDate ? spDateToDate(q.ExpiryDate)?.toISOString().slice(0,10) : '';
+  document.getElementById('gq-reference').value = q.Reference || '';
+  document.getElementById('gq-quoteno').value = q.Title;
+
+  let lines = [];
+  try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
+  quoteLines = [];
+  quoteLineCounter = 0;
+  if (lines.length) lines.forEach(l => addQuoteLine(l));
+  else addQuoteLine();
+}
+
+function viewQuoteById(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  let lines = [];
+  try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
+  const clientRecord = cache.clients.find(c => c.PSPClient === q.PSPClient);
+
+  const rows = lines.map(l => `
+    <tr>
+      <td style="padding:8px 4px;">${l.Description}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.Quantity}</td>
+      <td style="text-align:right;padding:8px 4px;">${(l.UnitPrice||0).toFixed(2)}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
+      <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.LineTotal||0).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const docHtml = buildQuoteDocumentHTML({
+    quoteNo: q.Title, quoteDate: q.QuoteDate, expiryDate: q.ExpiryDate,
+    reference: q.Reference, contact: q.ContactPerson,
+    clientName: q.ClientInvoiceName || q.PSPClient, clientRecord,
+    currency: q.Currency || 'PGK', rows,
+    subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
+  });
+
+  document.getElementById('modal-title').textContent = q.Title + ' — ' + q.PSPClient;
+  document.getElementById('modal-body').innerHTML = `<div style="border:1px solid var(--grey-200);border-radius:8px;overflow:hidden;">${docHtml}</div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Close</button>
+    <button class="btn btn-outline" onclick="printQuoteDoc('${id}')"><i class="ti ti-printer"></i> Print</button>
+    <button class="btn btn-teal" onclick="emailQuoteDoc('${id}')"><i class="ti ti-mail"></i> Email</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function printQuotePreview() {
+  const content = document.getElementById('quote-doc-content');
+  if (!content) return;
+  printHTMLContent(content.outerHTML);
+}
+
+function printQuoteDoc(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  let lines = [];
+  try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
+  const clientRecord = cache.clients.find(c => c.PSPClient === q.PSPClient);
+  const rows = lines.map(l => `
+    <tr>
+      <td style="padding:8px 4px;">${l.Description}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.Quantity}</td>
+      <td style="text-align:right;padding:8px 4px;">${(l.UnitPrice||0).toFixed(2)}</td>
+      <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
+      <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.LineTotal||0).toFixed(2)}</td>
+    </tr>`).join('');
+  const docHtml = buildQuoteDocumentHTML({
+    quoteNo: q.Title, quoteDate: q.QuoteDate, expiryDate: q.ExpiryDate,
+    reference: q.Reference, contact: q.ContactPerson,
+    clientName: q.ClientInvoiceName || q.PSPClient, clientRecord,
+    currency: q.Currency || 'PGK', rows,
+    subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
+  });
+  printHTMLContent(docHtml);
+}
+
+function printHTMLContent(innerHtml) {
+  const printArea = document.getElementById('print-area');
+  if (!printArea) return;
+  printArea.innerHTML = innerHtml;
+  printArea.style.display = 'block';
+  window.print();
+  printArea.style.display = 'none';
+}
+
+function emailQuotePreview() {
+  const clientName = document.getElementById('gq-client').value;
+  const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
+  const quoteNo = document.getElementById('gq-quoteno').value;
+  const total = document.getElementById('gq-total').textContent;
+  const currency = clientRecord?.Currency || 'PGK';
+  openEmailDraft(clientRecord?.EmailAddress, quoteNo, currency, total);
+}
+
+function emailQuoteDoc(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  openEmailDraft(q.EmailAddress, q.Title, q.Currency||'PGK', (q.TotalAmount||0).toFixed(2));
+}
+
+function openEmailDraft(emailAddr, quoteNo, currency, total) {
+  const to = (emailAddr || '').split(/[,;]/)[0].trim();
+  const subject = encodeURIComponent(`Quote ${quoteNo} from Concept Group Limited`);
+  const body = encodeURIComponent(`Please find attached Quote ${quoteNo} for ${currency} ${total}.\n\nKind regards,\n${currentUser?.displayName || ''}\nConcept Group Limited`);
+  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+  showToast('Email draft opened — please print/save the quote as PDF and attach it manually', 'success');
+}
+
+async function runHistoricalQuotesImport() {
+  if (!HISTORICAL_QUOTES || !HISTORICAL_QUOTES.length) {
+    showToast('No historical quote data found', 'error'); return;
+  }
+  if (!confirm(`This will import ${HISTORICAL_QUOTES.length} historical quotes (Jan-Jun 2026) into PSP_Quotes.\n\nThis should only be run ONCE. Continue?`)) return;
+
+  const btn = document.getElementById('btn-historical-quotes-import');
+  btn.disabled = true;
+
+  if (!cache.quotes.length) cache.quotes = await getItems('quotes');
+  const existingTitles = new Set(cache.quotes.map(q => q.Title));
+
+  let imported = 0, skipped = 0, failed = 0;
+  const total = HISTORICAL_QUOTES.length;
+
+  for (let i = 0; i < HISTORICAL_QUOTES.length; i++) {
+    const rec = HISTORICAL_QUOTES[i];
+    btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Importing ${i+1}/${total}...`;
+
+    if (existingTitles.has(rec.Title)) { skipped++; continue; }
+
+    try {
+      const coreFields = {
+        Title: rec.Title,
+        PSPClient: String(rec.PSPClient || ''),
+        ClientInvoiceName: String(rec.ClientInvoiceName || ''),
+        QuoteDate: rec.QuoteDate ? new Date(rec.QuoteDate).toISOString() : null,
+        ExpiryDate: rec.ExpiryDate ? new Date(rec.ExpiryDate).toISOString() : null,
+        Reference: String(rec.Reference || '').substring(0,255),
+        Currency: String(rec.Currency || 'PGK').substring(0,10),
+        TaxType: String(rec.TaxType || 'Tax on Sales').substring(0,50),
+        AccountCode: String(rec.AccountCode || '201').substring(0,50),
+        SubTotal: rec.SubTotal || 0,
+        TaxAmount: rec.TaxAmount || 0,
+        TotalAmount: rec.TotalAmount || 0,
+        Status: rec.Status || 'Draft',
+        EmailAddress: String(rec.EmailAddress || '').substring(0,500),
+        CreatedBy: 'Historical Import',
+        NeedsClientReview: !!rec.NeedsClientReview,
+      };
+      const newQ = await createItem('quotes', coreFields);
+      if (newQ?.id) {
+        await saveWithFieldFallback(true, 'quotes', newQ.id, {
+          LineItems: rec.LineItems || '[]',
+          LinkedInvoiceNo: String(rec.LinkedInvoiceNo || ''),
+        });
+      }
+      imported++;
+    } catch(e) {
+      console.warn(`Failed to import ${rec.Title}:`, e.message);
+      failed++;
+    }
+  }
+
+  cache.quotes = await getItems('quotes');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ti ti-history"></i> Import Historical (Jan-Jun)';
+  renderQuotes();
+  showToast(`Quote import complete: ${imported} imported, ${skipped} skipped, ${failed} failed`, failed>0?'error':'success');
+  console.log(`[PSP_HUB] Historical quotes import: ${imported} imported, ${skipped} skipped, ${failed} failed`);
+}
+
+async function convertQuoteToInvoice(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  if (!confirm(`Convert ${q.Title} to a Draft Invoice in PSP_Invoices?`)) return;
+
+  let lines = [];
+  try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
+
+  const lastInvRecord = cache.lastinv[0];
+  const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
+  const invNo = `INV-${lastNo + 1}`;
+
+  const invLines = lines.map(l => ({
+    PayGroup: '', PayNo: '', Category: 'Consulting',
+    Description: l.Description, Quantity: l.Quantity, UnitAmount: l.UnitPrice,
+    SubTotal: Math.round(l.Quantity*l.UnitPrice*100)/100,
+    TaxAmount: Math.round(l.Quantity*l.UnitPrice*(l.TaxPercent/100)*100)/100,
+  }));
+
+  try {
+    const coreFields = {
+      Title: invNo,
+      InvoiceDate: new Date().toISOString(),
+      DueDate: q.ExpiryDate || new Date().toISOString(),
+      BillingMonth: new Date().toLocaleDateString('en-GB',{month:'long'}),
+      PSPClient: q.PSPClient,
+      ContactName: q.ClientInvoiceName || q.PSPClient,
+      EmailAddress: String(q.EmailAddress||'').substring(0,255),
+      Currency: q.Currency || 'PGK',
+      TaxType: q.TaxType || 'Tax on Sales',
+      SubTotal: q.SubTotal, TaxAmount: q.TaxAmount, TotalAmount: q.TotalAmount,
+      AccountCode: String(q.AccountCode||'201'),
+      Reference: q.Reference,
+      ExportedBy: 'Quote Conversion — ' + (currentUser?.displayName||''),
+      ExportedDate: new Date().toISOString(),
+      Status: 'Draft',
+    };
+    const newInv = await createItem('invoices', coreFields);
+    if (newInv?.id) {
+      await saveWithFieldFallback(true, 'invoices', newInv.id, {
+        LineItems: JSON.stringify(invLines),
+        PayRuns: 'Consulting: ' + (q.Reference||''),
+        BillingRecordIDs: '',
+      });
+    }
+    await saveWithFieldFallback(true, 'quotes', q.id, { Status: 'Invoiced', LinkedInvoiceNo: invNo });
+    const newInvNo = lastNo + 1;
+    if (lastInvRecord) {
+      await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, { LastInvoiceNo: newInvNo });
+      cache.lastinv[0].LastInvoiceNo = newInvNo;
+    }
+    cache.quotes = await getItems('quotes');
+    cache.invoices = await getItems('invoices');
+    renderQuotes();
+    showToast(`Quote converted to Draft Invoice ${invNo}`, 'success');
+  } catch(e) { showToast('Error converting quote: ' + e.message, 'error'); }
 }
 
 // ─────────────────────────────────────────────
