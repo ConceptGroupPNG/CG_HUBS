@@ -884,9 +884,7 @@
       <div class="nav-item" onclick="navigate('billing-metrics')">
         <i class="ti ti-chart-bar"></i> Billing Metrics
       </div>
-      <div class="nav-item" onclick="navigate('import-invoices')">
-        <i class="ti ti-file-upload"></i> Import Invoices
-      </div>
+      
     </div>
 
     <div class="sidebar-section">
@@ -1433,6 +1431,9 @@
           <div class="tab" id="fintab-generate" onclick="switchInvoiceTab('generate')">
             <i class="ti ti-file-invoice" style="font-size:14px;margin-right:4px;"></i> Generate Invoice
           </div>
+          <div class="tab" id="fintab-import" onclick="switchInvoiceTab('import')">
+            <i class="ti ti-file-upload" style="font-size:14px;margin-right:4px;"></i> Import Invoices
+          </div>
         </div>
 
         <!-- TAB: INVOICES LIST -->
@@ -1581,12 +1582,8 @@
             <div id="invoice-preview"></div>
           </div>
 
-        </div>
-      </div>
-      </div>
-
-      <!-- IMPORT INVOICES PAGE -->
-      <div class="page" id="page-import-invoices">
+        <!-- TAB: IMPORT INVOICES -->
+        <div id="invoicetab-import-content" style="display:none;">
         <div class="grid-2">
           <div class="card">
             <div class="card-header"><h3>Import Xero Sales Invoices CSV</h3></div>
@@ -1678,7 +1675,13 @@
             </div>
           </div>
         </div>
-      </div></div><!-- /page-content -->
+      </div>
+
+        </div>
+      </div>
+      </div>
+
+      </div><!-- /page-content -->
   </div><!-- /main -->
 </div><!-- /app -->
 
@@ -2142,7 +2145,6 @@ function navigate(page) {
     'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
     'invoices': 'Invoices',
-    'import-invoices': 'Import Invoices',
   };
   document.getElementById('page-title').textContent = titles[page] || page;
   document.getElementById('topbar-actions').innerHTML = '';
@@ -2176,8 +2178,7 @@ async function loadPage(page) {
     else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
     else if (page === 'generate-invoice') await loadGenerateInvoice();
-  else if (page === 'invoices') { await loadInvoices(); await loadGenerateInvoice(); }
-  else if (page === 'import-invoices') await loadImportInvoices();
+  else if (page === 'invoices') { await loadInvoices(); await loadGenerateInvoice(); await loadImportInvoices(); }
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
       await handleTokenExpiry();
@@ -4398,7 +4399,7 @@ async function markAsBilled() {
 }
 
 function switchInvoiceTab(tab) {
-  const tabs = { invoices: 'invoicetab-invoices-content', generate: 'invoicetab-generate-content' };
+  const tabs = { invoices: 'invoicetab-invoices-content', generate: 'invoicetab-generate-content', import: 'invoicetab-import-content' };
   Object.entries(tabs).forEach(([key, contentId]) => {
     document.getElementById('fintab-' + key).classList.toggle('active', key === tab);
     document.getElementById(contentId).style.display = key === tab ? '' : 'none';
