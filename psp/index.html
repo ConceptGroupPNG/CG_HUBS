@@ -1477,8 +1477,7 @@
                   <th style="text-align:right;">Total</th>
                   <th>Currency</th>
                   <th>Status</th>
-                  <th>Exported By</th>
-                  <th>Actions</th>
+                                    <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="invoices-tbody">
@@ -4712,7 +4711,7 @@ function renderInvoices() {
 
   const tbody = document.getElementById('invoices-tbody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-receipt"></i><p>No invoices found</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-receipt"></i><p>No invoices found</p></div></td></tr>';
     return;
   }
 
@@ -4734,7 +4733,6 @@ function renderInvoices() {
       <td style="text-align:right;font-weight:700;color:var(--navy);">${(i.TotalAmount||0).toFixed(2)}</td>
       <td>${i.Currency||'PGK'}</td>
       <td>${statusBadgeInv(i.Status)}</td>
-      <td style="font-size:11px;">${i.ExportedBy||'—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="viewInvoiceById('${i.id}')">
           <i class="ti ti-eye"></i> View
