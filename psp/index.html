@@ -7216,14 +7216,20 @@ async function loadFinanceDashboard() {
       },
       datalabels: {
         display: ctx => {
-          // Only show label on the last (rightmost) dataset segment if value > 0
-          const datasetCount = ctx.chart.data.datasets.length;
-          return ctx.datasetIndex === datasetCount - 1 && ctx.dataset.data[ctx.dataIndex] > 0;
+          // Show the label only on the LAST NON-ZERO segment for this row
+          // (the globally-last dataset index is often zero for most rows,
+          // since not every Pay Master has activity in every Pay Group)
+          const row = ctx.dataIndex;
+          const datasets = ctx.chart.data.datasets;
+          let lastNonZeroIdx = -1;
+          for (let i = 0; i < datasets.length; i++) {
+            if ((datasets[i].data[row] || 0) > 0) lastNonZeroIdx = i;
+          }
+          return ctx.datasetIndex === lastNonZeroIdx;
         },
         anchor: 'end', align: 'end',
         color: '#334155', font: { size: 10, weight: '700' },
         formatter: (v, ctx) => {
-          // Show stack total
           const total = ctx.chart.data.datasets.reduce((s,ds) => s + (ds.data[ctx.dataIndex]||0), 0);
           return total > 0 ? total.toLocaleString() : '';
         },
