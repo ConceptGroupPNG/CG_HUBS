@@ -6129,6 +6129,31 @@ let quoteLines = [];
 let quoteLineCounter = 0;
 let currentQuoteId = null;
 
+// Branded confirm dialog replacing the native browser confirm() —
+// shows "PSP HUB" instead of the page URL, matches app styling.
+// Returns a Promise<boolean> so it can be awaited like confirm().
+function pspConfirm(message, title = 'PSP HUB') {
+  return new Promise((resolve) => {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = `
+      <div class="alert alert-info">
+        <i class="ti ti-help-circle"></i>
+        <div>${message}</div>
+      </div>`;
+    document.getElementById('modal-footer').innerHTML = `
+      <button class="btn btn-outline" id="psp-confirm-cancel">Cancel</button>
+      <button class="btn btn-teal" id="psp-confirm-ok">OK</button>`;
+    document.getElementById('modal-overlay').classList.add('open');
+
+    const cleanup = (result) => {
+      document.getElementById('modal-overlay').classList.remove('open');
+      resolve(result);
+    };
+    document.getElementById('psp-confirm-ok').onclick = () => cleanup(true);
+    document.getElementById('psp-confirm-cancel').onclick = () => cleanup(false);
+  });
+}
+
 function switchQuoteTab(tab) {
   const tabs = { quotes: 'quotetab-quotes-content', generate: 'quotetab-generate-content' };
   Object.entries(tabs).forEach(([key, contentId]) => {
@@ -6587,7 +6612,7 @@ async function runHistoricalQuotesImport() {
   if (!HISTORICAL_QUOTES || !HISTORICAL_QUOTES.length) {
     showToast('No historical quote data found', 'error'); return;
   }
-  if (!confirm(`This will import ${HISTORICAL_QUOTES.length} historical quotes (Jan-Jun 2026) into PSP_Quotes.\n\nThis should only be run ONCE. Continue?`)) return;
+  if (!await pspConfirm(`This will import ${HISTORICAL_QUOTES.length} historical quotes (Jan-Jun 2026) into PSP_Quotes.<br><br>This should only be run <strong>ONCE</strong>. Continue?`)) return;
 
   const btn = document.getElementById('btn-historical-quotes-import');
   btn.disabled = true;
@@ -6652,7 +6677,7 @@ async function convertQuoteToInvoice(id) {
     showToast(`Cannot convert a ${q.Status} quote to an invoice`, 'error');
     return;
   }
-  if (!confirm(`Convert ${q.Title} to a Draft Invoice in PSP_Invoices?`)) return;
+  if (!await pspConfirm(`Convert <strong>${q.Title}</strong> to a Draft Invoice in PSP_Invoices?`)) return;
 
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
