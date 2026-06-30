@@ -6596,6 +6596,10 @@ async function runHistoricalQuotesImport() {
 async function convertQuoteToInvoice(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
+  if (q.Status === 'Declined' || q.Status === 'Voided' || q.Status === 'Invoiced') {
+    showToast(`Cannot convert a ${q.Status} quote to an invoice`, 'error');
+    return;
+  }
   if (!confirm(`Convert ${q.Title} to a Draft Invoice in PSP_Invoices?`)) return;
 
   let lines = [];
