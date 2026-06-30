@@ -6220,7 +6220,13 @@ function updateQuoteLine(id, field, value) {
   if (!line) return;
   if (field === 'description') line.description = value;
   else line[field] = parseFloat(value) || 0;
-  renderQuoteLines();
+  // Update just this row's computed total + the overall totals, without
+  // rebuilding the inputs (which would steal focus mid-keystroke)
+  const lineTotalEl = document.getElementById('qline-total-' + id);
+  if (lineTotalEl) {
+    lineTotalEl.textContent = (line.quantity * line.unitPrice * (1 + line.taxPercent/100)).toFixed(2);
+  }
+  updateQuoteTotals();
 }
 
 function renderQuoteLines() {
@@ -6239,10 +6245,10 @@ function renderQuoteLines() {
       <input type="number" placeholder="Tax%" value="${l.taxPercent}" min="0" max="100"
         oninput="updateQuoteLine('${l.id}','taxPercent',this.value)"
         style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
-      <div style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
+      <div id="qline-total-${l.id}" style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
       <button onclick="removeQuoteLine('${l.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;"><i class="ti ti-x"></i></button>
     </div>`).join('');
-  updateQuoteTotals();
+  updateQuoteTotals(true);
 }
 
 function updateQuoteTotals() {
