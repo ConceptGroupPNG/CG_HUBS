@@ -2177,8 +2177,11 @@ async function loadPage(page) {
     else if (page === 'generate-calendar') await loadGenerateCalendar();
     else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
-    else if (page === 'generate-invoice') await loadGenerateInvoice();
-  else if (page === 'invoices') { await loadInvoices(); await loadGenerateInvoice(); await loadImportInvoices(); }
+    else if (page === 'invoices') {
+    await loadInvoices();
+    try { await loadGenerateInvoice(); } catch(e) { console.warn('loadGenerateInvoice failed:', e); }
+    try { await loadImportInvoices(); } catch(e) { console.warn('loadImportInvoices failed:', e); }
+  }
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
       await handleTokenExpiry();
