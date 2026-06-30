@@ -6164,7 +6164,7 @@ function renderQuotes() {
       <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="viewQuoteById('${i.id}')"><i class="ti ti-eye"></i></button>
         <button class="btn btn-xs btn-outline" onclick="editQuoteById('${i.id}')"><i class="ti ti-pencil"></i></button>
-        ${i.Status !== 'Invoiced' && i.Status !== 'Voided' ? `<button class="btn btn-xs btn-teal" onclick="convertQuoteToInvoice('${i.id}')" title="Convert to Draft Invoice"><i class="ti ti-arrow-right"></i></button>` : ''}
+        ${i.Status !== 'Invoiced' && i.Status !== 'Voided' && i.Status !== 'Declined' ? `<button class="btn btn-xs btn-teal" onclick="convertQuoteToInvoice('${i.id}')" title="Convert to Draft Invoice"><i class="ti ti-arrow-right"></i></button>` : ''}
         <button class="btn btn-xs btn-danger" onclick="confirmDelete('quotes','${i.id}')"><i class="ti ti-trash"></i></button>
       </td>
     </tr>`;
