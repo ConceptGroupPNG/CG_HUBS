@@ -6869,7 +6869,7 @@ function reExportInvoice(id) {
 function confirmDelete(entity, id, name) {
   let displayName = name || id;
   if (!name || name === 'item') {
-    const cacheMap = {calendar:'ActivityMilestone', activities:'ActivityMilestone', billing:'PSPClient'};
+    const cacheMap = {calendar:'ActivityMilestone', activities:'ActivityMilestone', billing:'PSPClient', quotes:'Title', invoices:'Title'};
     const field = cacheMap[entity] || 'id';
     const rec = (cache[entity]||[]).find(r => String(r.id) === String(id));
     displayName = rec ? (rec[field]||id) : id;
