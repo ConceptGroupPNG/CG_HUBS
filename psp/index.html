@@ -4406,15 +4406,28 @@ function switchInvoiceTab(tab) {
   Object.entries(tabs).forEach(([key, contentId]) => {
     const tabBtn = document.getElementById('fintab-' + key);
     const contentEl = document.getElementById(contentId);
-    console.log('[switchInvoiceTab]', key, 'tabBtn:', !!tabBtn, 'contentEl:', !!contentEl, 'contentEl.children:', contentEl ? contentEl.children.length : 'N/A');
     if (tabBtn) tabBtn.classList.toggle('active', key === tab);
-    if (contentEl) {
-      contentEl.style.display = key === tab ? '' : 'none';
-      if (key === tab) {
-        console.log('[switchInvoiceTab] Set display to visible. Computed display:', getComputedStyle(contentEl).display, 'offsetHeight:', contentEl.offsetHeight, 'innerHTML length:', contentEl.innerHTML.length);
-      }
-    }
+    if (contentEl) contentEl.style.display = key === tab ? 'block' : 'none';
   });
+  // Debug: check the grid-2 child specifically and force a reflow
+  const target = document.getElementById(tabs[tab]);
+  if (target) {
+    const gridChild = target.querySelector('.grid-2');
+    console.log('[switchInvoiceTab] target offsetHeight:', target.offsetHeight, 'scrollHeight:', target.scrollHeight);
+    if (gridChild) {
+      console.log('[switchInvoiceTab] grid-2 child offsetHeight:', gridChild.offsetHeight, 'computed display:', getComputedStyle(gridChild).display, 'computed width:', getComputedStyle(gridChild).width);
+      console.log('[switchInvoiceTab] grid-2 first card offsetHeight:', gridChild.children[0]?.offsetHeight);
+    }
+    // Check ancestor chain for any display:none we might have missed
+    let el = target;
+    let chain = [];
+    while (el && el.id !== 'app') {
+      const cs = getComputedStyle(el);
+      chain.push(`${el.tagName}#${el.id||'(no-id)'}.${el.className||''} display=${cs.display} height=${el.offsetHeight}`);
+      el = el.parentElement;
+    }
+    console.log('[switchInvoiceTab] Ancestor chain:\n' + chain.join('\n'));
+  }
 }
 
 // ─────────────────────────────────────────────
