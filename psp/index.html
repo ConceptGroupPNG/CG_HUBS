@@ -891,9 +891,6 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Finance</div>
-      <div class="nav-item" onclick="navigate('generate-invoice')">
-        <i class="ti ti-file-invoice"></i> Generate Invoice
-      </div>
       <div class="nav-item" onclick="navigate('invoices')">
         <i class="ti ti-receipt"></i> Invoices
       </div>
@@ -1427,8 +1424,73 @@
 
         </div><!-- /bm-metrics-view -->
 
-      <!-- GENERATE INVOICE PAGE -->
-      <div class="page" id="page-generate-invoice">
+      <!-- INVOICES & GENERATE INVOICE (TABBED) PAGE -->
+      <div class="page" id="page-invoices">
+        <div class="tabs" style="margin-bottom:16px;">
+          <div class="tab active" id="fintab-invoices" onclick="switchInvoiceTab('invoices')">
+            <i class="ti ti-receipt" style="font-size:14px;margin-right:4px;"></i> Invoices
+          </div>
+          <div class="tab" id="fintab-generate" onclick="switchInvoiceTab('generate')">
+            <i class="ti ti-file-invoice" style="font-size:14px;margin-right:4px;"></i> Generate Invoice
+          </div>
+        </div>
+
+        <!-- TAB: INVOICES LIST -->
+        <div id="invoicetab-invoices-content">
+        <div class="filter-bar">
+          <select id="filter-inv-client" onchange="renderInvoices()">
+            <option value="">All Clients</option>
+          </select>
+
+          <select id="filter-inv-status" onchange="renderInvoices()">
+            <option value="">All Statuses</option>
+            <option>Draft</option>
+            <option>Issued</option>
+            <option>Voided</option>
+          </select>
+          <select id="filter-inv-month" onchange="renderInvoices()">
+            <option value="">All Months</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+          <select id="filter-inv-year" onchange="renderInvoices()">
+            <option value="">All Years</option>
+            <option>2026</option><option>2025</option>
+          </select>
+          <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice No</th>
+                  <th>Client</th>
+                  <th>Billing Month</th>
+                  <th>Invoice Date</th>
+                  <th>Due Date</th>
+                  <th>Pay Runs</th>
+                  <th style="text-align:right;">Sub Total</th>
+                  <th style="text-align:right;">Tax</th>
+                  <th style="text-align:right;">Total</th>
+                  <th>Currency</th>
+                  <th>Status</th>
+                  <th>Exported By</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="invoices-tbody">
+                <tr><td colspan="13"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+        <!-- TAB: GENERATE INVOICE -->
+        <div id="invoicetab-generate-content" style="display:none;">
 
         <!-- Step 1: Client selection -->
         <div id="inv-step-1">
@@ -1521,6 +1583,7 @@
           </div>
 
         </div>
+      </div>
       </div>
 
       <!-- IMPORT INVOICES PAGE -->
@@ -1616,63 +1679,7 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- INVOICES PAGE -->
-      <div class="page" id="page-invoices">
-        <div class="filter-bar">
-          <select id="filter-inv-client" onchange="renderInvoices()">
-            <option value="">All Clients</option>
-          </select>
-
-          <select id="filter-inv-status" onchange="renderInvoices()">
-            <option value="">All Statuses</option>
-            <option>Draft</option>
-            <option>Issued</option>
-            <option>Voided</option>
-          </select>
-          <select id="filter-inv-month" onchange="renderInvoices()">
-            <option value="">All Months</option>
-            <option>January</option><option>February</option><option>March</option>
-            <option>April</option><option>May</option><option>June</option>
-            <option>July</option><option>August</option><option>September</option>
-            <option>October</option><option>November</option><option>December</option>
-          </select>
-          <select id="filter-inv-year" onchange="renderInvoices()">
-            <option value="">All Years</option>
-            <option>2026</option><option>2025</option>
-          </select>
-          <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
-        </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Invoice No</th>
-                  <th>Client</th>
-                  <th>Billing Month</th>
-                  <th>Invoice Date</th>
-                  <th>Due Date</th>
-                  <th>Pay Runs</th>
-                  <th style="text-align:right;">Sub Total</th>
-                  <th style="text-align:right;">Tax</th>
-                  <th style="text-align:right;">Total</th>
-                  <th>Currency</th>
-                  <th>Status</th>
-                  <th>Exported By</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="invoices-tbody">
-                <tr><td colspan="13"><div class="loading"><div class="spinner"></div></div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-    </div><!-- /page-content -->
+      </div></div><!-- /page-content -->
   </div><!-- /main -->
 </div><!-- /app -->
 
@@ -2097,7 +2104,7 @@ async function refreshPage() {
     if (currentPage === 'invoices') {
     cache.invoices = await getItems('invoices');
   }
-  if (currentPage === 'generate-invoice') {
+  if (currentPage === 'invoices') {
       cache.clients = await getItems('clients');
       cache.fees = await getItems('fees');
       cache.lastinv = await getItems('lastinv');
@@ -2135,7 +2142,6 @@ function navigate(page) {
     'generate-calendar': 'Generate Calendar',
     'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
-    'generate-invoice': 'Generate Invoice',
     'invoices': 'Invoices',
     'import-invoices': 'Import Invoices',
   };
@@ -2171,7 +2177,7 @@ async function loadPage(page) {
     else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
     else if (page === 'generate-invoice') await loadGenerateInvoice();
-  else if (page === 'invoices') await loadInvoices();
+  else if (page === 'invoices') { await loadInvoices(); await loadGenerateInvoice(); }
   else if (page === 'import-invoices') await loadImportInvoices();
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
@@ -4390,6 +4396,14 @@ async function markAsBilled() {
   document.getElementById('inv-preview-card').style.display = 'none';
   invoiceLines = [];
   nominatedRecords = [];
+}
+
+function switchInvoiceTab(tab) {
+  const tabs = { invoices: 'invoicetab-invoices-content', generate: 'invoicetab-generate-content' };
+  Object.entries(tabs).forEach(([key, contentId]) => {
+    document.getElementById('fintab-' + key).classList.toggle('active', key === tab);
+    document.getElementById(contentId).style.display = key === tab ? '' : 'none';
+  });
 }
 
 // ─────────────────────────────────────────────
