@@ -3488,6 +3488,44 @@ function statusBadge(s) {
   return `<span class="badge badge-${cls}"><i class="ti ${icon}"></i> ${s || 'Not Started'}</span>`;
 }
 
+// Refresh the SharePoint-backed cache entries relevant to a given page.
+// Used both by the manual Refresh button and automatically on navigation.
+async function refreshCacheForPage(page) {
+  if (page === 'dashboard' || page === 'my-activities' ||
+      page === 'all-activities' || page === 'calendar' ||
+      page === 'generate-calendar') {
+    cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+  }
+  if (page === 'templates' || page === 'generate-calendar') {
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  }
+  if (page === 'billing-metrics') {
+    cache.billing = await getItems('billing');
+  }
+  if (page === 'quotes') {
+    cache.quotes = await getItems('quotes');
+    cache.clients = await getItems('clients');
+    cache.lastquote = await getItems('lastquote');
+    cache.invoices = await getItems('invoices');
+    cache.lastinv = await getItems('lastinv');
+  }
+  if (page === 'invoices') {
+    cache.invoices = await getItems('invoices');
+    cache.clients = await getItems('clients');
+    cache.fees = await getItems('fees');
+    cache.lastinv = await getItems('lastinv');
+    cache.billing = await getItems('billing');
+  }
+  if (page === 'dashboard') {
+    if (currentDashTab === 'finance') {
+      cache.invoices = await getItems('invoices');
+      cache.billing = await getItems('billing');
+    }
+    // Dashboard needs everything for both Operations and Finance tabs
+    await refreshCache();
+  }
+}
+
 async function refreshPage() {
   const icon = document.getElementById('refresh-icon');
   const btn = document.getElementById('btn-refresh');
@@ -3496,34 +3534,9 @@ async function refreshPage() {
   icon.style.animation = 'spin 0.7s linear infinite';
 
   try {
-    // Refresh relevant cache for current page
-    if (currentPage === 'dashboard' || currentPage === 'my-activities' ||
-        currentPage === 'all-activities' || currentPage === 'calendar' ||
-        currentPage === 'generate-calendar') {
-      cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
-    }
-    if (currentPage === 'templates' || currentPage === 'generate-calendar') {
-      cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
-    }
-    if (currentPage === 'billing-metrics' || currentPage === 'generate-invoice') {
-      cache.billing = await getItems('billing');
-    }
-    if (currentPage === 'invoices') {
-    cache.invoices = await getItems('invoices');
-  }
-  if (currentPage === 'invoices') {
-      cache.clients = await getItems('clients');
-      cache.fees = await getItems('fees');
-      cache.lastinv = await getItems('lastinv');
-    }
-    if (currentPage === 'dashboard') {
-    if (currentDashTab === 'finance') {
-      cache.invoices = await getItems('invoices');
-      cache.billing = await getItems('billing');
+    await refreshCacheForPage(currentPage);
+    if (currentPage === 'dashboard' && currentDashTab === 'finance') {
       await loadFinanceDashboard();
-    }
-      // Dashboard needs everything
-      await refreshCache();
     }
     await loadPage(currentPage);
     showToast('Refreshed', 'success');
@@ -3535,7 +3548,7 @@ async function refreshPage() {
   }
 }
 
-function navigate(page) {
+async function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById(`page-${page}`)?.classList.add('active');
@@ -3553,8 +3566,21 @@ function navigate(page) {
     'invoices': 'Invoices',
   };
   document.getElementById('page-title').textContent = titles[page] || page;
-  document.getElementById('topbar-actions').innerHTML = '';
-  loadPage(page);
+
+  // Auto-refresh this page's data from SharePoint before rendering (Option C:
+  // always-fresh navigation, separate from the manual Refresh button which
+  // re-runs the same logic with a visible spinner/toast on demand)
+  const icon = document.getElementById('refresh-icon');
+  if (icon) icon.style.animation = 'spin 0.7s linear infinite';
+  try {
+    await refreshCacheForPage(page);
+  } catch(e) {
+    console.warn('[navigate] Auto-refresh failed for', page, ':', e.message);
+  } finally {
+    if (icon) icon.style.animation = '';
+  }
+
+  await loadPage(page);
 }
 
 async function handleTokenExpiry() {
