@@ -6189,9 +6189,11 @@ async function loadGenerateQuote() {
   document.getElementById('gq-date').value = today.toISOString().slice(0,10);
   document.getElementById('gq-expiry').value = expiry.toISOString().slice(0,10);
 
-  const lastNo = cache.lastquote[0]?.LastQuoteNo || '0518';
-  const nextNo = (parseInt(lastNo) + 1).toString().padStart(4, '0');
+  const lastNo = cache.lastquote[0]?.LastQuoteNo;
+  const lastNoNum = parseInt(String(lastNo || '518').trim(), 10) || 518;
+  const nextNo = (lastNoNum + 1).toString().padStart(4, '0');
   document.getElementById('gq-quoteno').value = 'QU-' + nextNo;
+  console.log('[PSP_HUB] Quote number calc: lastquote cache =', cache.lastquote[0], '→ next =', 'QU-' + nextNo);
 
   if (!currentQuoteId) {
     quoteLines = [];
@@ -6410,11 +6412,17 @@ async function saveQuote() {
     }
     // Increment last quote number only for brand-new quotes
     if (!currentQuoteId) {
-      const lastRec = cache.lastquote[0];
       const newNo = quoteNo.replace('QU-','');
+      const lastRec = cache.lastquote[0];
       if (lastRec) {
         await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNo: newNo });
         cache.lastquote[0].LastQuoteNo = newNo;
+        console.log('[PSP_HUB] PSP_Last_Quote updated to', newNo);
+      } else {
+        // No row exists yet in PSP_Last_Quote — create one
+        const created = await createItem('lastquote', { Title: 'LastQuote', LastQuoteNo: newNo });
+        cache.lastquote = await getItems('lastquote');
+        console.log('[PSP_HUB] PSP_Last_Quote row created with', newNo);
       }
     }
     cache.quotes = await getItems('quotes');
