@@ -1003,7 +1003,7 @@
               <div class="metric-icon"><i class="ti ti-cash"></i></div>
               <div class="metric-info">
                 <div class="metric-value" id="fin-ytd-revenue">—</div>
-                <div class="metric-label">Revenue YTD (PGK)</div>
+                <div class="metric-label">Revenue YTD (PGK, 000s)</div>
               </div>
             </div>
             <div class="metric-card mc-navy">
@@ -1017,7 +1017,7 @@
               <div class="metric-icon"><i class="ti ti-clock-dollar"></i></div>
               <div class="metric-info">
                 <div class="metric-value" id="fin-pipeline">—</div>
-                <div class="metric-label">Pipeline (Ready to Invoice)</div>
+                <div class="metric-label">Pipeline (PGK, 000s)</div>
               </div>
             </div>
             <div class="metric-card mc-red">
@@ -7027,9 +7027,9 @@ async function loadFinanceDashboard() {
   const avgPerPayslip = payslipsYTD > 0 ? revenueYTD / payslipsYTD : 0;
   const pipelineValue = pipelinePayslips * avgPerPayslip;
 
-  document.getElementById('fin-ytd-revenue').textContent = 'K' + (revenueYTD/1000).toFixed(0);
+  document.getElementById('fin-ytd-revenue').textContent = (revenueYTD/1000).toFixed(0) + 'K';
   document.getElementById('fin-inv-count').textContent = invoicesYear.length;
-  document.getElementById('fin-pipeline').textContent = 'K' + (pipelineValue/1000).toFixed(0);
+  document.getElementById('fin-pipeline').textContent = (pipelineValue/1000).toFixed(0) + 'K';
   document.getElementById('fin-avg-payslip').textContent = avgPerPayslip.toFixed(2);
 
   // ── METRICS KPIs ──
@@ -7101,13 +7101,13 @@ async function loadFinanceDashboard() {
       datalabels: {
         display: true, anchor: 'end', align: 'end',
         color: '#334155', font: { size: 10, weight: '700' },
-        formatter: v => v > 0 ? 'K'+(v/1000).toFixed(1) : '',
+        formatter: v => v > 0 ? (v/1000).toFixed(1)+'K' : '',
         clip: false,
       }
     },
     layout: { padding: { right: 48 } },
     scales: {
-      x: { beginAtZero: true, ticks: { callback: v => 'K'+(v/1000).toFixed(0) } },
+      x: { beginAtZero: true, ticks: { callback: v => (v/1000).toFixed(0)+'K' } },
       y: { ticks: { font: { size: 11 }, crossAlign: 'far' } }
     }
   });
@@ -7346,7 +7346,7 @@ async function loadFinanceDashboard() {
       <td style="text-align:center;"><span class="fin-pip-dot metrics" style="margin:0 auto;">${metrics}</span></td>
       <td style="text-align:center;"><span class="fin-pip-dot ready" style="margin:0 auto;">${ready}</span></td>
       <td style="text-align:center;"><span class="fin-pip-dot invoiced" style="margin:0 auto;">${invoiced}</span></td>
-      <td style="text-align:right;font-weight:700;">K${(revenue/1000).toFixed(1)}</td>
+      <td style="text-align:right;font-weight:700;">${(revenue/1000).toFixed(1)}K</td>
     </tr>`;
   }).join('');
 }
