@@ -1581,6 +1581,8 @@
             </div>
             <div id="invoice-preview"></div>
           </div>
+        </div>
+        </div>
 
         <!-- TAB: IMPORT INVOICES -->
         <div id="invoicetab-import-content" style="display:none;">
@@ -1674,9 +1676,6 @@
               </table>
             </div>
           </div>
-        </div>
-      </div>
-
         </div>
       </div>
       </div>
@@ -4407,27 +4406,8 @@ function switchInvoiceTab(tab) {
     const tabBtn = document.getElementById('fintab-' + key);
     const contentEl = document.getElementById(contentId);
     if (tabBtn) tabBtn.classList.toggle('active', key === tab);
-    if (contentEl) contentEl.style.display = key === tab ? 'block' : 'none';
+    if (contentEl) contentEl.style.display = key === tab ? '' : 'none';
   });
-  // Debug: check the grid-2 child specifically and force a reflow
-  const target = document.getElementById(tabs[tab]);
-  if (target) {
-    const gridChild = target.querySelector('.grid-2');
-    console.log('[switchInvoiceTab] target offsetHeight:', target.offsetHeight, 'scrollHeight:', target.scrollHeight);
-    if (gridChild) {
-      console.log('[switchInvoiceTab] grid-2 child offsetHeight:', gridChild.offsetHeight, 'computed display:', getComputedStyle(gridChild).display, 'computed width:', getComputedStyle(gridChild).width);
-      console.log('[switchInvoiceTab] grid-2 first card offsetHeight:', gridChild.children[0]?.offsetHeight);
-    }
-    // Check ancestor chain for any display:none we might have missed
-    let el = target;
-    let chain = [];
-    while (el && el.id !== 'app') {
-      const cs = getComputedStyle(el);
-      chain.push(`${el.tagName}#${el.id||'(no-id)'}.${el.className||''} display=${cs.display} height=${el.offsetHeight}`);
-      el = el.parentElement;
-    }
-    console.log('[switchInvoiceTab] Ancestor chain:\n' + chain.join('\n'));
-  }
 }
 
 // ─────────────────────────────────────────────
