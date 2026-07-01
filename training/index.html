@@ -666,6 +666,7 @@ select:focus{border-color:var(--teal)}
       <button class="btn btn-outline" id="modal-print-reg-btn" onclick="printRegistrationNotice()" style="display:none;margin-right:auto"><i class="ti ti-printer"></i>Print Registration Notice</button>
       <button class="btn btn-outline" id="modal-quote-print-btn" onclick="modalPrintQuote()" style="display:none"><i class="ti ti-printer"></i> Print</button>
       <button class="btn btn-outline" id="modal-quote-email-btn" onclick="modalEmailQuote()" style="display:none"><i class="ti ti-mail"></i> Email</button>
+      <button class="btn btn-outline" id="modal-invoice-xero-btn" onclick="modalXeroExport()" style="display:none"><i class="ti ti-file-spreadsheet"></i> Xero CSV</button>
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="modal-save-btn" onclick="saveModal()"><i class="ti ti-check"></i><span id="modal-save-label">Save</span></button>
     </div>
@@ -3840,6 +3841,8 @@ async function openFormModal(entity, data){
   // Show print/email for quotes only when editing an existing record
   if(quotePrintBtn) quotePrintBtn.style.display = (entity==='quotes' && data) ? '' : 'none';
   if(quoteEmailBtn) quoteEmailBtn.style.display = (entity==='quotes' && data) ? '' : 'none';
+  const invoiceXeroBtn = document.getElementById('modal-invoice-xero-btn');
+  if(invoiceXeroBtn) invoiceXeroBtn.style.display = (entity==='invoices' && data) ? '' : 'none';
   const def = FORM_DEFS[entity];
   // Preload any lookup entities not yet cached
   for(const f of def.fields){
@@ -4170,8 +4173,25 @@ async function createInvoiceFromQuotePrompt(){
     cache.invoices = await getItems('invoices','$top=500');
     cache.invoicelines = await getItems('invoicelines','$top=999');
 
-    toast(`Invoice "${invoiceNumber}" created from quote "${quoteNumber}"`);
-    document.getElementById('invoice-prompt-modal').classList.remove('open');
+    // Build the line items list for potential Xero export
+    const createdLines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invoiceNumber.trim().toLowerCase());
+    const newInv = (cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title||'').trim().toLowerCase()===invoiceNumber.trim().toLowerCase());
+    const orgEmail = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'')===(newInv?.OrgName||''))?.ContactEmail || '';
+
+    // Update the modal to show success + Xero export option
+    document.getElementById('invoice-prompt-modal').querySelector('.modal-header h2').innerHTML =
+      '<i class="ti ti-circle-check" style="color:var(--teal)"></i> Invoice Created';
+    document.getElementById('invoice-prompt-modal').querySelector('.modal-body').innerHTML = `
+      <p style="font-size:13px;color:var(--g700);margin-bottom:16px">
+        Invoice <strong>${invoiceNumber}</strong> has been created successfully from quote <strong>${quoteNumber}</strong>.
+      </p>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="exportInvoiceXeroCSV('${invoiceNumber}','${(newInv?.OrgName||'').replace(/'/g,"\\'")}','${orgEmail.replace(/'/g,"\\'")}')">
+        <i class="ti ti-file-spreadsheet"></i> Download Xero CSV
+      </button>
+      <p style="font-size:11px;color:var(--g500);text-align:center">or close this dialog to continue</p>`;
+    document.getElementById('invoice-prompt-modal').querySelector('.modal-footer').innerHTML =
+      '<button class="btn btn-outline" onclick="document.getElementById(\'invoice-prompt-modal\').classList.remove(\'open\');location.reload()">Close</button>';
+
     await loadPage(currentPage);
     if(currentPage==='dashboard') loadDashboard();
   } catch(e){
@@ -4720,6 +4740,96 @@ function exportTableCSV(entity, tbodyId, headers, rowFn){
   a.href=url; a.download=`CG_${entity}_`+new Date().toISOString().substring(0,10)+'.csv';
   a.click(); URL.revokeObjectURL(url);
   toast('Exported '+items.length+' '+entity+' to CSV','success');
+}
+
+// ── XERO CSV EXPORT ───────────────────────────────────────────────────────────
+function exportInvoiceXeroCSV(invoiceNumber, orgName, orgEmail){
+  // Resolve from cache if not passed directly
+  if(!invoiceNumber){
+    toast('No invoice number provided','error'); return;
+  }
+  const invNum = invoiceNumber.trim();
+  const inv = (cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title||'').trim()===invNum);
+  if(!inv){ toast('Invoice not found in cache — please refresh and try again','error'); return; }
+
+  const org = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'')===(orgName||inv.OrgName||''));
+  const contactName = orgName || inv.OrgName || '';
+  const email       = orgEmail || org?.ContactEmail || '';
+  const invoiceDate = inv.InvoiceDate ? new Date(inv.InvoiceDate).toLocaleDateString('en-AU',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
+  // Due date = invoice date + 30 days
+  const dueDateObj  = inv.InvoiceDate ? new Date(new Date(inv.InvoiceDate).getTime()+30*864e5) : new Date(Date.now()+30*864e5);
+  const dueDate     = dueDateObj.toLocaleDateString('en-AU',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const grandTotal  = +(inv.TotalAmount||0);
+  const reference   = inv.QuoteRef || '';
+
+  // Get line items
+  const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim()===invNum && l.CourseName);
+
+  if(!lines.length){
+    toast('No line items found for this invoice — please save the invoice first','error'); return;
+  }
+
+  // Xero CSV headers (matching the provided column structure)
+  const headers = [
+    'ContactName','EmailAddress','POAddressLine11','POCity','POCountry','PORegion',
+    'InvoiceNumber','Reference','InvoiceDate','DueDate','Total',
+    'InventoryItemCode','Description','Quantity','UnitAmount',
+    'AccountCode','TaxType','TaxAmount','TrackingName1','TrackingOption1','Currency'
+  ];
+
+  const rows = lines.map(l=>{
+    const qty      = +l.Quantity || 0;
+    const unitAmt  = +l.FeeExGST || 0;
+    const taxAmt   = +l.GSTAmount || 0;
+    return [
+      contactName,          // ContactName
+      email,                // EmailAddress
+      '',                   // POAddressLine11
+      'Port Moresby',       // POCity
+      'PNG',                // POCountry
+      'NCD',                // PORegion
+      invNum,               // InvoiceNumber
+      reference,            // Reference
+      invoiceDate,          // InvoiceDate
+      dueDate,              // DueDate
+      grandTotal,           // Total (same on every row — Xero uses first row's value)
+      'Training',           // InventoryItemCode
+      l.CourseName||'',     // Description
+      qty,                  // Quantity
+      unitAmt,              // UnitAmount
+      '201',                // AccountCode
+      'Tax on Sales',       // TaxType
+      taxAmt,               // TaxAmount
+      '',                   // TrackingName1
+      '',                   // TrackingOption1
+      'PGK',                // Currency
+    ];
+  });
+
+  const csvContent = [
+    headers.join('\t'),
+    ...rows.map(r=>r.map(v=>`${v}`).join('\t'))
+  ].join('\n');
+
+  const blob = new Blob([csvContent], {type:'text/tab-separated-values'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `Xero_Invoice_${invNum}_${new Date().toISOString().substring(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Xero CSV downloaded for ${invNum}`);
+}
+
+function modalXeroExport(){
+  // Read invoice number from the open Edit modal
+  const invNum  = document.getElementById('mf-InvoiceNumber')?.value?.trim() || '';
+  const orgId   = document.getElementById('mf-OrgRef')?.value || '';
+  const org     = (cache.organisations||[]).find(o=>String(o.id)===String(orgId));
+  const orgName = org ? (org.OrgName||org.Title||'') : '';
+  const email   = org?.ContactEmail || '';
+  if(!invNum){ toast('Please save the invoice first','error'); return; }
+  exportInvoiceXeroCSV(invNum, orgName, email);
 }
 
 function exportInvoicesCSV(){
