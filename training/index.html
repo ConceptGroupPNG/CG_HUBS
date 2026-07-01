@@ -4806,12 +4806,17 @@ function exportInvoiceXeroCSV(invoiceNumber, orgName, orgEmail){
     ];
   });
 
-  const csvContent = [
-    headers.join('\t'),
-    ...rows.map(r=>r.map(v=>`${v}`).join('\t'))
-  ].join('\n');
+  const csvEscape = v => {
+    const s = String(v==null?'':v);
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
 
-  const blob = new Blob([csvContent], {type:'text/tab-separated-values'});
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(r=>r.map(csvEscape).join(','))
+  ].join('\r\n');
+
+  const blob = new Blob([csvContent], {type:'text/csv;charset=utf-8;'});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
