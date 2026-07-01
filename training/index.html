@@ -4616,16 +4616,14 @@ function getDependents(entity, record){
   const deps = [];
   if(entity==='invoices'){
     const invNum = (record.InvoiceNumber||record.Title||'').trim().toLowerCase();
-    const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
-    if(lines.length) deps.push({label:'invoice line item', count:lines.length});
+    // Line items cascade-delete automatically — not a blocking dependency
     const atts = (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
     if(atts.length) deps.push({label:'linked attendee', count:atts.length});
     const pays = (cache.payments||[]).filter(p=>(p.RemittanceRef||'').trim().toLowerCase()===invNum);
     if(pays.length) deps.push({label:'recorded payment', count:pays.length});
   } else if(entity==='quotes'){
     const quoteNum = (record.Title||'').trim().toLowerCase();
-    const lines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===quoteNum);
-    if(lines.length) deps.push({label:'quote line item', count:lines.length});
+    // Line items cascade-delete automatically — not a blocking dependency
     const invs = (cache.invoices||[]).filter(i=>(i.QuoteRef||'').trim().toLowerCase()===quoteNum);
     if(invs.length) deps.push({label:'invoice referencing this quote', count:invs.length});
   }
@@ -4663,13 +4661,27 @@ async function confirmDelete(entity, id, name){
 
   // No dependents (or not an entity we check) - proceed with the normal confirm flow
   document.getElementById('confirm-title').textContent = `Delete "${name}"?`;
-  document.getElementById('confirm-msg').innerHTML = 'This will permanently remove the record from SharePoint. This cannot be undone.';
+  const cascadeNote = (entity==='quotes'||entity==='invoices') ? ' All associated line items will also be deleted.' : '';
+  document.getElementById('confirm-msg').innerHTML = `This will permanently remove the record from SharePoint.${cascadeNote} This cannot be undone.`;
   const btn = document.getElementById('confirm-ok-btn');
   btn.style.display = '';
   btn.onclick = async()=>{
     btn.disabled=true;
     btn.innerHTML='<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>';
     try {
+      // Cascade-delete line items before deleting the parent record
+      if(entity==='quotes'){
+        const quoteNum = ((cache.quotes||[]).find(r=>String(r.id)===String(id))?.Title||'').trim().toLowerCase();
+        const lines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===quoteNum);
+        for(const l of lines){ try{ await deleteItem('quotelines', l.id); }catch(e){ console.warn('Failed to delete quote line',l.id,e); } }
+        cache.quotelines = (cache.quotelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()!==quoteNum);
+      }
+      if(entity==='invoices'){
+        const invNum = ((cache.invoices||[]).find(r=>String(r.id)===String(id))?.InvoiceNumber||'').trim().toLowerCase();
+        const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
+        for(const l of lines){ try{ await deleteItem('invoicelines', l.id); }catch(e){ console.warn('Failed to delete invoice line',l.id,e); } }
+        cache.invoicelines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()!==invNum);
+      }
       await deleteItem(entity, id);
       toast(`"${name}" deleted`);
       document.getElementById('confirm-modal').classList.remove('open');
