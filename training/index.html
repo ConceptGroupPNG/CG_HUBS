@@ -544,6 +544,14 @@ select:focus{border-color:var(--teal)}
 
       <!-- INVOICES -->
       <div id="page-invoices" class="page">
+        <!-- Tab bar -->
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchInvoiceTab('list')">Invoices List</button>
+          <button class="tab-btn" onclick="switchInvoiceTab('import')">Import Invoices</button>
+        </div>
+
+        <!-- TAB: Invoices List (existing content) -->
+        <div id="invtab-list" class="tab-panel active">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search invoices..." id="inv-q" oninput="filterTable('invoices')"></div>
           <select id="inv-status" onchange="filterTable('invoices')">
@@ -576,7 +584,72 @@ select:focus{border-color:var(--teal)}
             <tbody id="inv-tbody"></tbody></table>
           </div>
         </div>
-      </div>
+        </div><!-- /invtab-list -->
+
+        <!-- TAB: Import Invoices -->
+        <div id="invtab-import" class="tab-panel">
+          <div class="card" style="margin:0">
+            <div class="card-header"><h2>Import Invoices from Xero CSV</h2></div>
+            <div class="card-body">
+
+              <!-- Drop zone -->
+              <div id="inv-import-dropzone" style="border:2px dashed var(--g300);border-radius:var(--r);padding:40px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px"
+                onclick="document.getElementById('inv-import-file').click()"
+                ondragover="event.preventDefault();this.style.borderColor='var(--teal)';this.style.background='var(--teal-l)'"
+                ondragleave="this.style.borderColor='var(--g300)';this.style.background=''"
+                ondrop="event.preventDefault();this.style.borderColor='var(--g300)';this.style.background='';handleImportDrop(event)">
+                <i class="ti ti-file-upload" style="font-size:32px;color:var(--g400);display:block;margin-bottom:8px"></i>
+                <div style="font-size:14px;font-weight:600;color:var(--g600)">Drop Xero CSV file here</div>
+                <div style="font-size:12px;color:var(--g400);margin-top:4px">or click to browse</div>
+                <input type="file" id="inv-import-file" accept=".csv" style="display:none" onchange="handleImportFile(this)">
+              </div>
+
+              <!-- Controls row (hidden until file loaded) -->
+              <div id="inv-import-controls" style="display:none;margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                  <div class="fg" style="margin:0;min-width:180px">
+                    <label>Default Status for Import</label>
+                    <select id="inv-import-status">
+                      <option>Pending</option>
+                      <option>Issued</option>
+                      <option>Draft</option>
+                    </select>
+                  </div>
+                  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+                    <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
+                      <input type="checkbox" id="inv-import-select-all" onchange="importToggleAll(this.checked)"> Select All Ready
+                    </label>
+                    <button class="btn btn-primary" id="inv-import-btn" onclick="runInvoiceImport()"><i class="ti ti-file-import"></i> Import Selected</button>
+                    <button class="btn btn-outline" onclick="resetImport()"><i class="ti ti-x"></i> Clear</button>
+                  </div>
+                </div>
+                <div id="inv-import-summary" style="margin-top:10px;font-size:12px;color:var(--g500)"></div>
+              </div>
+
+              <!-- Preview table -->
+              <div id="inv-import-preview" style="display:none">
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr>
+                      <th style="width:36px"><input type="checkbox" id="inv-import-hdr-chk" onchange="importToggleAll(this.checked)"></th>
+                      <th>Invoice #</th>
+                      <th>Organisation (CSV)</th>
+                      <th>Matched To</th>
+                      <th>Date</th>
+                      <th style="text-align:right">Total</th>
+                      <th>Lines</th>
+                      <th>Status</th>
+                    </tr></thead>
+                    <tbody id="inv-import-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div><!-- /invtab-import -->
+
+      </div><!-- /page-invoices -->
 
       <!-- PAYMENTS -->
       <div id="page-payments" class="page">
@@ -4835,6 +4908,233 @@ function modalXeroExport(){
   const email   = org?.ContactEmail || '';
   if(!invNum){ toast('Please save the invoice first','error'); return; }
   exportInvoiceXeroCSV(invNum, orgName, email);
+}
+
+// ── IMPORT INVOICES ───────────────────────────────────────────────────────────
+let importedInvoices = []; // [{invoiceNumber, contactName, orgMatch, orgName, invoiceDate, dueDate, reference, total, lines[], status:'ready'|'duplicate'|'nomatch'}]
+
+function switchInvoiceTab(tab){
+  document.querySelectorAll('#page-invoices .tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active',(tab==='list'&&i===0)||(tab==='import'&&i===1));
+  });
+  document.getElementById('invtab-list').classList.toggle('active', tab==='list');
+  document.getElementById('invtab-import').classList.toggle('active', tab==='import');
+}
+
+function handleImportDrop(e){
+  const file = e.dataTransfer.files[0];
+  if(file) parseImportCSV(file);
+}
+
+function handleImportFile(input){
+  const file = input.files[0];
+  if(file) parseImportCSV(file);
+}
+
+function parseImportCSV(file){
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const text = e.target.result;
+    // Parse CSV — handle quoted fields
+    const parseRow = line => {
+      const cols = [];
+      let cur = '', inQ = false;
+      for(let i=0;i<line.length;i++){
+        const c = line[i];
+        if(c==='"'){ if(inQ && line[i+1]==='"'){ cur+='"'; i++; } else inQ=!inQ; }
+        else if(c===','&&!inQ){ cols.push(cur); cur=''; }
+        else cur+=c;
+      }
+      cols.push(cur);
+      return cols;
+    };
+    const lines = text.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<2){ toast('CSV appears empty','error'); return; }
+    const hdr = parseRow(lines[0]).map(h=>h.trim());
+
+    // Column index map
+    const ci = k => hdr.findIndex(h=>h.toLowerCase()===k.toLowerCase());
+    const iContactName   = ci('ContactName');
+    const iEmail         = ci('EmailAddress');
+    const iInvNum        = ci('InvoiceNumber');
+    const iRef           = ci('Reference');
+    const iInvDate       = ci('InvoiceDate');
+    const iDueDate       = ci('DueDate');
+    const iTotal         = ci('Total');
+    const iItemCode      = ci('InventoryItemCode');
+    const iDesc          = ci('Description');
+    const iQty           = ci('Quantity');
+    const iUnit          = ci('UnitAmount');
+    const iAcct          = ci('AccountCode');
+    const iTaxType       = ci('TaxType');
+    const iTaxAmt        = ci('TaxAmount');
+
+    if(iInvNum<0||iContactName<0){ toast('CSV does not appear to be in Xero invoice format — missing required columns','error'); return; }
+
+    // Group rows by InvoiceNumber
+    const grouped = {};
+    for(let i=1;i<lines.length;i++){
+      const row = parseRow(lines[i]);
+      if(row.length < 3) continue;
+      const inv = (row[iInvNum]||'').trim();
+      if(!inv) continue;
+      if(!grouped[inv]) grouped[inv] = { rows:[], contactName:(row[iContactName]||'').trim(), email:(row[iEmail]||'').trim(), invoiceDate:(row[iInvDate]||'').trim(), dueDate:(row[iDueDate]||'').trim(), reference:(row[iRef]||'').trim(), total:+(row[iTotal]||0) };
+      if((row[iDesc]||'').trim()){
+        grouped[inv].rows.push({
+          itemCode:  (row[iItemCode]||'').trim(),
+          desc:      (row[iDesc]||'').trim(),
+          qty:       +(row[iQty]||1),
+          unitAmt:   +(row[iUnit]||0),
+          acct:      (row[iAcct]||'').trim(),
+          taxType:   (row[iTaxType]||'').trim(),
+          taxAmt:    +(row[iTaxAmt]||0),
+        });
+      }
+    }
+
+    // Ensure caches are loaded for matching
+    if(!cache.organisations) cache.organisations = await getItems('organisations','$top=500');
+    if(!cache.invoices) cache.invoices = await getItems('invoices','$top=500');
+
+    // Normalise invoice number for matching — strip common prefixes so
+    // "INV-5837" matches "5837" and vice versa
+    const normaliseInvNum = s => (s||'').trim().toLowerCase().replace(/^inv[-_]?/i,'');
+    const existingNums = new Set((cache.invoices||[]).map(i=>normaliseInvNum(i.InvoiceNumber||i.Title||'')));
+
+    importedInvoices = Object.entries(grouped).map(([invNum, data])=>{
+      const csvName = data.contactName.toLowerCase().trim();
+      const org = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'').toLowerCase().trim()===csvName);
+      let status = 'ready';
+      if(existingNums.has(normaliseInvNum(invNum))) status = 'duplicate';
+      else if(!org) status = 'nomatch';
+      return { invoiceNumber: invNum, contactName: data.contactName, email: data.email, orgMatch: org||null, orgName: org?(org.OrgName||org.Title||''):data.contactName, invoiceDate: data.invoiceDate, dueDate: data.dueDate, reference: data.reference, total: data.total, lines: data.rows, status };
+    });
+
+    renderImportPreview();
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview(){
+  const tbody = document.getElementById('inv-import-tbody');
+  const controls = document.getElementById('inv-import-controls');
+  const preview  = document.getElementById('inv-import-preview');
+  if(!importedInvoices.length){ toast('No invoices found in CSV','error'); return; }
+
+  controls.style.display = '';
+  preview.style.display  = '';
+
+  const readyCount = importedInvoices.filter(i=>i.status==='ready').length;
+  const dupCount   = importedInvoices.filter(i=>i.status==='duplicate').length;
+  const noMatch    = importedInvoices.filter(i=>i.status==='nomatch').length;
+  document.getElementById('inv-import-summary').innerHTML =
+    `Found <strong>${importedInvoices.length}</strong> invoice(s) — `+
+    `<span style="color:var(--teal-d)"><strong>${readyCount}</strong> ready</span>, `+
+    `<span style="color:var(--amber)"><strong>${dupCount}</strong> duplicate</span>, `+
+    `<span style="color:var(--red)"><strong>${noMatch}</strong> no org match</span>`;
+
+  const fmtD = s => { try{ const p=s.split('/'); return p.length===3?`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`:s; }catch{ return s; } };
+
+  tbody.innerHTML = importedInvoices.map((inv,idx)=>{
+    const disabled = inv.status !== 'ready';
+    const badgeColor = inv.status==='ready'?'var(--teal-d)':inv.status==='duplicate'?'var(--amber)':'var(--red)';
+    const badgeLabel = inv.status==='ready'?'Ready':inv.status==='duplicate'?'Duplicate':'No Match';
+    const fmtTotal = 'K '+Number(inv.total).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+    return `<tr style="${disabled?'opacity:.5':''}">
+      <td><input type="checkbox" class="inv-import-chk" data-idx="${idx}" ${disabled?'disabled':''} ${inv.status==='ready'?'checked':''}></td>
+      <td style="font-weight:600;font-size:12px">${inv.invoiceNumber}</td>
+      <td style="font-size:12px">${inv.contactName}</td>
+      <td style="font-size:12px">${inv.status==='ready'?inv.orgName:'<span style="color:'+badgeColor+'">'+(inv.status==='duplicate'?'Already exists':'No match found')+'</span>'}</td>
+      <td style="font-size:12px">${fmtD(inv.invoiceDate)}</td>
+      <td style="text-align:right;font-size:12px">${fmtTotal}</td>
+      <td style="text-align:center;font-size:12px">${inv.lines.length}</td>
+      <td><span style="background:${badgeColor};color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">${badgeLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function importToggleAll(checked){
+  document.querySelectorAll('.inv-import-chk:not(:disabled)').forEach(cb=>cb.checked=checked);
+  document.getElementById('inv-import-select-all').checked = checked;
+  document.getElementById('inv-import-hdr-chk').checked = checked;
+}
+
+async function runInvoiceImport(){
+  const selected = [...document.querySelectorAll('.inv-import-chk:checked:not(:disabled)')]
+    .map(cb=>importedInvoices[+cb.dataset.idx])
+    .filter(i=>i&&i.status==='ready');
+
+  if(!selected.length){ toast('No invoices selected for import','error'); return; }
+
+  const status = document.getElementById('inv-import-status').value || 'Pending';
+  const btn = document.getElementById('inv-import-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div> Importing...';
+
+  let imported = 0, failed = 0;
+  const fmtDateISO = s => {
+    try{ const p=s.split('/'); return p.length===3?`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`:s; }catch{ return s||null; }
+  };
+
+  for(const inv of selected){
+    try {
+      // Compute line-level totals
+      const feeExGST  = inv.lines.reduce((s,l)=>s+(l.qty*l.unitAmt),0);
+      const gstAmount = inv.lines.reduce((s,l)=>s+l.taxAmt,0);
+      const total     = feeExGST+gstAmount;
+
+      // 1. Create invoice header
+      const invFields = {
+        Title:         inv.invoiceNumber,
+        InvoiceNumber: inv.invoiceNumber,
+        InvoiceDate:   fmtDateISO(inv.invoiceDate),
+        OrgName:       inv.orgName,
+        QuoteRef:      inv.reference||'',
+        FeeExGST:      feeExGST,
+        GSTAmount:     gstAmount,
+        TotalAmount:   total,
+        Status:        status,
+      };
+      await saveWithFieldFallback(false, 'invoices', null, invFields);
+
+      // 2. Create invoice lines
+      for(const l of inv.lines){
+        await saveWithFieldFallback(false, 'invoicelines', null, {
+          Title:      inv.invoiceNumber,
+          CourseName: l.desc,
+          Quantity:   l.qty,
+          FeeExGST:   l.unitAmt,
+          GSTAmount:  l.taxAmt,
+          LineTotal:  l.qty*l.unitAmt+l.taxAmt,
+        });
+      }
+
+      // Mark as imported in the preview
+      inv.status = 'imported';
+      imported++;
+    } catch(e){
+      console.error('Failed to import', inv.invoiceNumber, e);
+      failed++;
+    }
+  }
+
+  // Refresh caches
+  cache.invoices     = await getItems('invoices','$top=500');
+  cache.invoicelines = await getItems('invoicelines','$top=999');
+
+  toast(`Import complete: ${imported} imported${failed?`, ${failed} failed`:''}`);
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ti ti-file-import"></i> Import Selected';
+  renderImportPreview(); // refresh to show updated statuses
+}
+
+function resetImport(){
+  importedInvoices = [];
+  document.getElementById('inv-import-controls').style.display='none';
+  document.getElementById('inv-import-preview').style.display='none';
+  document.getElementById('inv-import-file').value='';
+  document.getElementById('inv-import-tbody').innerHTML='';
+  document.getElementById('inv-import-summary').innerHTML='';
 }
 
 function exportInvoicesCSV(){
