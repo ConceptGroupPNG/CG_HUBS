@@ -454,15 +454,15 @@ select:focus{border-color:var(--teal)}
               <div class="card" style="margin:0">
                 <div class="card-header"><h2>Generate Quote</h2></div>
                 <div class="card-body">
-                  <div class="modal-form">
-                    <div class="fg">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="fg" style="grid-column:1/-1">
                       <label>Quote Number</label>
                       <div style="display:flex;gap:8px;align-items:center">
                         <input type="text" id="gq-number" placeholder="Loading..." style="flex:1">
                         <button class="btn btn-outline" style="font-size:12px;white-space:nowrap" onclick="fetchNextQuoteNumber()"><i class="ti ti-refresh"></i> Next</button>
                       </div>
                     </div>
-                    <div class="fg full">
+                    <div class="fg" style="grid-column:1/-1">
                       <label>Organisation *</label>
                       <select id="gq-org" onchange="gqOrgChanged()">
                         <option value="">— Select Organisation —</option>
@@ -520,10 +520,11 @@ select:focus{border-color:var(--teal)}
 
                   <!-- Actions -->
                   <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
-                    <button class="btn btn-primary" onclick="gqSave()"><i class="ti ti-check"></i> Save Quote</button>
+                    <button class="btn btn-primary" id="gq-save-btn" onclick="gqSave()"><i class="ti ti-check"></i> Save Quote</button>
                     <button class="btn btn-outline" onclick="gqPrint()"><i class="ti ti-printer"></i> Print</button>
                     <button class="btn btn-outline" onclick="gqEmail()"><i class="ti ti-mail"></i> Email</button>
-                    <button class="btn btn-outline" onclick="gqReset()" style="margin-left:auto"><i class="ti ti-file-plus"></i> New Quote</button>
+                    <button class="btn btn-outline" onclick="gqBack()" style="margin-left:auto"><i class="ti ti-x"></i> Cancel</button>
+                    <button class="btn btn-outline" onclick="gqReset()"><i class="ti ti-file-plus"></i> New Quote</button>
                   </div>
                 </div>
               </div>
@@ -2009,7 +2010,7 @@ async function gqSave(){
   const orgName = org ? (org.OrgName||org.Title||'') : '';
   const t = gqLinesTotals();
 
-  const btn = document.querySelector('[onclick="gqSave()"]');
+  const btn = document.getElementById('gq-save-btn');
   if(btn){ btn.disabled=true; btn.innerHTML='<div class="spinner" style="width:14px;height:14px;border-width:2px"></div>'; }
 
   try {
@@ -2060,9 +2061,11 @@ async function gqSave(){
     cache.quotelines = await getItems('quotelines','$top=999');
   } catch(e){
     toast('Save failed: '+e.message,'error');
+    const btn = document.getElementById('gq-save-btn');
     if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Quote'; btn.onclick = gqSave; }
   } finally {
-    if(btn) btn.disabled=false;
+    const b = document.getElementById('gq-save-btn');
+    if(b) b.disabled=false;
   }
 }
 
@@ -2124,7 +2127,8 @@ function modalPrintQuote(){
     .totals .grand td{border-top:2px solid #1a2744;font-size:14px;font-weight:700;padding-top:8px}
     .totals .grand td:last-child{color:#1a2744}
     .footer{border-top:1px solid #eee;padding-top:10px;font-size:10px;color:#aaa;margin-top:20px}
-    @media print{@page{size:A4;margin:15mm}body{padding:0}}
+    @page{size:A4 portrait;margin:0}
+    @media print{body{padding:15mm;font-size:11px}}
   </style></head><body>
   <div class="header">
     <div>
@@ -2351,8 +2355,7 @@ function gqReset(){
   gqLineSeq = 0;
   gqLastSavedNumber = null;
   // Restore the Save button in case it was converted to Back
-  const btn = document.querySelector('[onclick="gqSave()"]') ||
-              document.querySelector('button[onclick*="gqSave"]');
+  const btn = document.getElementById('gq-save-btn');
   if(btn){ btn.innerHTML='<i class="ti ti-check"></i> Save Quote'; btn.onclick = gqSave; }
   ['gq-number','gq-contact','gq-email','gq-ref'].forEach(id=>{
     const el = document.getElementById(id);
