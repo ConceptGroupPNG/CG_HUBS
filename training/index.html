@@ -523,7 +523,7 @@ select:focus{border-color:var(--teal)}
                     <button class="btn btn-primary" onclick="gqSave()"><i class="ti ti-check"></i> Save Quote</button>
                     <button class="btn btn-outline" onclick="gqPrint()"><i class="ti ti-printer"></i> Print</button>
                     <button class="btn btn-outline" onclick="gqEmail()"><i class="ti ti-mail"></i> Email</button>
-                    <button class="btn btn-outline" onclick="gqReset()" style="margin-left:auto"><i class="ti ti-refresh"></i> Reset</button>
+                    <button class="btn btn-outline" onclick="gqReset()" style="margin-left:auto"><i class="ti ti-file-plus"></i> New Quote</button>
                   </div>
                 </div>
               </div>
@@ -663,6 +663,8 @@ select:focus{border-color:var(--teal)}
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" id="modal-print-reg-btn" onclick="printRegistrationNotice()" style="display:none;margin-right:auto"><i class="ti ti-printer"></i>Print Registration Notice</button>
+      <button class="btn btn-outline" id="modal-quote-print-btn" onclick="modalPrintQuote()" style="display:none"><i class="ti ti-printer"></i> Print</button>
+      <button class="btn btn-outline" id="modal-quote-email-btn" onclick="modalEmailQuote()" style="display:none"><i class="ti ti-mail"></i> Email</button>
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="modal-save-btn" onclick="saveModal()"><i class="ti ti-check"></i><span id="modal-save-label">Save</span></button>
     </div>
@@ -2050,14 +2052,154 @@ async function gqSave(){
 
     toast(`Quote ${quoteNum} saved successfully`);
     gqLastSavedNumber = quoteNum;
-    gqReset();
-    switchQuoteTab('list');
-    await loadPage('quotes');
+    // Keep form populated — user can Print or Email now.
+    // Change Save button to Back so they can return to the list when ready.
+    if(btn){ btn.innerHTML='<i class="ti ti-arrow-left"></i> Back'; btn.onclick = gqBack; }
+    // Refresh cache in background so the list is up to date when they go back
+    cache.quotes = await getItems('quotes','$top=500');
+    cache.quotelines = await getItems('quotelines','$top=999');
   } catch(e){
     toast('Save failed: '+e.message,'error');
+    if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Quote'; btn.onclick = gqSave; }
   } finally {
-    if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Quote'; }
+    if(btn) btn.disabled=false;
   }
+}
+
+function modalPrintQuote(){
+  // Read values from the edit modal form
+  const quoteNum = document.getElementById('mf-QuoteNumber')?.value.trim() || '';
+  const orgId    = document.getElementById('mf-OrgRef')?.value || '';
+  const org      = (cache.organisations||[]).find(o=>String(o.id)===String(orgId));
+  const orgName  = org ? (org.OrgName||org.Title||'') : (document.getElementById('mf-OrgRef_display')?.value || '');
+  const contact  = org?.ContactPerson || '';
+  const email    = org?.ContactEmail  || '';
+  const qDate    = document.getElementById('mf-QuoteDate')?.value || '';
+  const status   = document.getElementById('mf-Status')?.value || '';
+
+  // Use the live quoteLines array (loaded when the modal opened)
+  const lines = quoteLines.filter(l=>l.CourseName);
+  const t = lines.reduce((acc,l)=>({
+    fee:   acc.fee   + (+l.FeeExGST||0)*(+l.Quantity||0),
+    gst:   acc.gst   + (+l.GSTAmount||0),
+    total: acc.total + (+l.LineTotal||0),
+  }), {fee:0, gst:0, total:0});
+
+  const logo = CONCEPT_LOGO_URI;
+  const fmtD = s => s ? new Date(s).toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fmtK = n => 'K '+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+
+  // Derive expiry — not stored as a field, so estimate +7 days from quote date
+  const expiryDate = qDate ? new Date(new Date(qDate).getTime()+7*864e5).toISOString().substring(0,10) : '';
+
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Quote ${quoteNum}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:24mm 20mm 20mm}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px}
+    .logo-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:6px;padding:8px 14px;display:inline-block}
+    .logo-box img{height:48px;width:auto;display:block}
+    .company-sub{font-size:10px;color:#888;margin-top:8px;line-height:1.6}
+    .quote-title{text-align:right}
+    .quote-title .word{font-size:30px;font-weight:700;color:#1a2744;letter-spacing:1px}
+    .quote-title .num{font-size:15px;font-weight:700;color:#0e9f6e;margin-top:2px}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid #1a2744}
+    .meta-table{font-size:11px;border-collapse:collapse}
+    .meta-table td{padding:2px 0}
+    .meta-table td:first-child{color:#888;padding-right:12px;white-space:nowrap}
+    .meta-table td:last-child{font-weight:600}
+    table.lines{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px;table-layout:fixed}
+    table.lines th{background:#1a2744;color:#fff;padding:8px 10px;text-align:left;font-size:11px}
+    table.lines th.r{text-align:right}
+    table.lines td{padding:7px 10px;border-bottom:1px solid #eee;vertical-align:top;word-break:break-word}
+    table.lines td.r{text-align:right;white-space:nowrap}
+    table.lines tr:nth-child(even) td{background:#f9fafb}
+    .totals{display:flex;justify-content:flex-end;margin-bottom:28px}
+    .totals table{border-collapse:collapse;min-width:240px}
+    .totals td{padding:5px 12px}
+    .totals td:first-child{color:#666;text-align:right}
+    .totals td:last-child{text-align:right;font-weight:600;min-width:100px}
+    .totals .grand td{border-top:2px solid #1a2744;font-size:14px;font-weight:700;padding-top:8px}
+    .totals .grand td:last-child{color:#1a2744}
+    .footer{border-top:1px solid #eee;padding-top:10px;font-size:10px;color:#aaa;margin-top:20px}
+    @media print{@page{size:A4;margin:15mm}body{padding:0}}
+  </style></head><body>
+  <div class="header">
+    <div>
+      ${logo?`<div class="logo-box"><img src="${logo}"></div>`:'<div style="font-size:20px;font-weight:700;color:#1a2744">Concept Group</div>'}
+      <div class="company-sub">Concept Group (PNG)<br>Port Moresby, Papua New Guinea<br>training@conceptgroup.com.pg</div>
+    </div>
+    <div class="quote-title">
+      <div class="word">QUOTE</div>
+      <div class="num">${quoteNum}</div>
+    </div>
+  </div>
+  <div class="meta">
+    <div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#888;margin-bottom:4px;font-weight:700">Prepared for</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:3px">${orgName}</div>
+      ${contact?`<div style="font-size:11px">${contact}</div>`:''}
+      ${email?`<div style="font-size:11px;color:#0e9f6e">${email}</div>`:''}
+    </div>
+    <div style="text-align:right">
+      <table class="meta-table" style="margin-left:auto">
+        <tr><td>Quote Date:</td><td>${fmtD(qDate)}</td></tr>
+        ${expiryDate?`<tr><td>Expiry Date:</td><td>${fmtD(expiryDate)}</td></tr>`:''}
+        <tr><td>Status:</td><td>${status}</td></tr>
+      </table>
+    </div>
+  </div>
+  <table class="lines">
+    <colgroup><col style="width:44%"><col style="width:7%"><col style="width:17%"><col style="width:13%"><col style="width:19%"></colgroup>
+    <thead><tr>
+      <th>Course / Description</th><th class="r">Qty</th>
+      <th class="r">Fee (ex GST)</th><th class="r">GST</th><th class="r">Line Total</th>
+    </tr></thead>
+    <tbody>
+      ${lines.map(l=>`<tr>
+        <td>${l.CourseName}</td><td class="r">${l.Quantity}</td>
+        <td class="r">${fmtK(+l.FeeExGST * +l.Quantity)}</td>
+        <td class="r">${fmtK(l.GSTAmount)}</td>
+        <td class="r">${fmtK(l.LineTotal)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  <div class="totals">
+    <table>
+      <tr><td>Subtotal (ex GST)</td><td>${fmtK(t.fee)}</td></tr>
+      <tr><td>GST (10%)</td><td>${fmtK(t.gst)}</td></tr>
+      <tr class="grand"><td>TOTAL (PGK)</td><td>${fmtK(t.total)}</td></tr>
+    </table>
+  </div>
+  <div class="footer">All amounts in Papua New Guinea Kina (PGK). GST registered.</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+function modalEmailQuote(){
+  const quoteNum = document.getElementById('mf-QuoteNumber')?.value.trim() || '';
+  const orgId    = document.getElementById('mf-OrgRef')?.value || '';
+  const org      = (cache.organisations||[]).find(o=>String(o.id)===String(orgId));
+  const email    = org?.ContactEmail || '';
+  const contact  = org?.ContactPerson || '';
+  const orgName  = org ? (org.OrgName||org.Title||'') : '';
+  const t = quoteLines.filter(l=>l.CourseName).reduce((acc,l)=>({
+    fee: acc.fee+(+l.FeeExGST||0)*(+l.Quantity||0),
+    gst: acc.gst+(+l.GSTAmount||0),
+    total: acc.total+(+l.LineTotal||0),
+  }), {fee:0,gst:0,total:0});
+  const subject = encodeURIComponent(`Quote ${quoteNum} — Concept Group Training`);
+  const body = encodeURIComponent(
+    `Dear ${contact||orgName},\n\n`+
+    `Please find attached Quote ${quoteNum} from Concept Group.\n\n`+
+    `Total: PGK ${t.total.toFixed(2)} (incl. GST)\n\n`+
+    `Please don't hesitate to contact us if you have any questions.\n\n`+
+    `Kind regards,\nConcept Group Training`
+  );
+  window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
 }
 
 function gqPrint(){
@@ -2199,10 +2341,19 @@ function gqEmail(){
   window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
 }
 
+function gqBack(){
+  switchQuoteTab('list');
+  loadPage('quotes');
+}
+
 function gqReset(){
   gqLines = [];
   gqLineSeq = 0;
   gqLastSavedNumber = null;
+  // Restore the Save button in case it was converted to Back
+  const btn = document.querySelector('[onclick="gqSave()"]') ||
+              document.querySelector('button[onclick*="gqSave"]');
+  if(btn){ btn.innerHTML='<i class="ti ti-check"></i> Save Quote'; btn.onclick = gqSave; }
   ['gq-number','gq-contact','gq-email','gq-ref'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value = '';
@@ -3680,6 +3831,11 @@ async function openFormModal(entity, data){
   _lastCourseDateFilterCourse = null; // reset guard so the new form's initial filter always applies
   const printBtn = document.getElementById('modal-print-reg-btn');
   if(printBtn) printBtn.style.display = 'none'; // reset; shown again below only if criteria are met
+  const quotePrintBtn = document.getElementById('modal-quote-print-btn');
+  const quoteEmailBtn = document.getElementById('modal-quote-email-btn');
+  // Show print/email for quotes only when editing an existing record
+  if(quotePrintBtn) quotePrintBtn.style.display = (entity==='quotes' && data) ? '' : 'none';
+  if(quoteEmailBtn) quoteEmailBtn.style.display = (entity==='quotes' && data) ? '' : 'none';
   const def = FORM_DEFS[entity];
   // Preload any lookup entities not yet cached
   for(const f of def.fields){
