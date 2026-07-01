@@ -19,7 +19,7 @@
 .tab-btn:hover:not(.active){color:var(--navy)}
 .tab-panel{display:none}.tab-panel.active{display:block}
 .gq-wrap{display:grid;grid-template-columns:1fr 420px;gap:24px;align-items:start}
-.gq-preview{background:#fff;border:1px solid var(--g200);border-radius:var(--r);padding:32px;font-family:Arial,sans-serif;font-size:12px;color:#222;position:sticky;top:20px;min-height:500px}
+.gq-preview{background:#fff;border:1px solid var(--g200);border-radius:var(--r);padding:32px;font-family:Arial,sans-serif;font-size:12px;color:#222;position:sticky;top:20px;min-height:600px;display:flex;flex-direction:column}
 .gq-preview h1{font-size:22px;color:var(--navy);margin:0 0 4px}
 .gq-preview table{width:100%;border-collapse:collapse;margin-top:12px}
 .gq-preview th{background:var(--navy);color:#fff;padding:6px 8px;text-align:left;font-size:11px}
@@ -1990,7 +1990,7 @@ function renderQuotePreview(){
         </tr>
       </table>
     </div>
-    <div style="margin-top:24px;padding-top:12px;border-top:1px solid #eee;font-size:10px;color:#999">
+    <div style="margin-top:auto;padding-top:20px;border-top:1px solid #eee;font-size:10px;color:#999">
       This quote is valid until ${fmtD(expDate)}. All amounts in PGK. GST registered.
     </div>`;
 }
@@ -2100,7 +2100,7 @@ function modalPrintQuote(){
   <title>Quote ${quoteNum}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:24mm 20mm 20mm}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:20mm;min-height:100vh;display:flex;flex-direction:column}
     .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px}
     .logo-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:6px;padding:8px 14px;display:inline-block}
     .logo-box img{height:48px;width:auto;display:block}
@@ -2126,9 +2126,10 @@ function modalPrintQuote(){
     .totals td:last-child{text-align:right;font-weight:600;min-width:100px}
     .totals .grand td{border-top:2px solid #1a2744;font-size:14px;font-weight:700;padding-top:8px}
     .totals .grand td:last-child{color:#1a2744}
-    .footer{border-top:1px solid #eee;padding-top:10px;font-size:10px;color:#aaa;margin-top:20px}
+    .footer{border-top:1px solid #eee;padding-top:12px;font-size:10px;color:#aaa;margin-top:auto}
     @page{size:A4 portrait;margin:0}
     @media print{body{padding:15mm;font-size:11px}}
+    @media screen{body{min-height:297mm}}
   </style></head><body>
   <div class="header">
     <div>
@@ -2228,7 +2229,7 @@ function gqPrint(){
   <title>Quote ${quoteNum}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:24mm 20mm 20mm}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:20mm;min-height:100vh;display:flex;flex-direction:column}
     .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px}
     .logo-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:6px;padding:8px 14px;display:inline-block}
     .logo-box img{height:48px;width:auto;display:block}
@@ -2256,7 +2257,7 @@ function gqPrint(){
     .totals td:last-child{text-align:right;font-weight:600;min-width:100px}
     .totals .grand td{border-top:2px solid #1a2744;font-size:14px;font-weight:700;padding-top:8px}
     .totals .grand td:last-child{color:#1a2744}
-    .footer{border-top:1px solid #eee;padding-top:10px;font-size:10px;color:#aaa;margin-top:20px}
+    .footer{border-top:1px solid #eee;padding-top:12px;font-size:10px;color:#aaa;margin-top:auto}
     @media print{@page{size:A4;margin:15mm 15mm 15mm 15mm}body{padding:0}}
   </style></head><body>
 
