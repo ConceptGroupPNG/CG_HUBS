@@ -4139,6 +4139,7 @@ async function loadPage(page) {
     try { await loadImportInvoices(); } catch(e) { console.warn('loadImportInvoices failed:', e); }
   }
   else if (page === 'clients') await loadClientsPage();
+  else if (page === 'billing-calc') loadBillingCalc();
   else if (page === 'bulk-admin') await loadBulkAdmin();
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
