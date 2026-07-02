@@ -2046,9 +2046,12 @@
                   <option value="">— Select Pay Group —</option>
                 </select>
               </div>
-              <div class="form-group" style="margin:0;">
+              <div class="form-group" style="margin:0;position:relative;">
                 <label>New Pay Master</label>
-                <input type="text" id="ba-pm-new-member" placeholder="Type Pay Master name..." style="cursor:text;">
+                <input type="text" id="ba-pm-new-member" placeholder="Type name to search M365 users..."
+                  autocomplete="off" style="width:100%;">
+                <div id="ba-pm-member-dropdown" class="user-picker-dropdown"></div>
+                <input type="hidden" id="ba-pm-member-id">
               </div>
               <div class="form-group" style="margin:0;">
                 <label>Scope</label>
@@ -7873,7 +7876,7 @@ function renderClientsList() {
   const statusF = document.getElementById('cl-filter-status')?.value || '';
   let items = [...cache.clients];
   if (search) items = items.filter(c =>
-    (c.PSPClient||'').toLowerCase().includes(search) ||
+    (c.PSPClient||c.ContactName||c.Title||'').toLowerCase().includes(search) ||
     (c.ClientInvoiceName||'').toLowerCase().includes(search)
   );
   if (statusF) items = items.filter(c => (c.ClientStatus || 'Active') === statusF);
@@ -7886,9 +7889,11 @@ function renderClientsList() {
   tbody.innerHTML = items.map(c => {
     const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === c.PSPClient).map(a => a.PayGroup).filter(Boolean))].sort();
     const statusColor = (c.ClientStatus || 'Active') === 'Active' ? 'var(--teal)' : 'var(--grey-400)';
+    const pspName = c.PSPClient || c.ContactName || c.Title || '—';
+    const invoiceName = c.ClientInvoiceName || '';
     return `<tr>
-      <td><strong style="color:var(--navy);">${c.PSPClient||'—'}</strong></td>
-      <td style="color:var(--grey-600);font-size:12px;">${c.ClientInvoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
+      <td><strong style="color:var(--navy);">${pspName}</strong></td>
+      <td style="color:var(--grey-600);font-size:12px;">${invoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
       <td>${c.Currency||'PGK'}</td>
       <td style="font-size:12px;">${c.TaxType||'—'}</td>
       <td style="font-size:12px;">${pgs.map(pg=>`<span style="background:var(--teal);color:white;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:3px;">${pg}</span>`).join('')||'<em style="color:var(--grey-400);">None</em>'}</td>
@@ -7910,7 +7915,7 @@ async function toggleClientStatus(id) {
   await saveWithFieldFallback(true, 'clients', id, { ClientStatus: newStatus });
   c.ClientStatus = newStatus;
   renderClientsList();
-  showToast(`${c.PSPClient} set to ${newStatus}`, 'success');
+  showToast(`${c.PSPClient || c.ContactName || c.Title} set to ${newStatus}`, 'success');
 }
 
 function openClientWizard(id) {
@@ -7923,7 +7928,7 @@ function openClientWizard(id) {
     // Edit mode — populate from existing client
     const c = cache.clients.find(x => String(x.id) === String(id));
     if (!c) return;
-    document.getElementById('wiz-psp-client').value    = c.PSPClient || '';
+    document.getElementById('wiz-psp-client').value    = c.PSPClient || c.ContactName || c.Title || '';
     document.getElementById('wiz-psp-client').readOnly = true; // PSP name shouldn't change
     document.getElementById('wiz-invoice-name').value  = c.ClientInvoiceName || '';
     document.getElementById('wiz-currency').value      = c.Currency || 'PGK';
@@ -7941,10 +7946,12 @@ function openClientWizard(id) {
     document.getElementById('wiz-country').value       = c.POCountry || 'Papua New Guinea';
 
     // Load existing pay groups
-    const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === c.PSPClient).map(a => a.PayGroup).filter(Boolean))].sort();
+    const clientNameKey = c.PSPClient || c.ContactName || c.Title || '';
+    const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === clientNameKey).map(a => a.PayGroup).filter(Boolean))].sort();
     wizPayGroups = pgs.map(pg => {
-      const tmpl = cache.activities.find(a => a.PSPClient === c.PSPClient && a.PayGroup === pg);
-      const fees = cache.fees.find(f => f.Title === c.PSPClient && (f.field_1 === pg || f.PayGroup === pg));
+      const tmpl = cache.activities.find(a => a.PSPClient === clientNameKey && a.PayGroup === pg);
+      const clientName = c.PSPClient || c.ContactName || c.Title || '';
+      const fees = cache.fees.find(f => f.Title === clientName && (f.field_1 === pg || f.PayGroup === pg));
       return {
         pg, cycle: tmpl?.Cycle || '', isNew: false,
         calcMethod: fees?.CalcMethod || 'A',
@@ -8273,6 +8280,12 @@ async function loadBulkAdmin() {
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   if (!cache.billing.length) cache.billing = await getItems('billing');
 
+  // Wire up user picker for New Pay Master field
+  renderUserPicker('ba-pm-new-member', 'ba-pm-member-dropdown', 'ba-pm-member-id', function(user) {
+    document.getElementById('ba-pm-new-member').value = user.displayName;
+    document.getElementById('ba-pm-member-id').value  = user.id;
+  });
+
   // Populate all client dropdowns
   const clients = [...new Set([
     ...cache.activities.map(a => a.PSPClient),
@@ -8348,7 +8361,7 @@ async function baApplyPMChange() {
   const newMember = document.getElementById('ba-pm-new-member')?.value?.trim();
 
   if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
-  if (!newMember) { showToast('Enter the new Pay Master name', 'error'); return; }
+  if (!newMember) { showToast('Select a Pay Master from the search results', 'error'); return; }
 
   let targets = [];
   if (scope === 'forward') {
