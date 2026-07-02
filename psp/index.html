@@ -1363,7 +1363,7 @@
               <div id="bm-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
             </div>
             <button class="btn btn-sm btn-red" onclick="bmClearClient()" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;padding:8px 16px;">
-              <i class="ti ti-refresh"></i> Change Client
+              <i class="ti ti-arrow-left"></i> Back
             </button>
           </div>
 
@@ -5589,46 +5589,17 @@ function openBillingForm(item = null) {
         <div style="font-size:11px;color:var(--teal-dark);margin-top:3px;">${item ? 'PPE: ' + (item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—') : 'Fill in the pay run details below'}</div>
       </div>
 
-      <!-- Pay Run Identity — display only when editing, editable when adding -->
+      <!-- Pay Run Identity — hidden fields only when editing (header shows the info), full form when adding -->
       ${item ? `
-      <div style="background:linear-gradient(135deg,#f0fdf8 0%,#e6f9f3 100%);border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1.5px solid var(--teal-light);">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
-          <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);"></div>
-          <div style="font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal-dark);">Pay Run</div>
-          <span style="font-size:10px;color:var(--grey-500);margin-left:4px;">(read only)</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Client</div>
-            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PSPClient||'—'}</div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay Group</div>
-            <div style="font-size:13px;font-weight:700;color:var(--navy);">${getPayGroup(item)}</div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay No</div>
-            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PayNo||'—'}</div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--grey-500);margin-bottom:3px;">Pay End Date</div>
-            <div style="font-size:13px;font-weight:700;color:var(--navy);">${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</div>
-          </div>
-        </div>
-        <!-- Payrun Number — editable even in edit mode -->
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--teal-light);">
-          <div class="form-group" style="margin:0;">
-            <label>Payrun Number</label>
-            <input type="text" id="fb-payrun" value="${item.Payrun||''}" placeholder="e.g. 2026-01">
-          </div>
-        </div>
-        <!-- Hidden fields to carry identity values through save -->
         <input type="hidden" id="fb-client" value="${item.PSPClient||''}">
         <input type="hidden" id="fb-paygroup" value="${getPayGroup(item)}">
         <input type="hidden" id="fb-payno" value="${item.PayNo||''}">
         <input type="hidden" id="fb-ppe" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
         <input type="hidden" id="fb-billmonth" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item.BillingMonth||'')}">
-      </div>` : `
+        <div class="form-group" style="margin:0 0 14px;">
+          <label>Payrun Number</label>
+          <input type="text" id="fb-payrun" value="${item.Payrun||''}" placeholder="e.g. 2026-01">
+        </div>` : `
       <div style="background:linear-gradient(135deg,#f0fdf8 0%,#e6f9f3 100%);border-radius:10px;padding:14px 16px;margin-bottom:14px;border:1.5px solid var(--teal-light);">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--teal);"></div>
@@ -9340,6 +9311,17 @@ function calcDownloadCSV() {
 
 // ─────────────────────────────────────────────
 // KANBAN BOARD
+
+function kbRelativeDate(date) {
+  if (!date) return '';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const diffDays = Math.round((today - d) / (1000*60*60*24));
+  if (diffDays === 0) return '';
+  if (diffDays === 1) return '(Yesterday)';
+  if (diffDays <= 7) return `(${diffDays} days ago)`;
+  return `(${d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})})`;
+}
 // ─────────────────────────────────────────────
 let kanbanScope = 'me';       // 'me' | 'all'
 let kanbanAutoRefresh = false;
@@ -9511,7 +9493,10 @@ function kbCardHtml(item, col) {
         }).join('')}
       </div>
     </div>
-    ${isOverdue ? `<div style="font-size:9px;color:#cc1f2d;font-weight:700;margin-top:4px;">⚠ OVERDUE</div>` : ''}
+    ${isOverdue ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+      <span style="font-size:9px;color:#cc1f2d;font-weight:700;">⚠ OVERDUE</span>
+      <span style="font-size:9px;color:#cc1f2d;font-weight:600;">${kbRelativeDate(time)}</span>
+    </div>` : ''}
   </div>`;
 }
 
