@@ -2025,128 +2025,153 @@
 
       <!-- BULK ADMIN PAGE -->
       <div class="page" id="page-bulk-admin">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" id="bulk-admin-grid">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
 
-          <!-- Card: Reassign Pay Master -->
-          <div class="card">
-            <div class="card-header" style="background:linear-gradient(135deg,#1a2744,#2d4a8a);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
-              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-user-edit" style="color:#93c5fd;"></i> Reassign Pay Master</h3>
+          <!-- ── Card: Reassign Pay Master ── -->
+          <div class="card" style="padding:0;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:14px 20px;display:flex;align-items:center;gap:10px;">
+              <i class="ti ti-user-edit" style="color:#93c5fd;font-size:18px;"></i>
+              <h3 style="color:white;margin:0;font-size:15px;">Reassign Pay Master</h3>
             </div>
-            <div class="form-group">
-              <label>Client</label>
-              <select id="ba-pm-client" onchange="baPopulatePayGroups('pm')">
-                <option value="">— Select Client —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Pay Group</label>
-              <select id="ba-pm-pg" onchange="baPreviewPMActivities()">
-                <option value="">— Select Pay Group —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>New Pay Master</label>
-              <input type="text" id="ba-pm-new-member" placeholder="Type name or pick from M365..." readonly onclick="openUserPickerFor('ba-pm-new-member', 'ba-pm-member-obj')">
-              <input type="hidden" id="ba-pm-member-obj">
-            </div>
-            <div class="form-group">
-              <label>Scope</label>
-              <div style="display:flex;gap:10px;">
-                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
-                  <input type="radio" name="ba-pm-scope" value="forward" checked onchange="baPreviewPMActivities()"> Going Forward (skip Finished/Started)
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
-                  <input type="radio" name="ba-pm-scope" value="once" onchange="baPreviewPMActivities()"> Once Only
-                </label>
+            <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div class="form-group" style="margin:0;">
+                <label>Client</label>
+                <select id="ba-pm-client" onchange="baPopulatePayGroups('pm')">
+                  <option value="">— Select Client —</option>
+                </select>
               </div>
-            </div>
-            <div id="ba-pm-once-sel" style="display:none;" class="form-group">
-              <label>Select Activity</label>
-              <select id="ba-pm-once-activity"><option value="">— Pick activity —</option></select>
-            </div>
-            <div id="ba-pm-preview" style="margin:10px 0;font-size:12px;color:var(--grey-600);"></div>
-            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-              <button class="btn btn-teal" onclick="baApplyPMChange()"><i class="ti ti-user-check"></i> Apply Reassignment</button>
+              <div class="form-group" style="margin:0;">
+                <label>Pay Group</label>
+                <select id="ba-pm-pg" onchange="baPreviewPMActivities()">
+                  <option value="">— Select Pay Group —</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>New Pay Master</label>
+                <input type="text" id="ba-pm-new-member" placeholder="Type Pay Master name..." style="cursor:text;">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Scope</label>
+                <div style="display:flex;gap:20px;margin-top:4px;">
+                  <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="ba-pm-scope" value="forward" checked onchange="baPreviewPMActivities()">
+                    Going Forward <span style="font-size:11px;color:var(--grey-500);">(skip Finished/Started)</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="ba-pm-scope" value="once" onchange="baPreviewPMActivities()">
+                    Once Only
+                  </label>
+                </div>
+              </div>
+              <div id="ba-pm-once-sel" style="display:none;" class="form-group" style="margin:0;">
+                <label>Select Activity</label>
+                <select id="ba-pm-once-activity"><option value="">— Pick activity —</option></select>
+              </div>
+              <div id="ba-pm-preview" style="font-size:12px;color:var(--grey-600);min-height:20px;"></div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button class="btn btn-teal" onclick="baApplyPMChange()">
+                  <i class="ti ti-user-check"></i> Apply Reassignment
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Card: Change Activity Date -->
-          <div class="card">
-            <div class="card-header" style="background:linear-gradient(135deg,#065f46,#0e9f6e);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
-              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-calendar-event" style="color:#a7f3d0;"></i> Change Activity Date</h3>
+          <!-- ── Card: Change Activity Date ── -->
+          <div class="card" style="padding:0;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#065f46,#0e9f6e);padding:14px 20px;display:flex;align-items:center;gap:10px;">
+              <i class="ti ti-calendar-event" style="color:#a7f3d0;font-size:18px;"></i>
+              <h3 style="color:white;margin:0;font-size:15px;">Change Activity Date</h3>
             </div>
-            <div class="form-group">
-              <label>Client</label>
-              <select id="ba-dt-client" onchange="baPopulatePayGroups('dt')">
-                <option value="">— Select Client —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Pay Group</label>
-              <select id="ba-dt-pg" onchange="baLoadDateActivities()">
-                <option value="">— Select Pay Group —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Scope</label>
-              <div style="display:flex;gap:10px;">
-                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
-                  <input type="radio" name="ba-dt-scope" value="once" checked onchange="baLoadDateActivities()"> Once Only
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
-                  <input type="radio" name="ba-dt-scope" value="allafter" onchange="baLoadDateActivities()"> All After (shift by N days)
-                </label>
+            <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div class="form-group" style="margin:0;">
+                <label>Client</label>
+                <select id="ba-dt-client" onchange="baPopulatePayGroups('dt')">
+                  <option value="">— Select Client —</option>
+                </select>
               </div>
-            </div>
-            <div id="ba-dt-once-fields" class="form-group">
-              <label>Select Activity</label>
-              <select id="ba-dt-once-activity" onchange="baShowCurrentDate()">
-                <option value="">— Pick activity —</option>
-              </select>
-              <div id="ba-dt-current-date" style="font-size:11px;color:var(--grey-500);margin-top:4px;"></div>
-              <label style="margin-top:10px;">New Date & Time</label>
-              <input type="datetime-local" id="ba-dt-new-datetime">
-            </div>
-            <div id="ba-dt-allafter-fields" style="display:none;" class="form-group">
-              <label>Shift by (days)</label>
-              <input type="number" id="ba-dt-shift-days" placeholder="e.g. 2 or -1" style="max-width:140px;">
-              <div id="ba-dt-allafter-preview" style="margin-top:8px;font-size:12px;color:var(--grey-600);"></div>
-            </div>
-            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-              <button class="btn btn-teal" onclick="baApplyDateChange()"><i class="ti ti-calendar-check"></i> Apply Date Change</button>
+              <div class="form-group" style="margin:0;">
+                <label>Pay Group</label>
+                <select id="ba-dt-pg" onchange="baLoadDateActivities()">
+                  <option value="">— Select Pay Group —</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Scope</label>
+                <div style="display:flex;gap:20px;margin-top:4px;">
+                  <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="ba-dt-scope" value="once" checked onchange="baLoadDateActivities()">
+                    Once Only
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="ba-dt-scope" value="allafter" onchange="baLoadDateActivities()">
+                    All After <span style="font-size:11px;color:var(--grey-500);">(shift by N days)</span>
+                  </label>
+                </div>
+              </div>
+              <div id="ba-dt-once-fields">
+                <div class="form-group" style="margin:0 0 10px;">
+                  <label>Select Activity</label>
+                  <select id="ba-dt-once-activity" onchange="baShowCurrentDate()">
+                    <option value="">— Pick activity —</option>
+                  </select>
+                  <div id="ba-dt-current-date" style="font-size:11px;color:var(--grey-500);margin-top:4px;"></div>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>New Date &amp; Time</label>
+                  <input type="datetime-local" id="ba-dt-new-datetime">
+                </div>
+              </div>
+              <div id="ba-dt-allafter-fields" style="display:none;">
+                <div class="form-group" style="margin:0 0 8px;">
+                  <label>Shift by (days)</label>
+                  <input type="number" id="ba-dt-shift-days" placeholder="e.g. 2 or -1" style="max-width:160px;">
+                </div>
+                <div id="ba-dt-allafter-preview" style="font-size:12px;color:var(--grey-600);"></div>
+              </div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button class="btn btn-teal" onclick="baApplyDateChange()">
+                  <i class="ti ti-calendar-check"></i> Apply Date Change
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Card: Delete Not Started Activities -->
-          <div class="card" style="border-top:3px solid var(--red);">
-            <div class="card-header" style="background:linear-gradient(135deg,#7f1d1d,#cc1f2d);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
-              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-trash" style="color:#fca5a5;"></i> Delete Not Started Activities</h3>
+          <!-- ── Card: Delete Not Started ── -->
+          <div class="card" style="padding:0;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#7f1d1d,#cc1f2d);padding:14px 20px;display:flex;align-items:center;gap:10px;">
+              <i class="ti ti-trash" style="color:#fca5a5;font-size:18px;"></i>
+              <h3 style="color:white;margin:0;font-size:15px;">Delete Not Started Activities</h3>
             </div>
-            <div class="callout warning" style="margin-bottom:16px;">
-              <i class="ti ti-alert-triangle"></i>
-              <div>This permanently deletes all <strong>Not Started</strong> activities and their corresponding <strong>PSP_Billing</strong> records for the selected Pay Group. This cannot be undone.</div>
-            </div>
-            <div class="form-group">
-              <label>Client</label>
-              <select id="ba-del-client" onchange="baPopulatePayGroups('del')">
-                <option value="">— Select Client —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Pay Group</label>
-              <select id="ba-del-pg" onchange="baPreviewDelete()">
-                <option value="">— Select Pay Group —</option>
-              </select>
-            </div>
-            <div id="ba-del-preview" style="font-size:13px;color:var(--grey-600);margin:10px 0;"></div>
-            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-              <button class="btn" style="background:var(--red);color:white;" onclick="baDeleteNotStarted()">
-                <i class="ti ti-trash"></i> Delete Not Started
-              </button>
+            <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div style="background:#fff1f2;border:1.5px solid #fca5a5;border-radius:8px;padding:12px 14px;font-size:12px;color:#7f1d1d;line-height:1.6;">
+                <strong><i class="ti ti-alert-triangle"></i> Destructive Action</strong><br>
+                Permanently deletes all <strong>Not Started</strong> activities and their
+                corresponding <strong>PSP_Billing</strong> records for the selected Pay Group.
+                Started and Finished activities are preserved. This cannot be undone.
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Client</label>
+                <select id="ba-del-client" onchange="baPopulatePayGroups('del')">
+                  <option value="">— Select Client —</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Pay Group</label>
+                <select id="ba-del-pg" onchange="baPreviewDelete()">
+                  <option value="">— Select Pay Group —</option>
+                </select>
+              </div>
+              <div id="ba-del-preview" style="min-height:20px;"></div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button class="btn" style="background:var(--red);color:white;border:none;" onclick="baDeleteNotStarted()">
+                  <i class="ti ti-trash"></i> Delete Not Started
+                </button>
+              </div>
             </div>
           </div>
 
         </div>
+      </div>
       </div>
 
       </div><!-- /page-content -->
