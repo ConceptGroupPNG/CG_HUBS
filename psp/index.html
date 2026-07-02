@@ -9395,8 +9395,12 @@ function getKanbanItems() {
   return cache.calendar.filter(i => {
     const d = spDateToDate(i.ActivityDateTime);
     if (!d) return false;
-    const dayMatch = d >= today && d < tomorrow;
-    if (!dayMatch) return false;
+    const status = getActStatus(i);
+    // Always show today's activities (all statuses)
+    const isToday = d >= today && d < tomorrow;
+    // Also show overdue unfinished activities (past, not Finished)
+    const isOverdue = d < today && status !== 'Finished';
+    if (!isToday && !isOverdue) return false;
     if (kanbanScope === 'me') {
       const member = i.PSPMEmber || '';
       return member === me || member.includes(me.split(' ')[0]);
