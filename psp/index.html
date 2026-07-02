@@ -861,12 +861,9 @@
       <div class="nav-item active" onclick="navigate('dashboard')">
         <i class="ti ti-layout-dashboard"></i> Dashboard
       </div>
-      <div class="nav-item" onclick="navigate('my-activities')">
-        <i class="ti ti-checklist"></i> My Activities
+      <div class="nav-item" onclick="navigate('activities')">
+        <i class="ti ti-checklist"></i> Activities
         <span class="nav-badge" id="badge-my-activities">0</span>
-      </div>
-      <div class="nav-item" onclick="navigate('all-activities')">
-        <i class="ti ti-users"></i> All Activities
       </div>
       <div class="nav-item" onclick="navigate('calendar')">
         <i class="ti ti-calendar"></i> Pay Calendar
@@ -1002,7 +999,7 @@
             <div class="card">
               <div class="card-header">
                 <h3>My Activities Today</h3>
-                <button class="btn btn-sm btn-outline" onclick="navigate('my-activities')">View All</button>
+                <button class="btn btn-sm btn-outline" onclick="navigate('activities')">View All</button>
               </div>
               <div id="dash-my-activities"><div class="loading"><div class="spinner"></div></div></div>
             </div>
@@ -1154,73 +1151,88 @@
 
       </div>
 
-      <!-- MY ACTIVITIES PAGE -->
-      <div class="page" id="page-my-activities">
-        <div class="filter-bar">
-          <select id="filter-my-date" onchange="renderMyActivities()">
-            <option value="today">Today</option>
-            <option value="week">This Week</option>
-            <option value="all">All Open</option>
-          </select>
-          <select id="filter-my-client" onchange="renderMyActivities()">
-            <option value="">All Clients</option>
-          </select>
-          <input type="text" id="filter-my-search" placeholder="Search activities..." oninput="renderMyActivities()">
-        </div>
-        <div id="my-activities-container"><div class="loading"><div class="spinner"></div></div></div>
-      </div>
+      <!-- ACTIVITIES PAGE -->
+      <div class="page" id="page-activities">
 
-      <!-- ALL ACTIVITIES PAGE -->
-      <div class="page" id="page-all-activities">
-        <div class="filter-bar">
-          <select id="filter-all-date" onchange="renderAllActivities()">
+        <!-- Scope toggle + filters -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+
+          <!-- My / All toggle -->
+          <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;flex-shrink:0;">
+            <button id="act-scope-my" onclick="setActivityScope('my')"
+              class="btn btn-xs btn-teal"
+              style="font-size:12px;font-weight:700;padding:5px 14px;">
+              <i class="ti ti-user"></i> My Activities
+            </button>
+            <button id="act-scope-all" onclick="setActivityScope('all')"
+              class="btn btn-xs"
+              style="font-size:12px;font-weight:700;padding:5px 14px;border:none;background:none;color:var(--grey-600);">
+              <i class="ti ti-users"></i> All
+            </button>
+          </div>
+
+          <!-- Shared filters -->
+          <select id="act-filter-date" onchange="renderActivities()" style="font-size:12px;">
             <option value="today">Today</option>
             <option value="week">This Week</option>
             <option value="all">All Open</option>
           </select>
-          <select id="filter-all-member" onchange="renderAllActivities()">
-            <option value="">All Pay Masters</option>
-          </select>
-          <select id="filter-all-client" onchange="onAllClientChange()">
+          <select id="act-filter-client" onchange="onActClientChange()" style="font-size:12px;">
             <option value="">All Clients</option>
           </select>
-          <select id="filter-all-paygroup" onchange="renderAllActivities()">
+          <select id="act-filter-pg" onchange="renderActivities()" style="font-size:12px;">
             <option value="">All Pay Groups</option>
           </select>
-          <select id="filter-all-status" onchange="renderAllActivities()">
+
+          <!-- All-scope only filters (hidden in My scope) -->
+          <select id="act-filter-member" onchange="renderActivities()" style="font-size:12px;display:none;">
+            <option value="">All Pay Masters</option>
+          </select>
+          <select id="act-filter-status" onchange="renderActivities()" style="font-size:12px;display:none;">
             <option value="">All Statuses</option>
             <option value="Not Started">Not Started</option>
             <option value="Started">Started</option>
             <option value="Delayed">Delayed</option>
             <option value="Finished">Finished</option>
           </select>
-          <input type="text" id="filter-all-search" placeholder="Search..." oninput="renderAllActivities()">
+
+          <input type="text" id="act-filter-search" placeholder="Search..." oninput="renderActivities()"
+            style="font-size:12px;min-width:160px;">
         </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table id="all-activities-table">
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Pay Group</th>
-                  <th>Pay No</th>
-                  <th>Order</th>
-                  <th>Milestone</th>
-                  <th>Scheduled</th>
-                  <th>Pay Master</th>
-                  <th>Int/Ext</th>
-                  <th>SLA</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="all-activities-tbody">
-                <tr><td colspan="11"><div class="loading"><div class="spinner"></div></div></td></tr>
-              </tbody>
-            </table>
+
+        <!-- My Activities: grouped card view -->
+        <div id="act-my-container" style=""></div>
+
+        <!-- All Activities: table view (hidden by default) -->
+        <div id="act-all-container" style="display:none;">
+          <div class="card">
+            <div class="table-wrap">
+              <table id="act-all-table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Pay Group</th>
+                    <th>Pay No</th>
+                    <th>Order</th>
+                    <th>Milestone</th>
+                    <th>Scheduled</th>
+                    <th>Pay Master</th>
+                    <th>Int/Ext</th>
+                    <th>SLA</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="act-all-tbody">
+                  <tr><td colspan="11"><div class="loading"><div class="spinner"></div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
+
+
 
       <!-- CALENDAR PAGE -->
       <div class="page" id="page-calendar">
@@ -3984,9 +3996,8 @@ function statusBadge(s) {
 // Refresh the SharePoint-backed cache entries relevant to a given page.
 // Used both by the manual Refresh button and automatically on navigation.
 async function refreshCacheForPage(page) {
-  if (page === 'dashboard' || page === 'my-activities' ||
-      page === 'all-activities' || page === 'calendar' ||
-      page === 'generate-calendar') {
+  if (page === 'dashboard' || page === 'activities' ||
+      page === 'calendar' || page === 'generate-calendar') {
     cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
   }
   if (page === 'generate-calendar') {
@@ -4063,8 +4074,7 @@ async function navigate(page) {
   currentPage = page;
   const titles = {
     'dashboard': 'Dashboard',
-    'my-activities': 'My Activities',
-    'all-activities': 'All Activities',
+    'activities': 'Activities',
     'calendar': 'Pay Calendar',
     'generate-calendar': 'Generate Calendar',
     'billing-calc': 'Billing Calculator',
@@ -4124,8 +4134,7 @@ async function handleTokenExpiry() {
 async function loadPage(page) {
   try {
     if (page === 'dashboard') await loadDashboard();
-    else if (page === 'my-activities') await loadMyActivities();
-    else if (page === 'all-activities') await loadAllActivities();
+    else if (page === 'activities') await loadActivities();
     else if (page === 'calendar') await loadCalendar();
     else if (page === 'generate-calendar') await loadGenerateCalendar();
     else if (page === 'billing-metrics') await loadBillingMetrics();
@@ -4298,49 +4307,92 @@ async function loadDashboard() {
 // ─────────────────────────────────────────────
 // MY ACTIVITIES
 // ─────────────────────────────────────────────
-async function loadMyActivities() {
+async function loadActivities() {
   if (!cache.calendar.length) await refreshCalendarCache();
-  populateClientFilter('filter-my-client', cache.calendar);
-  renderMyActivities();
+  // Populate filters
+  populateClientFilter('act-filter-client', cache.calendar);
+  populatePayGroupFilter('act-filter-pg', cache.calendar);
+  populateMemberFilter('act-filter-member', cache.calendar);
+  renderActivities();
+}
+
+let activityScope = 'my'; // 'my' | 'all'
+
+function setActivityScope(scope) {
+  activityScope = scope;
+
+  // Toggle button styles
+  const myBtn  = document.getElementById('act-scope-my');
+  const allBtn = document.getElementById('act-scope-all');
+  if (myBtn)  { myBtn.className  = scope === 'my'  ? 'btn btn-xs btn-teal' : 'btn btn-xs'; myBtn.style.cssText  = scope === 'my'  ? 'font-size:12px;font-weight:700;padding:5px 14px;' : 'font-size:12px;font-weight:700;padding:5px 14px;border:none;background:none;color:var(--grey-600);'; }
+  if (allBtn) { allBtn.className = scope === 'all' ? 'btn btn-xs btn-teal' : 'btn btn-xs'; allBtn.style.cssText = scope === 'all' ? 'font-size:12px;font-weight:700;padding:5px 14px;' : 'font-size:12px;font-weight:700;padding:5px 14px;border:none;background:none;color:var(--grey-600);'; }
+
+  // Show/hide scope-specific filters
+  const memberFilter = document.getElementById('act-filter-member');
+  const statusFilter = document.getElementById('act-filter-status');
+  if (memberFilter) memberFilter.style.display = scope === 'all' ? '' : 'none';
+  if (statusFilter) statusFilter.style.display = scope === 'all' ? '' : 'none';
+
+  // Show/hide containers
+  const myContainer  = document.getElementById('act-my-container');
+  const allContainer = document.getElementById('act-all-container');
+  if (myContainer)  myContainer.style.display  = scope === 'my'  ? '' : 'none';
+  if (allContainer) allContainer.style.display = scope === 'all' ? '' : 'none';
+
+  renderActivities();
+}
+
+function onActClientChange() {
+  const client = document.getElementById('act-filter-client')?.value;
+  const items = client ? cache.calendar.filter(i => i.PSPClient === client) : cache.calendar;
+  populatePayGroupFilter('act-filter-pg', items);
+  renderActivities();
+}
+
+function renderActivities() {
+  if (activityScope === 'my') renderMyActivities();
+  else renderAllActivities();
 }
 
 function renderMyActivities() {
-  const dateFilter = document.getElementById('filter-my-date').value;
-  const client = document.getElementById('filter-my-client').value;
-  const search = document.getElementById('filter-my-search').value.toLowerCase();
+  const dateFilter = document.getElementById('act-filter-date')?.value || 'today';
+  const client     = document.getElementById('act-filter-client')?.value || '';
+  const pg         = document.getElementById('act-filter-pg')?.value || '';
+  const search     = (document.getElementById('act-filter-search')?.value || '').toLowerCase();
 
   let items = cache.calendar.filter(i => {
     if (getPSPMember(i) !== currentUser.displayName) return false;
     if (i.FinishDateTime) return false;
-    if ((getActStatus(i)) === 'Finished') return false;
+    if (getActStatus(i) === 'Finished') return false;
     return true;
   });
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
   if (client) items = items.filter(i => i.PSPClient === client);
+  if (pg)     items = items.filter(i => getPayGroup(i) === pg);
   if (search) items = items.filter(i =>
     (i.ActivityMilestone||'').toLowerCase().includes(search) ||
     (i.PSPClient||'').toLowerCase().includes(search) ||
     (i.PayGroup||'').toLowerCase().includes(search)
   );
 
-  // Group by Client + PayGroup + PayNo
   const groups = {};
   items.forEach(i => {
     const key = `${i.PSPClient}||${i.PayGroup}||${i.PayNo}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(i);
   });
-  Object.values(groups).forEach(g => g.sort((a, b) => (a.Order || 0) - (b.Order || 0)));
+  Object.values(groups).forEach(g => g.sort((a,b) => (a.Order||0) - (b.Order||0)));
 
-  const container = document.getElementById('my-activities-container');
+  const container = document.getElementById('act-my-container');
+  if (!container) return;
   if (!items.length) {
     container.innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No activities match your filters</p></div>';
     return;
   }
 
-  const html = Object.entries(groups).map(([key, grpItems]) => {
-    const [client, pg, payno] = key.split('||');
+  container.innerHTML = Object.entries(groups).map(([key, grpItems]) => {
+    const [cl, pg, payno] = key.split('||');
     const ppe = grpItems[0]?.PayEndDate;
     const rows = grpItems.map(i => {
       const overdue = isOverdue(i.ActivityDateTime, getActStatus(i));
@@ -4348,129 +4400,77 @@ function renderMyActivities() {
       <div class="activity-row">
         <div class="activity-order ${getStatusClass(getActStatus(i))}">${getOrder(i)}</div>
         <div>
-          <div class="activity-name">${i.ActivityMilestone}${overdue ? ' <span style="color:var(--danger);font-size:11px;">⚠ Overdue</span>' : ''}</div>
-          <div class="activity-meta">Scheduled: ${fmtDateTime(i.ActivityDateTime)} · <span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'Int'}</span> · Contact: ${i.Contact||'—'}</div>
+          <div class="activity-name">${i.ActivityMilestone}${overdue ? ' <span style="color:var(--red);font-size:11px;font-weight:700;">OVERDUE</span>' : ''}</div>
+          <div class="activity-meta">${fmtDateTime(i.ActivityDateTime)}</div>
         </div>
-        ${statusBadge(getActStatus(i) || 'Not Started')}
-        <div class="activity-actions">
-          <button class="btn btn-xs btn-teal" onclick="openStatusModalById('${i.id}')">Update</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+          ${statusBadge(getActStatus(i)||'Not Started')}
+          <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
         </div>
       </div>`;
     }).join('');
-
-    return `
-    <div class="card" style="margin-bottom:16px;">
-      <div class="group-card-header">
-        <div>
-          <h3>${client} — ${pg}</h3>
-          <div class="sub">Pay No ${payno} · PPE: ${fmtDate(ppe)}</div>
-        </div>
-        <span class="progress-pill ${grpItems.filter(i=>getActStatus(i)==='Finished').length===grpItems.length?'all-done':''}">${grpItems.filter(i=>getActStatus(i)==='Finished').length}/${grpItems.length} done</span>
+    return `<div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--grey-100);">
+        <strong style="color:var(--navy);">${cl}</strong>
+        <span style="background:var(--teal);color:white;border-radius:5px;padding:1px 8px;font-size:11px;font-weight:700;">${pg}</span>
+        <span style="font-size:12px;color:var(--grey-500);">Pay ${payno}${ppe ? ' · PPE: ' + fmtDate(ppe) : ''}</span>
       </div>
-      <div style="padding:8px 16px;">${rows}</div>
+      ${rows}
     </div>`;
   }).join('');
-
-  container.innerHTML = html;
-}
-
-function getPSPMember(item) {
-  if (!item) return '';
-  const expanded = item.PSPMEmber || item.PSPMember;
-  if (expanded) {
-    if (typeof expanded === 'object' && expanded.LookupValue) return expanded.LookupValue;
-    if (typeof expanded === 'string' && expanded.length > 0) return expanded;
-  }
-  if (item.PSPMEmberLookupId) return `User #${item.PSPMEmberLookupId}`;
-  return '';
-}
-function getPayGroup(item) {
-  if (!item) return '';
-  return item.PayGroup || item['Pay_x0020_Group'] || '';
-}
-function getClientName(clientRecord) {
-  // PSP_Client_Details uses ContactName as the primary client identifier
-  return clientRecord.ContactName || clientRecord.PSPClient || clientRecord.Title || '—';
-}
-function getOrder(item) {
-  if (!item) return '';
-  return item.Order0 !== undefined ? item.Order0 : (item.Order !== undefined ? item.Order : '');
-}
-function getActStatus(item) {
-  return item.Act_Status || item['Act_x0020_Status'] || '';
-}
-function getStatusClass(status) {
-  if (status === 'Finished') return 'finished';
-  if (status === 'Started') return 'started';
-  if (status === 'Delayed') return 'delayed';
-  return '';
-}
-
-// ─────────────────────────────────────────────
-// ALL ACTIVITIES
-// ─────────────────────────────────────────────
-async function loadAllActivities() {
-  if (!cache.calendar.length) await refreshCalendarCache();
-  populateClientFilter('filter-all-client', cache.calendar);
-  populatePayGroupFilter('filter-all-paygroup', cache.calendar);
-  populateMemberFilter('filter-all-member', cache.calendar);
-  renderAllActivities();
-}
-
-function onAllClientChange() {
-  const client = document.getElementById('filter-all-client').value;
-  const items = client ? cache.calendar.filter(i => i.PSPClient === client) : cache.calendar;
-  populatePayGroupFilter('filter-all-paygroup', items);
-  renderAllActivities();
 }
 
 function renderAllActivities() {
-  const dateFilter = document.getElementById('filter-all-date').value;
-  const member = document.getElementById('filter-all-member').value;
-  const client = document.getElementById('filter-all-client').value;
-  const pg = document.getElementById('filter-all-paygroup')?.value || '';
-  const status = document.getElementById('filter-all-status').value;
-  const search = document.getElementById('filter-all-search').value.toLowerCase();
+  const dateFilter = document.getElementById('act-filter-date')?.value || 'today';
+  const member     = document.getElementById('act-filter-member')?.value || '';
+  const client     = document.getElementById('act-filter-client')?.value || '';
+  const pg         = document.getElementById('act-filter-pg')?.value || '';
+  const status     = document.getElementById('act-filter-status')?.value || '';
+  const search     = (document.getElementById('act-filter-search')?.value || '').toLowerCase();
 
   let items = [...cache.calendar];
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
   if (member) items = items.filter(i => getPSPMember(i) === member);
-  if (pg) items = items.filter(i => getPayGroup(i) === pg);
+  if (pg)     items = items.filter(i => getPayGroup(i) === pg);
   if (client) items = items.filter(i => i.PSPClient === client);
   if (status) items = items.filter(i => (getActStatus(i) || 'Not Started') === status);
   if (search) items = items.filter(i =>
     (i.ActivityMilestone||'').toLowerCase().includes(search) ||
     (i.PSPClient||'').toLowerCase().includes(search)
   );
-  items.sort((a, b) => {
+  items.sort((a,b) => {
     if (a.PSPClient < b.PSPClient) return -1;
     if (a.PSPClient > b.PSPClient) return 1;
-    return (getOrder(a) || 0) - (getOrder(b) || 0);
+    return (getOrder(a)||0) - (getOrder(b)||0);
   });
 
-  const tbody = document.getElementById('all-activities-tbody');
+  const tbody = document.getElementById('act-all-tbody');
+  if (!tbody) return;
   if (!items.length) {
     tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-search"></i><p>No activities match filters</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = items.map(i => `
     <tr>
-      <td>${i.PSPClient || '—'}</td>
-      <td><strong>${i.PayGroup || '—'}</strong></td>
-      <td>${i.PayNo || '—'}</td>
+      <td>${i.PSPClient||'—'}</td>
+      <td><strong>${i.PayGroup||'—'}</strong></td>
+      <td>${i.PayNo||'—'}</td>
       <td>${getOrder(i)}</td>
-      <td>${i.ActivityMilestone || '—'}</td>
+      <td>${i.ActivityMilestone||'—'}</td>
       <td>${fmtDateTime(i.ActivityDateTime)}</td>
       <td>${getPSPMember(i)}</td>
       <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
       <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
-      <td>${statusBadge(getActStatus(i) || 'Not Started')}</td>
-      <td>
-        <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
-      </td>
+      <td>${statusBadge(getActStatus(i)||'Not Started')}</td>
+      <td><button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button></td>
     </tr>`).join('');
 }
+
+// Legacy aliases — keep dashboard badge working
+async function loadMyActivities() { activityScope='my'; await loadActivities(); }
+async function loadAllActivities() { activityScope='all'; await loadActivities(); }
+
 
 // ─────────────────────────────────────────────
 // CALENDAR
