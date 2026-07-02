@@ -8950,10 +8950,13 @@ const CALC_SUPP_FIELDS = [
 ];
 
 function loadBillingCalc() {
-  // Populate client dropdown
+  // Populate client dropdown from fees list (Title is the authoritative key for fee lookups)
+  // Supplement with any clients that exist but don't yet have fees
   const sel = document.getElementById('calc-client');
   if (!sel) return;
-  const clients = [...new Set(cache.clients.map(c => c.PSPClient || c.ContactName || c.Title).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const fromFees    = cache.fees.map(f => f.Title).filter(Boolean);
+  const fromClients = cache.clients.map(c => c.PSPClient || c.ContactName || c.Title).filter(Boolean);
+  const clients = [...new Set([...fromFees, ...fromClients])].sort((a,b) => a.localeCompare(b));
   sel.innerHTML = '<option value="">— Manual Entry —</option>' +
     clients.map(c => `<option>${c}</option>`).join('');
 
@@ -8975,8 +8978,12 @@ function calcClientChange() {
   const pgs = [...new Set(cache.fees.filter(f => f.Title === clientName).map(f => f.field_1 || f.PayGroup).filter(Boolean))].sort();
   pgSel.innerHTML = '<option value="">— Select Pay Group —</option>' + pgs.map(pg => `<option>${pg}</option>`).join('');
 
-  // Auto-fill Currency & Tax from client record
-  const c = cache.clients.find(c => (c.PSPClient || c.ContactName || c.Title) === clientName);
+  // Auto-fill Currency & Tax from client record — match on any name field
+  const c = cache.clients.find(cl =>
+    (cl.PSPClient === clientName) ||
+    (cl.ContactName === clientName) ||
+    (cl.Title === clientName)
+  );
   if (c) {
     const currSel = document.getElementById('calc-currency');
     const taxSel  = document.getElementById('calc-tax');
