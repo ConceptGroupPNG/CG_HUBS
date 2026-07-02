@@ -937,12 +937,27 @@
             <div class="tab" id="dash-tab-finance" onclick="switchDashTab('finance')">
               <i class="ti ti-chart-bar" style="font-size:14px;margin-right:4px;"></i> Finance
             </div>
+            <div class="tab" id="dash-tab-kanban" onclick="switchDashTab('kanban')">
+              <i class="ti ti-layout-kanban" style="font-size:14px;margin-right:4px;"></i> Kanban
+            </div>
           </div>
           <div id="fin-year-filter" style="display:none;">
             <select id="fin-year-sel" onchange="loadFinanceDashboard()" style="padding:6px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--navy);background:var(--white);outline:none;">
               <option value="2026">2026</option>
               <option value="2025">2025</option>
             </select>
+          </div>
+          <div id="kanban-controls" style="display:none;align-items:center;gap:10px;">
+            <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;">
+              <button id="kb-scope-me" onclick="setKanbanScope('me')" class="btn btn-xs btn-teal" style="font-size:11px;font-weight:700;padding:4px 12px;">My Activities</button>
+              <button id="kb-scope-all" onclick="setKanbanScope('all')" class="btn btn-xs btn-outline" style="font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);">All Pay Masters</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--grey-600);cursor:pointer;user-select:none;">
+              <div id="kb-refresh-toggle" onclick="toggleKanbanAutoRefresh()" style="width:34px;height:18px;background:var(--grey-300);border-radius:10px;cursor:pointer;position:relative;transition:background 0.2s;">
+                <div id="kb-refresh-knob" style="width:14px;height:14px;background:white;border-radius:50%;position:absolute;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+              </div>
+              <span id="kb-refresh-label">Auto-refresh: Off</span>
+            </label>
           </div>
         </div>
 
@@ -1122,6 +1137,13 @@
                 <tbody id="fin-pipeline-tbody"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+
+        <!-- KANBAN TAB -->
+        <div id="dash-kanban-content" style="display:none;">
+          <div id="kanban-board" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start;min-height:400px;">
+            <!-- Columns injected by loadKanbanBoard() -->
           </div>
         </div>
 
@@ -3580,6 +3602,18 @@ async function navigate(page) {
     if (icon) icon.style.animation = '';
   }
 
+  // Stop kanban auto-refresh when leaving dashboard
+  if (page !== 'dashboard' && kanbanRefreshTimer) {
+    clearInterval(kanbanRefreshTimer);
+    kanbanRefreshTimer = null;
+    kanbanAutoRefresh = false;
+    const toggle = document.getElementById('kb-refresh-toggle');
+    const knob   = document.getElementById('kb-refresh-knob');
+    const label  = document.getElementById('kb-refresh-label');
+    if (toggle) toggle.style.background = 'var(--grey-300)';
+    if (knob) knob.style.left = '2px';
+    if (label) label.textContent = 'Auto-refresh: Off';
+  }
   await loadPage(page);
 }
 
@@ -7000,13 +7034,18 @@ let currentDashTab = 'ops';
 
 function switchDashTab(tab) {
   currentDashTab = tab;
-  ['ops','finance'].forEach(t => {
-    document.getElementById('dash-tab-' + t).classList.toggle('active', t === tab);
-    document.getElementById('dash-' + t + '-content').style.display = t === tab ? '' : 'none';
+  ['ops','finance','kanban'].forEach(t => {
+    const tabEl = document.getElementById('dash-tab-' + t);
+    const contentEl = document.getElementById('dash-' + t + '-content');
+    if (tabEl) tabEl.classList.toggle('active', t === tab);
+    if (contentEl) contentEl.style.display = t === tab ? '' : 'none';
   });
   const yearFilter = document.getElementById('fin-year-filter');
   if (yearFilter) yearFilter.style.display = tab === 'finance' ? '' : 'none';
+  const kanbanControls = document.getElementById('kanban-controls');
+  if (kanbanControls) kanbanControls.style.display = tab === 'kanban' ? 'flex' : 'none';
   if (tab === 'finance') loadFinanceDashboard();
+  if (tab === 'kanban') loadKanbanBoard();
 }
 
 function getFinYear() {
@@ -7451,6 +7490,276 @@ async function initApp(token) {
   }
   document.getElementById('auth-screen').style.display = 'flex';
 })();
+
+
+// ─────────────────────────────────────────────
+// KANBAN BOARD
+// ─────────────────────────────────────────────
+let kanbanScope = 'me';       // 'me' | 'all'
+let kanbanAutoRefresh = false;
+let kanbanRefreshTimer = null;
+let kanbanDragId = null;      // id of card being dragged
+
+const KANBAN_COLS = [
+  { key: 'Not Started', label: 'Not Started', icon: 'ti-circle',          color: '#64748b', bg: '#f1f5f9', border: '#94a3b8', headerBg: '#334155' },
+  { key: 'Started',     label: 'In Progress',  icon: 'ti-player-play',     color: '#0e9f6e', bg: '#f0fdf4', border: '#34d399', headerBg: '#065f46' },
+  { key: 'Delayed',     label: 'Delayed',       icon: 'ti-alert-triangle',  color: '#f59e0b', bg: '#fffbeb', border: '#fbbf24', headerBg: '#92400e' },
+  { key: 'Finished',    label: 'Finished',      icon: 'ti-circle-check',    color: '#3b82f6', bg: '#eff6ff', border: '#93c5fd', headerBg: '#1e3a8a' },
+];
+
+// Allowed transitions (same rules as status modal)
+const KANBAN_TRANSITIONS = {
+  'Not Started': ['Started', 'Delayed'],
+  'Started':     ['Finished', 'Delayed'],
+  'Delayed':     ['Started'],
+  'Finished':    [],
+};
+
+function setKanbanScope(scope) {
+  kanbanScope = scope;
+  document.getElementById('kb-scope-me').className  = scope === 'me'  ? 'btn btn-xs btn-teal'    : 'btn btn-xs btn-outline';
+  document.getElementById('kb-scope-all').className = scope === 'all' ? 'btn btn-xs btn-teal'    : 'btn btn-xs btn-outline';
+  document.getElementById('kb-scope-me').style.cssText  = scope === 'me'  ? 'font-size:11px;font-weight:700;padding:4px 12px;' : 'font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);';
+  document.getElementById('kb-scope-all').style.cssText = scope === 'all' ? 'font-size:11px;font-weight:700;padding:4px 12px;' : 'font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);';
+  loadKanbanBoard();
+}
+
+function toggleKanbanAutoRefresh() {
+  kanbanAutoRefresh = !kanbanAutoRefresh;
+  const toggle = document.getElementById('kb-refresh-toggle');
+  const knob   = document.getElementById('kb-refresh-knob');
+  const label  = document.getElementById('kb-refresh-label');
+  if (kanbanAutoRefresh) {
+    toggle.style.background = 'var(--teal)';
+    knob.style.left = '18px';
+    label.textContent = 'Auto-refresh: On (1 min)';
+    kanbanRefreshTimer = setInterval(async () => {
+      cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+      loadKanbanBoard();
+    }, 60000);
+  } else {
+    toggle.style.background = 'var(--grey-300)';
+    knob.style.left = '2px';
+    label.textContent = 'Auto-refresh: Off';
+    clearInterval(kanbanRefreshTimer);
+    kanbanRefreshTimer = null;
+  }
+}
+
+function getKanbanItems() {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  const me = currentUser?.displayName || '';
+  return cache.calendar.filter(i => {
+    const d = spDateToDate(i.ActivityDateTime);
+    if (!d) return false;
+    const dayMatch = d >= today && d < tomorrow;
+    if (!dayMatch) return false;
+    if (kanbanScope === 'me') {
+      const member = i.PSPMEmber || '';
+      return member === me || member.includes(me.split(' ')[0]);
+    }
+    return true;
+  });
+}
+
+function getKanbanStatus(item) {
+  return getActStatus(item) || 'Not Started';
+}
+
+function loadKanbanBoard() {
+  const board = document.getElementById('kanban-board');
+  if (!board) return;
+
+  const items = getKanbanItems();
+
+  // Group by status
+  const grouped = {};
+  KANBAN_COLS.forEach(c => grouped[c.key] = []);
+  items.forEach(i => {
+    const s = getKanbanStatus(i);
+    if (grouped[s]) grouped[s].push(i);
+  });
+
+  board.innerHTML = KANBAN_COLS.map(col => {
+    const cards = grouped[col.key];
+    const canDrop = KANBAN_COLS.some(c => (KANBAN_TRANSITIONS[c.key] || []).includes(col.key));
+    return `
+    <div class="kb-column" data-status="${col.key}"
+      style="background:${col.bg};border:2px solid ${col.border};border-radius:14px;overflow:hidden;min-height:200px;"
+      ondragover="kbDragOver(event)" ondrop="kbDrop(event,'${col.key}')" ondragleave="kbDragLeave(event)">
+      <!-- Column header -->
+      <div style="background:${col.headerBg};padding:12px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="ti ${col.icon}" style="color:${col.color};font-size:16px;filter:brightness(1.8);"></i>
+          <span style="font-size:13px;font-weight:700;color:white;letter-spacing:0.02em;">${col.label}</span>
+        </div>
+        <span style="background:rgba(255,255,255,0.18);color:white;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;">${cards.length}</span>
+      </div>
+      <!-- Cards -->
+      <div class="kb-cards" data-status="${col.key}" style="padding:10px;display:flex;flex-direction:column;gap:8px;min-height:120px;">
+        ${cards.length === 0
+          ? `<div style="text-align:center;padding:24px 8px;color:${col.border};font-size:12px;opacity:0.7;"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:6px;"></i>No activities</div>`
+          : cards.map(i => kbCardHtml(i, col)).join('')
+        }
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function kbCardHtml(item, col) {
+  const client   = item.PSPClient || '—';
+  const activity = item.ActivityMilestone || '—';
+  const payGroup = getPayGroup(item) || '';
+  const payNo    = item.PayNo ? `Pay ${item.PayNo}` : '';
+  const member   = item.PSPMEmber || '';
+  const initials = member.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || '?';
+  const time     = spDateToDate(item.ActivityDateTime);
+  const timeStr  = time ? time.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+  const status   = getKanbanStatus(item);
+  const allowed  = KANBAN_TRANSITIONS[status] || [];
+
+  // Priority colour strip on left
+  const isOverdue = !['Finished'].includes(status) && time && time < new Date();
+  const stripColor = isOverdue ? '#cc1f2d' : col.color;
+
+  return `<div class="kb-card" id="kbc-${item.id}" draggable="true"
+    data-id="${item.id}" data-status="${status}"
+    ondragstart="kbDragStart(event,'${item.id}')"
+    ondragend="kbDragEnd(event)"
+    style="background:white;border-radius:10px;border-left:4px solid ${stripColor};
+           box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:10px 12px;cursor:grab;
+           transition:box-shadow 0.15s,transform 0.15s;">
+    <!-- Client + paygroup badge -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:6px;">
+      <div style="font-size:11px;font-weight:700;color:var(--navy);line-height:1.3;">${client}</div>
+      ${payGroup ? `<span style="background:var(--teal);color:white;border-radius:6px;padding:1px 7px;font-size:9px;font-weight:700;white-space:nowrap;">${payGroup}</span>` : ''}
+    </div>
+    <!-- Activity name -->
+    <div style="font-size:12px;color:var(--grey-800);margin-bottom:8px;line-height:1.4;">${activity}</div>
+    <!-- Footer row -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        ${timeStr ? `<span style="font-size:10px;color:var(--grey-500);"><i class="ti ti-clock" style="font-size:10px;"></i> ${timeStr}</span>` : ''}
+        ${payNo ? `<span style="font-size:10px;color:var(--grey-400);">${payNo}</span>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <!-- Quick-action buttons for allowed transitions -->
+        ${allowed.map(s => {
+          const toCol = KANBAN_COLS.find(c=>c.key===s);
+          return toCol ? `<button onclick="kbQuickMove('${item.id}','${s}')" title="Move to ${s}"
+            style="background:${toCol.headerBg};border:none;border-radius:5px;padding:3px 7px;font-size:9px;font-weight:700;color:white;cursor:pointer;opacity:0.85;">
+            ${s === 'Finished' ? '✓' : s === 'Delayed' ? '!' : s === 'Started' ? '▶' : s}
+          </button>` : '';
+        }).join('')}
+        <!-- Avatar -->
+        <div title="${member}" style="width:22px;height:22px;border-radius:50%;background:${col.headerBg};color:white;
+             font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${initials}</div>
+      </div>
+    </div>
+    ${isOverdue ? `<div style="font-size:9px;color:#cc1f2d;font-weight:700;margin-top:4px;">⚠ OVERDUE</div>` : ''}
+  </div>`;
+}
+
+// ── Drag and Drop ──
+function kbDragStart(e, id) {
+  kanbanDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => {
+    const el = document.getElementById('kbc-' + id);
+    if (el) { el.style.opacity = '0.45'; el.style.transform = 'rotate(2deg)'; }
+  }, 0);
+}
+
+function kbDragEnd(e) {
+  if (kanbanDragId) {
+    const el = document.getElementById('kbc-' + kanbanDragId);
+    if (el) { el.style.opacity = '1'; el.style.transform = ''; }
+  }
+}
+
+function kbDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const col = e.currentTarget;
+  col.style.boxShadow = '0 0 0 3px var(--teal)';
+}
+
+function kbDragLeave(e) {
+  e.currentTarget.style.boxShadow = '';
+}
+
+async function kbDrop(e, targetStatus) {
+  e.preventDefault();
+  e.currentTarget.style.boxShadow = '';
+  if (!kanbanDragId) return;
+
+  const item = cache.calendar.find(i => String(i.id) === String(kanbanDragId));
+  if (!item) return;
+  const currentStatus = getKanbanStatus(item);
+  if (currentStatus === targetStatus) return;
+
+  const allowed = KANBAN_TRANSITIONS[currentStatus] || [];
+  if (!allowed.includes(targetStatus)) {
+    showToast(`Cannot move from "${currentStatus}" to "${targetStatus}"`, 'error');
+    return;
+  }
+
+  await kbApplyMove(item, targetStatus);
+}
+
+async function kbQuickMove(id, targetStatus) {
+  const item = cache.calendar.find(i => String(i.id) === String(id));
+  if (!item) return;
+  await kbApplyMove(item, targetStatus);
+}
+
+async function kbApplyMove(item, targetStatus) {
+  const now = new Date().toISOString();
+  const fields = { Act_Status: targetStatus };
+  if (targetStatus === 'Started' && !item.StartDateTime) fields.StartDateTime = now;
+  if (targetStatus === 'Finished') {
+    fields.FinishDateTime = now;
+    if (!item.StartDateTime) fields.StartDateTime = now;
+  }
+
+  try {
+    await saveWithFieldFallback(true, 'calendar', item.id, fields);
+    // Update cache
+    const idx = cache.calendar.findIndex(i => i.id === item.id);
+    if (idx >= 0) Object.assign(cache.calendar[idx], fields);
+
+    // Check last-activity auto-process flag (same as status modal)
+    if (targetStatus === 'Finished') {
+      const payRunItems = cache.calendar.filter(i =>
+        i.PSPClient === item.PSPClient &&
+        getPayGroup(i) === getPayGroup(item) &&
+        i.PayNo === item.PayNo
+      );
+      const allDone = payRunItems.every(i => getActStatus(i) === 'Finished');
+      if (allDone) {
+        const billingRec = cache.billing.find(b =>
+          b.PSPClient === item.PSPClient &&
+          b.PayGroup === getPayGroup(item) &&
+          String(b.PayNo) === String(item.PayNo)
+        );
+        if (billingRec && !billingRec.Process) {
+          await saveWithFieldFallback(true, 'billing', billingRec.id, { Process: true });
+          const bi = cache.billing.findIndex(b => b.id === billingRec.id);
+          if (bi >= 0) cache.billing[bi].Process = true;
+          showToast(`Pay run complete — billing record flagged ready`, 'success');
+        }
+      }
+    }
+
+    showToast(`Moved to ${targetStatus}`, 'success');
+    loadKanbanBoard();
+  } catch(err) {
+    showToast('Failed to update: ' + err.message, 'error');
+  }
+}
+
 </script>
 </body>
 </html>
