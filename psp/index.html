@@ -878,7 +878,9 @@
       <div class="nav-item" onclick="navigate('generate-calendar')">
         <i class="ti ti-calendar-plus"></i> Generate Calendar
       </div>
-      
+      <div class="nav-item" onclick="navigate('billing-calc')">
+        <i class="ti ti-calculator"></i> Billing Calculator
+      </div>
       <div class="nav-item" onclick="navigate('bulk-admin')">
         <i class="ti ti-adjustments"></i> Bulk Admin
       </div>
@@ -2001,7 +2003,158 @@
         </div>
       </div>
 
-      <!-- BULK ADMIN PAGE -->
+      <!-- BILLING CALCULATOR PAGE -->
+      <div class="page" id="page-billing-calc">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start;">
+
+          <!-- ── LEFT: Inputs ── -->
+          <div style="display:flex;flex-direction:column;gap:14px;">
+
+            <!-- Client & Pay Group -->
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+                <span style="color:white;font-size:13px;font-weight:700;"><i class="ti ti-settings" style="color:#93c5fd;margin-right:6px;"></i>Setup</span>
+                <button onclick="calcClear()" class="btn btn-xs" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:3px 10px;">
+                  <i class="ti ti-eraser"></i> Clear
+                </button>
+              </div>
+              <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+                <div class="form-group" style="margin:0;">
+                  <label>Client <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(auto-fills Price Book)</span></label>
+                  <select id="calc-client" onchange="calcClientChange()">
+                    <option value="">— Manual Entry —</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Pay Group</label>
+                  <select id="calc-pg" onchange="calcPGChange()">
+                    <option value="">— Select —</option>
+                  </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div class="form-group" style="margin:0;">
+                    <label>Currency</label>
+                    <select id="calc-currency">
+                      <option value="PGK">PGK</option>
+                      <option value="AUD">AUD</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label>Tax Type</label>
+                    <select id="calc-tax">
+                      <option value="Tax on Sales">Tax on Sales (10%)</option>
+                      <option value="Zero Rated">Zero Rated (0%)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calc Method -->
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#065f46,#0e9f6e);padding:12px 16px;">
+                <span style="color:white;font-size:13px;font-weight:700;"><i class="ti ti-math-function" style="color:#a7f3d0;margin-right:6px;"></i>Calc Method</span>
+              </div>
+              <div style="padding:14px;">
+                <div class="form-group" style="margin:0 0 12px;">
+                  <select id="calc-method" onchange="calcMethodChange()">
+                    <option value="A">A — Flat Pay Run Fee</option>
+                    <option value="B">B — Per Payslip</option>
+                    <option value="C">C — Min + Overage Per Head</option>
+                    <option value="D">D — Per Head (above min)</option>
+                  </select>
+                </div>
+                <!-- Method-specific price book fields -->
+                <div id="calc-pb-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+              </div>
+            </div>
+
+            <!-- Metrics -->
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#92400e,#f59e0b);padding:12px 16px;">
+                <span style="color:white;font-size:13px;font-weight:700;"><i class="ti ti-users" style="color:#fef3c7;margin-right:6px;"></i>Pay Run Metrics</span>
+              </div>
+              <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Employees (Emp) <span style="color:var(--red);">*</span></label>
+                  <input type="number" id="calc-emp" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">New Hires (NH)</label>
+                  <input type="number" id="calc-nh" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Terminations (Term)</label>
+                  <input type="number" id="calc-term" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Lay-Offs (LO)</label>
+                  <input type="number" id="calc-lo" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Re-Hires / CLO</label>
+                  <input type="number" id="calc-clo" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Non-Update (3NoN)</label>
+                  <input type="number" id="calc-nonupd" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Exception</label>
+                  <input type="number" id="calc-excpt" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">WSS</label>
+                  <input type="number" id="calc-wss" min="0" value="0" oninput="calcPreview()">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Re-Run</label>
+                  <input type="number" id="calc-rerun" min="0" value="0" oninput="calcPreview()">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── RIGHT: Live Preview ── -->
+          <div class="card" style="padding:0;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;">
+              <span style="color:white;font-size:13px;font-weight:700;"><i class="ti ti-receipt" style="color:#bfdbfe;margin-right:6px;"></i>Invoice Preview</span>
+              <button onclick="calcDownloadCSV()" class="btn btn-xs" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:3px 10px;">
+                <i class="ti ti-download"></i> Download CSV
+              </button>
+            </div>
+            <div id="calc-preview" style="padding:20px;">
+              <div style="text-align:center;padding:60px 20px;color:var(--grey-400);">
+                <i class="ti ti-calculator" style="font-size:40px;display:block;margin-bottom:12px;"></i>
+                Select a client and enter metrics to see the billing preview
+              </div>
+            </div>
+            <!-- Totals footer -->
+            <div id="calc-totals" style="display:none;border-top:2px solid var(--grey-100);padding:16px 20px;background:var(--grey-50);">
+              <div style="display:flex;justify-content:flex-end;">
+                <table style="font-size:13px;border-collapse:collapse;min-width:280px;">
+                  <tr>
+                    <td style="padding:3px 16px 3px 0;color:var(--grey-600);">Subtotal</td>
+                    <td style="padding:3px 0;text-align:right;font-weight:600;color:var(--navy);" id="calc-sub">—</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:3px 16px 3px 0;color:var(--grey-600);" id="calc-tax-label">Tax</td>
+                    <td style="padding:3px 0;text-align:right;font-weight:600;color:var(--grey-600);" id="calc-tax-amt">—</td>
+                  </tr>
+                  <tr style="border-top:2px solid var(--navy);">
+                    <td style="padding:8px 16px 4px 0;font-size:15px;font-weight:800;color:var(--navy);">TOTAL</td>
+                    <td style="padding:8px 0 4px;text-align:right;font-size:15px;font-weight:800;color:var(--navy);" id="calc-total">—</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+<!-- BULK ADMIN PAGE -->
       <div class="page" id="page-bulk-admin">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
 
@@ -3854,6 +4007,10 @@ async function refreshCacheForPage(page) {
     cache.fees = await getItems('fees');
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   }
+  if (page === 'billing-calc') {
+    cache.clients = await getItems('clients');
+    cache.fees    = await getItems('fees');
+  }
   if (page === 'bulk-admin') {
     cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
@@ -3910,6 +4067,7 @@ async function navigate(page) {
     'all-activities': 'All Activities',
     'calendar': 'Pay Calendar',
     'generate-calendar': 'Generate Calendar',
+    'billing-calc': 'Billing Calculator',
     'billing-metrics': 'Billing Metrics',
     'bulk-admin': 'Bulk Admin',
     'clients': 'Clients',
@@ -8753,6 +8911,389 @@ async function baDeleteNotStarted() {
   baPreviewDelete();
 }
 
+
+
+// ─────────────────────────────────────────────
+// BILLING CALCULATOR
+// ─────────────────────────────────────────────
+
+// Price Book field definitions per calc method
+const CALC_PB_FIELDS = {
+  A: [
+    { id:'calc-payrun', label:'Pay Run Fee', key:'PayRun' },
+  ],
+  B: [
+    { id:'calc-each',   label:'Per Payslip', key:'Each' },
+  ],
+  C: [
+    { id:'calc-payrun', label:'Min Pay Run Fee', key:'PayRun' },
+    { id:'calc-max',    label:'Max Employees (incl.)', key:'Max' },
+    { id:'calc-extra',  label:'Overage Per Head', key:'Extra' },
+  ],
+  D: [
+    { id:'calc-payrun', label:'Min Charge', key:'PayRun' },
+    { id:'calc-max',    label:'Min Employees (incl.)', key:'Max' },
+    { id:'calc-extra',  label:'Per Head Rate', key:'Extra' },
+  ],
+};
+
+// Supplementary fee fields (always shown in price book section)
+const CALC_SUPP_FIELDS = [
+  { id:'calc-fee-nh',     label:'New Hire Fee',     key:'NewHire' },
+  { id:'calc-fee-term',   label:'Termination Fee',  key:'Term' },
+  { id:'calc-fee-lo',     label:'Lay-Off Fee',      key:'LO' },
+  { id:'calc-fee-clo',    label:'Re-Hire Fee',      key:'CLO' },
+  { id:'calc-fee-nonupd', label:'Non-Update Fee',   key:'ThreeNoN' },
+  { id:'calc-fee-excpt',  label:'Exception Fee',    key:'Excpt' },
+  { id:'calc-fee-wss',    label:'WSS Fee',          key:'WSS' },
+  { id:'calc-fee-rerun',  label:'Re-Run Fee',       key:'ReRun' },
+];
+
+function loadBillingCalc() {
+  // Populate client dropdown
+  const sel = document.getElementById('calc-client');
+  if (!sel) return;
+  const clients = [...new Set(cache.clients.map(c => c.PSPClient || c.ContactName || c.Title).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML = '<option value="">— Manual Entry —</option>' +
+    clients.map(c => `<option>${c}</option>`).join('');
+
+  calcMethodChange(); // Render initial price book fields
+  calcPreview();
+}
+
+function calcClientChange() {
+  const clientName = document.getElementById('calc-client')?.value;
+  const pgSel = document.getElementById('calc-pg');
+  if (!pgSel) return;
+
+  if (!clientName) {
+    pgSel.innerHTML = '<option value="">— Select —</option>';
+    return;
+  }
+
+  // Populate Pay Groups
+  const pgs = [...new Set(cache.fees.filter(f => f.Title === clientName).map(f => f.field_1 || f.PayGroup).filter(Boolean))].sort();
+  pgSel.innerHTML = '<option value="">— Select Pay Group —</option>' + pgs.map(pg => `<option>${pg}</option>`).join('');
+
+  // Auto-fill Currency & Tax from client record
+  const c = cache.clients.find(c => (c.PSPClient || c.ContactName || c.Title) === clientName);
+  if (c) {
+    const currSel = document.getElementById('calc-currency');
+    const taxSel  = document.getElementById('calc-tax');
+    if (currSel && c.Currency) currSel.value = c.Currency;
+    if (taxSel  && c.TaxType)  taxSel.value  = c.TaxType;
+  }
+
+  calcPreview();
+}
+
+function calcPGChange() {
+  const clientName = document.getElementById('calc-client')?.value;
+  const pg         = document.getElementById('calc-pg')?.value;
+  if (!clientName || !pg) { calcMethodChange(); calcPreview(); return; }
+
+  // Find fees record
+  const fees = cache.fees.find(f => f.Title === clientName && (f.field_1 === pg || f.PayGroup === pg));
+  if (!fees) { calcMethodChange(); calcPreview(); return; }
+
+  // Set calc method
+  const methodSel = document.getElementById('calc-method');
+  if (methodSel && fees.CalcMethod) methodSel.value = fees.CalcMethod;
+
+  // Build price book field map
+  const feeMap = {
+    PayRun:   fees.field_5  || 0,
+    Each:     fees.field_6  || 0,
+    Extra:    fees.field_7  || 0,
+    WSS:      fees.field_8  || 0,
+    CLO:      fees.field_9  || 0,
+    LO:       fees.field_10 || 0,
+    NewHire:  fees.field_11 || 0,
+    Term:     fees.field_12 || 0,
+    Excpt:    fees.field_13 || 0,
+    ThreeNoN: fees.field_14 || 0,
+    ReRun:    fees.field_15 || 0,
+    Min:      fees.field_3  || 0,
+    Max:      fees.field_4  || 0,
+    Tier:     fees.field_2  || 0,
+  };
+
+  calcMethodChange(feeMap);
+  calcPreview();
+}
+
+function calcMethodChange(prefillFees) {
+  const method = document.getElementById('calc-method')?.value || 'A';
+  const container = document.getElementById('calc-pb-fields');
+  if (!container) return;
+
+  const primaryFields = CALC_PB_FIELDS[method] || CALC_PB_FIELDS['A'];
+  const allFields = [...primaryFields, ...CALC_SUPP_FIELDS];
+
+  container.innerHTML = allFields.map(f => `
+    <div class="form-group" style="margin:0;">
+      <label style="font-size:11px;">${f.label}</label>
+      <input type="number" id="${f.id}" min="0" step="0.01" value="${prefillFees ? (prefillFees[f.key] || 0) : 0}"
+        oninput="calcPreview()" style="font-size:12px;padding:5px 8px;">
+    </div>`).join('');
+
+  calcPreview();
+}
+
+function calcGetFee(id) { return parseFloat(document.getElementById(id)?.value || 0) || 0; }
+function calcGetInt(id) { return parseInt(document.getElementById(id)?.value || 0) || 0; }
+
+function calcPreview() {
+  const method   = document.getElementById('calc-method')?.value || 'A';
+  const currency = document.getElementById('calc-currency')?.value || 'PGK';
+  const taxType  = document.getElementById('calc-tax')?.value || 'Tax on Sales';
+  const taxRate  = taxType === 'Zero Rated' ? 0 : 0.1;
+  const pg       = document.getElementById('calc-pg')?.value || 'Pay Group';
+  const client   = document.getElementById('calc-client')?.value || '';
+
+  // Metrics
+  const emp    = calcGetInt('calc-emp');
+  const nh     = calcGetInt('calc-nh');
+  const term   = calcGetInt('calc-term');
+  const lo     = calcGetInt('calc-lo');
+  const clo    = calcGetInt('calc-clo');
+  const nonUpd = calcGetInt('calc-nonupd');
+  const excpt  = calcGetInt('calc-excpt');
+  const wss    = calcGetInt('calc-wss');
+  const rerun  = calcGetInt('calc-rerun');
+
+  // Primary fee fields (method-specific)
+  const feePayRun = calcGetFee('calc-payrun');
+  const feeEach   = calcGetFee('calc-each');
+  const feeMax    = calcGetFee('calc-max');
+  const feeExtra  = calcGetFee('calc-extra');
+
+  // Supplementary fee fields
+  const feeNH     = calcGetFee('calc-fee-nh');
+  const feeTerm   = calcGetFee('calc-fee-term');
+  const feeLO     = calcGetFee('calc-fee-lo');
+  const feeCLO    = calcGetFee('calc-fee-clo');
+  const feeNonUpd = calcGetFee('calc-fee-nonupd');
+  const feeExcpt  = calcGetFee('calc-fee-excpt');
+  const feeWSS    = calcGetFee('calc-fee-wss');
+  const feeReRun  = calcGetFee('calc-fee-rerun');
+
+  // ── Primary line (method-dependent) ──
+  const lines = [];
+  const addLine = (order, desc, qty, unit) => {
+    if (!qty || !unit) return;
+    const sub = Math.round(qty * unit * 100) / 100;
+    const tax = Math.round(sub * taxRate * 100) / 100;
+    lines.push({ order, desc, qty, unit, sub, tax, total: sub + tax });
+  };
+
+  let mainDesc = '', mainQty = 1, mainUnit = 0;
+  if (method === 'A') {
+    mainDesc = `${pg} — ${emp} Employees: Standard Charge`;
+    mainQty = 1; mainUnit = feePayRun;
+  } else if (method === 'B') {
+    mainDesc = `${pg} — ${emp} × ${currency}${feeEach} Per Payslip`;
+    mainQty = emp; mainUnit = feeEach;
+  } else if (method === 'C') {
+    if (emp > feeMax) {
+      mainDesc = `${pg} — ${emp} Employees. Min ${currency}${feePayRun} + ${emp - feeMax} × ${currency}${feeExtra}`;
+      mainQty = 1; mainUnit = feePayRun + (emp - feeMax) * feeExtra;
+    } else {
+      mainDesc = `${pg} — ${emp} Employees. Min Charge ${currency}${feePayRun}`;
+      mainQty = 1; mainUnit = feePayRun;
+    }
+  } else if (method === 'D') {
+    if (emp > feeMax) {
+      mainDesc = `${pg} — ${emp} × ${currency}${feeExtra} (above ${feeMax})`;
+      mainQty = emp; mainUnit = feeExtra;
+    } else {
+      mainDesc = `${pg} — ${emp} Employees. Min Charge ${currency}${feePayRun}`;
+      mainQty = 1; mainUnit = feePayRun;
+    }
+  }
+
+  if (mainUnit) {
+    const sub = Math.round(mainQty * mainUnit * 100) / 100;
+    const tax = Math.round(sub * taxRate * 100) / 100;
+    lines.push({ order: 1, desc: mainDesc, qty: mainQty, unit: Math.round(mainUnit*100)/100, sub, tax, total: sub+tax });
+  }
+
+  // ── Supplementary lines ──
+  addLine(2, `${pg} — ${nh} New Hire(s) × ${currency}${feeNH}`,    nh,     feeNH);
+  addLine(3, `${pg} — ${term} Termination(s) × ${currency}${feeTerm}`, term, feeTerm);
+  addLine(4, `${pg} — ${nonUpd} Non-Update(s) × ${currency}${feeNonUpd}`, nonUpd, feeNonUpd);
+  addLine(5, `${pg} — ${lo} Lay-Off(s) × ${currency}${feeLO}`,     lo,     feeLO);
+  addLine(6, `${pg} — ${clo} Re-Hire(s) × ${currency}${feeCLO}`,   clo,    feeCLO);
+  addLine(7, `${pg} — ${excpt} Exception(s) × ${currency}${feeExcpt}`, excpt, feeExcpt);
+  addLine(8, `${pg} — ${wss} WSS × ${currency}${feeWSS}`,          wss,    feeWSS);
+  addLine(9, `${pg} — ${rerun} Re-Run(s) × ${currency}${feeReRun}`, rerun, feeReRun);
+
+  const preview  = document.getElementById('calc-preview');
+  const totalsEl = document.getElementById('calc-totals');
+  if (!preview) return;
+
+  if (!lines.length) {
+    preview.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--grey-400);">
+      <i class="ti ti-calculator" style="font-size:40px;display:block;margin-bottom:12px;"></i>
+      Enter metrics and fee rates to see the billing preview
+    </div>`;
+    if (totalsEl) totalsEl.style.display = 'none';
+    return;
+  }
+
+  const fmt = n => n.toLocaleString('en-AU', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const totalSub = lines.reduce((s,l) => s+l.sub, 0);
+  const totalTax = lines.reduce((s,l) => s+l.tax, 0);
+  const totalAmt = totalSub + totalTax;
+
+  // Colour map for rows
+  const rowColors = [
+    '#1e3a8a','#065f46','#7f1d1d','#92400e','#1e3a5f','#4a1d96','#064e3b','#1a2744','#374151'
+  ];
+
+  preview.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:var(--navy);">
+          <th style="padding:8px 12px;text-align:left;color:white;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Description</th>
+          <th style="padding:8px 12px;text-align:right;color:white;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;width:50px;">Qty</th>
+          <th style="padding:8px 12px;text-align:right;color:white;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;width:90px;">Unit</th>
+          <th style="padding:8px 12px;text-align:right;color:white;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;width:90px;">Subtotal</th>
+          <th style="padding:8px 12px;text-align:right;color:white;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;width:80px;">Tax</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lines.map((l,i) => `
+          <tr style="border-bottom:1px solid var(--grey-100);">
+            <td style="padding:10px 12px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:3px;height:32px;background:${rowColors[i]||'var(--navy)'};border-radius:2px;flex-shrink:0;"></div>
+                <span style="color:var(--grey-800);line-height:1.4;">${l.desc}</span>
+              </div>
+            </td>
+            <td style="padding:10px 12px;text-align:right;color:var(--grey-600);">${l.qty}</td>
+            <td style="padding:10px 12px;text-align:right;color:var(--grey-600);">${currency} ${fmt(l.unit)}</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--navy);">${currency} ${fmt(l.sub)}</td>
+            <td style="padding:10px 12px;text-align:right;color:var(--grey-500);">${currency} ${fmt(l.tax)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // Totals
+  if (totalsEl) {
+    totalsEl.style.display = '';
+    const taxPct = taxRate > 0 ? ` (${Math.round(taxRate*100)}%)` : ' (0%)';
+    document.getElementById('calc-tax-label').textContent = `Tax${taxPct}`;
+    document.getElementById('calc-sub').textContent   = `${currency} ${fmt(totalSub)}`;
+    document.getElementById('calc-tax-amt').textContent = `${currency} ${fmt(totalTax)}`;
+    document.getElementById('calc-total').textContent  = `${currency} ${fmt(totalAmt)}`;
+  }
+}
+
+function calcClear() {
+  document.getElementById('calc-client').value = '';
+  document.getElementById('calc-pg').innerHTML = '<option value="">— Select —</option>';
+  document.getElementById('calc-currency').value = 'PGK';
+  document.getElementById('calc-tax').value = 'Tax on Sales';
+  document.getElementById('calc-method').value = 'A';
+  ['calc-emp','calc-nh','calc-term','calc-lo','calc-clo','calc-nonupd','calc-excpt','calc-wss','calc-rerun'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = 0;
+  });
+  calcMethodChange();
+  calcPreview();
+}
+
+function calcDownloadCSV() {
+  const method   = document.getElementById('calc-method')?.value || 'A';
+  const currency = document.getElementById('calc-currency')?.value || 'PGK';
+  const taxType  = document.getElementById('calc-tax')?.value || 'Tax on Sales';
+  const taxRate  = taxType === 'Zero Rated' ? 0 : 0.1;
+  const pg       = document.getElementById('calc-pg')?.value || 'Pay Group';
+  const client   = document.getElementById('calc-client')?.value || 'Manual';
+
+  const emp    = calcGetInt('calc-emp');
+  const nh     = calcGetInt('calc-nh');
+  const term   = calcGetInt('calc-term');
+  const lo     = calcGetInt('calc-lo');
+  const clo    = calcGetInt('calc-clo');
+  const nonUpd = calcGetInt('calc-nonupd');
+  const excpt  = calcGetInt('calc-excpt');
+  const wss    = calcGetInt('calc-wss');
+  const rerun  = calcGetInt('calc-rerun');
+
+  const feePayRun = calcGetFee('calc-payrun');
+  const feeEach   = calcGetFee('calc-each');
+  const feeMax    = calcGetFee('calc-max');
+  const feeExtra  = calcGetFee('calc-extra');
+  const feeNH     = calcGetFee('calc-fee-nh');
+  const feeTerm   = calcGetFee('calc-fee-term');
+  const feeLO     = calcGetFee('calc-fee-lo');
+  const feeCLO    = calcGetFee('calc-fee-clo');
+  const feeNonUpd = calcGetFee('calc-fee-nonupd');
+  const feeExcpt  = calcGetFee('calc-fee-excpt');
+  const feeWSS    = calcGetFee('calc-fee-wss');
+  const feeReRun  = calcGetFee('calc-fee-rerun');
+
+  const rows = [];
+  const addRow = (desc, qty, unit) => {
+    if (!qty || !unit) return;
+    const sub = Math.round(qty * unit * 100) / 100;
+    const tax = Math.round(sub * taxRate * 100) / 100;
+    rows.push({ desc, qty, unit: Math.round(unit*100)/100, sub, tax });
+  };
+
+  // Primary
+  let mainDesc = '', mainQty = 1, mainUnit = 0;
+  if (method === 'A') { mainDesc = `${pg} — ${emp} Employees: Standard Charge`; mainQty=1; mainUnit=feePayRun; }
+  else if (method === 'B') { mainDesc = `${pg} — ${emp} × ${currency}${feeEach} Per Payslip`; mainQty=emp; mainUnit=feeEach; }
+  else if (method === 'C') {
+    if (emp > feeMax) { mainDesc = `${pg} — ${emp} Employees. Min ${currency}${feePayRun} + ${emp-feeMax} × ${currency}${feeExtra}`; mainQty=1; mainUnit=feePayRun+(emp-feeMax)*feeExtra; }
+    else { mainDesc = `${pg} — ${emp} Employees. Min Charge ${currency}${feePayRun}`; mainQty=1; mainUnit=feePayRun; }
+  } else if (method === 'D') {
+    if (emp > feeMax) { mainDesc = `${pg} — ${emp} × ${currency}${feeExtra} (above ${feeMax})`; mainQty=emp; mainUnit=feeExtra; }
+    else { mainDesc = `${pg} — ${emp} Employees. Min Charge ${currency}${feePayRun}`; mainQty=1; mainUnit=feePayRun; }
+  }
+  if (mainUnit) addRow(mainDesc, mainQty, mainUnit);
+
+  addRow(`${pg} — ${nh} New Hire(s) × ${currency}${feeNH}`, nh, feeNH);
+  addRow(`${pg} — ${term} Termination(s) × ${currency}${feeTerm}`, term, feeTerm);
+  addRow(`${pg} — ${nonUpd} Non-Update(s) × ${currency}${feeNonUpd}`, nonUpd, feeNonUpd);
+  addRow(`${pg} — ${lo} Lay-Off(s) × ${currency}${feeLO}`, lo, feeLO);
+  addRow(`${pg} — ${clo} Re-Hire(s) × ${currency}${feeCLO}`, clo, feeCLO);
+  addRow(`${pg} — ${excpt} Exception(s) × ${currency}${feeExcpt}`, excpt, feeExcpt);
+  addRow(`${pg} — ${wss} WSS × ${currency}${feeWSS}`, wss, feeWSS);
+  addRow(`${pg} — ${rerun} Re-Run(s) × ${currency}${feeReRun}`, rerun, feeReRun);
+
+  if (!rows.length) { showToast('No lines to export', 'error'); return; }
+
+  const totalSub = rows.reduce((s,r) => s+r.sub, 0);
+  const totalTax = rows.reduce((s,r) => s+r.tax, 0);
+  const fmt = n => n.toFixed(2);
+
+  const headers = ['ContactName','Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount','Currency'];
+  const csvRows = rows.map(r => [
+    `"${client}"`,
+    `"${r.desc}"`,
+    r.qty,
+    fmt(r.unit),
+    '201',
+    taxType,
+    fmt(r.tax),
+    currency,
+  ].join(','));
+
+  // Summary row
+  csvRows.push([`"${client}"`,`"TOTAL"`,1,fmt(totalSub),'201',taxType,fmt(totalTax),currency].join(','));
+
+  const csv = [headers.join(','), ...csvRows].join('\n');
+  const blob = new Blob([csv], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `BillingCalc_${client.replace(/[^a-z0-9]/gi,'_')}_${pg}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('CSV downloaded', 'success');
+}
 
 // ─────────────────────────────────────────────
 // KANBAN BOARD
