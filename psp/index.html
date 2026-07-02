@@ -4187,6 +4187,11 @@ async function refreshCalendarCache() {
 // ─────────────────────────────────────────────
 // ITEM FIELD HELPERS
 // ─────────────────────────────────────────────
+function getClientName(clientRecord) {
+  // PSP_Client_Details uses ContactName as the primary client identifier
+  return clientRecord?.ContactName || clientRecord?.PSPClient || clientRecord?.Title || '—';
+}
+
 function getPSPMember(item) {
   // PSP_Act_Calendar uses PSPMEmber (with typo), templates use PSPMember
   return item?.PSPMEmber || item?.PSPMember || '';
