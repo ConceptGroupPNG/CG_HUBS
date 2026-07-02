@@ -4201,7 +4201,7 @@ function getOrder(item) {
 }
 
 function getPayGroup(item) {
-  return item?.PayGroup || item?.field_1 || '';
+  return item?.PayGroup || item?.['Pay_x0020_Group'] || item?.field_1 || '';
 }
 
 function getStatusClass(status) {
