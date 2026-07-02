@@ -1598,7 +1598,253 @@
           </div>
         </div>
 
-      <!-- CLIENTS PAGE -->
+      
+
+        <!-- TAB: INVOICES LIST -->
+        <div id="invoicetab-invoices-content">
+        <div class="filter-bar">
+          <select id="filter-inv-client" onchange="renderInvoices()">
+            <option value="">All Clients</option>
+          </select>
+
+          <select id="filter-inv-status" onchange="renderInvoices()">
+            <option value="">All Statuses</option>
+            <option>Draft</option>
+            <option>Issued</option>
+            <option>Voided</option>
+          </select>
+          <select id="filter-inv-month" onchange="renderInvoices()">
+            <option value="">All Months</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+          <select id="filter-inv-year" onchange="renderInvoices()">
+            <option value="">All Years</option>
+            <option>2026</option><option>2025</option>
+          </select>
+          <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice No</th>
+                  <th>Client</th>
+                  <th>Billing Month</th>
+                  <th>Invoice Date</th>
+                  <th>Due Date</th>
+                  <th>Pay Runs</th>
+                  <th style="text-align:right;">Sub Total</th>
+                  <th style="text-align:right;">Tax</th>
+                  <th style="text-align:right;">Total</th>
+                  <th>Currency</th>
+                  <th>Status</th>
+                                    <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="invoices-tbody">
+                <tr><td colspan="13"><div class="loading"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+        <!-- TAB: GENERATE INVOICE -->
+        <div id="invoicetab-generate-content" style="display:none;">
+
+        <!-- Step 1: Client selection -->
+        <div id="inv-step-1">
+          <div style="max-width:520px;margin:60px auto;text-align:center;">
+            <div style="background:var(--white);border-radius:16px;border:1px solid var(--grey-200);padding:40px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+              <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--teal-light),#d1fae5);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                <i class="ti ti-file-invoice" style="font-size:28px;color:var(--teal);"></i>
+              </div>
+              <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px;">Generate Invoice</h3>
+              <p style="color:var(--grey-500);font-size:13px;margin-bottom:24px;">Select a client to view eligible pay runs and create an invoice</p>
+              <select id="inv-client" style="width:100%;padding:12px 14px;border:2px solid var(--grey-200);border-radius:10px;font-size:14px;font-weight:600;color:var(--navy);background:var(--white);outline:none;margin-bottom:16px;"
+                onchange="onInvClientChange()">
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Nominate pay runs -->
+        <div id="inv-step-2" style="display:none;">
+
+          <!-- Client header -->
+          <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Generate Invoice</div>
+              <div id="inv-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
+            </div>
+            <button class="btn btn-sm btn-red" onclick="invClearClient()" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;padding:8px 16px;">
+              <i class="ti ti-refresh"></i> Change Client
+            </button>
+          </div>
+
+          <!-- Invoice settings bar -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-body" style="padding:16px 20px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:14px;align-items:end;">
+                <div class="form-group" style="margin:0;">
+                  <label>Billing Month</label>
+                  <select id="inv-month">
+                    <option>January</option><option>February</option><option>March</option>
+                    <option>April</option><option>May</option><option>June</option>
+                    <option>July</option><option>August</option><option>September</option>
+                    <option>October</option><option>November</option><option>December</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Invoice Date</label>
+                  <input type="date" id="inv-date">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Due Date</label>
+                  <input type="date" id="inv-due">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label>Invoice No</label>
+                  <input type="text" id="inv-number" readonly style="background:var(--grey-100);color:var(--grey-500);font-weight:700;width:110px;">
+                </div>
+                <button class="btn btn-teal" onclick="generateInvoice()" id="btn-gen-inv" disabled style="white-space:nowrap;">
+                  <i class="ti ti-file-invoice"></i> Preview Invoice
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Eligible pay runs -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <h3>Eligible Pay Runs <span id="inv-eligible-count" style="font-weight:400;color:var(--grey-500);font-size:13px;"></span></h3>
+              <span style="font-size:12px;color:var(--grey-500);">Process ✓ &nbsp; Metrics ✓ &nbsp; Not yet billed</span>
+            </div>
+            <div id="inv-payrun-list">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
+
+          <!-- Invoice preview -->
+          <div class="card" id="inv-preview-card" style="display:none;">
+            <div class="card-header">
+              <h3>Invoice Preview</h3>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-outline" onclick="confirmInvoiceNo()" id="btn-confirm-invno">
+                  <i class="ti ti-pencil"></i> Edit Invoice No
+                </button>
+                <button class="btn btn-sm btn-teal" onclick="exportInvoiceCSV()" id="btn-export-inv">
+                  <i class="ti ti-download"></i> Export CSV
+                </button>
+              </div>
+            </div>
+            <div id="invoice-preview"></div>
+          </div>
+        </div>
+        </div>
+
+        <!-- TAB: IMPORT INVOICES -->
+        <div id="invoicetab-import-content" style="display:none;">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Import Xero Sales Invoices CSV</h3></div>
+            <div class="card-body">
+              <div class="alert alert-info">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                  Upload a Sales Invoices CSV exported from Xero. The file is matched to clients via
+                  <strong>ContactName</strong> against <strong>PSP_Client_Details.ClientInvoiceName</strong>,
+                  grouped into invoice headers, and checked for duplicates already in PSP_Invoices.
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Default Status for Imported Invoices</label>
+                <select id="imp-default-status">
+                  <option value="Issued">Issued (from finalised Xero export)</option>
+                  <option value="Draft">Draft (from draft/unconfirmed export)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>CSV File</label>
+                <div id="imp-dropzone" style="border:2px dashed var(--grey-300);border-radius:10px;padding:32px;text-align:center;cursor:pointer;background:var(--grey-50);transition:all 0.15s;"
+                  onclick="document.getElementById('imp-file-input').click()"
+                  ondragover="event.preventDefault();this.style.borderColor='var(--teal)';this.style.background='var(--teal-light)';"
+                  ondragleave="this.style.borderColor='var(--grey-300)';this.style.background='var(--grey-50)';"
+                  ondrop="handleImportDrop(event)">
+                  <i class="ti ti-cloud-upload" style="font-size:36px;color:var(--grey-400);display:block;margin-bottom:8px;"></i>
+                  <div style="font-size:13px;font-weight:600;color:var(--navy);">Click to browse or drag a CSV here</div>
+                  <div style="font-size:11px;color:var(--grey-500);margin-top:4px;">Xero Sales Invoices export (.csv)</div>
+                </div>
+                <input type="file" id="imp-file-input" accept=".csv" style="display:none;" onchange="handleImportFile(this.files[0])">
+              </div>
+
+              <div id="imp-file-info" style="display:none;margin-bottom:16px;">
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--teal-light);border-radius:8px;">
+                  <i class="ti ti-file-text" style="color:var(--teal-dark);font-size:20px;"></i>
+                  <div style="flex:1;">
+                    <div id="imp-file-name" style="font-size:13px;font-weight:700;color:var(--navy);"></div>
+                    <div id="imp-file-meta" style="font-size:11px;color:var(--grey-500);"></div>
+                  </div>
+                  <button class="btn btn-xs btn-outline" onclick="clearImportFile()"><i class="ti ti-x"></i></button>
+                </div>
+              </div>
+
+              <button class="btn btn-teal" onclick="processImportFile()" id="btn-process-import" disabled>
+                <i class="ti ti-list-check"></i> Preview &amp; Validate
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Client Matching Reference</h3></div>
+            <div class="card-body" style="max-height:420px;overflow-y:auto;padding:0;">
+              <div id="imp-client-reference">
+                <div class="loading"><div class="spinner"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Validation & Preview results -->
+        <div id="imp-results" style="display:none;margin-top:20px;">
+          <div class="card">
+            <div class="card-header">
+              <h3>Import Preview</h3>
+              <button class="btn btn-sm btn-teal" onclick="confirmImport()" id="btn-confirm-import">
+                <i class="ti ti-database-import"></i> Import Selected
+              </button>
+            </div>
+            <div id="imp-summary-bar" style="padding:14px 20px;background:var(--grey-50);border-bottom:1px solid var(--grey-200);display:flex;gap:24px;"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:36px;"><input type="checkbox" id="imp-select-all" onchange="toggleAllImportRows(this.checked)"></th>
+                    <th>Invoice No</th>
+                    <th>Client (CSV)</th>
+                    <th>Matched PSPClient</th>
+                    <th>Date</th>
+                    <th style="text-align:right;">Total</th>
+                    <th>Currency</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="imp-preview-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+<!-- CLIENTS PAGE -->
       <div class="page" id="page-clients">
         <!-- Client List View -->
         <div id="clients-list-view">
@@ -1901,250 +2147,6 @@
           </div>
 
         </div>
-      </div>
-
-        <!-- TAB: INVOICES LIST -->
-        <div id="invoicetab-invoices-content">
-        <div class="filter-bar">
-          <select id="filter-inv-client" onchange="renderInvoices()">
-            <option value="">All Clients</option>
-          </select>
-
-          <select id="filter-inv-status" onchange="renderInvoices()">
-            <option value="">All Statuses</option>
-            <option>Draft</option>
-            <option>Issued</option>
-            <option>Voided</option>
-          </select>
-          <select id="filter-inv-month" onchange="renderInvoices()">
-            <option value="">All Months</option>
-            <option>January</option><option>February</option><option>March</option>
-            <option>April</option><option>May</option><option>June</option>
-            <option>July</option><option>August</option><option>September</option>
-            <option>October</option><option>November</option><option>December</option>
-          </select>
-          <select id="filter-inv-year" onchange="renderInvoices()">
-            <option value="">All Years</option>
-            <option>2026</option><option>2025</option>
-          </select>
-          <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
-        </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Invoice No</th>
-                  <th>Client</th>
-                  <th>Billing Month</th>
-                  <th>Invoice Date</th>
-                  <th>Due Date</th>
-                  <th>Pay Runs</th>
-                  <th style="text-align:right;">Sub Total</th>
-                  <th style="text-align:right;">Tax</th>
-                  <th style="text-align:right;">Total</th>
-                  <th>Currency</th>
-                  <th>Status</th>
-                                    <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="invoices-tbody">
-                <tr><td colspan="13"><div class="loading"><div class="spinner"></div></div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-        <!-- TAB: GENERATE INVOICE -->
-        <div id="invoicetab-generate-content" style="display:none;">
-
-        <!-- Step 1: Client selection -->
-        <div id="inv-step-1">
-          <div style="max-width:520px;margin:60px auto;text-align:center;">
-            <div style="background:var(--white);border-radius:16px;border:1px solid var(--grey-200);padding:40px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
-              <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--teal-light),#d1fae5);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-                <i class="ti ti-file-invoice" style="font-size:28px;color:var(--teal);"></i>
-              </div>
-              <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px;">Generate Invoice</h3>
-              <p style="color:var(--grey-500);font-size:13px;margin-bottom:24px;">Select a client to view eligible pay runs and create an invoice</p>
-              <select id="inv-client" style="width:100%;padding:12px 14px;border:2px solid var(--grey-200);border-radius:10px;font-size:14px;font-weight:600;color:var(--navy);background:var(--white);outline:none;margin-bottom:16px;"
-                onchange="onInvClientChange()">
-                <option value="">— Select Client —</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Step 2: Nominate pay runs -->
-        <div id="inv-step-2" style="display:none;">
-
-          <!-- Client header -->
-          <div style="background:linear-gradient(90deg,var(--navy-dark) 0%,var(--navy-mid) 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
-            <div>
-              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin-bottom:4px;">Generate Invoice</div>
-              <div id="inv-client-label" style="font-size:18px;font-weight:800;color:var(--white);"></div>
-            </div>
-            <button class="btn btn-sm btn-red" onclick="invClearClient()" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;padding:8px 16px;">
-              <i class="ti ti-refresh"></i> Change Client
-            </button>
-          </div>
-
-          <!-- Invoice settings bar -->
-          <div class="card" style="margin-bottom:16px;">
-            <div class="card-body" style="padding:16px 20px;">
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:14px;align-items:end;">
-                <div class="form-group" style="margin:0;">
-                  <label>Billing Month</label>
-                  <select id="inv-month">
-                    <option>January</option><option>February</option><option>March</option>
-                    <option>April</option><option>May</option><option>June</option>
-                    <option>July</option><option>August</option><option>September</option>
-                    <option>October</option><option>November</option><option>December</option>
-                  </select>
-                </div>
-                <div class="form-group" style="margin:0;">
-                  <label>Invoice Date</label>
-                  <input type="date" id="inv-date">
-                </div>
-                <div class="form-group" style="margin:0;">
-                  <label>Due Date</label>
-                  <input type="date" id="inv-due">
-                </div>
-                <div class="form-group" style="margin:0;">
-                  <label>Invoice No</label>
-                  <input type="text" id="inv-number" readonly style="background:var(--grey-100);color:var(--grey-500);font-weight:700;width:110px;">
-                </div>
-                <button class="btn btn-teal" onclick="generateInvoice()" id="btn-gen-inv" disabled style="white-space:nowrap;">
-                  <i class="ti ti-file-invoice"></i> Preview Invoice
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Eligible pay runs -->
-          <div class="card" style="margin-bottom:16px;">
-            <div class="card-header">
-              <h3>Eligible Pay Runs <span id="inv-eligible-count" style="font-weight:400;color:var(--grey-500);font-size:13px;"></span></h3>
-              <span style="font-size:12px;color:var(--grey-500);">Process ✓ &nbsp; Metrics ✓ &nbsp; Not yet billed</span>
-            </div>
-            <div id="inv-payrun-list">
-              <div class="loading"><div class="spinner"></div></div>
-            </div>
-          </div>
-
-          <!-- Invoice preview -->
-          <div class="card" id="inv-preview-card" style="display:none;">
-            <div class="card-header">
-              <h3>Invoice Preview</h3>
-              <div style="display:flex;gap:8px;">
-                <button class="btn btn-sm btn-outline" onclick="confirmInvoiceNo()" id="btn-confirm-invno">
-                  <i class="ti ti-pencil"></i> Edit Invoice No
-                </button>
-                <button class="btn btn-sm btn-teal" onclick="exportInvoiceCSV()" id="btn-export-inv">
-                  <i class="ti ti-download"></i> Export CSV
-                </button>
-              </div>
-            </div>
-            <div id="invoice-preview"></div>
-          </div>
-        </div>
-        </div>
-
-        <!-- TAB: IMPORT INVOICES -->
-        <div id="invoicetab-import-content" style="display:none;">
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header"><h3>Import Xero Sales Invoices CSV</h3></div>
-            <div class="card-body">
-              <div class="alert alert-info">
-                <i class="ti ti-info-circle"></i>
-                <div>
-                  Upload a Sales Invoices CSV exported from Xero. The file is matched to clients via
-                  <strong>ContactName</strong> against <strong>PSP_Client_Details.ClientInvoiceName</strong>,
-                  grouped into invoice headers, and checked for duplicates already in PSP_Invoices.
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>Default Status for Imported Invoices</label>
-                <select id="imp-default-status">
-                  <option value="Issued">Issued (from finalised Xero export)</option>
-                  <option value="Draft">Draft (from draft/unconfirmed export)</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label>CSV File</label>
-                <div id="imp-dropzone" style="border:2px dashed var(--grey-300);border-radius:10px;padding:32px;text-align:center;cursor:pointer;background:var(--grey-50);transition:all 0.15s;"
-                  onclick="document.getElementById('imp-file-input').click()"
-                  ondragover="event.preventDefault();this.style.borderColor='var(--teal)';this.style.background='var(--teal-light)';"
-                  ondragleave="this.style.borderColor='var(--grey-300)';this.style.background='var(--grey-50)';"
-                  ondrop="handleImportDrop(event)">
-                  <i class="ti ti-cloud-upload" style="font-size:36px;color:var(--grey-400);display:block;margin-bottom:8px;"></i>
-                  <div style="font-size:13px;font-weight:600;color:var(--navy);">Click to browse or drag a CSV here</div>
-                  <div style="font-size:11px;color:var(--grey-500);margin-top:4px;">Xero Sales Invoices export (.csv)</div>
-                </div>
-                <input type="file" id="imp-file-input" accept=".csv" style="display:none;" onchange="handleImportFile(this.files[0])">
-              </div>
-
-              <div id="imp-file-info" style="display:none;margin-bottom:16px;">
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--teal-light);border-radius:8px;">
-                  <i class="ti ti-file-text" style="color:var(--teal-dark);font-size:20px;"></i>
-                  <div style="flex:1;">
-                    <div id="imp-file-name" style="font-size:13px;font-weight:700;color:var(--navy);"></div>
-                    <div id="imp-file-meta" style="font-size:11px;color:var(--grey-500);"></div>
-                  </div>
-                  <button class="btn btn-xs btn-outline" onclick="clearImportFile()"><i class="ti ti-x"></i></button>
-                </div>
-              </div>
-
-              <button class="btn btn-teal" onclick="processImportFile()" id="btn-process-import" disabled>
-                <i class="ti ti-list-check"></i> Preview &amp; Validate
-              </button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h3>Client Matching Reference</h3></div>
-            <div class="card-body" style="max-height:420px;overflow-y:auto;padding:0;">
-              <div id="imp-client-reference">
-                <div class="loading"><div class="spinner"></div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Validation & Preview results -->
-        <div id="imp-results" style="display:none;margin-top:20px;">
-          <div class="card">
-            <div class="card-header">
-              <h3>Import Preview</h3>
-              <button class="btn btn-sm btn-teal" onclick="confirmImport()" id="btn-confirm-import">
-                <i class="ti ti-database-import"></i> Import Selected
-              </button>
-            </div>
-            <div id="imp-summary-bar" style="padding:14px 20px;background:var(--grey-50);border-bottom:1px solid var(--grey-200);display:flex;gap:24px;"></div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th style="width:36px;"><input type="checkbox" id="imp-select-all" onchange="toggleAllImportRows(this.checked)"></th>
-                    <th>Invoice No</th>
-                    <th>Client (CSV)</th>
-                    <th>Matched PSPClient</th>
-                    <th>Date</th>
-                    <th style="text-align:right;">Total</th>
-                    <th>Currency</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="imp-preview-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
       </div>
 
       </div><!-- /page-content -->
