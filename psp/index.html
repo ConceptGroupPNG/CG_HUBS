@@ -7638,6 +7638,12 @@ function kbCardHtml(item, col) {
     </div>
     <!-- Activity name -->
     <div style="font-size:12px;color:var(--grey-800);margin-bottom:8px;line-height:1.4;">${activity}</div>
+    <!-- Pay Master row -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <div style="width:22px;height:22px;border-radius:50%;background:${col.headerBg};color:white;
+           font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${initials}</div>
+      <span style="font-size:11px;font-weight:600;color:${col.headerBg};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${member || 'Unassigned'}</span>
+    </div>
     <!-- Footer row -->
     <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
       <div style="display:flex;align-items:center;gap:6px;">
@@ -7653,9 +7659,6 @@ function kbCardHtml(item, col) {
             ${s === 'Finished' ? '✓' : s === 'Delayed' ? '!' : s === 'Started' ? '▶' : s}
           </button>` : '';
         }).join('')}
-        <!-- Avatar -->
-        <div title="${member}" style="width:22px;height:22px;border-radius:50%;background:${col.headerBg};color:white;
-             font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${initials}</div>
       </div>
     </div>
     ${isOverdue ? `<div style="font-size:9px;color:#cc1f2d;font-weight:700;margin-top:4px;">⚠ OVERDUE</div>` : ''}
