@@ -878,9 +878,7 @@
       <div class="nav-item" onclick="navigate('generate-calendar')">
         <i class="ti ti-calendar-plus"></i> Generate Calendar
       </div>
-      <div class="nav-item" onclick="navigate('templates')">
-        <i class="ti ti-template"></i> Activity Templates
-      </div>
+      
       <div class="nav-item" onclick="navigate('billing-metrics')">
         <i class="ti ti-chart-bar"></i> Billing Metrics
       </div>
@@ -1321,43 +1319,7 @@
         </div>
       </div>
 
-      <!-- TEMPLATES PAGE -->
-      <div class="page" id="page-templates">
-        <div class="filter-bar">
-          <select id="filter-tmpl-client" onchange="renderTemplates()">
-            <option value="">All Clients</option>
-          </select>
-          <select id="filter-tmpl-paygroup" onchange="renderTemplates()">
-            <option value="">All Pay Groups</option>
-          </select>
-          <button class="btn btn-teal" onclick="openTemplateForm()">
-            <i class="ti ti-plus"></i> Add Template
-          </button>
-        </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Pay Group</th>
-                  <th>Cycle</th>
-                  <th>Order</th>
-                  <th>Milestone</th>
-                  <th>Offset</th>
-                  <th>Pay Master</th>
-                  <th>Int/Ext</th>
-                  <th>SLA</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="templates-tbody">
-                <tr><td colspan="10"><div class="loading"><div class="spinner"></div></div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      
 
       <!-- BILLING METRICS PAGE -->
       <div class="page" id="page-billing-metrics">
@@ -2021,10 +1983,14 @@
 
           <!-- Step 3: Activity Templates -->
           <div id="wiz-panel-3" style="display:none;">
-            <h3 style="color:var(--navy);margin-bottom:16px;">Activity Templates</h3>
-            <p style="color:var(--grey-600);margin-bottom:20px;font-size:13px;">Each Pay Group needs an Activity Template for calendar generation. You can clone from an existing template or start fresh.</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+              <div>
+                <h3 style="color:var(--navy);margin:0;">Activity Templates</h3>
+                <p style="color:var(--grey-600);font-size:12px;margin:4px 0 0;">Define activities for each Pay Group. These are used when generating pay calendars.</p>
+              </div>
+            </div>
             <div id="wiz-templates-list"></div>
-            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:24px;">
+            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:20px;">
               <button class="btn btn-outline" onclick="wizGoStep(2)"><i class="ti ti-arrow-left"></i> Back</button>
               <div style="display:flex;gap:10px;">
                 <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
@@ -3870,7 +3836,7 @@ async function refreshCacheForPage(page) {
       page === 'generate-calendar') {
     cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
   }
-  if (page === 'templates' || page === 'generate-calendar') {
+  if (page === 'generate-calendar') {
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   }
   if (page === 'billing-metrics') {
@@ -3944,7 +3910,6 @@ async function navigate(page) {
     'all-activities': 'All Activities',
     'calendar': 'Pay Calendar',
     'generate-calendar': 'Generate Calendar',
-    'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
     'bulk-admin': 'Bulk Admin',
     'clients': 'Clients',
@@ -4005,7 +3970,6 @@ async function loadPage(page) {
     else if (page === 'all-activities') await loadAllActivities();
     else if (page === 'calendar') await loadCalendar();
     else if (page === 'generate-calendar') await loadGenerateCalendar();
-    else if (page === 'templates') await loadTemplates();
     else if (page === 'billing-metrics') await loadBillingMetrics();
     else if (page === 'quotes') {
     await loadQuotes();
@@ -5206,15 +5170,7 @@ function onGenClientChange() {
 // ─────────────────────────────────────────────
 // TEMPLATES
 // ─────────────────────────────────────────────
-async function loadTemplates() {
-  const fetches = [];
-  if (!cache.activities.length) fetches.push(getItems('activities', '', 5000, ['PSPMEmber']).then(d => cache.activities = d));
-  if (!cache.clients.length) fetches.push(getItems('clients').then(d => cache.clients = d));
-  await Promise.all(fetches);
-  populateClientFilter('filter-tmpl-client', cache.activities);
-  populatePayGroupFilter('filter-tmpl-paygroup', cache.activities);
-  renderTemplates();
-}
+
 
 function renderTemplates() {
   const client = document.getElementById('filter-tmpl-client').value;
@@ -5255,127 +5211,13 @@ async function openTemplateFormById(id) {
   await openTemplateForm(item);
 }
 
-async function openTemplateForm(item = null) {
-  modalEntity = 'activities';
-  modalIsEdit = !!item;
-  const title = item ? 'Edit Template Activity' : 'Add Template Activity';
-  if (!cache.clients.length) cache.clients = await getItems('clients');
-  const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-body').innerHTML = `
-    <!-- Row 1: Client + Pay Group -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div class="form-group" style="margin:0;">
-        <label>Client <span style="color:var(--red);">*</span></label>
-        <select id="f-client" onchange="onTmplClientChange()">
-          ${clients.map(c => `<option ${item && (item.PSPClient===c)?'selected':''}>${c}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Pay Group <span style="color:var(--red);">*</span></label>
-        <select id="f-paygroup" onchange="onTmplPayGroupChange()">
-          <option value="">Select Pay Group...</option>
-        </select>
-      </div>
-    </div>
-    <!-- Row 2: Milestone (full width) -->
-    <div class="form-group" style="margin-bottom:10px;">
-      <label>Milestone <span style="color:var(--red);">*</span></label>
-      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}" placeholder="e.g. Process Payroll, Submit Reports">
-    </div>
-    <!-- Row 3: Order, Offset, Cycle, Int/Ext -->
-    <div style="display:grid;grid-template-columns:80px 100px 140px 120px;gap:10px;margin-bottom:10px;">
-      <div class="form-group" style="margin:0;">
-        <label>Order <span style="color:var(--red);">*</span></label>
-        <input type="number" id="f-order" value="${getOrder(item)||''}" min="1">
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Offset <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(days from PPE)</span></label>
-        <input type="number" id="f-offset" value="${item?.Offset||0}">
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Cycle</label>
-        <select id="f-cycle">
-          <option ${item?.Cycle==='FORTNIGHT'?'selected':''}>FORTNIGHT</option>
-          <option ${item?.Cycle==='MONTH'?'selected':''}>MONTH</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Int / Ext</label>
-        <select id="f-intext">
-          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
-          <option ${item?.IntExt==='External'?'selected':''}>External</option>
-        </select>
-      </div>
-    </div>
-    <!-- Row 4: Pay Master + Contact -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div class="form-group" style="margin:0;">
-        <label>Pay Master</label>
-        <div class="user-picker-wrap">
-          <input type="text" id="f-member" class="user-picker-input" placeholder="Search M365 users..." autocomplete="off" value="${item ? getPSPMember(item) : ''}">
-          <div id="f-member-dropdown" class="user-picker-dropdown"></div>
-        </div>
-        <div id="f-member-selected" class="user-picker-selected" style="display:${item && getPSPMember(item) ? 'flex' : 'none'};">
-          <i class="ti ti-circle-check"></i> ${item ? getPSPMember(item) : ''}
-        </div>
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Contact</label>
-        <input type="text" id="f-contact" value="${item?.Contact||''}" placeholder="Client contact name">
-      </div>
-    </div>
-    <!-- Row 5: Client BAU + SLA -->
-    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;">
-      <div class="form-group" style="margin:0;">
-        <label>Client BAU</label>
-        <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}" placeholder="BAU reference">
-      </div>
-      <div style="padding-bottom:8px;">
-        <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;white-space:nowrap;">
-          <input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone
-        </label>
-      </div>
-    </div>`;
-  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
-  document.getElementById('modal-overlay').classList.add('open');
-  // Wire user picker
-  userPickerSelected = item ? { displayName: getPSPMember(item) } : {};
-  setTimeout(() => {
-    renderUserPicker('f-member', 'f-member-dropdown', 'f-member-selected', null);
-    // Populate pay groups for selected client
-    populateTmplPayGroups(item?.PayGroup || '');
-  }, 50);
-}
 
-function onTmplClientChange() {
-  populateTmplPayGroups('');
-}
 
-function onTmplPayGroupChange() {
-  // Auto-fill cycle when pay group is selected
-  const client = document.getElementById('f-client')?.value;
-  const pg = document.getElementById('f-paygroup')?.value;
-  if (!client || !pg) return;
-  const match = cache.activities.find(a => a.PSPClient === client && a.PayGroup === pg);
-  const cycleEl = document.getElementById('f-cycle');
-  if (match && cycleEl) cycleEl.value = match.Cycle || '';
-}
 
-function populateTmplPayGroups(selectedPG) {
-  const clientEl = document.getElementById('f-client');
-  const pgEl = document.getElementById('f-paygroup');
-  if (!clientEl || !pgEl) return;
-  const client = clientEl.value;
-  // Get pay groups from existing templates for this client
-  const paygroups = [...new Set(
-    cache.activities.filter(a => a.PSPClient === client).map(a => a.PayGroup).filter(Boolean)
-  )].sort();
-  pgEl.innerHTML = '<option value="">Select Pay Group...</option>' +
-    paygroups.map(pg => `<option value="${pg}" ${pg === selectedPG ? 'selected' : ''}>${pg}</option>`).join('');
-  // Trigger cycle auto-fill if editing
-  if (selectedPG) onTmplPayGroupChange();
-}
+
+
+
+
 
 async function saveModal() {
   if (modalEntity === 'activities') {
@@ -8154,62 +7996,321 @@ function wizStep2Next() {
   wizGoStep(3);
 }
 
+// ── Step 3: context-aware template management ──
+// wizClientName() gets the current client name from Step 1 form
+function wizClientName() {
+  return document.getElementById('wiz-psp-client')?.value.trim() || '';
+}
+
 function renderWizTemplates() {
   const container = document.getElementById('wiz-templates-list');
   if (!container) return;
 
-  // Get all existing templates across all clients for the clone dropdown
+  const clientName = wizClientName();
   const allPGs = [...new Set(cache.activities.map(a => `${a.PSPClient} / ${a.PayGroup}`).filter(Boolean))].sort();
 
-  // Only show new pay groups (existing ones already have templates)
-  const newPGs = wizPayGroups.filter(pg => pg.isNew && pg.pg);
-  const existingPGs = wizPayGroups.filter(pg => !pg.isNew && pg.pg);
-
-  let html = '';
-
-  if (existingPGs.length) {
-    html += `<div class="callout info" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i><div>Existing Pay Groups already have Activity Templates. Use <strong>Activity Templates</strong> in the Admin menu to edit them.</div></div>
-    <div style="margin-bottom:16px;">${existingPGs.map(pg=>`<span style="background:var(--grey-100);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;margin-right:6px;">${pg.pg} ✓</span>`).join('')}</div>`;
-  }
-
-  if (!newPGs.length) {
-    html += '<div style="text-align:center;padding:24px;color:var(--grey-400);">No new Pay Groups to configure.</div>';
-    container.innerHTML = html;
+  if (!wizPayGroups.length) {
+    container.innerHTML = '<div style="text-align:center;padding:32px;color:var(--grey-400);">No Pay Groups defined. Go back to Step 2 to add Pay Groups first.</div>';
     return;
   }
 
-  html += newPGs.map((pg, relIdx) => {
+  container.innerHTML = wizPayGroups.filter(pg => pg.pg).map((pg) => {
     const absIdx = wizPayGroups.indexOf(pg);
-    return `<div class="card" style="margin-bottom:14px;border-left:4px solid var(--teal);">
-      <strong style="color:var(--navy);">${pg.pg}</strong> <span style="font-size:11px;color:var(--grey-400);">${pg.cycle}</span>
-      <div class="form-row" style="margin-top:12px;">
-        <div class="form-group">
-          <label>Template Setup</label>
-          <select onchange="wizSetTemplateClone(${absIdx}, this.value)">
-            <option value="">Start Fresh (add activities manually after setup)</option>
-            <optgroup label="Clone from existing template">
-              ${allPGs.map(s=>`<option value="${s}">${s}</option>`).join('')}
-            </optgroup>
+    // Get activities from cache for this client/pg (may already exist for existing PGs, or pending for new ones)
+    const acts = cache.activities
+      .filter(a => a.PSPClient === clientName && a.PayGroup === pg.pg)
+      .sort((a,b) => (parseInt(a.Order0)||0) - (parseInt(b.Order0)||0));
+
+    return `
+    <div style="background:var(--white);border:1.5px solid var(--grey-200);border-left:4px solid var(--teal);border-radius:10px;margin-bottom:14px;overflow:hidden;">
+      <!-- Header -->
+      <div style="background:var(--grey-50);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--grey-200);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:13px;font-weight:700;color:var(--navy);">${pg.pg}</span>
+          <span style="font-size:11px;color:var(--grey-400);">${pg.cycle}</span>
+          <span style="background:var(--teal);color:white;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;">${acts.length} activit${acts.length===1?'y':'ies'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <select style="font-size:11px;padding:3px 8px;border:1.5px solid var(--grey-200);border-radius:6px;color:var(--grey-600);"
+            onchange="wizCloneTemplate(${absIdx}, this.value, this)" title="Clone from another template">
+            <option value="">↓ Clone from...</option>
+            ${allPGs.filter(s => s !== clientName + ' / ' + pg.pg).map(s=>`<option value="${s}">${s}</option>`).join('')}
           </select>
+          <button class="btn btn-xs btn-teal" onclick="wizOpenAddActivity('${clientName}','${pg.pg}','${pg.cycle}')">
+            <i class="ti ti-plus"></i> Add
+          </button>
         </div>
       </div>
-      <div id="wiz-clone-preview-${absIdx}" style="font-size:12px;color:var(--grey-600);margin-top:4px;"></div>
+
+      <!-- Activity rows -->
+      <div style="padding:0;">
+        ${acts.length === 0
+          ? `<div style="text-align:center;padding:20px;color:var(--grey-400);font-size:12px;">No activities yet — click + Add or Clone from an existing template</div>`
+          : `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="background:var(--grey-50);border-bottom:1px solid var(--grey-200);">
+                  <th style="padding:6px 12px;font-size:10px;font-weight:700;color:var(--grey-500);text-align:left;text-transform:uppercase;letter-spacing:0.05em;width:50px;">Order</th>
+                  <th style="padding:6px 12px;font-size:10px;font-weight:700;color:var(--grey-500);text-align:left;text-transform:uppercase;letter-spacing:0.05em;">Milestone</th>
+                  <th style="padding:6px 12px;font-size:10px;font-weight:700;color:var(--grey-500);text-align:center;text-transform:uppercase;letter-spacing:0.05em;width:60px;">Offset</th>
+                  <th style="padding:6px 12px;font-size:10px;font-weight:700;color:var(--grey-500);text-align:left;text-transform:uppercase;letter-spacing:0.05em;">Pay Master</th>
+                  <th style="padding:6px 12px;font-size:10px;font-weight:700;color:var(--grey-500);text-align:center;text-transform:uppercase;letter-spacing:0.05em;width:50px;">SLA</th>
+                  <th style="padding:6px 12px;width:70px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${acts.map((a, ri) => `
+                  <tr style="border-bottom:1px solid var(--grey-100);${ri%2===1?'background:#f8fafc':''}" id="wiz-act-row-${a.id}">
+                    <td style="padding:7px 12px;text-align:center;font-weight:700;color:var(--navy);">${a.Order0||'—'}</td>
+                    <td style="padding:7px 12px;font-weight:600;color:var(--grey-800);">${a.ActivityMilestone||'—'}</td>
+                    <td style="padding:7px 12px;text-align:center;color:var(--grey-600);">${a.Offset||0}</td>
+                    <td style="padding:7px 12px;color:var(--grey-600);">${a.PSPMember||'<em style="color:var(--grey-400);">Unassigned</em>'}</td>
+                    <td style="padding:7px 12px;text-align:center;">${a.SLA ? '<span style="color:var(--teal);font-weight:700;">✓</span>' : '<span style="color:var(--grey-300);">—</span>'}</td>
+                    <td style="padding:7px 12px;text-align:right;">
+                      <button class="btn btn-xs btn-outline" onclick="wizEditActivity('${a.id}')" title="Edit" style="padding:2px 6px;margin-right:3px;"><i class="ti ti-pencil"></i></button>
+                      <button class="btn btn-xs" onclick="wizDeleteActivity('${a.id}','${pg.pg}')" title="Delete" style="padding:2px 6px;background:#fee2e2;color:#991b1b;border:none;"><i class="ti ti-trash"></i></button>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`
+        }
+      </div>
     </div>`;
   }).join('');
-
-  container.innerHTML = html;
 }
 
-function wizSetTemplateClone(absIdx, value) {
-  wizPayGroups[absIdx].templateCloneFrom = value || null;
-  const preview = document.getElementById('wiz-clone-preview-' + absIdx);
-  if (!preview) return;
-  if (!value) { preview.innerHTML = ''; return; }
-  const [cloneClient, clonePG] = value.split(' / ');
-  const acts = cache.activities.filter(a => a.PSPClient === cloneClient && a.PayGroup === clonePG);
-  preview.innerHTML = acts.length
-    ? `<i class="ti ti-copy"></i> Will clone ${acts.length} activities from this template`
-    : '<span style="color:var(--amber);">No activities found in this template</span>';
+async function wizCloneTemplate(absIdx, source, sel) {
+  if (!source) return;
+  sel.value = ''; // Reset dropdown
+  const pg = wizPayGroups[absIdx];
+  const clientName = wizClientName();
+  if (!pg || !clientName) return;
+
+  const [srcClient, srcPG] = source.split(' / ');
+  const srcActs = cache.activities.filter(a => a.PSPClient === srcClient && a.PayGroup === srcPG);
+  if (!srcActs.length) { showToast('No activities found in source template', 'error'); return; }
+
+  const existingCount = cache.activities.filter(a => a.PSPClient === clientName && a.PayGroup === pg.pg).length;
+  if (existingCount > 0) {
+    const ok = await pspConfirm(
+      `Clone ${srcActs.length} activities from <strong>${source}</strong> into <strong>${clientName} / ${pg.pg}</strong>?<br><br>Existing ${existingCount} activit${existingCount===1?'y':'ies'} will be kept — cloned activities will be added.`,
+      'Clone Template'
+    );
+    if (!ok) return;
+  }
+
+  showToast('Cloning...', 'success');
+  for (const src of srcActs) {
+    const fields = {
+      PSPClient: clientName, PayGroup: pg.pg, Cycle: pg.cycle || src.Cycle,
+      Order0: src.Order0, Offset: src.Offset,
+      ActivityMilestone: src.ActivityMilestone,
+      PSPMember: src.PSPMember, Contact: src.Contact,
+      IntExt: src.IntExt, ClientBAU: src.ClientBAU,
+      SLA: src.SLA, Template: true,
+    };
+    try {
+      const created = await createItem('activities', fields);
+      if (created?.id) { fields.id = created.id; cache.activities.push(fields); }
+    } catch(e) { console.warn('Clone activity failed:', e.message); }
+  }
+  showToast(`Cloned ${srcActs.length} activities from ${srcPG}`, 'success');
+  renderWizTemplates();
+}
+
+function wizOpenAddActivity(client, pg, cycle) {
+  // Pre-set wizard context then open the existing template modal
+  wizTmplContext = { client, pg, cycle };
+  openTemplateFormForWiz(null);
+}
+
+function wizEditActivity(id) {
+  const item = cache.activities.find(a => String(a.id) === String(id));
+  if (!item) return;
+  wizTmplContext = { client: item.PSPClient, pg: item.PayGroup, cycle: item.Cycle };
+  openTemplateFormForWiz(item);
+}
+
+async function wizDeleteActivity(id, pgName) {
+  const item = cache.activities.find(a => String(a.id) === String(id));
+  if (!item) return;
+  const ok = await pspConfirm(
+    `Delete activity <strong>"${item.ActivityMilestone}"</strong> from the ${pgName} template?`,
+    'Delete Activity'
+  );
+  if (!ok) return;
+  try {
+    await deleteItem('activities', id);
+    cache.activities = cache.activities.filter(a => String(a.id) !== String(id));
+    showToast('Activity deleted', 'success');
+    renderWizTemplates();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+// Context for template modal when called from wizard
+let wizTmplContext = null;
+
+function openTemplateFormForWiz(item) {
+  // Use the existing openTemplateForm but lock client/pg to wizard context
+  const ctx = wizTmplContext;
+  if (!ctx) return;
+
+  modalEntity = 'activities';
+  modalIsEdit = !!item;
+  document.getElementById('modal-title').textContent = item ? 'Edit Template Activity' : 'Add Template Activity';
+
+  // Reuse the compact modal body but with client/pg locked
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:var(--grey-50);border:1px solid var(--grey-200);border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;gap:16px;">
+      <span style="font-size:12px;color:var(--grey-600);"><strong>Client:</strong> ${ctx.client}</span>
+      <span style="font-size:12px;color:var(--grey-600);"><strong>Pay Group:</strong> ${ctx.pg}</span>
+      <span style="font-size:12px;color:var(--grey-600);"><strong>Cycle:</strong> ${ctx.cycle}</span>
+    </div>
+    <div class="form-group" style="margin-bottom:10px;">
+      <label>Milestone <span style="color:var(--red);">*</span></label>
+      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}" placeholder="e.g. Process Payroll, Submit Reports">
+    </div>
+    <div style="display:grid;grid-template-columns:80px 100px 140px 120px;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
+        <label>Order <span style="color:var(--red);">*</span></label>
+        <input type="number" id="f-order" value="${getOrder(item)||''}" min="1">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Offset <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(days from PPE)</span></label>
+        <input type="number" id="f-offset" value="${item?.Offset||0}">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Cycle</label>
+        <select id="f-cycle">
+          ${CYCLES.map(c=>`<option ${(item?.Cycle||ctx.cycle)===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Int / Ext</label>
+        <select id="f-intext">
+          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
+        <label>Pay Master</label>
+        <div class="user-picker-wrap">
+          <input type="text" id="f-member" class="user-picker-input" placeholder="Search M365 users..." autocomplete="off" value="${item ? getPSPMember(item) : ''}">
+          <div id="f-member-dropdown" class="user-picker-dropdown"></div>
+        </div>
+        <div id="f-member-selected" class="user-picker-selected" style="display:${item && getPSPMember(item) ? 'flex' : 'none'};">
+          <i class="ti ti-circle-check"></i> ${item ? getPSPMember(item) : ''}
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Contact</label>
+        <input type="text" id="f-contact" value="${item?.Contact||''}" placeholder="Client contact name">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;">
+      <div class="form-group" style="margin:0;">
+        <label>Client BAU</label>
+        <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}" placeholder="BAU reference">
+      </div>
+      <div style="padding-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone
+        </label>
+      </div>
+    </div>`;
+
+  // Store client/pg in hidden fields for saveTemplateForm to use
+  document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
+  document.getElementById('modal-save-btn').setAttribute('data-wiz-mode', 'true');
+  document.getElementById('modal-overlay').classList.add('open');
+
+  userPickerSelected = item ? { displayName: getPSPMember(item) } : {};
+  setTimeout(() => {
+    renderUserPicker('f-member', 'f-member-dropdown', 'f-member-selected', null);
+  }, 50);
+}
+
+// Override saveTemplateForm to handle wizard context
+const _origSaveTemplateForm = typeof saveTemplateForm === 'function' ? saveTemplateForm : null;
+
+async function saveTemplateForm() {
+  const isWizMode = document.getElementById('modal-save-btn')?.getAttribute('data-wiz-mode') === 'true';
+
+  if (isWizMode && wizTmplContext) {
+    // Wizard mode: use fixed client/pg from context
+    const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+    const milestone = document.getElementById('f-milestone')?.value.trim();
+    const orderVal  = parseInt(document.getElementById('f-order')?.value || '0');
+    if (!milestone || !orderVal) { showToast('Order and Milestone are required', 'error'); return; }
+
+    const fields = {
+      PSPClient: wizTmplContext.client,
+      PayGroup: wizTmplContext.pg,
+      Cycle: document.getElementById('f-cycle')?.value || wizTmplContext.cycle,
+      Order0: orderVal,
+      Offset: parseInt(document.getElementById('f-offset')?.value || '0'),
+      ActivityMilestone: milestone,
+      PSPMember: userPickerSelected?.displayName || document.getElementById('f-member')?.value || '',
+      Contact: document.getElementById('f-contact')?.value || '',
+      IntExt: document.getElementById('f-intext')?.value || 'Internal',
+      ClientBAU: document.getElementById('f-clientbau')?.value || '',
+      SLA: document.getElementById('f-sla')?.checked || false,
+      Template: true,
+    };
+
+    try {
+      if (id) {
+        await saveWithFieldFallback(true, 'activities', id, fields);
+        const ai = cache.activities.findIndex(a => String(a.id) === String(id));
+        if (ai >= 0) Object.assign(cache.activities[ai], fields);
+        showToast('Activity updated', 'success');
+      } else {
+        const created = await createItem('activities', fields);
+        if (created?.id) { fields.id = created.id; cache.activities.push(fields); }
+        showToast('Activity added', 'success');
+      }
+      document.getElementById('modal-overlay').classList.remove('open');
+      document.getElementById('modal-save-btn').removeAttribute('data-wiz-mode');
+      renderWizTemplates();
+    } catch(e) {
+      showToast('Error saving activity: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  // Normal mode — call original save logic
+  if (_origSaveTemplateForm) { await _origSaveTemplateForm(); return; }
+
+  // Fallback: original saveTemplateForm logic inline
+  const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+  const client = document.getElementById('f-client')?.value;
+  const pg = document.getElementById('f-paygroup')?.value;
+  const cycle = document.getElementById('f-cycle')?.value;
+  const milestone = document.getElementById('f-milestone')?.value.trim();
+  const orderVal = parseInt(document.getElementById('f-order')?.value || '0');
+  if (!orderVal || !milestone) { showToast('Order and Milestone are required', 'error'); return; }
+  const fields = {
+    PSPClient: client, PayGroup: pg, Cycle: cycle, Order0: orderVal,
+    Offset: parseInt(document.getElementById('f-offset')?.value) || 0,
+    ActivityMilestone: milestone,
+    PSPMember: userPickerSelected.displayName || document.getElementById('f-member').value,
+    Contact: document.getElementById('f-contact').value,
+    IntExt: document.getElementById('f-intext').value,
+    ClientBAU: document.getElementById('f-clientbau').value,
+    SLA: document.getElementById('f-sla').checked,
+    Template: true,
+  };
+  try {
+    await saveWithFieldFallback(!!id, 'activities', id || '', fields);
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+    showToast(id ? 'Template updated' : 'Template activity added', 'success');
+    document.getElementById('modal-overlay').classList.remove('open');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 async function wizSaveClient() {
@@ -8286,26 +8387,7 @@ async function wizSaveClient() {
         if (newFees?.id) { feeFields.id = newFees.id; cache.fees.push(feeFields); }
       }
 
-      // Clone or create template for new pay groups
-      if (pg.isNew) {
-        if (pg.templateCloneFrom) {
-          const [cloneClient, clonePG] = pg.templateCloneFrom.split(' / ');
-          const srcActs = cache.activities.filter(a => a.PSPClient === cloneClient && a.PayGroup === clonePG);
-          for (const src of srcActs) {
-            const tmplFields = {
-              PSPClient: client, PayGroup: pg.pg, Cycle: pg.cycle,
-              Order0: src.Order0, Offset: src.Offset,
-              ActivityMilestone: src.ActivityMilestone,
-              PSPMember: src.PSPMember, Contact: src.Contact,
-              IntExt: src.IntExt, ClientBAU: src.ClientBAU,
-              SLA: src.SLA, Template: true,
-            };
-            const newAct = await createItem('activities', tmplFields);
-            if (newAct?.id) { tmplFields.id = newAct.id; cache.activities.push(tmplFields); }
-          }
-        }
-        // If no clone, user adds activities manually via Activity Templates page
-      }
+      // Activities are managed live in Step 3 — no batch clone needed here
     }
 
     showToast(`Client "${client}" saved successfully`, 'success');
