@@ -1896,29 +1896,31 @@
           </div>
 
           <!-- Step 1: Client Details -->
-          <div id="wiz-panel-1" class="card" style="padding:28px;">
-            <h3 style="margin-bottom:20px;color:var(--navy);">Client Details</h3>
-            <div class="form-row">
-              <div class="form-group">
+          <div id="wiz-panel-1" class="card" style="padding:20px;">
+
+            <!-- Section: Core Identity -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div class="form-group" style="margin:0;">
                 <label>PSP Client Name <span style="color:var(--red);">*</span></label>
-                <input type="text" id="wiz-psp-client" placeholder="e.g. National Parliament of PNG" style="font-weight:600;">
+                <input type="text" id="wiz-psp-client" placeholder="e.g. National Parliament of PNG" style="font-weight:700;">
               </div>
-              <div class="form-group">
-                <label>Xero Invoice Name (ClientInvoiceName)</label>
-                <input type="text" id="wiz-invoice-name" placeholder="Leave blank if same as PSP Client Name">
-                <small style="color:var(--grey-500);font-size:11px;">Used on Xero invoices. If different from the PSP Client Name, e.g. Dayforce Regional Pay Pty Ltd.</small>
+              <div class="form-group" style="margin:0;">
+                <label>Xero Invoice Name <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(if different from PSP Name)</span></label>
+                <input type="text" id="wiz-invoice-name" placeholder="Leave blank if same as above">
               </div>
             </div>
-            <div class="form-row">
-              <div class="form-group">
+
+            <!-- Section: Billing Settings -->
+            <div style="display:grid;grid-template-columns:140px 1fr 180px 120px;gap:12px;margin-bottom:12px;">
+              <div class="form-group" style="margin:0;">
                 <label>Currency <span style="color:var(--red);">*</span></label>
                 <select id="wiz-currency">
-                  <option value="PGK">PGK — Papua New Guinea Kina</option>
-                  <option value="AUD">AUD — Australian Dollar</option>
-                  <option value="USD">USD — US Dollar</option>
+                  <option value="PGK">PGK</option>
+                  <option value="AUD">AUD</option>
+                  <option value="USD">USD</option>
                 </select>
               </div>
-              <div class="form-group">
+              <div class="form-group" style="margin:0;">
                 <label>Tax Type <span style="color:var(--red);">*</span></label>
                 <select id="wiz-tax-type">
                   <option value="Tax on Sales">Tax on Sales (GST 10%)</option>
@@ -1926,33 +1928,11 @@
                   <option value="Tax Exempt">Tax Exempt</option>
                 </select>
               </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
+              <div class="form-group" style="margin:0;">
                 <label>Email Address</label>
                 <input type="email" id="wiz-email" placeholder="billing@client.com">
               </div>
-              <div class="form-group">
-                <label>Account Code (Xero)</label>
-                <input type="text" id="wiz-account-code" placeholder="201" value="201">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Inventory Item Code (Xero)</label>
-                <input type="text" id="wiz-item-code" placeholder="Bureau" value="Bureau">
-              </div>
-              <div class="form-group">
-                <label>Tracking Category (Xero)</label>
-                <input type="text" id="wiz-tracking-name" placeholder="Department" value="Department">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Tracking Option (Xero)</label>
-                <input type="text" id="wiz-tracking-option" placeholder="Bureau/PSP" value="Bureau/PSP">
-              </div>
-              <div class="form-group">
+              <div class="form-group" style="margin:0;">
                 <label>Status</label>
                 <select id="wiz-status">
                   <option value="Active">Active</option>
@@ -1960,32 +1940,64 @@
                 </select>
               </div>
             </div>
-            <h4 style="margin:20px 0 12px;color:var(--navy);font-size:13px;text-transform:uppercase;letter-spacing:0.06em;">Billing Address (for Quotes)</h4>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Address Line 1</label>
-                <input type="text" id="wiz-addr1" placeholder="PO Box 123">
+
+            <!-- Section: Xero Settings -->
+            <div style="background:var(--grey-50);border:1px solid var(--grey-200);border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+              <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px;">
+                <i class="ti ti-building-bank" style="font-size:12px;"></i> Xero Settings
               </div>
-              <div class="form-group">
-                <label>Address Line 2</label>
-                <input type="text" id="wiz-addr2" placeholder="">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Account Code</label>
+                  <input type="text" id="wiz-account-code" placeholder="201" value="201">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Inventory Item Code</label>
+                  <input type="text" id="wiz-item-code" placeholder="Bureau" value="Bureau">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Tracking Category</label>
+                  <input type="text" id="wiz-tracking-name" placeholder="Department" value="Department">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Tracking Option</label>
+                  <input type="text" id="wiz-tracking-option" placeholder="Bureau/PSP" value="Bureau/PSP">
+                </div>
               </div>
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>City</label>
-                <input type="text" id="wiz-city" placeholder="Port Moresby" value="Port Moresby">
+
+            <!-- Section: Billing Address -->
+            <div style="background:var(--grey-50);border:1px solid var(--grey-200);border-radius:8px;padding:12px 14px;margin-bottom:16px;">
+              <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px;">
+                <i class="ti ti-map-pin" style="font-size:12px;"></i> Billing Address <span style="font-weight:400;font-size:10px;text-transform:none;letter-spacing:0;">(used on Quotes)</span>
               </div>
-              <div class="form-group">
-                <label>Region / Province</label>
-                <input type="text" id="wiz-region" placeholder="NCD">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Address Line 1</label>
+                  <input type="text" id="wiz-addr1" placeholder="PO Box 123">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Address Line 2</label>
+                  <input type="text" id="wiz-addr2" placeholder="">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 120px 1fr;gap:10px;">
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">City</label>
+                  <input type="text" id="wiz-city" placeholder="Port Moresby" value="Port Moresby">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Region</label>
+                  <input type="text" id="wiz-region" placeholder="NCD">
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:11px;">Country</label>
+                  <input type="text" id="wiz-country" placeholder="Papua New Guinea" value="Papua New Guinea">
+                </div>
               </div>
             </div>
-            <div class="form-group" style="max-width:300px;">
-              <label>Country</label>
-              <input type="text" id="wiz-country" placeholder="Papua New Guinea" value="Papua New Guinea">
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:24px;">
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
               <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
               <button class="btn btn-teal" onclick="wizStep1Next()">Next: Pay Groups <i class="ti ti-arrow-right"></i></button>
             </div>
@@ -5251,36 +5263,54 @@ async function openTemplateForm(item = null) {
   const clients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = `
-    <div class="form-row">
-      <div class="form-group">
-        <label>Client *</label>
+    <!-- Row 1: Client + Pay Group -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
+        <label>Client <span style="color:var(--red);">*</span></label>
         <select id="f-client" onchange="onTmplClientChange()">
           ${clients.map(c => `<option ${item && (item.PSPClient===c)?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group">
-        <label>Pay Group *</label>
+      <div class="form-group" style="margin:0;">
+        <label>Pay Group <span style="color:var(--red);">*</span></label>
         <select id="f-paygroup" onchange="onTmplPayGroupChange()">
           <option value="">Select Pay Group...</option>
         </select>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Order *</label>
-        <input type="number" id="f-order" value="${getOrder(item)||''}">
+    <!-- Row 2: Milestone (full width) -->
+    <div class="form-group" style="margin-bottom:10px;">
+      <label>Milestone <span style="color:var(--red);">*</span></label>
+      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}" placeholder="e.g. Process Payroll, Submit Reports">
+    </div>
+    <!-- Row 3: Order, Offset, Cycle, Int/Ext -->
+    <div style="display:grid;grid-template-columns:80px 100px 140px 120px;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
+        <label>Order <span style="color:var(--red);">*</span></label>
+        <input type="number" id="f-order" value="${getOrder(item)||''}" min="1">
       </div>
-      <div class="form-group">
-        <label>Offset (days from PPE)</label>
+      <div class="form-group" style="margin:0;">
+        <label>Offset <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(days from PPE)</span></label>
         <input type="number" id="f-offset" value="${item?.Offset||0}">
       </div>
+      <div class="form-group" style="margin:0;">
+        <label>Cycle</label>
+        <select id="f-cycle">
+          <option ${item?.Cycle==='FORTNIGHT'?'selected':''}>FORTNIGHT</option>
+          <option ${item?.Cycle==='MONTH'?'selected':''}>MONTH</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Int / Ext</label>
+        <select id="f-intext">
+          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option ${item?.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
     </div>
-    <div class="form-group">
-      <label>Milestone *</label>
-      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
+    <!-- Row 4: Pay Master + Contact -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
         <label>Pay Master</label>
         <div class="user-picker-wrap">
           <input type="text" id="f-member" class="user-picker-input" placeholder="Search M365 users..." autocomplete="off" value="${item ? getPSPMember(item) : ''}">
@@ -5290,33 +5320,22 @@ async function openTemplateForm(item = null) {
           <i class="ti ti-circle-check"></i> ${item ? getPSPMember(item) : ''}
         </div>
       </div>
-      <div class="form-group">
+      <div class="form-group" style="margin:0;">
         <label>Contact</label>
-        <input type="text" id="f-contact" value="${item?.Contact||''}">
+        <input type="text" id="f-contact" value="${item?.Contact||''}" placeholder="Client contact name">
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Cycle</label>
-        <select id="f-cycle">
-          <option ${item?.Cycle==='FORTNIGHT'?'selected':''}>FORTNIGHT</option>
-          <option ${item?.Cycle==='MONTH'?'selected':''}>MONTH</option>
-        </select>
+    <!-- Row 5: Client BAU + SLA -->
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;">
+      <div class="form-group" style="margin:0;">
+        <label>Client BAU</label>
+        <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}" placeholder="BAU reference">
       </div>
-      <div class="form-group">
-        <label>Int/Ext</label>
-        <select id="f-intext">
-          <option ${item?.IntExt==='Internal'?'selected':''}>Internal</option>
-          <option ${item?.IntExt==='External'?'selected':''}>External</option>
-        </select>
+      <div style="padding-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone
+        </label>
       </div>
-    </div>
-    <div class="form-group">
-      <label>Client BAU</label>
-      <input type="text" id="f-clientbau" value="${item?.ClientBAU||''}">
-    </div>
-    <div class="form-group">
-      <label><input type="checkbox" id="f-sla" ${item?.SLA?'checked':''}> SLA Milestone</label>
     </div>`;
   document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
   document.getElementById('modal-overlay').classList.add('open');
