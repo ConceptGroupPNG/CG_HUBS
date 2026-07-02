@@ -4185,6 +4185,36 @@ async function refreshCalendarCache() {
 }
 
 // ─────────────────────────────────────────────
+// ITEM FIELD HELPERS
+// ─────────────────────────────────────────────
+function getPSPMember(item) {
+  // PSP_Act_Calendar uses PSPMEmber (with typo), templates use PSPMember
+  return item?.PSPMEmber || item?.PSPMember || '';
+}
+
+function getActStatus(item) {
+  return item?.Act_Status || '';
+}
+
+function getOrder(item) {
+  return item?.Order0 || item?.Order || 0;
+}
+
+function getPayGroup(item) {
+  return item?.PayGroup || item?.field_1 || '';
+}
+
+function getStatusClass(status) {
+  const map = {
+    'Not Started': 'not-started',
+    'Started':     'started',
+    'Delayed':     'delayed',
+    'Finished':    'finished',
+  };
+  return map[status] || 'not-started';
+}
+
+// ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
 async function loadDashboard() {
