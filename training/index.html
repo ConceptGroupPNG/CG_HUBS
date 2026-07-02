@@ -3481,9 +3481,12 @@ function renderPayments(items){
     const totalPaidOnInvoice = inv ? invoiceTotalPaid(inv) : paid; // all payments against the invoice
     const bal = Math.max(0,total-totalPaidOnInvoice); // invoice-wide balance, not just this payment
     const st = paymentStatus(p);
-    const att = inv ? attendeeForInvoice(inv) : null;
-    const attName = inv?.AttendeeName || '—';
-    const orgName = att?.OrgName || '—';
+    const invNum = (inv?.InvoiceNumber||inv?.Title||p.RemittanceRef||'').trim().toLowerCase();
+    // Attendee: prefer looking up from CG_Attendees by InvoiceRef match
+    const attFromList = (cache.attendees||[]).find(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
+    const attName = attFromList?.FullName || attFromList?.Title || inv?.AttendeeName || '—';
+    // Organisation: prefer inv.OrgName (always stored), fall back to attendee's OrgName
+    const orgName = inv?.OrgName || attFromList?.OrgName || '—';
     const paymentLink = (typeof p.PaymentLink==='object' ? p.PaymentLink?.Url : p.PaymentLink) || '';
     return `<tr>
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
@@ -5167,11 +5170,12 @@ function exportPaymentsCSV(){
       const paid=+(p.AmountPaid||0);
       const totalPaidOnInvoice = inv ? invoiceTotalPaid(inv) : paid;
       const bal=Math.max(0,total-totalPaidOnInvoice);
-      const att=inv?attendeeForInvoice(inv):null;
+      const invNum2 = (inv?.InvoiceNumber||inv?.Title||p.RemittanceRef||'').trim().toLowerCase();
+      const attFromList2 = (cache.attendees||[]).find(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum2);
       return [
         p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'',
-        inv?.AttendeeName||'',
-        att?.OrgName||'',
+        attFromList2?.FullName||attFromList2?.Title||inv?.AttendeeName||'',
+        inv?.OrgName||attFromList2?.OrgName||'',
         total,
         paid,
         bal,
