@@ -884,11 +884,16 @@
       <div class="nav-item" onclick="navigate('billing-metrics')">
         <i class="ti ti-chart-bar"></i> Billing Metrics
       </div>
-      
+      <div class="nav-item" onclick="navigate('bulk-admin')">
+        <i class="ti ti-adjustments"></i> Bulk Admin
+      </div>
     </div>
 
     <div class="sidebar-section">
       <div class="sidebar-label">Finance</div>
+      <div class="nav-item" onclick="navigate('clients')">
+        <i class="ti ti-building"></i> Clients
+      </div>
       <div class="nav-item" onclick="navigate('quotes')">
         <i class="ti ti-file-description"></i> Quotes
       </div>
@@ -1592,6 +1597,311 @@
             <i class="ti ti-file-upload" style="font-size:14px;margin-right:4px;"></i> Import Invoices
           </div>
         </div>
+
+      <!-- CLIENTS PAGE -->
+      <div class="page" id="page-clients">
+        <!-- Client List View -->
+        <div id="clients-list-view">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <div class="search-box">
+                <i class="ti ti-search" style="color:var(--grey-400);font-size:14px;"></i>
+                <input type="text" id="cl-search" placeholder="Search clients..." oninput="renderClientsList()" style="border:none;outline:none;font-size:13px;width:200px;">
+              </div>
+              <select id="cl-filter-status" onchange="renderClientsList()" style="padding:7px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;color:var(--navy);background:var(--white);">
+                <option value="">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+            <button class="btn btn-teal" onclick="openClientWizard(null)">
+              <i class="ti ti-plus"></i> Add Client
+            </button>
+          </div>
+          <div class="card">
+            <table class="data-table">
+              <thead><tr>
+                <th>Client (PSP Name)</th>
+                <th>Invoice Name (Xero)</th>
+                <th>Currency</th>
+                <th>Tax Type</th>
+                <th>Pay Groups</th>
+                <th>Status</th>
+                <th style="width:100px;">Actions</th>
+              </tr></thead>
+              <tbody id="cl-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Client Wizard View -->
+        <div id="clients-wizard-view" style="display:none;">
+          <!-- Wizard Steps Header -->
+          <div style="display:flex;align-items:center;gap:0;margin-bottom:28px;overflow-x:auto;padding-bottom:4px;">
+            <div class="wiz-step active" id="wiz-step-1" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--teal);color:white;border-radius:10px 0 0 10px;font-size:13px;font-weight:700;white-space:nowrap;">
+              <span style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">1</span> Client Details
+            </div>
+            <div class="wiz-step" id="wiz-step-2" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);font-size:13px;font-weight:700;white-space:nowrap;">
+              <span style="width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:11px;">2</span> Pay Groups & Price Book
+            </div>
+            <div class="wiz-step" id="wiz-step-3" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);border-radius:0 10px 10px 0;font-size:13px;font-weight:700;white-space:nowrap;">
+              <span style="width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:11px;">3</span> Activity Templates
+            </div>
+          </div>
+
+          <!-- Step 1: Client Details -->
+          <div id="wiz-panel-1" class="card" style="padding:28px;">
+            <h3 style="margin-bottom:20px;color:var(--navy);">Client Details</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>PSP Client Name <span style="color:var(--red);">*</span></label>
+                <input type="text" id="wiz-psp-client" placeholder="e.g. National Parliament of PNG" style="font-weight:600;">
+              </div>
+              <div class="form-group">
+                <label>Xero Invoice Name (ClientInvoiceName)</label>
+                <input type="text" id="wiz-invoice-name" placeholder="Leave blank if same as PSP Client Name">
+                <small style="color:var(--grey-500);font-size:11px;">Used on Xero invoices. If different from the PSP Client Name, e.g. Dayforce Regional Pay Pty Ltd.</small>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Currency <span style="color:var(--red);">*</span></label>
+                <select id="wiz-currency">
+                  <option value="PGK">PGK — Papua New Guinea Kina</option>
+                  <option value="AUD">AUD — Australian Dollar</option>
+                  <option value="USD">USD — US Dollar</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Tax Type <span style="color:var(--red);">*</span></label>
+                <select id="wiz-tax-type">
+                  <option value="Tax on Sales">Tax on Sales (GST 10%)</option>
+                  <option value="Zero Rated">Zero Rated (0%)</option>
+                  <option value="Tax Exempt">Tax Exempt</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="wiz-email" placeholder="billing@client.com">
+              </div>
+              <div class="form-group">
+                <label>Account Code (Xero)</label>
+                <input type="text" id="wiz-account-code" placeholder="201" value="201">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Inventory Item Code (Xero)</label>
+                <input type="text" id="wiz-item-code" placeholder="Bureau" value="Bureau">
+              </div>
+              <div class="form-group">
+                <label>Tracking Category (Xero)</label>
+                <input type="text" id="wiz-tracking-name" placeholder="Department" value="Department">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Tracking Option (Xero)</label>
+                <input type="text" id="wiz-tracking-option" placeholder="Bureau/PSP" value="Bureau/PSP">
+              </div>
+              <div class="form-group">
+                <label>Status</label>
+                <select id="wiz-status">
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+            <h4 style="margin:20px 0 12px;color:var(--navy);font-size:13px;text-transform:uppercase;letter-spacing:0.06em;">Billing Address (for Quotes)</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Address Line 1</label>
+                <input type="text" id="wiz-addr1" placeholder="PO Box 123">
+              </div>
+              <div class="form-group">
+                <label>Address Line 2</label>
+                <input type="text" id="wiz-addr2" placeholder="">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>City</label>
+                <input type="text" id="wiz-city" placeholder="Port Moresby" value="Port Moresby">
+              </div>
+              <div class="form-group">
+                <label>Region / Province</label>
+                <input type="text" id="wiz-region" placeholder="NCD">
+              </div>
+            </div>
+            <div class="form-group" style="max-width:300px;">
+              <label>Country</label>
+              <input type="text" id="wiz-country" placeholder="Papua New Guinea" value="Papua New Guinea">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:24px;">
+              <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
+              <button class="btn btn-teal" onclick="wizStep1Next()">Next: Pay Groups <i class="ti ti-arrow-right"></i></button>
+            </div>
+          </div>
+
+          <!-- Step 2: Pay Groups & Price Book -->
+          <div id="wiz-panel-2" style="display:none;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+              <h3 style="color:var(--navy);margin:0;">Pay Groups & Price Book</h3>
+              <button class="btn btn-teal btn-sm" onclick="wizAddPayGroup()"><i class="ti ti-plus"></i> Add Pay Group</button>
+            </div>
+            <div id="wiz-paygroups-list"></div>
+            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:24px;">
+              <button class="btn btn-outline" onclick="wizGoStep(1)"><i class="ti ti-arrow-left"></i> Back</button>
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
+                <button class="btn btn-teal" onclick="wizStep2Next()">Next: Templates <i class="ti ti-arrow-right"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Activity Templates -->
+          <div id="wiz-panel-3" style="display:none;">
+            <h3 style="color:var(--navy);margin-bottom:16px;">Activity Templates</h3>
+            <p style="color:var(--grey-600);margin-bottom:20px;font-size:13px;">Each Pay Group needs an Activity Template for calendar generation. You can clone from an existing template or start fresh.</p>
+            <div id="wiz-templates-list"></div>
+            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:24px;">
+              <button class="btn btn-outline" onclick="wizGoStep(2)"><i class="ti ti-arrow-left"></i> Back</button>
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
+                <button class="btn btn-teal" id="wiz-save-btn" onclick="wizSaveClient()"><i class="ti ti-device-floppy"></i> Save Client</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BULK ADMIN PAGE -->
+      <div class="page" id="page-bulk-admin">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" id="bulk-admin-grid">
+
+          <!-- Card: Reassign Pay Master -->
+          <div class="card">
+            <div class="card-header" style="background:linear-gradient(135deg,#1a2744,#2d4a8a);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
+              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-user-edit" style="color:#93c5fd;"></i> Reassign Pay Master</h3>
+            </div>
+            <div class="form-group">
+              <label>Client</label>
+              <select id="ba-pm-client" onchange="baPopulatePayGroups('pm')">
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Pay Group</label>
+              <select id="ba-pm-pg" onchange="baPreviewPMActivities()">
+                <option value="">— Select Pay Group —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>New Pay Master</label>
+              <input type="text" id="ba-pm-new-member" placeholder="Type name or pick from M365..." readonly onclick="openUserPickerFor('ba-pm-new-member', 'ba-pm-member-obj')">
+              <input type="hidden" id="ba-pm-member-obj">
+            </div>
+            <div class="form-group">
+              <label>Scope</label>
+              <div style="display:flex;gap:10px;">
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                  <input type="radio" name="ba-pm-scope" value="forward" checked onchange="baPreviewPMActivities()"> Going Forward (skip Finished/Started)
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                  <input type="radio" name="ba-pm-scope" value="once" onchange="baPreviewPMActivities()"> Once Only
+                </label>
+              </div>
+            </div>
+            <div id="ba-pm-once-sel" style="display:none;" class="form-group">
+              <label>Select Activity</label>
+              <select id="ba-pm-once-activity"><option value="">— Pick activity —</option></select>
+            </div>
+            <div id="ba-pm-preview" style="margin:10px 0;font-size:12px;color:var(--grey-600);"></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button class="btn btn-teal" onclick="baApplyPMChange()"><i class="ti ti-user-check"></i> Apply Reassignment</button>
+            </div>
+          </div>
+
+          <!-- Card: Change Activity Date -->
+          <div class="card">
+            <div class="card-header" style="background:linear-gradient(135deg,#065f46,#0e9f6e);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
+              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-calendar-event" style="color:#a7f3d0;"></i> Change Activity Date</h3>
+            </div>
+            <div class="form-group">
+              <label>Client</label>
+              <select id="ba-dt-client" onchange="baPopulatePayGroups('dt')">
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Pay Group</label>
+              <select id="ba-dt-pg" onchange="baLoadDateActivities()">
+                <option value="">— Select Pay Group —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Scope</label>
+              <div style="display:flex;gap:10px;">
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                  <input type="radio" name="ba-dt-scope" value="once" checked onchange="baLoadDateActivities()"> Once Only
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                  <input type="radio" name="ba-dt-scope" value="allafter" onchange="baLoadDateActivities()"> All After (shift by N days)
+                </label>
+              </div>
+            </div>
+            <div id="ba-dt-once-fields" class="form-group">
+              <label>Select Activity</label>
+              <select id="ba-dt-once-activity" onchange="baShowCurrentDate()">
+                <option value="">— Pick activity —</option>
+              </select>
+              <div id="ba-dt-current-date" style="font-size:11px;color:var(--grey-500);margin-top:4px;"></div>
+              <label style="margin-top:10px;">New Date & Time</label>
+              <input type="datetime-local" id="ba-dt-new-datetime">
+            </div>
+            <div id="ba-dt-allafter-fields" style="display:none;" class="form-group">
+              <label>Shift by (days)</label>
+              <input type="number" id="ba-dt-shift-days" placeholder="e.g. 2 or -1" style="max-width:140px;">
+              <div id="ba-dt-allafter-preview" style="margin-top:8px;font-size:12px;color:var(--grey-600);"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button class="btn btn-teal" onclick="baApplyDateChange()"><i class="ti ti-calendar-check"></i> Apply Date Change</button>
+            </div>
+          </div>
+
+          <!-- Card: Delete Not Started Activities -->
+          <div class="card" style="border-top:3px solid var(--red);">
+            <div class="card-header" style="background:linear-gradient(135deg,#7f1d1d,#cc1f2d);margin:-20px -20px 20px;padding:16px 20px;border-radius:12px 12px 0 0;">
+              <h3 style="color:white;margin:0;display:flex;align-items:center;gap:8px;"><i class="ti ti-trash" style="color:#fca5a5;"></i> Delete Not Started Activities</h3>
+            </div>
+            <div class="callout warning" style="margin-bottom:16px;">
+              <i class="ti ti-alert-triangle"></i>
+              <div>This permanently deletes all <strong>Not Started</strong> activities and their corresponding <strong>PSP_Billing</strong> records for the selected Pay Group. This cannot be undone.</div>
+            </div>
+            <div class="form-group">
+              <label>Client</label>
+              <select id="ba-del-client" onchange="baPopulatePayGroups('del')">
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Pay Group</label>
+              <select id="ba-del-pg" onchange="baPreviewDelete()">
+                <option value="">— Select Pay Group —</option>
+              </select>
+            </div>
+            <div id="ba-del-preview" style="font-size:13px;color:var(--grey-600);margin:10px 0;"></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button class="btn" style="background:var(--red);color:white;" onclick="baDeleteNotStarted()">
+                <i class="ti ti-trash"></i> Delete Not Started
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
         <!-- TAB: INVOICES LIST -->
         <div id="invoicetab-invoices-content">
@@ -3531,6 +3841,16 @@ async function refreshCacheForPage(page) {
     cache.invoices = await getItems('invoices');
     cache.lastinv = await getItems('lastinv');
   }
+  if (page === 'clients') {
+    cache.clients = await getItems('clients');
+    cache.fees = await getItems('fees');
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  }
+  if (page === 'bulk-admin') {
+    cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+    cache.billing = await getItems('billing');
+  }
   if (page === 'invoices') {
     cache.invoices = await getItems('invoices');
     cache.clients = await getItems('clients');
@@ -3584,6 +3904,8 @@ async function navigate(page) {
     'generate-calendar': 'Generate Calendar',
     'templates': 'Activity Templates',
     'billing-metrics': 'Billing Metrics',
+    'bulk-admin': 'Bulk Admin',
+    'clients': 'Clients',
     'quotes': 'Quotes',
     'invoices': 'Invoices',
   };
@@ -3652,6 +3974,8 @@ async function loadPage(page) {
     try { await loadGenerateInvoice(); } catch(e) { console.warn('loadGenerateInvoice failed:', e); }
     try { await loadImportInvoices(); } catch(e) { console.warn('loadImportInvoices failed:', e); }
   }
+  else if (page === 'clients') await loadClientsPage();
+  else if (page === 'bulk-admin') await loadBulkAdmin();
   } catch(e) {
     if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
       await handleTokenExpiry();
@@ -4324,6 +4648,7 @@ async function saveStatus() {
   }
   if (newStatus === 'Finished') {
     fields.FinishDateTime = now;
+    fields.FinishDateTimeNo = parseInt(now.slice(0,10).replace(/-/g,''), 10);
     if (!statusEditItem.StartDateTime) fields.StartDateTime = now;
   }
   if (newStatus === 'Started' && statusEditItem.Act_Status === 'Delayed') {
@@ -4751,6 +5076,7 @@ async function generateCalendar() {
         ActivityMilestone: t.ActivityMilestone,
         Offset: t.Offset,
         ActivityDateTime: actDate.toISOString(),
+        ActivityDateTimeNo: parseInt(actDate.toISOString().slice(0,10).replace(/-/g,''), 10),
         PSPMEmberLookupId: t.PSPMEmberLookupId || null,
         Act_Status: 'Not Started',
         ClientBAU: t.ClientBAU,
@@ -7492,6 +7818,766 @@ async function initApp(token) {
 })();
 
 
+
+// ─────────────────────────────────────────────
+// CLIENTS PAGE
+// ─────────────────────────────────────────────
+let wizClientId = null;       // null = new, int = edit
+let wizPayGroups = [];        // [{pg, cycle, calcMethod, fees:{}, isNew, templateCloneFrom}]
+
+const CYCLES = ['Weekly','Fortnightly','Monthly','4-Weekly','Bi-Monthly','Quarterly'];
+const CALC_METHODS = [
+  { v:'A', label:'A — Flat Pay Run Fee' },
+  { v:'B', label:'B — Per Payslip' },
+  { v:'C', label:'C — Min + Overage Per Head' },
+  { v:'D', label:'D — Per Head (above min)' },
+  { v:'E', label:'E — Tiered' },
+];
+
+async function loadClientsPage() {
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  if (!cache.fees.length)    cache.fees    = await getItems('fees');
+  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  renderClientsList();
+}
+
+function renderClientsList() {
+  const search = (document.getElementById('cl-search')?.value || '').toLowerCase();
+  const statusF = document.getElementById('cl-filter-status')?.value || '';
+  let items = [...cache.clients];
+  if (search) items = items.filter(c =>
+    (c.PSPClient||'').toLowerCase().includes(search) ||
+    (c.ClientInvoiceName||'').toLowerCase().includes(search)
+  );
+  if (statusF) items = items.filter(c => (c.ClientStatus || 'Active') === statusF);
+  items.sort((a,b) => (a.PSPClient||'').localeCompare(b.PSPClient||''));
+
+  const tbody = document.getElementById('cl-tbody');
+  if (!tbody) return;
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--grey-400);">No clients found</td></tr>'; return; }
+
+  tbody.innerHTML = items.map(c => {
+    const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === c.PSPClient).map(a => a.PayGroup).filter(Boolean))].sort();
+    const statusColor = (c.ClientStatus || 'Active') === 'Active' ? 'var(--teal)' : 'var(--grey-400)';
+    return `<tr>
+      <td><strong style="color:var(--navy);">${c.PSPClient||'—'}</strong></td>
+      <td style="color:var(--grey-600);font-size:12px;">${c.ClientInvoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
+      <td>${c.Currency||'PGK'}</td>
+      <td style="font-size:12px;">${c.TaxType||'—'}</td>
+      <td style="font-size:12px;">${pgs.map(pg=>`<span style="background:var(--teal);color:white;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:3px;">${pg}</span>`).join('')||'<em style="color:var(--grey-400);">None</em>'}</td>
+      <td><span style="font-weight:700;color:${statusColor};">${c.ClientStatus||'Active'}</span></td>
+      <td>
+        <button class="btn btn-xs btn-outline" onclick="openClientWizard('${c.id}')"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-xs" style="background:#eff6ff;color:#3b82f6;border:1.5px solid #93c5fd;" onclick="toggleClientStatus('${c.id}')" title="${(c.ClientStatus||'Active')==='Active'?'Deactivate':'Activate'}">
+          <i class="ti ti-${(c.ClientStatus||'Active')==='Active'?'toggle-right':'toggle-left'}"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function toggleClientStatus(id) {
+  const c = cache.clients.find(x => String(x.id) === String(id));
+  if (!c) return;
+  const newStatus = (c.ClientStatus || 'Active') === 'Active' ? 'Inactive' : 'Active';
+  await saveWithFieldFallback(true, 'clients', id, { ClientStatus: newStatus });
+  c.ClientStatus = newStatus;
+  renderClientsList();
+  showToast(`${c.PSPClient} set to ${newStatus}`, 'success');
+}
+
+function openClientWizard(id) {
+  wizClientId = id;
+  wizPayGroups = [];
+  document.getElementById('clients-list-view').style.display = 'none';
+  document.getElementById('clients-wizard-view').style.display = '';
+
+  if (id) {
+    // Edit mode — populate from existing client
+    const c = cache.clients.find(x => String(x.id) === String(id));
+    if (!c) return;
+    document.getElementById('wiz-psp-client').value    = c.PSPClient || '';
+    document.getElementById('wiz-psp-client').readOnly = true; // PSP name shouldn't change
+    document.getElementById('wiz-invoice-name').value  = c.ClientInvoiceName || '';
+    document.getElementById('wiz-currency').value      = c.Currency || 'PGK';
+    document.getElementById('wiz-tax-type').value      = c.TaxType || 'Tax on Sales';
+    document.getElementById('wiz-email').value         = c.EmailAddress || '';
+    document.getElementById('wiz-account-code').value  = c.AccountCode || '201';
+    document.getElementById('wiz-item-code').value     = c.InventoryItemCode || 'Bureau';
+    document.getElementById('wiz-tracking-name').value = c.TrackingName1 || 'Department';
+    document.getElementById('wiz-tracking-option').value = c.TrackingOption1 || 'Bureau/PSP';
+    document.getElementById('wiz-status').value        = c.ClientStatus || 'Active';
+    document.getElementById('wiz-addr1').value         = c.POAddressLine1 || '';
+    document.getElementById('wiz-addr2').value         = c.POAddressLine2 || '';
+    document.getElementById('wiz-city').value          = c.POCity || '';
+    document.getElementById('wiz-region').value        = c.PORegion || '';
+    document.getElementById('wiz-country').value       = c.POCountry || 'Papua New Guinea';
+
+    // Load existing pay groups
+    const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === c.PSPClient).map(a => a.PayGroup).filter(Boolean))].sort();
+    wizPayGroups = pgs.map(pg => {
+      const tmpl = cache.activities.find(a => a.PSPClient === c.PSPClient && a.PayGroup === pg);
+      const fees = cache.fees.find(f => f.Title === c.PSPClient && (f.field_1 === pg || f.PayGroup === pg));
+      return {
+        pg, cycle: tmpl?.Cycle || '', isNew: false,
+        calcMethod: fees?.CalcMethod || 'A',
+        fees: fees ? {
+          PayRun: fees.field_5||0, Each: fees.field_6||0, Extra: fees.field_7||0,
+          WSS: fees.field_8||0, CLO: fees.field_9||0, LO: fees.field_10||0,
+          NewHire: fees.field_11||0, Term: fees.field_12||0, Excpt: fees.field_13||0,
+          ThreeNoN: fees.field_14||0, ReRun: fees.field_15||0,
+          Min: fees.field_3||0, Max: fees.field_4||0, Tier: fees.field_2||0,
+          feesId: fees.id,
+        } : {},
+        templateCloneFrom: null,
+      };
+    });
+  } else {
+    document.getElementById('wiz-psp-client').readOnly = false;
+    document.getElementById('wiz-psp-client').value = '';
+    document.getElementById('wiz-invoice-name').value = '';
+    document.getElementById('wiz-currency').value = 'PGK';
+    document.getElementById('wiz-tax-type').value = 'Tax on Sales';
+    document.getElementById('wiz-email').value = '';
+    document.getElementById('wiz-account-code').value = '201';
+    document.getElementById('wiz-item-code').value = 'Bureau';
+    document.getElementById('wiz-tracking-name').value = 'Department';
+    document.getElementById('wiz-tracking-option').value = 'Bureau/PSP';
+    document.getElementById('wiz-status').value = 'Active';
+    document.getElementById('wiz-addr1').value = '';
+    document.getElementById('wiz-addr2').value = '';
+    document.getElementById('wiz-city').value = 'Port Moresby';
+    document.getElementById('wiz-region').value = '';
+    document.getElementById('wiz-country').value = 'Papua New Guinea';
+  }
+  wizGoStep(1);
+}
+
+function closeClientWizard() {
+  document.getElementById('clients-list-view').style.display = '';
+  document.getElementById('clients-wizard-view').style.display = 'none';
+}
+
+function wizGoStep(n) {
+  [1,2,3].forEach(i => {
+    const step = document.getElementById('wiz-step-' + i);
+    const panel = document.getElementById('wiz-panel-' + i);
+    const isActive = i === n;
+    const isDone = i < n;
+    if (step) {
+      step.style.background = isActive ? 'var(--teal)' : isDone ? '#065f46' : 'var(--grey-200)';
+      step.style.color = (isActive || isDone) ? 'white' : 'var(--grey-600)';
+    }
+    if (panel) panel.style.display = isActive ? '' : 'none';
+  });
+  if (n === 2) renderWizPayGroups();
+  if (n === 3) renderWizTemplates();
+}
+
+function wizStep1Next() {
+  const client = document.getElementById('wiz-psp-client').value.trim();
+  if (!client) { showToast('PSP Client Name is required', 'error'); return; }
+  // Check for duplicate name on new client
+  if (!wizClientId) {
+    const exists = cache.clients.find(c => (c.PSPClient||'').toLowerCase() === client.toLowerCase());
+    if (exists) { showToast('A client with this name already exists', 'error'); return; }
+  }
+  wizGoStep(2);
+}
+
+function wizAddPayGroup() {
+  wizPayGroups.push({ pg: '', cycle: 'Fortnightly', isNew: true, calcMethod: 'A', fees: {}, templateCloneFrom: null });
+  renderWizPayGroups();
+}
+
+function renderWizPayGroups() {
+  const container = document.getElementById('wiz-paygroups-list');
+  if (!container) return;
+  if (!wizPayGroups.length) {
+    container.innerHTML = '<div style="text-align:center;padding:32px;color:var(--grey-400);"><i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>No Pay Groups yet. Click + Add Pay Group.</div>';
+    return;
+  }
+  container.innerHTML = wizPayGroups.map((pg, idx) => `
+    <div class="card" style="margin-bottom:16px;border-left:4px solid var(--teal);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <strong style="color:var(--navy);font-size:14px;">${pg.pg || 'New Pay Group'}</strong>
+        ${pg.isNew ? `<button class="btn btn-xs" style="background:#fee2e2;color:#991b1b;border:none;" onclick="wizRemovePayGroup(${idx})"><i class="ti ti-trash"></i></button>` : '<span style="font-size:11px;color:var(--grey-400);">Existing — name &amp; cycle locked</span>'}
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Pay Group Name ${pg.isNew?'<span style="color:var(--red);">*</span>':''}</label>
+          <input type="text" value="${pg.pg||''}" ${pg.isNew?'':'readonly'} 
+            onchange="wizUpdatePG(${idx},'pg',this.value)" placeholder="e.g. FJHUB, BAU, MONTHLY">
+        </div>
+        <div class="form-group">
+          <label>Pay Cycle ${pg.isNew?'<span style="color:var(--red);">*</span>':''}</label>
+          <select ${pg.isNew?'':'disabled'} onchange="wizUpdatePG(${idx},'cycle',this.value)">
+            ${CYCLES.map(c=>`<option ${pg.cycle===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Calc Method <span style="color:var(--red);">*</span></label>
+          <select onchange="wizUpdatePG(${idx},'calcMethod',this.value);renderWizPayGroups()">
+            ${CALC_METHODS.map(m=>`<option value="${m.v}" ${pg.calcMethod===m.v?'selected':''}>${m.label}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <!-- Price Book fields -->
+      <details open style="margin-top:10px;">
+        <summary style="font-size:12px;font-weight:700;color:var(--grey-600);text-transform:uppercase;letter-spacing:0.06em;cursor:pointer;margin-bottom:10px;">Price Book</summary>
+        <div class="form-row">
+          <div class="form-group"><label>Pay Run Fee</label><input type="number" min="0" step="0.01" value="${pg.fees.PayRun||''}" onchange="wizUpdateFee(${idx},'PayRun',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Per Employee</label><input type="number" min="0" step="0.01" value="${pg.fees.Each||''}" onchange="wizUpdateFee(${idx},'Each',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Overage / Extra</label><input type="number" min="0" step="0.01" value="${pg.fees.Extra||''}" onchange="wizUpdateFee(${idx},'Extra',this.value)" placeholder="0.00"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Min Employees</label><input type="number" min="0" value="${pg.fees.Min||''}" onchange="wizUpdateFee(${idx},'Min',this.value)" placeholder="0"></div>
+          <div class="form-group"><label>Max Employees</label><input type="number" min="0" value="${pg.fees.Max||''}" onchange="wizUpdateFee(${idx},'Max',this.value)" placeholder="0"></div>
+          <div class="form-group"><label>Tier</label><input type="number" min="0" value="${pg.fees.Tier||''}" onchange="wizUpdateFee(${idx},'Tier',this.value)" placeholder="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>WSS</label><input type="number" min="0" step="0.01" value="${pg.fees.WSS||''}" onchange="wizUpdateFee(${idx},'WSS',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>CLO</label><input type="number" min="0" step="0.01" value="${pg.fees.CLO||''}" onchange="wizUpdateFee(${idx},'CLO',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Lay-Off (LO)</label><input type="number" min="0" step="0.01" value="${pg.fees.LO||''}" onchange="wizUpdateFee(${idx},'LO',this.value)" placeholder="0.00"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>New Hire</label><input type="number" min="0" step="0.01" value="${pg.fees.NewHire||''}" onchange="wizUpdateFee(${idx},'NewHire',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Termination</label><input type="number" min="0" step="0.01" value="${pg.fees.Term||''}" onchange="wizUpdateFee(${idx},'Term',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Exception</label><input type="number" min="0" step="0.01" value="${pg.fees.Excpt||''}" onchange="wizUpdateFee(${idx},'Excpt',this.value)" placeholder="0.00"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>3-No-Notice</label><input type="number" min="0" step="0.01" value="${pg.fees.ThreeNoN||''}" onchange="wizUpdateFee(${idx},'ThreeNoN',this.value)" placeholder="0.00"></div>
+          <div class="form-group"><label>Re-Run</label><input type="number" min="0" step="0.01" value="${pg.fees.ReRun||''}" onchange="wizUpdateFee(${idx},'ReRun',this.value)" placeholder="0.00"></div>
+        </div>
+      </details>
+    </div>`).join('');
+}
+
+function wizUpdatePG(idx, field, value) { wizPayGroups[idx][field] = value; }
+function wizUpdateFee(idx, field, value) { wizPayGroups[idx].fees[field] = parseFloat(value) || 0; }
+function wizRemovePayGroup(idx) { wizPayGroups.splice(idx, 1); renderWizPayGroups(); }
+
+function wizStep2Next() {
+  for (let i=0; i<wizPayGroups.length; i++) {
+    const pg = wizPayGroups[i];
+    if (!pg.pg.trim()) { showToast(`Pay Group ${i+1} needs a name`, 'error'); return; }
+    if (!pg.cycle) { showToast(`Pay Group "${pg.pg}" needs a cycle`, 'error'); return; }
+  }
+  wizGoStep(3);
+}
+
+function renderWizTemplates() {
+  const container = document.getElementById('wiz-templates-list');
+  if (!container) return;
+
+  // Get all existing templates across all clients for the clone dropdown
+  const allPGs = [...new Set(cache.activities.map(a => `${a.PSPClient} / ${a.PayGroup}`).filter(Boolean))].sort();
+
+  // Only show new pay groups (existing ones already have templates)
+  const newPGs = wizPayGroups.filter(pg => pg.isNew && pg.pg);
+  const existingPGs = wizPayGroups.filter(pg => !pg.isNew && pg.pg);
+
+  let html = '';
+
+  if (existingPGs.length) {
+    html += `<div class="callout info" style="margin-bottom:16px;"><i class="ti ti-info-circle"></i><div>Existing Pay Groups already have Activity Templates. Use <strong>Activity Templates</strong> in the Admin menu to edit them.</div></div>
+    <div style="margin-bottom:16px;">${existingPGs.map(pg=>`<span style="background:var(--grey-100);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;margin-right:6px;">${pg.pg} ✓</span>`).join('')}</div>`;
+  }
+
+  if (!newPGs.length) {
+    html += '<div style="text-align:center;padding:24px;color:var(--grey-400);">No new Pay Groups to configure.</div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  html += newPGs.map((pg, relIdx) => {
+    const absIdx = wizPayGroups.indexOf(pg);
+    return `<div class="card" style="margin-bottom:14px;border-left:4px solid var(--teal);">
+      <strong style="color:var(--navy);">${pg.pg}</strong> <span style="font-size:11px;color:var(--grey-400);">${pg.cycle}</span>
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group">
+          <label>Template Setup</label>
+          <select onchange="wizSetTemplateClone(${absIdx}, this.value)">
+            <option value="">Start Fresh (add activities manually after setup)</option>
+            <optgroup label="Clone from existing template">
+              ${allPGs.map(s=>`<option value="${s}">${s}</option>`).join('')}
+            </optgroup>
+          </select>
+        </div>
+      </div>
+      <div id="wiz-clone-preview-${absIdx}" style="font-size:12px;color:var(--grey-600);margin-top:4px;"></div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function wizSetTemplateClone(absIdx, value) {
+  wizPayGroups[absIdx].templateCloneFrom = value || null;
+  const preview = document.getElementById('wiz-clone-preview-' + absIdx);
+  if (!preview) return;
+  if (!value) { preview.innerHTML = ''; return; }
+  const [cloneClient, clonePG] = value.split(' / ');
+  const acts = cache.activities.filter(a => a.PSPClient === cloneClient && a.PayGroup === clonePG);
+  preview.innerHTML = acts.length
+    ? `<i class="ti ti-copy"></i> Will clone ${acts.length} activities from this template`
+    : '<span style="color:var(--amber);">No activities found in this template</span>';
+}
+
+async function wizSaveClient() {
+  const btn = document.getElementById('wiz-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader-2 spin"></i> Saving...';
+  try {
+    const client       = document.getElementById('wiz-psp-client').value.trim();
+    const invoiceName  = document.getElementById('wiz-invoice-name').value.trim() || client;
+    const currency     = document.getElementById('wiz-currency').value;
+    const taxType      = document.getElementById('wiz-tax-type').value;
+    const email        = document.getElementById('wiz-email').value.trim();
+    const accountCode  = document.getElementById('wiz-account-code').value.trim();
+    const itemCode     = document.getElementById('wiz-item-code').value.trim();
+    const trackName    = document.getElementById('wiz-tracking-name').value.trim();
+    const trackOption  = document.getElementById('wiz-tracking-option').value.trim();
+    const status       = document.getElementById('wiz-status').value;
+    const addr1        = document.getElementById('wiz-addr1').value.trim();
+    const addr2        = document.getElementById('wiz-addr2').value.trim();
+    const city         = document.getElementById('wiz-city').value.trim();
+    const region       = document.getElementById('wiz-region').value.trim();
+    const country      = document.getElementById('wiz-country').value.trim();
+
+    const clientFields = {
+      Title: client, PSPClient: client, ClientInvoiceName: invoiceName,
+      Currency: currency, TaxType: taxType, EmailAddress: email,
+      AccountCode: accountCode, InventoryItemCode: itemCode,
+      TrackingName1: trackName, TrackingOption1: trackOption,
+      ClientStatus: status,
+      POAddressLine1: addr1, POAddressLine2: addr2,
+      POCity: city, PORegion: region, POCountry: country,
+    };
+
+    // Save / update client record
+    if (wizClientId) {
+      await saveWithFieldFallback(true, 'clients', wizClientId, clientFields);
+      const idx = cache.clients.findIndex(c => String(c.id) === String(wizClientId));
+      if (idx >= 0) Object.assign(cache.clients[idx], clientFields);
+    } else {
+      const newClient = await createItem('clients', clientFields);
+      if (newClient?.id) {
+        clientFields.id = newClient.id;
+        cache.clients.push(clientFields);
+      }
+    }
+
+    // Save Price Books for each pay group
+    for (const pg of wizPayGroups) {
+      const feeFields = {
+        Title: client,
+        CalcMethod: pg.calcMethod,
+        field_1: pg.pg,
+        field_2: pg.fees.Tier || 0,
+        field_3: pg.fees.Min || 0,
+        field_4: pg.fees.Max || 0,
+        field_5: pg.fees.PayRun || 0,
+        field_6: pg.fees.Each || 0,
+        field_7: pg.fees.Extra || 0,
+        field_8: pg.fees.WSS || 0,
+        field_9: pg.fees.CLO || 0,
+        field_10: pg.fees.LO || 0,
+        field_11: pg.fees.NewHire || 0,
+        field_12: pg.fees.Term || 0,
+        field_13: pg.fees.Excpt || 0,
+        field_14: pg.fees.ThreeNoN || 0,
+        field_15: pg.fees.ReRun || 0,
+      };
+      if (pg.fees.feesId) {
+        await saveWithFieldFallback(true, 'fees', pg.fees.feesId, feeFields);
+        const fi = cache.fees.findIndex(f => String(f.id) === String(pg.fees.feesId));
+        if (fi >= 0) Object.assign(cache.fees[fi], feeFields);
+      } else {
+        const newFees = await createItem('fees', feeFields);
+        if (newFees?.id) { feeFields.id = newFees.id; cache.fees.push(feeFields); }
+      }
+
+      // Clone or create template for new pay groups
+      if (pg.isNew) {
+        if (pg.templateCloneFrom) {
+          const [cloneClient, clonePG] = pg.templateCloneFrom.split(' / ');
+          const srcActs = cache.activities.filter(a => a.PSPClient === cloneClient && a.PayGroup === clonePG);
+          for (const src of srcActs) {
+            const tmplFields = {
+              PSPClient: client, PayGroup: pg.pg, Cycle: pg.cycle,
+              Order0: src.Order0, Offset: src.Offset,
+              ActivityMilestone: src.ActivityMilestone,
+              PSPMember: src.PSPMember, Contact: src.Contact,
+              IntExt: src.IntExt, ClientBAU: src.ClientBAU,
+              SLA: src.SLA, Template: true,
+            };
+            const newAct = await createItem('activities', tmplFields);
+            if (newAct?.id) { tmplFields.id = newAct.id; cache.activities.push(tmplFields); }
+          }
+        }
+        // If no clone, user adds activities manually via Activity Templates page
+      }
+    }
+
+    showToast(`Client "${client}" saved successfully`, 'success');
+    closeClientWizard();
+    renderClientsList();
+
+    // Prompt to generate calendar for new client
+    if (!wizClientId && wizPayGroups.some(pg => pg.isNew)) {
+      const go = await pspConfirm(`Client "${client}" is set up! Would you like to generate the first pay calendar now?`, 'Setup Complete');
+      if (go) navigate('generate-calendar');
+    }
+
+  } catch(e) {
+    showToast('Error saving client: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Client';
+  }
+}
+
+// ─────────────────────────────────────────────
+// BULK ADMIN PAGE
+// ─────────────────────────────────────────────
+async function loadBulkAdmin() {
+  if (!cache.calendar.length) cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  if (!cache.billing.length) cache.billing = await getItems('billing');
+
+  // Populate all client dropdowns
+  const clients = [...new Set([
+    ...cache.activities.map(a => a.PSPClient),
+    ...cache.calendar.map(a => a.PSPClient),
+  ].filter(Boolean))].sort((a,b) => a.localeCompare(b));
+
+  ['ba-pm-client','ba-dt-client','ba-del-client'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Select Client —</option>' +
+      clients.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
+  });
+}
+
+function baPopulatePayGroups(prefix) {
+  const client = document.getElementById(`ba-${prefix}-client`)?.value;
+  const sel = document.getElementById(`ba-${prefix}-pg`);
+  if (!sel) return;
+  const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === client).map(a => a.PayGroup).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">— Select Pay Group —</option>' + pgs.map(pg => `<option>${pg}</option>`).join('');
+  sel.value = '';
+  if (prefix === 'pm') baPreviewPMActivities();
+  if (prefix === 'dt') baLoadDateActivities();
+  if (prefix === 'del') baPreviewDelete();
+}
+
+// ── Reassign Pay Master ──────────────────────
+function baPreviewPMActivities() {
+  const client = document.getElementById('ba-pm-client')?.value;
+  const pg     = document.getElementById('ba-pm-pg')?.value;
+  const scope  = document.querySelector('input[name="ba-pm-scope"]:checked')?.value || 'forward';
+  const preview = document.getElementById('ba-pm-preview');
+  const onceDiv = document.getElementById('ba-pm-once-sel');
+  const onceSel = document.getElementById('ba-pm-once-activity');
+
+  onceDiv.style.display = scope === 'once' ? '' : 'none';
+
+  if (!client || !pg) { if (preview) preview.innerHTML = ''; return; }
+
+  const items = cache.calendar.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg &&
+    (scope === 'forward' ? !['Finished','Started'].includes(getActStatus(i)) : true)
+  ).sort((a,b) => (spDateToDate(a.ActivityDateTime)||0) - (spDateToDate(b.ActivityDateTime)||0));
+
+  if (scope === 'once' && onceSel) {
+    const allItems = cache.calendar.filter(i =>
+      i.PSPClient === client && getPayGroup(i) === pg &&
+      !['Finished'].includes(getActStatus(i))
+    ).sort((a,b) => (spDateToDate(a.ActivityDateTime)||0) - (spDateToDate(b.ActivityDateTime)||0));
+    onceSel.innerHTML = '<option value="">— Pick activity —</option>' +
+      allItems.map(i => {
+        const d = spDateToDate(i.ActivityDateTime);
+        return `<option value="${i.id}">${i.ActivityMilestone||'?'} — Pay ${i.PayNo} (${d?d.toLocaleDateString('en-GB'):'?'})</option>`;
+      }).join('');
+  }
+
+  if (preview) {
+    if (scope === 'forward') {
+      preview.innerHTML = items.length
+        ? `<span style="color:var(--teal);font-weight:600;">✓ ${items.length} Not Started activities will be reassigned</span>`
+        : '<span style="color:var(--grey-400);">No eligible activities found</span>';
+    } else {
+      preview.innerHTML = '<span style="color:var(--grey-600);">Select an activity above to reassign once</span>';
+    }
+  }
+}
+
+async function baApplyPMChange() {
+  const client = document.getElementById('ba-pm-client')?.value;
+  const pg     = document.getElementById('ba-pm-pg')?.value;
+  const scope  = document.querySelector('input[name="ba-pm-scope"]:checked')?.value || 'forward';
+  const newMember = document.getElementById('ba-pm-new-member')?.value?.trim();
+
+  if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
+  if (!newMember) { showToast('Enter the new Pay Master name', 'error'); return; }
+
+  let targets = [];
+  if (scope === 'forward') {
+    targets = cache.calendar.filter(i =>
+      i.PSPClient === client && getPayGroup(i) === pg &&
+      !['Finished','Started'].includes(getActStatus(i))
+    );
+  } else {
+    const id = document.getElementById('ba-pm-once-activity')?.value;
+    if (!id) { showToast('Select an activity', 'error'); return; }
+    const item = cache.calendar.find(i => String(i.id) === String(id));
+    if (item) targets = [item];
+  }
+
+  if (!targets.length) { showToast('No activities to update', 'error'); return; }
+
+  const confirmed = await pspConfirm(
+    `Reassign <strong>${targets.length} activit${targets.length===1?'y':'ies'}</strong> for ${client} / ${pg} to <strong>${newMember}</strong>?`,
+    'Confirm Reassignment'
+  );
+  if (!confirmed) return;
+
+  let done = 0;
+  for (const item of targets) {
+    try {
+      await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmber: newMember });
+      const ci = cache.calendar.findIndex(i => i.id === item.id);
+      if (ci >= 0) cache.calendar[ci].PSPMEmber = newMember;
+      done++;
+    } catch(e) { console.warn('Failed:', item.id, e.message); }
+  }
+
+  // Going Forward: also update the Activity Template
+  if (scope === 'forward') {
+    const tmplItems = cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg);
+    for (const tmpl of tmplItems) {
+      try {
+        await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMember: newMember });
+        const ai = cache.activities.findIndex(a => a.id === tmpl.id);
+        if (ai >= 0) cache.activities[ai].PSPMember = newMember;
+      } catch(e) { console.warn('Template update failed:', tmpl.id, e.message); }
+    }
+    showToast(`${done} activities and Activity Template updated to ${newMember}`, 'success');
+  } else {
+    showToast(`${done} activit${done===1?'y':'ies'} reassigned to ${newMember}`, 'success');
+  }
+  baPreviewPMActivities();
+}
+
+// ── Change Activity Date ──────────────────────
+function baLoadDateActivities() {
+  const client = document.getElementById('ba-dt-client')?.value;
+  const pg     = document.getElementById('ba-dt-pg')?.value;
+  const scope  = document.querySelector('input[name="ba-dt-scope"]:checked')?.value || 'once';
+  const onceDiv   = document.getElementById('ba-dt-once-fields');
+  const afterDiv  = document.getElementById('ba-dt-allafter-fields');
+  const onceSel   = document.getElementById('ba-dt-once-activity');
+
+  onceDiv.style.display  = scope === 'once' ? '' : 'none';
+  afterDiv.style.display = scope === 'allafter' ? '' : 'none';
+
+  if (!client || !pg) return;
+
+  if (scope === 'once' && onceSel) {
+    const items = cache.calendar.filter(i =>
+      i.PSPClient === client && getPayGroup(i) === pg &&
+      !['Finished'].includes(getActStatus(i))
+    ).sort((a,b) => (spDateToDate(a.ActivityDateTime)||0) - (spDateToDate(b.ActivityDateTime)||0));
+    onceSel.innerHTML = '<option value="">— Pick activity —</option>' +
+      items.map(i => {
+        const d = spDateToDate(i.ActivityDateTime);
+        return `<option value="${i.id}">${i.ActivityMilestone||'?'} — Pay ${i.PayNo} (${d?d.toLocaleDateString('en-GB'):'?'}) [${getActStatus(i)}]</option>`;
+      }).join('');
+  }
+
+  if (scope === 'allafter') {
+    const notStarted = cache.calendar.filter(i =>
+      i.PSPClient === client && getPayGroup(i) === pg &&
+      getActStatus(i) === 'Not Started'
+    );
+    const preview = document.getElementById('ba-dt-allafter-preview');
+    if (preview) preview.innerHTML = `<span style="color:var(--grey-600);">${notStarted.length} Not Started activities will shift</span>`;
+  }
+}
+
+function baShowCurrentDate() {
+  const id = document.getElementById('ba-dt-once-activity')?.value;
+  const div = document.getElementById('ba-dt-current-date');
+  if (!div) return;
+  if (!id) { div.innerHTML = ''; return; }
+  const item = cache.calendar.find(i => String(i.id) === String(id));
+  if (!item) return;
+  const d = spDateToDate(item.ActivityDateTime);
+  div.innerHTML = `Current: <strong>${d ? d.toLocaleString('en-GB') : '—'}</strong>`;
+  // Pre-fill datetime-local input
+  const dtInput = document.getElementById('ba-dt-new-datetime');
+  if (dtInput && d) {
+    const pad = n => String(n).padStart(2,'0');
+    dtInput.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+}
+
+async function baApplyDateChange() {
+  const client = document.getElementById('ba-dt-client')?.value;
+  const pg     = document.getElementById('ba-dt-pg')?.value;
+  const scope  = document.querySelector('input[name="ba-dt-scope"]:checked')?.value || 'once';
+
+  if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
+
+  if (scope === 'once') {
+    const id = document.getElementById('ba-dt-once-activity')?.value;
+    const newDT = document.getElementById('ba-dt-new-datetime')?.value;
+    if (!id) { showToast('Select an activity', 'error'); return; }
+    if (!newDT) { showToast('Enter a new date and time', 'error'); return; }
+    const item = cache.calendar.find(i => String(i.id) === String(id));
+    if (!item) return;
+    const newISO = new Date(newDT).toISOString();
+    const newDateNo = parseInt(newDT.slice(0,10).replace(/-/g,''), 10);
+    await saveWithFieldFallback(true, 'calendar', item.id, { ActivityDateTime: newISO, ActivityDateTimeNo: newDateNo });
+    const ci = cache.calendar.findIndex(i => i.id === item.id);
+    if (ci >= 0) { cache.calendar[ci].ActivityDateTime = newISO; cache.calendar[ci].ActivityDateTimeNo = newDateNo; }
+    showToast('Activity date updated', 'success');
+    baLoadDateActivities();
+
+  } else {
+    // All After — shift by N days
+    const shiftDays = parseInt(document.getElementById('ba-dt-shift-days')?.value || '0', 10);
+    if (!shiftDays) { showToast('Enter a shift value (days)', 'error'); return; }
+
+    const targets = cache.calendar.filter(i =>
+      i.PSPClient === client && getPayGroup(i) === pg && getActStatus(i) === 'Not Started'
+    );
+    if (!targets.length) { showToast('No Not Started activities to shift', 'error'); return; }
+
+    const confirmed = await pspConfirm(
+      `Shift <strong>${targets.length} activities</strong> for ${client} / ${pg} by <strong>${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays)===1?'':'s'}</strong>?<br><br>Offsets will be recalculated relative to each Pay Period End date.`,
+      'Confirm Date Shift'
+    );
+    if (!confirmed) return;
+
+    let done = 0;
+    for (const item of targets) {
+      try {
+        const oldDate = spDateToDate(item.ActivityDateTime);
+        if (!oldDate) continue;
+        const newDate = new Date(oldDate);
+        newDate.setDate(newDate.getDate() + shiftDays);
+        const newISO = newDate.toISOString();
+        const newDateNo = parseInt(newDate.toISOString().slice(0,10).replace(/-/g,''), 10);
+
+        // Recalculate Offset relative to PPE (PayEnddate from billing)
+        const billingRec = cache.billing.find(b =>
+          b.PSPClient === item.PSPClient &&
+          getPayGroup(b) === pg &&
+          String(b.PayNo) === String(item.PayNo)
+        );
+        let newOffset = item.Offset || 0;
+        if (billingRec?.PayEnddate) {
+          const ppe = spDateToDate(billingRec.PayEnddate);
+          if (ppe) {
+            const diffMs = newDate - ppe;
+            newOffset = Math.round(diffMs / (1000 * 60 * 60 * 24));
+          }
+        }
+
+        await saveWithFieldFallback(true, 'calendar', item.id, {
+          ActivityDateTime: newISO,
+          ActivityDateTimeNo: newDateNo,
+          Offset: newOffset,
+        });
+        const ci = cache.calendar.findIndex(i => i.id === item.id);
+        if (ci >= 0) {
+          cache.calendar[ci].ActivityDateTime = newISO;
+          cache.calendar[ci].ActivityDateTimeNo = newDateNo;
+          cache.calendar[ci].Offset = newOffset;
+        }
+        done++;
+      } catch(e) { console.warn('Failed:', item.id, e.message); }
+    }
+    showToast(`${done} activities shifted by ${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays)===1?'':'s'}`, 'success');
+    baLoadDateActivities();
+  }
+}
+
+// ── Delete Not Started Activities ────────────
+function baPreviewDelete() {
+  const client = document.getElementById('ba-del-client')?.value;
+  const pg     = document.getElementById('ba-del-pg')?.value;
+  const preview = document.getElementById('ba-del-preview');
+  if (!preview) return;
+  if (!client || !pg) { preview.innerHTML = ''; return; }
+
+  const calItems = cache.calendar.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg && getActStatus(i) === 'Not Started'
+  );
+  const payNos = [...new Set(calItems.map(i => String(i.PayNo)))];
+  const bilItems = cache.billing.filter(b =>
+    b.PSPClient === client && getPayGroup(b) === pg && payNos.includes(String(b.PayNo))
+  );
+
+  preview.innerHTML = calItems.length
+    ? `<div style="background:#fee2e2;border-radius:8px;padding:10px 14px;">
+        <strong style="color:#991b1b;">${calItems.length} activities</strong> and <strong style="color:#991b1b;">${bilItems.length} billing records</strong> will be permanently deleted.
+       </div>`
+    : '<span style="color:var(--grey-400);">No Not Started activities found for this Pay Group.</span>';
+}
+
+async function baDeleteNotStarted() {
+  const client = document.getElementById('ba-del-client')?.value;
+  const pg     = document.getElementById('ba-del-pg')?.value;
+  if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
+
+  const calItems = cache.calendar.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg && getActStatus(i) === 'Not Started'
+  );
+  if (!calItems.length) { showToast('No Not Started activities found', 'error'); return; }
+
+  const payNos = [...new Set(calItems.map(i => String(i.PayNo)))];
+  const bilItems = cache.billing.filter(b =>
+    b.PSPClient === client && getPayGroup(b) === pg && payNos.includes(String(b.PayNo))
+  );
+
+  // Double confirmation
+  const first = await pspConfirm(
+    `Delete <strong>${calItems.length} Not Started activities</strong> and <strong>${bilItems.length} billing records</strong> for <strong>${client} / ${pg}</strong>?<br><br>This cannot be undone.`,
+    'Confirm Delete'
+  );
+  if (!first) return;
+
+  const second = await pspConfirm(
+    `Are you absolutely sure? This will permanently delete ${calItems.length + bilItems.length} records from SharePoint.`,
+    'Final Confirmation'
+  );
+  if (!second) return;
+
+  let calDone = 0, bilDone = 0;
+  for (const item of calItems) {
+    try {
+      await deleteItem('calendar', item.id);
+      cache.calendar = cache.calendar.filter(i => i.id !== item.id);
+      calDone++;
+    } catch(e) { console.warn('Calendar delete failed:', item.id, e.message); }
+  }
+  for (const item of bilItems) {
+    try {
+      await deleteItem('billing', item.id);
+      cache.billing = cache.billing.filter(i => i.id !== item.id);
+      bilDone++;
+    } catch(e) { console.warn('Billing delete failed:', item.id, e.message); }
+  }
+
+  showToast(`Deleted ${calDone} activities and ${bilDone} billing records`, 'success');
+  baPreviewDelete();
+}
+
+
 // ─────────────────────────────────────────────
 // KANBAN BOARD
 // ─────────────────────────────────────────────
@@ -7722,8 +8808,12 @@ async function kbApplyMove(item, targetStatus) {
   const now = new Date().toISOString();
   const fields = { Act_Status: targetStatus };
   if (targetStatus === 'Started' && !item.StartDateTime) fields.StartDateTime = now;
+  if (targetStatus === 'Delayed') {
+    fields.DelayDateTime = now;
+  }
   if (targetStatus === 'Finished') {
     fields.FinishDateTime = now;
+    fields.FinishDateTimeNo = parseInt(now.slice(0,10).replace(/-/g,''), 10);
     if (!item.StartDateTime) fields.StartDateTime = now;
   }
 
