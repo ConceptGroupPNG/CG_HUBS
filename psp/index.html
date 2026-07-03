@@ -9369,11 +9369,12 @@ function printFinanceDashboard() {
 
   // ── Clone HTML elements ──
   const pipelineHTML  = document.getElementById('fin-pipeline-tbody')?.closest('table')?.outerHTML || '';
-  const workloadHTML  = document.querySelector('#pm-workload-table')?.closest('table')?.outerHTML  || '';
+  const workloadHTMLRaw = document.querySelector('#pm-workload-table')?.closest('table')?.outerHTML || '';
+  const workloadHTML = workloadHTMLRaw.replace('<table ', '<table id="wl-table" ');
 
   function chartImg(src, h) {
     return src
-      ? `<img src="${src}" style="width:100%;max-width:100%;height:${h};object-fit:contain;display:block;">`
+      ? `<img src="${src}" style="width:100%;max-width:540px;height:${h};object-fit:contain;display:block;">`
       : `<p style="color:#999;font-size:11px;text-align:center;padding:20px 0;">No data</p>`;
   }
 
@@ -9385,12 +9386,10 @@ function printFinanceDashboard() {
 <meta name="viewport" content="width=794px">
 <title>PSP HUB Finance Dashboard ${year}</title>
 <style>
-  @page{size:210mm 297mm;margin:10mm}
-  @page :first{size:210mm 297mm;margin:10mm}
+  @page{size:A4 portrait;margin:10mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
   :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
-  html{width:210mm!important}
-  body{width:190mm!important;max-width:190mm!important;overflow-x:hidden!important}
+  html,body{width:720px!important;max-width:720px!important;overflow-x:hidden!important}
   body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
   h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
   h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
@@ -9410,23 +9409,29 @@ function printFinanceDashboard() {
   .k5{background:#1a2744}.k6{background:#0e9f6e}.k7{background:#f59e0b}.k8{background:#cc1f2d}
   /* Panels */
   .panel{border:1px solid var(--g200);border-radius:8px;padding:10px;break-inside:avoid;min-width:0;overflow:hidden}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;max-width:100%}
+  .row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px;margin-bottom:10px;width:100%;max-width:100%}
   .row .panel{margin-bottom:0}
   .full{margin-bottom:12px}
   /* Table */
-  table{width:100%;border-collapse:collapse;font-size:9px}
-  th{background:var(--navy);color:white;padding:4px 6px;text-align:left;
-     font-size:8px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap}
-  td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  table{width:100%;border-collapse:collapse;font-size:8px}
+  th{background:var(--navy);color:white;padding:3px 4px;text-align:left;
+     font-size:7px;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;overflow:hidden}
+  td{padding:3px 4px;border-bottom:1px solid #f1f5f9;vertical-align:middle;overflow:hidden;word-break:break-word}
   tr:nth-child(even) td{background:#f8fafc}
+  /* Compact workload table */
+  #wl-table td > div { gap: 4px !important; }
+  #wl-table td > div > div:first-child { width:20px !important; height:20px !important; font-size:8px !important; flex-shrink:0; }
+  #wl-table td > div > span { font-size:8px !important; white-space:nowrap !important; overflow:hidden; text-overflow:ellipsis; max-width:80px; }
+  /* Compact workload table */
+  #wl-table th, #wl-table td { padding: 3px 5px !important; font-size:8px; }
   /* Print */
   @media print{
-    @page{size:210mm 297mm;margin:10mm}
     button{display:none!important}
     .pb{break-before:page}
-    html,body{width:190mm!important;padding:0!important;margin:0!important}
+    html,body{width:720px!important;max-width:720px!important;padding:0!important;margin:0!important}
     img{max-width:100%!important}
-    .row{grid-template-columns:1fr 1fr!important}
+    .row{display:grid!important;grid-template-columns:1fr 1fr!important}
+    .kpis{display:grid!important;grid-template-columns:repeat(4,1fr)!important}
   }
   .print-btn{margin-top:12px;padding:8px 20px;background:var(--teal);color:#fff;
     border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
@@ -9476,14 +9481,20 @@ function printFinanceDashboard() {
 </div>
 
 <!-- Pay Master Workload + Lay-Offs -->
-<div class="row pb">
-  <div class="panel"><h2>Pay Master Workload</h2>${workloadHTML}</div>
-  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'320px')}</div>
+<div class="full pb">
+  <div class="panel" style="font-size:9px;"><h2>Pay Master Workload</h2>${workloadHTML}</div>
+</div>
+<div class="two">
+  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'220px')}</div>
+  <div></div>
 </div>
 
 <!-- Billing Pipeline -->
 <div class="panel full pb"><h2>Billing Pipeline by Client</h2>${pipelineHTML}</div>
 
+<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-top:12px;font-size:11px;color:#92400e;">
+  <strong>⚠ Before printing:</strong> In the print dialog, set <strong>Layout → Portrait</strong> and <strong>Paper size → A4</strong>
+</div>
 <button class="print-btn" onclick="window.print()">🖨 Print</button>
 </body></html>`);
   w.document.close();
