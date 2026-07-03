@@ -4022,16 +4022,9 @@ async function refreshCacheForPage(page) {
     cache.lastinv = await getItems('lastinv');
     cache.billing = await getItems('billing');
   }
-  if (page === 'dashboard') {
-    if (currentDashTab === 'finance') {
-      cache.invoices = await getItems('invoices');
-      cache.billing = await getItems('billing');
-      loadFinanceDashboard();
-    } else {
-      loadKanbanBoard();
-    }
-    // Dashboard needs everything for both Operations and Finance tabs
-    await refreshCache();
+  if (page === 'dashboard' && currentDashTab === 'finance') {
+    cache.invoices = await getItems('invoices');
+    cache.billing = await getItems('billing');
   }
 }
 
@@ -4327,6 +4320,13 @@ async function loadDashboard() {
       </div>`;
     }).join('');
     dashDel.innerHTML = `<div style="max-height:420px;overflow-y:auto;padding:4px 16px;">${rows}</div>`;
+  }
+
+  // Load the default tab content
+  if (currentDashTab === 'finance') {
+    await loadFinanceDashboard();
+  } else {
+    loadKanbanBoard();
   }
 }
 
