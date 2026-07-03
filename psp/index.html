@@ -227,22 +227,48 @@
   @media print {
     @page { size: A4 landscape; margin: 10mm 10mm; }
 
-    /* Hide everything; show only finance dashboard */
-    body > * { display: none !important; }
-    #dash-finance-content {
-      display: block !important;
-      position: fixed; top: 0; left: 0; width: 100%;
-      padding: 0; margin: 0;
+    /* Visibility approach — keeps DOM layout intact */
+    body * { visibility: hidden; }
+
+    /* Make every ancestor of dash-finance-content visible */
+    body, html,
+    div.app, div.main, div.page-content,
+    #page-dashboard,
+    #dash-finance-content,
+    #dash-finance-content * {
+      visibility: visible !important;
     }
-    #dash-finance-content * { visibility: visible; }
 
-    /* Show print header */
-    #fin-print-header { display: block !important; }
+    /* Hide sidebar, header, other tabs, controls */
+    .sidebar, .page-header,
+    #dash-ops-content, #dash-kanban-content,
+    #fin-year-filter, #kanban-controls,
+    button, .btn, select, input {
+      visibility: hidden !important;
+      display: none !important;
+    }
 
-    /* Hide controls */
-    #fin-year-filter, button, select, input, .btn { display: none !important; }
+    /* Position finance content at page origin */
+    #dash-finance-content {
+      position: absolute !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important;
+      padding: 10px !important;
+    }
 
-    /* Cards — flat for print */
+    /* Show print-only header */
+    #fin-print-header {
+      display: block !important;
+      visibility: visible !important;
+    }
+
+    /* Force colour printing */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Cards — flat border, no shadow */
     .card {
       box-shadow: none !important;
       border: 1px solid #e2e8f0 !important;
@@ -250,34 +276,14 @@
       margin-bottom: 8px !important;
     }
 
-    /* Force colour printing for charts, badges, avatars */
-    * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
-    /* Charts — honour their container height */
-    canvas { max-width: 100% !important; }
-
-    /* Workload table — preserve coloured bars and avatars */
+    /* Tables */
     #pm-workload-table tr { break-inside: avoid; }
-    #pm-workload-table td div[style*="background:var(--teal)"] { 
-      background: #0e9f6e !important; 
-    }
-
-    /* KPI cards */
-    .kpi-grid { display: grid !important; }
-
-    /* Billing pipeline table */
     .table-wrap table { font-size: 9px !important; }
     .table-wrap th, .table-wrap td { padding: 4px 6px !important; }
 
     /* Grid layouts */
     .grid-2 { grid-template-columns: 1fr 1fr !important; }
     .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
-
-    /* Page breaks */
-    .fin-chart-fullwidth { break-before: auto; }
   }
 
 </style>
