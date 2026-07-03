@@ -225,7 +225,7 @@
 
   /* ── Finance Dashboard Print ── */
   @media print {
-    @page { size: A4 landscape; margin: 8mm 8mm; }
+    @page { size: A4 portrait; margin: 10mm 10mm 10mm 10mm; }
 
     /* Visibility approach */
     body * { visibility: hidden; }
@@ -238,7 +238,7 @@
       visibility: visible !important;
     }
 
-    /* Hide sidebar, header, other tabs, controls */
+    /* Hide everything not needed */
     .sidebar, .page-header,
     #dash-ops-content, #dash-kanban-content,
     #fin-year-filter, #kanban-controls,
@@ -247,20 +247,21 @@
       display: none !important;
     }
 
-    /* Position finance content flush to page */
+    /* Finance content fills the page */
     #dash-finance-content {
       position: absolute !important;
       top: 0 !important; left: 0 !important;
-      width: 100% !important;
-      padding: 6px 10px !important;
+      width: 190mm !important;
+      padding: 0 !important;
       box-sizing: border-box !important;
     }
 
-    /* Show print-only header */
+    /* Show print header */
     #fin-print-header {
       display: block !important;
       visibility: visible !important;
-      margin-bottom: 10px !important;
+      margin-bottom: 8px !important;
+      padding-bottom: 6px !important;
     }
 
     /* Force colour printing */
@@ -269,96 +270,121 @@
       print-color-adjust: exact !important;
     }
 
-    /* KPI section — tighter */
+    /* ── KPI cards: 4-column grid, compact ── */
     .kpi-grid {
       display: grid !important;
-      gap: 6px !important;
-      margin-bottom: 6px !important;
+      grid-template-columns: repeat(4, 1fr) !important;
+      gap: 5px !important;
+      margin-bottom: 5px !important;
+      break-inside: avoid !important;
     }
     .kpi-card {
-      padding: 10px 12px !important;
+      padding: 8px 10px !important;
       border-radius: 8px !important;
+      break-inside: avoid !important;
     }
-    .kpi-value { font-size: 22px !important; }
-    .kpi-label { font-size: 9px !important; }
+    .kpi-value { font-size: 18px !important; line-height: 1.2 !important; }
+    .kpi-label { font-size: 8px !important; }
+    .kpi-icon { width: 28px !important; height: 28px !important; font-size: 14px !important; }
 
-    /* Cards */
+    /* KPI section labels */
+    [style*="BILLING"], [style*="PAYROLL METRICS"] {
+      font-size: 8px !important;
+      margin-bottom: 4px !important;
+      margin-top: 6px !important;
+    }
+
+    /* ── Cards ── */
     .card {
       box-shadow: none !important;
       border: 1px solid #e2e8f0 !important;
-      break-inside: avoid;
+      break-inside: avoid !important;
       margin-bottom: 6px !important;
-      border-radius: 8px !important;
+      border-radius: 6px !important;
     }
-    .card-header { padding: 8px 12px !important; }
-    .card-header h3 { font-size: 12px !important; }
+    .card-header {
+      padding: 6px 10px !important;
+    }
+    .card-header h3 { font-size: 11px !important; margin: 0 !important; }
 
-    /* Remove ALL overflow/scroll on chart wrappers */
+    /* ── Remove overflow/scroll ── */
     .card-body,
     [style*="overflow-x:auto"],
-    [style*="overflow-x: auto"] {
+    [style*="overflow-x: auto"],
+    .table-wrap {
       overflow: visible !important;
       overflow-x: visible !important;
+      padding: 6px 8px !important;
     }
 
-    /* Chart wrappers — full width, no clipping */
+    /* Chart wrappers — full width */
     [id$="-wrap"] {
       overflow: visible !important;
       width: 100% !important;
     }
+    canvas { max-width: 100% !important; }
 
-    canvas {
-      max-width: 100% !important;
-      overflow: visible !important;
-    }
-
-    /* Grid layouts */
+    /* ── Two-column grids: side by side ── */
     .grid-2 {
       display: grid !important;
       grid-template-columns: 1fr 1fr !important;
-      gap: 8px !important;
+      gap: 6px !important;
+      break-inside: avoid !important;
     }
     .grid-3 {
       display: grid !important;
       grid-template-columns: 1fr 1fr 1fr !important;
-      gap: 8px !important;
+      gap: 6px !important;
+      break-inside: avoid !important;
     }
 
-    /* Pay Master Workload table */
+    /* ── Pay Master Workload table ── */
     #pm-workload-table tr { break-inside: avoid; }
-    #pm-workload-table td { padding: 5px 8px !important; }
-
-    /* Fix Pay Master name wrapping */
+    #pm-workload-table td {
+      padding: 4px 8px !important;
+      font-size: 10px !important;
+    }
     #pm-workload-table td:first-child > div {
-      flex-wrap: nowrap !important;
       white-space: nowrap !important;
     }
     #pm-workload-table td:first-child span {
       white-space: nowrap !important;
-      font-size: 11px !important;
+      font-size: 10px !important;
     }
-
-    /* Show Status column badges */
+    #pm-workload-table td:first-child > div > div {
+      width: 22px !important;
+      height: 22px !important;
+      font-size: 9px !important;
+    }
     #pm-workload-table td:last-child span {
       display: inline-block !important;
-      visibility: visible !important;
       font-size: 9px !important;
-      padding: 2px 6px !important;
+      padding: 1px 5px !important;
     }
 
-    /* data-table */
-    .data-table th { font-size: 9px !important; padding: 5px 8px !important; }
-    .data-table td { font-size: 10px !important; padding: 5px 8px !important; }
-
-    /* Billing pipeline table */
-    .table-wrap {
-      overflow: visible !important;
+    /* data-table headers */
+    .data-table th {
+      font-size: 8px !important;
+      padding: 4px 6px !important;
     }
+    .data-table td {
+      font-size: 9px !important;
+      padding: 4px 6px !important;
+    }
+
+    /* Billing pipeline */
     .table-wrap table { font-size: 8px !important; width: 100% !important; }
-    .table-wrap th, .table-wrap td { padding: 3px 5px !important; }
+    .table-wrap th, .table-wrap td { padding: 3px 4px !important; }
 
-    /* Page break hints */
-    .grid-2, .grid-3 { break-inside: avoid; }
+    /* No blank space between sections */
+    [style*="margin-bottom:20px"],
+    [style*="margin-bottom: 20px"] {
+      margin-bottom: 6px !important;
+    }
+    [style*="margin-bottom:14px"],
+    [style*="margin-bottom: 14px"] {
+      margin-bottom: 5px !important;
+    }
   }
 
 </style>
@@ -9490,7 +9516,33 @@ function printFinanceDashboard() {
   if (yearEl) yearEl.textContent = `Financial Year: ${year}`;
   if (dateEl) dateEl.textContent = `Printed: ${new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' })}`;
 
-  window.print();
+  // Temporarily shrink chart wrap heights for print (portrait A4 = ~270mm usable)
+  const wrapIds = [
+    'chart-client-revenue-wrap',
+    'chart-client-payslips-wrap',
+    'chart-last-payperiod-wrap',
+    'chart-member-payslips-wrap',
+  ];
+  const origHeights = {};
+  wrapIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { origHeights[id] = el.style.height; el.style.height = '160px'; }
+  });
+
+  // Resize Chart.js instances to match
+  Object.values(Chart.instances || {}).forEach(c => c.resize());
+
+  setTimeout(() => {
+    window.print();
+    // Restore heights after print dialog closes
+    setTimeout(() => {
+      wrapIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && origHeights[id] !== undefined) el.style.height = origHeights[id];
+      });
+      Object.values(Chart.instances || {}).forEach(c => c.resize());
+    }, 1000);
+  }, 300);
 }
 
 // ─────────────────────────────────────────────
