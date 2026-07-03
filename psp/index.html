@@ -943,11 +943,14 @@
               <i class="ti ti-layout-kanban" style="font-size:14px;margin-right:4px;"></i> Kanban
             </div>
           </div>
-          <div id="fin-year-filter" style="display:none;">
+          <div id="fin-year-filter" style="display:none;align-items:center;gap:10px;">
             <select id="fin-year-sel" onchange="loadFinanceDashboard()" style="padding:6px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--navy);background:var(--white);outline:none;">
               <option value="2026">2026</option>
               <option value="2025">2025</option>
             </select>
+            <button onclick="printFinanceDashboard()" class="btn btn-sm btn-outline" style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
+              <i class="ti ti-printer"></i> Print Report
+            </button>
           </div>
           <div id="kanban-controls" style="display:none;align-items:center;gap:10px;">
             <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;">
@@ -1012,6 +1015,19 @@
 
         <!-- FINANCE TAB -->
         <div id="dash-finance-content" style="display:none;">
+          <!-- Print-only header -->
+          <div id="fin-print-header" style="display:none;margin-bottom:20px;padding-bottom:12px;border-bottom:3px solid #1a2744;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div style="font-size:20px;font-weight:800;color:#1a2744;">PSP HUB — Finance Dashboard</div>
+                <div style="font-size:12px;color:#64748b;margin-top:2px;">Payroll Services PNG · Concept Group Limited · Confidential</div>
+              </div>
+              <div style="text-align:right;font-size:11px;color:#64748b;">
+                <div id="fin-print-year" style="font-size:16px;font-weight:700;color:#1a2744;"></div>
+                <div id="fin-print-date"></div>
+              </div>
+            </div>
+          </div>
 
           <!-- KPI Cards Row 1 — Billing -->
           <div style="margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--grey-500);">Billing</div>
@@ -1103,11 +1119,11 @@
           <div class="grid-2" style="margin-bottom:20px;align-items:start;">
             <div class="card">
               <div class="card-header"><h3>Employees — Last Pay Period</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-last-payperiod"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-last-payperiod-wrap" style="position:relative;"><canvas id="chart-last-payperiod"></canvas></div></div>
             </div>
             <div class="card">
               <div class="card-header"><h3>Total Payslips Processed — YTD</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-client-payslips"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-client-payslips-wrap" style="position:relative;"><canvas id="chart-client-payslips"></canvas></div></div>
             </div>
           </div>
 
@@ -1115,7 +1131,7 @@
           <div class="grid-2" style="margin-bottom:20px;">
             <div class="card">
               <div class="card-header"><h3>Payslips by Pay Master</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-member-payslips"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-member-payslips-wrap" style="position:relative;"><canvas id="chart-member-payslips"></canvas></div></div>
             </div>
             <div class="card">
               <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
@@ -7423,7 +7439,7 @@ function switchDashTab(tab) {
     if (contentEl) contentEl.style.display = t === tab ? '' : 'none';
   });
   const yearFilter = document.getElementById('fin-year-filter');
-  if (yearFilter) yearFilter.style.display = tab === 'finance' ? '' : 'none';
+  if (yearFilter) yearFilter.style.display = tab === 'finance' ? 'flex' : 'none';
   const kanbanControls = document.getElementById('kanban-controls');
   if (kanbanControls) kanbanControls.style.display = tab === 'kanban' ? 'flex' : 'none';
   if (tab === 'finance') loadFinanceDashboard();
@@ -7590,8 +7606,8 @@ async function loadFinanceDashboard() {
     clientPayslips[c] = (clientPayslips[c]||0) + (i.EmployeesPayslips||0);
   });
   const cpSorted = Object.entries(clientPayslips).sort((a,b) => b[1]-a[1]);
-  const cpCanvas = document.getElementById('chart-client-payslips');
-  if (cpCanvas) cpCanvas.height = Math.max(180, cpSorted.length * 26);
+  const cpWrap = document.getElementById('chart-client-payslips-wrap');
+  if (cpWrap) cpWrap.style.height = Math.max(60, cpSorted.length * 26) + 'px';
   mkChart('chart-client-payslips', 'bar', {
     labels: cpSorted.map(([c]) => c),
     datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v),
@@ -7672,8 +7688,8 @@ async function loadFinanceDashboard() {
     barThickness: 18,
   }));
 
-  const mpCanvas = document.getElementById('chart-member-payslips');
-  if (mpCanvas) mpCanvas.height = Math.max(160, members.length * 32);
+  const mpWrap = document.getElementById('chart-member-payslips-wrap');
+  if (mpWrap) mpWrap.style.height = Math.max(60, members.length * 26) + 'px';
 
   mkChart('chart-member-payslips', 'bar', {
     labels: members,
@@ -7772,8 +7788,8 @@ async function loadFinanceDashboard() {
   const lpClients = Object.entries(lastPeriodByClient)
     .sort((a,b) => b[1].payslips - a[1].payslips);
 
-  const lpCanvas = document.getElementById('chart-last-payperiod');
-  if (lpCanvas) lpCanvas.height = Math.max(160, lpClients.length * 26);
+  const lpWrap = document.getElementById('chart-last-payperiod-wrap');
+  if (lpWrap) lpWrap.style.height = Math.max(60, lpClients.length * 26) + 'px';
 
   mkChart('chart-last-payperiod', 'bar', {
     labels: lpClients.map(([c, d]) => `${c}  (${d.mainPayGroup||''} • PPE: ${d.ppeStr})`),
@@ -7786,6 +7802,7 @@ async function loadFinanceDashboard() {
     }]
   }, {
     indexAxis: 'y',
+    maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
       datalabels: {
@@ -9306,6 +9323,21 @@ function calcDownloadCSV() {
   a.download = `BillingCalc_${client.replace(/[^a-z0-9]/gi,'_')}_${pg}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   showToast('CSV downloaded', 'success');
+}
+
+// ─────────────────────────────────────────────
+// FINANCE DASHBOARD PRINT
+// ─────────────────────────────────────────────
+function printFinanceDashboard() {
+  const year = document.getElementById('fin-year-sel')?.value || new Date().getFullYear();
+
+  // Set print header values
+  const yearEl = document.getElementById('fin-print-year');
+  const dateEl = document.getElementById('fin-print-date');
+  if (yearEl) yearEl.textContent = `Financial Year: ${year}`;
+  if (dateEl) dateEl.textContent = `Printed: ${new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' })}`;
+
+  window.print();
 }
 
 // ─────────────────────────────────────────────
