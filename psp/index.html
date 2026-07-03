@@ -9374,22 +9374,23 @@ function printFinanceDashboard() {
 
   function chartImg(src, h) {
     return src
-      ? `<img src="${src}" style="width:100%;max-width:540px;height:${h};object-fit:contain;display:block;">`
+      ? `<img src="${src}" style="width:100%;height:${h};object-fit:contain;display:block;">`
       : `<p style="color:#999;font-size:11px;text-align:center;padding:20px 0;">No data</p>`;
   }
 
-  const w = window.open('', '_blank', 'width=794,height=1123');
+  const w = window.open('', '_blank', 'width=794,height=1100,scrollbars=yes');
   if (!w) { showToast('Allow popups for this site to use Print', 'error'); return; }
 
   w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=794px">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PSP HUB Finance Dashboard ${year}</title>
 <style>
   @page{size:A4 portrait;margin:10mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
   :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
-  html,body{width:720px!important;max-width:720px!important;overflow-x:hidden!important}
+  html{width:794px!important}
+  body{width:754px!important;max-width:754px!important;padding:0 20px!important;overflow-x:hidden!important;box-sizing:border-box!important}
   body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
   h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
   h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
@@ -9408,7 +9409,7 @@ function printFinanceDashboard() {
   .k1{background:#0e9f6e}.k2{background:#1a2744}.k3{background:#f59e0b}.k4{background:#cc1f2d}
   .k5{background:#1a2744}.k6{background:#0e9f6e}.k7{background:#f59e0b}.k8{background:#cc1f2d}
   /* Panels */
-  .panel{border:1px solid var(--g200);border-radius:8px;padding:10px;break-inside:avoid;min-width:0;overflow:hidden}
+  .panel{border:1px solid var(--g200);border-radius:8px;padding:10px;break-inside:avoid;min-width:0;overflow:hidden;box-sizing:border-box}
   .row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px;margin-bottom:10px;width:100%;max-width:100%}
   .row .panel{margin-bottom:0}
   .full{margin-bottom:12px}
@@ -9495,7 +9496,10 @@ function printFinanceDashboard() {
 <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-top:12px;font-size:11px;color:#92400e;">
   <strong>⚠ Before printing:</strong> In the print dialog, set <strong>Layout → Portrait</strong> and <strong>Paper size → A4</strong>
 </div>
-<button class="print-btn" onclick="window.print()">🖨 Print</button>
+<div style="background:#d1fae5;border:1px solid #0e9f6e;border-radius:6px;padding:8px 12px;margin-top:12px;font-size:11px;color:#065f46;">
+  <strong>✓ Ready to print</strong> — When the print dialog opens, confirm <strong>Layout: Portrait</strong> and <strong>Paper: A4</strong>
+</div>
+<button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
 </body></html>`);
   w.document.close();
 }
