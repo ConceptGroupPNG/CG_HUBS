@@ -4026,10 +4026,10 @@ async function refreshCacheForPage(page) {
     if (currentDashTab === 'finance') {
       cache.invoices = await getItems('invoices');
       cache.billing = await getItems('billing');
+      loadFinanceDashboard();
+    } else {
+      loadKanbanBoard();
     }
-  if (currentDashTab === 'kanban' || currentDashTab !== 'finance') {
-    loadKanbanBoard();
-  }
     // Dashboard needs everything for both Operations and Finance tabs
     await refreshCache();
   }
