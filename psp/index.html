@@ -7719,7 +7719,7 @@ async function loadFinanceDashboard() {
   // Activities completed/pending from calendar (YTD)
   const calYear = cache.calendar.filter(i => {
     const d = spDateToDate(i.ActivityDateTime);
-    return d && d.getFullYear() === selectedYear;
+    return d && d.getFullYear() === year;
   });
   calYear.forEach(i => {
     const m = getPSPMember(i);
