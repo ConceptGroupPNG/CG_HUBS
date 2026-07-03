@@ -7557,15 +7557,14 @@ async function loadFinanceDashboard() {
     clientRevenue[c] = (clientRevenue[c]||0) + toPGK(i.TotalAmount||0, i.Currency||'PGK');
   });
   const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
-  const crHeight = Math.max(200, crSorted.length * 30);
-  document.getElementById('chart-client-revenue').height = crHeight;
   const crCanvas = document.getElementById('chart-client-revenue');
-  if (crCanvas) crCanvas.height = Math.max(180, crSorted.length * 26);
+  if (crCanvas) crCanvas.height = Math.max(120, crSorted.length * 20);
   mkChart('chart-client-revenue', 'bar', {
     labels: crSorted.map(([c]) => c),
     datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v),
       backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
-      borderRadius: 4, barThickness: 16 }]
+      borderRadius: 4, barThickness: 14,
+      categoryPercentage: 0.85, barPercentage: 0.9 }]
   }, {
     indexAxis: 'y',
     plugins: {
