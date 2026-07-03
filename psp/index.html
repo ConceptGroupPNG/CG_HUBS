@@ -1191,23 +1191,21 @@
                 <h3>Pay Master Workload</h3>
                 <span style="font-size:11px;color:var(--grey-500);font-weight:400;">YTD — payslips, clients, activities</span>
               </div>
-              <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;">
-                  <thead>
-                    <tr style="background:var(--navy);">
-                      <th style="padding:8px 12px;text-align:left;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Pay Master</th>
-                      <th style="padding:8px 12px;text-align:left;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Payslips YTD</th>
-                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Clients</th>
-                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Pay Groups</th>
-                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Done / Total</th>
-                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="pm-workload-table">
-                    <tr><td colspan="6"><div class="loading"><div class="spinner"></div></div></td></tr>
-                  </tbody>
-                </table>
-              </div>
+              <table class="data-table" style="width:100%;">
+                <thead>
+                  <tr>
+                    <th>Pay Master</th>
+                    <th>Payslips YTD</th>
+                    <th style="text-align:center;">Clients</th>
+                    <th style="text-align:center;">Pay Groups</th>
+                    <th style="text-align:center;">Done / Total</th>
+                    <th style="text-align:center;">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="pm-workload-table">
+                  <tr><td colspan="6"><div class="loading"><div class="spinner"></div></div></td></tr>
+                </tbody>
+              </table>
             </div>
             <div class="card">
               <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
