@@ -9347,194 +9347,139 @@ function calcDownloadCSV() {
 // ─────────────────────────────────────────────
 function printFinanceDashboard() {
   const year = document.getElementById('fin-year-sel')?.value || new Date().getFullYear();
-  const printDate = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'long',year:'numeric'});
+  const today = new Date().toLocaleDateString('en-GB', {day:'2-digit', month:'long', year:'numeric'});
 
-  // ── 1. Collect KPI values from the DOM ──
-  function getKPIs(sectionId) {
-    const cards = document.querySelectorAll(`#${sectionId} .metric-card`);
-    return Array.from(cards).map(c => ({
-      val:   c.querySelector('.metric-value')?.textContent || '—',
-      label: c.querySelector('.metric-label')?.textContent || '',
-      cls:   c.className,
-    }));
+  // ── Pull metric values from DOM ──
+  const ytdRev    = document.getElementById('fin-ytd-revenue')?.textContent || '—';
+  const invCount  = document.getElementById('fin-inv-count')?.textContent   || '—';
+  const pipeline  = document.getElementById('fin-pipeline')?.textContent    || '—';
+  const avgPay    = document.getElementById('fin-avg-payslip')?.textContent || '—';
+  const payslips  = document.getElementById('fin-payslips-ytd')?.textContent|| '—';
+  const newHires  = document.getElementById('fin-nh-ytd')?.textContent      || '—';
+  const terms     = document.getElementById('fin-term-ytd')?.textContent    || '—';
+  const netHC     = document.getElementById('fin-net-hc')?.textContent      || '—';
+
+  // ── Chart images via Chart.js toBase64Image() ──
+  const imgRevenue    = finCharts['chart-revenue']         ? finCharts['chart-revenue'].toBase64Image()         : '';
+  const imgNHTerm     = finCharts['chart-nh-term']         ? finCharts['chart-nh-term'].toBase64Image()         : '';
+  const imgClRev      = finCharts['chart-client-revenue']  ? finCharts['chart-client-revenue'].toBase64Image()  : '';
+  const imgLastPP     = finCharts['chart-last-payperiod']  ? finCharts['chart-last-payperiod'].toBase64Image()  : '';
+  const imgPayslips   = finCharts['chart-client-payslips'] ? finCharts['chart-client-payslips'].toBase64Image() : '';
+  const imgLoRH       = finCharts['chart-lo-rh']           ? finCharts['chart-lo-rh'].toBase64Image()           : '';
+
+  // ── Clone HTML elements ──
+  const pipelineHTML  = document.getElementById('fin-pipeline-tbody')?.closest('table')?.outerHTML || '';
+  const workloadHTML  = document.querySelector('#pm-workload-table')?.closest('table')?.outerHTML  || '';
+
+  function chartImg(src, h) {
+    return src
+      ? `<img src="${src}" style="width:100%;height:${h};object-fit:contain;display:block;">`
+      : `<p style="color:#999;font-size:11px;text-align:center;padding:20px 0;">No data</p>`;
   }
-  const billingKPIs = getKPIs('fin-billing-cards');
-  const payrollKPIs = getKPIs('fin-payroll-cards');
 
-  // KPI colour map
-  const kpiColors = {
-    'mc-teal':'#0e9f6e', 'mc-navy':'#1a2744', 'mc-warning':'#f59e0b',
-    'mc-red':'#cc1f2d', 'mc-blue':'#3b82f6', 'mc-purple':'#7c3aed',
-  };
-  function kpiColor(cls) {
-    for (const [k,v] of Object.entries(kpiColors)) if (cls.includes(k)) return v;
-    return '#1a2744';
-  }
-  function kpiHtml(kpis) {
-    return kpis.map(k => `<div style="background:${kpiColor(k.cls)};border-radius:8px;padding:10px 12px;color:white;break-inside:avoid;">
-      <div style="font-size:22px;font-weight:800;line-height:1.1;">${k.val}</div>
-      <div style="font-size:8px;opacity:0.85;margin-top:3px;">${k.label}</div>
-    </div>`).join('');
-  }
+  const w = window.open('', '_blank', 'width=900,height=750');
+  if (!w) { showToast('Allow popups for this site to use Print', 'error'); return; }
 
-  // ── 2. Resize charts, capture as PNG, restore ──
-  const chartSpecs = [
-    { id:'chart-revenue',          wrapId:'chart-revenue-wrap',         w:520, h:180 },
-    { id:'chart-nh-term',          wrapId:'chart-nh-term-wrap',         w:520, h:180 },
-    { id:'chart-client-revenue',   wrapId:'chart-client-revenue-wrap',  w:1060,h:300 },
-    { id:'chart-last-payperiod',   wrapId:'chart-last-payperiod-wrap',  w:520, h:280 },
-    { id:'chart-client-payslips',  wrapId:'chart-client-payslips-wrap', w:520, h:280 },
-    { id:'chart-lo-rh',            wrapId:'chart-lo-rh-wrap',           w:520, h:260 },
-  ];
-
-  const origSizes = {};
-  chartSpecs.forEach(spec => {
-    const wrap   = document.getElementById(spec.wrapId);
-    const canvas = document.getElementById(spec.id);
-    if (!wrap || !canvas) return;
-    origSizes[spec.id] = { ww: wrap.style.width, wh: wrap.style.height, cw: canvas.width, ch: canvas.height };
-    wrap.style.width  = spec.w + 'px';
-    wrap.style.height = spec.h + 'px';
-  });
-
-  // Force all finance charts to resize
-  Object.entries(finCharts).forEach(([id, chart]) => {
-    try { chart.resize(); } catch(e) {}
-  });
-
-  // Short delay for resize to settle, then capture
-  setTimeout(() => {
-    const imgs = {};
-    chartSpecs.forEach(spec => {
-      const canvas = document.getElementById(spec.id);
-      imgs[spec.id] = canvas ? canvas.toDataURL('image/png') : '';
-    });
-
-    // Restore original sizes
-    chartSpecs.forEach(spec => {
-      const wrap   = document.getElementById(spec.wrapId);
-      const o      = origSizes[spec.id];
-      if (!wrap || !o) return;
-      wrap.style.width  = o.ww;
-      wrap.style.height = o.wh;
-    });
-    Object.entries(finCharts).forEach(([id, chart]) => {
-      try { chart.resize(); } catch(e) {}
-    });
-
-    // Workload table HTML
-    const wlTable = document.querySelector('#pm-workload-table')?.closest('table')?.outerHTML || '';
-
-    // ── 3. Build and open print window ──
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow popups for this site to use Print', 'error'); return; }
-
-    function img(id, h) {
-      return imgs[id]
-        ? `<img src="${imgs[id]}" style="width:100%;height:${h}px;object-fit:contain;display:block;">`
-        : `<div style="height:${h}px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;">No data</div>`;
-    }
-
-    w.document.write(`<!DOCTYPE html><html><head>
+  w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
 <title>PSP HUB Finance Dashboard ${year}</title>
 <style>
-  @page { size:A4 portrait; margin:10mm; }
-  @media print { body{margin:0;} .no-print{display:none;} }
-  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif;margin:0;padding:0;}
-  body{font-size:10px;color:#334155;background:white;}
-  /* Header */
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:6px;border-bottom:3px solid #1a2744;margin-bottom:10px;}
-  .hdr-left h1{font-size:15px;font-weight:800;color:#1a2744;margin-bottom:2px;}
-  .hdr-left p{font-size:8px;color:#64748b;}
-  .hdr-right{text-align:right;}
-  .hdr-right .yr{font-size:13px;font-weight:700;color:#1a2744;}
-  .hdr-right .dt{font-size:8px;color:#64748b;margin-top:2px;}
-  /* Section label */
-  .sec{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin:6px 0 3px;}
-  /* KPI row */
-  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px;}
-  /* Card */
-  .card{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;break-inside:avoid;margin-bottom:6px;}
-  .ct{font-size:10px;font-weight:700;color:#1a2744;padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
-  .cb{padding:4px;}
-  /* Two column */
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;}
-  .two>.card{margin-bottom:0;}
-  /* Page break */
-  .pb{break-before:page;}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
+  :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
+  body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
+  h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
+  h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
+  .sub{color:var(--g500);font-size:11px;margin-bottom:16px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;
+       padding-bottom:8px;border-bottom:3px solid var(--navy);margin-bottom:14px}
+  .yr{font-size:14px;font-weight:700;color:var(--navy);text-align:right}
+  .dt{font-size:10px;color:var(--g500);text-align:right;margin-top:2px}
+  .sec{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+       color:var(--g500);margin:10px 0 4px}
+  /* KPI cards */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+  .kpi{border-radius:8px;padding:12px 14px;color:white}
+  .kpi .val{font-size:22px;font-weight:800;line-height:1.1}
+  .kpi .lbl{font-size:8px;opacity:0.85;margin-top:3px}
+  .k1{background:#0e9f6e}.k2{background:#1a2744}.k3{background:#f59e0b}.k4{background:#cc1f2d}
+  .k5{background:#1a2744}.k6{background:#0e9f6e}.k7{background:#f59e0b}.k8{background:#cc1f2d}
+  /* Panels */
+  .panel{border:1px solid var(--g200);border-radius:8px;padding:12px;break-inside:avoid}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .row .panel{margin-bottom:0}
+  .full{margin-bottom:12px}
   /* Table */
-  table{width:100%;border-collapse:collapse;font-size:8px;}
-  th{background:#1a2744;color:white;padding:3px 5px;text-align:left;font-size:7px;text-transform:uppercase;white-space:nowrap;}
-  td{padding:3px 5px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
-  tr:nth-child(even) td{background:#f8fafc;}
-  /* Print button */
-  .print-btn{position:fixed;top:10px;right:10px;padding:8px 16px;background:#1a2744;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700;}
+  table{width:100%;border-collapse:collapse;font-size:9px}
+  th{background:var(--navy);color:white;padding:4px 6px;text-align:left;
+     font-size:8px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap}
+  td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  tr:nth-child(even) td{background:#f8fafc}
+  /* Print */
+  @media print{
+    @page{size:A4 portrait;margin:10mm}
+    button{display:none!important}
+    .pb{break-before:page}
+    body{padding:0}
+  }
+  .print-btn{margin-top:12px;padding:8px 20px;background:var(--teal);color:#fff;
+    border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
 </style></head><body>
 
-<button class="print-btn no-print" onclick="window.print()">🖨 Print</button>
-
-<!-- PAGE 1: Header + KPIs + Monthly charts -->
+<!-- Header -->
 <div class="hdr">
-  <div class="hdr-left">
+  <div>
     <h1>PSP HUB — Finance Dashboard</h1>
-    <p>Payroll Services PNG · Concept Group Limited · Confidential</p>
+    <div class="sub">Payroll Services PNG &nbsp;·&nbsp; Concept Group Limited &nbsp;·&nbsp; Confidential</div>
   </div>
-  <div class="hdr-right">
+  <div>
     <div class="yr">Financial Year: ${year}</div>
-    <div class="dt">Printed: ${printDate}</div>
+    <div class="dt">Printed: ${today}</div>
   </div>
 </div>
 
+<!-- KPIs -->
 <div class="sec">Billing</div>
-<div class="kpi-row">${kpiHtml(billingKPIs)}</div>
+<div class="kpis">
+  <div class="kpi k1"><div class="val">${ytdRev}</div><div class="lbl">Revenue YTD (PGK, 000s)</div></div>
+  <div class="kpi k2"><div class="val">${invCount}</div><div class="lbl">Invoices This Year</div></div>
+  <div class="kpi k3"><div class="val">${pipeline}</div><div class="lbl">Pipeline (PGK, 000s)</div></div>
+  <div class="kpi k4"><div class="val">${avgPay}</div><div class="lbl">Avg Charge / Payslip (PGK)</div></div>
+</div>
 <div class="sec">Payroll Metrics</div>
-<div class="kpi-row">${kpiHtml(payrollKPIs)}</div>
-
-<div class="two" style="margin-top:8px;">
-  <div class="card">
-    <div class="ct">Monthly Revenue (PGK, thousands)</div>
-    <div class="cb">${img('chart-revenue', 170)}</div>
-  </div>
-  <div class="card">
-    <div class="ct">New Hires vs Terminations</div>
-    <div class="cb">${img('chart-nh-term', 170)}</div>
-  </div>
+<div class="kpis">
+  <div class="kpi k5"><div class="val">${payslips}</div><div class="lbl">Total Payslips YTD</div></div>
+  <div class="kpi k6"><div class="val">${newHires}</div><div class="lbl">New Hires YTD</div></div>
+  <div class="kpi k7"><div class="val">${terms}</div><div class="lbl">Terminations YTD</div></div>
+  <div class="kpi k8"><div class="val">${netHC}</div><div class="lbl">Net Headcount Change</div></div>
 </div>
 
-<!-- PAGE 2: Revenue by Client -->
-<div class="card pb">
-  <div class="ct">Revenue by Client (PGK YTD)</div>
-  <div class="cb">${img('chart-client-revenue', 380)}</div>
+<!-- Monthly Revenue + NH/Term -->
+<div class="row" style="margin-top:12px">
+  <div class="panel"><h2>Monthly Revenue (PGK, thousands)</h2>${chartImg(imgRevenue,'180px')}</div>
+  <div class="panel"><h2>New Hires vs Terminations</h2>${chartImg(imgNHTerm,'180px')}</div>
 </div>
 
-<!-- PAGE 3: Employees + Payslips -->
-<div class="two pb">
-  <div class="card">
-    <div class="ct">Employees — Last Pay Period</div>
-    <div class="cb">${img('chart-last-payperiod', 360)}</div>
-  </div>
-  <div class="card">
-    <div class="ct">Total Payslips Processed — YTD</div>
-    <div class="cb">${img('chart-client-payslips', 360)}</div>
-  </div>
+<!-- Revenue by Client (page break before) -->
+<div class="panel full pb"><h2>Revenue by Client (PGK YTD)</h2>${chartImg(imgClRev,'320px')}</div>
+
+<!-- Employees + Payslips -->
+<div class="row pb">
+  <div class="panel"><h2>Employees — Last Pay Period</h2>${chartImg(imgLastPP,'300px')}</div>
+  <div class="panel"><h2>Total Payslips Processed — YTD</h2>${chartImg(imgPayslips,'300px')}</div>
 </div>
 
-<!-- PAGE 4: Pay Master Workload + Lay-Offs -->
-<div class="two pb">
-  <div class="card">
-    <div class="ct">Pay Master Workload</div>
-    <div class="cb" style="padding:0;">${wlTable}</div>
-  </div>
-  <div class="card">
-    <div class="ct">Lay-Offs vs Re-Hires</div>
-    <div class="cb">${img('chart-lo-rh', 260)}</div>
-  </div>
+<!-- Pay Master Workload + Lay-Offs -->
+<div class="row pb">
+  <div class="panel"><h2>Pay Master Workload</h2>${workloadHTML}</div>
+  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'240px')}</div>
 </div>
 
+<!-- Billing Pipeline -->
+<div class="panel full pb"><h2>Billing Pipeline by Client</h2>${pipelineHTML}</div>
+
+<button class="print-btn" onclick="window.print()">🖨 Print</button>
 </body></html>`);
-    w.document.close();
-  }, 400);
+  w.document.close();
 }
 
 // ─────────────────────────────────────────────
