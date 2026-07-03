@@ -3482,11 +3482,12 @@ function renderPayments(items){
     const bal = Math.max(0,total-totalPaidOnInvoice); // invoice-wide balance, not just this payment
     const st = paymentStatus(p);
     const invNum = (inv?.InvoiceNumber||inv?.Title||p.RemittanceRef||'').trim().toLowerCase();
-    // Attendee: prefer looking up from CG_Attendees by InvoiceRef match
+    // Attendee: look up from CG_Attendees by InvoiceRef, fall back to legacy AttendeeName field
     const attFromList = (cache.attendees||[]).find(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum);
+    const legacyAtt = inv ? attendeeForInvoice(inv) : null;
     const attName = attFromList?.FullName || attFromList?.Title || inv?.AttendeeName || '—';
-    // Organisation: prefer inv.OrgName (always stored), fall back to attendee's OrgName
-    const orgName = inv?.OrgName || attFromList?.OrgName || '—';
+    // Organisation: prefer inv.OrgName, then attendee's OrgName from either source
+    const orgName = inv?.OrgName || attFromList?.OrgName || legacyAtt?.OrgName || '—';
     const paymentLink = (typeof p.PaymentLink==='object' ? p.PaymentLink?.Url : p.PaymentLink) || '';
     return `<tr>
       <td class="td-bold">${p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'—'}</td>
@@ -5172,10 +5173,11 @@ function exportPaymentsCSV(){
       const bal=Math.max(0,total-totalPaidOnInvoice);
       const invNum2 = (inv?.InvoiceNumber||inv?.Title||p.RemittanceRef||'').trim().toLowerCase();
       const attFromList2 = (cache.attendees||[]).find(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum2);
+      const legacyAtt2 = inv ? attendeeForInvoice(inv) : null;
       return [
         p.RemittanceRef||inv?.InvoiceNumber||inv?.Title||'',
         attFromList2?.FullName||attFromList2?.Title||inv?.AttendeeName||'',
-        inv?.OrgName||attFromList2?.OrgName||'',
+        inv?.OrgName||attFromList2?.OrgName||legacyAtt2?.OrgName||'',
         total,
         paid,
         bal,
