@@ -223,169 +223,7 @@
   .fin-pip-dot.ready    { background: var(--warning); }
   .fin-pip-dot.invoiced { background: var(--navy); }
 
-  /* ── Finance Dashboard Print ── */
-  @media print {
-    @page { size: A4 portrait; margin: 10mm 10mm 10mm 10mm; }
-
-    /* Visibility approach */
-    body * { visibility: hidden; }
-
-    body, html,
-    div.app, div.main, div.page-content,
-    #page-dashboard,
-    #dash-finance-content,
-    #dash-finance-content * {
-      visibility: visible !important;
-    }
-
-    /* Hide everything not needed */
-    .sidebar, .page-header,
-    #dash-ops-content, #dash-kanban-content,
-    #fin-year-filter, #kanban-controls,
-    button, .btn, select, input {
-      visibility: hidden !important;
-      display: none !important;
-    }
-
-    /* Finance content fills the page */
-    #dash-finance-content {
-      position: absolute !important;
-      top: 0 !important; left: 0 !important;
-      width: 190mm !important;
-      padding: 0 !important;
-      box-sizing: border-box !important;
-    }
-
-    /* Show print header */
-    #fin-print-header {
-      display: block !important;
-      visibility: visible !important;
-      margin-bottom: 8px !important;
-      padding-bottom: 6px !important;
-    }
-
-    /* Force colour printing */
-    * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
-    /* ── KPI cards: 4-column grid, compact ── */
-    .kpi-grid {
-      display: grid !important;
-      grid-template-columns: repeat(4, 1fr) !important;
-      gap: 5px !important;
-      margin-bottom: 5px !important;
-      break-inside: avoid !important;
-    }
-    .kpi-card {
-      padding: 8px 10px !important;
-      border-radius: 8px !important;
-      break-inside: avoid !important;
-    }
-    .kpi-value { font-size: 18px !important; line-height: 1.2 !important; }
-    .kpi-label { font-size: 8px !important; }
-    .kpi-icon { width: 28px !important; height: 28px !important; font-size: 14px !important; }
-
-    /* KPI section labels */
-    [style*="BILLING"], [style*="PAYROLL METRICS"] {
-      font-size: 8px !important;
-      margin-bottom: 4px !important;
-      margin-top: 6px !important;
-    }
-
-    /* ── Cards ── */
-    .card {
-      box-shadow: none !important;
-      border: 1px solid #e2e8f0 !important;
-      break-inside: avoid !important;
-      margin-bottom: 6px !important;
-      border-radius: 6px !important;
-    }
-    .card-header {
-      padding: 6px 10px !important;
-    }
-    .card-header h3 { font-size: 11px !important; margin: 0 !important; }
-
-    /* ── Remove overflow/scroll ── */
-    .card-body,
-    [style*="overflow-x:auto"],
-    [style*="overflow-x: auto"],
-    .table-wrap {
-      overflow: visible !important;
-      overflow-x: visible !important;
-      padding: 6px 8px !important;
-    }
-
-    /* Chart wrappers — full width */
-    [id$="-wrap"] {
-      overflow: visible !important;
-      width: 100% !important;
-    }
-    canvas { max-width: 100% !important; }
-
-    /* ── Two-column grids: side by side ── */
-    .grid-2 {
-      display: grid !important;
-      grid-template-columns: 1fr 1fr !important;
-      gap: 6px !important;
-      break-inside: avoid !important;
-    }
-    .grid-3 {
-      display: grid !important;
-      grid-template-columns: 1fr 1fr 1fr !important;
-      gap: 6px !important;
-      break-inside: avoid !important;
-    }
-
-    /* ── Pay Master Workload table ── */
-    #pm-workload-table tr { break-inside: avoid; }
-    #pm-workload-table td {
-      padding: 4px 8px !important;
-      font-size: 10px !important;
-    }
-    #pm-workload-table td:first-child > div {
-      white-space: nowrap !important;
-    }
-    #pm-workload-table td:first-child span {
-      white-space: nowrap !important;
-      font-size: 10px !important;
-    }
-    #pm-workload-table td:first-child > div > div {
-      width: 22px !important;
-      height: 22px !important;
-      font-size: 9px !important;
-    }
-    #pm-workload-table td:last-child span {
-      display: inline-block !important;
-      font-size: 9px !important;
-      padding: 1px 5px !important;
-    }
-
-    /* data-table headers */
-    .data-table th {
-      font-size: 8px !important;
-      padding: 4px 6px !important;
-    }
-    .data-table td {
-      font-size: 9px !important;
-      padding: 4px 6px !important;
-    }
-
-    /* Billing pipeline */
-    .table-wrap table { font-size: 8px !important; width: 100% !important; }
-    .table-wrap th, .table-wrap td { padding: 3px 4px !important; }
-
-    /* No blank space between sections */
-    [style*="margin-bottom:20px"],
-    [style*="margin-bottom: 20px"] {
-      margin-bottom: 6px !important;
-    }
-    [style*="margin-bottom:14px"],
-    [style*="margin-bottom: 14px"] {
-      margin-bottom: 5px !important;
-    }
-  }
+  /* Finance Dashboard print handled via printFinanceDashboard() */
 
 </style>
 <style>
@@ -9509,40 +9347,100 @@ function calcDownloadCSV() {
 // ─────────────────────────────────────────────
 function printFinanceDashboard() {
   const year = document.getElementById('fin-year-sel')?.value || new Date().getFullYear();
+  const printDate = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
 
-  // Set print header values
-  const yearEl = document.getElementById('fin-print-year');
-  const dateEl = document.getElementById('fin-print-date');
-  if (yearEl) yearEl.textContent = `Financial Year: ${year}`;
-  if (dateEl) dateEl.textContent = `Printed: ${new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' })}`;
+  function canvasToImg(wrapId, h) {
+    const wrap = document.getElementById(wrapId);
+    const canvas = wrap ? wrap.querySelector('canvas') : document.getElementById(wrapId);
+    if (!canvas) return `<div style="height:${h}px;background:#f8fafc;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;">No data</div>`;
+    return `<img src="${canvas.toDataURL('image/png')}" style="width:100%;height:${h}px;object-fit:contain;display:block;">`;
+  }
 
-  // Temporarily shrink chart wrap heights for print (portrait A4 = ~270mm usable)
-  const wrapIds = [
-    'chart-client-revenue-wrap',
-    'chart-client-payslips-wrap',
-    'chart-last-payperiod-wrap',
-    'chart-member-payslips-wrap',
-  ];
-  const origHeights = {};
-  wrapIds.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { origHeights[id] = el.style.height; el.style.height = '160px'; }
-  });
+  const kpiCards = Array.from(document.querySelectorAll('#dash-finance-content .kpi-card'));
+  const wlTable  = document.querySelector('#pm-workload-table')?.closest('table')?.outerHTML || '';
 
-  // Resize Chart.js instances to match
-  Object.values(Chart.instances || {}).forEach(c => c.resize());
+  const bilLabel = 'BILLING';
+  const paLabel  = 'PAYROLL METRICS';
 
-  setTimeout(() => {
-    window.print();
-    // Restore heights after print dialog closes
-    setTimeout(() => {
-      wrapIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el && origHeights[id] !== undefined) el.style.height = origHeights[id];
-      });
-      Object.values(Chart.instances || {}).forEach(c => c.resize());
-    }, 1000);
-  }, 300);
+  function kpiHtml(cards) {
+    return cards.map(c => {
+      const val   = c.querySelector('.kpi-value')?.textContent || '';
+      const label = c.querySelector('.kpi-label')?.textContent || '';
+      const bg    = c.style.cssText.match(/background[^;]+/)?.[0] || 'background:#1a2744';
+      return `<div style="${bg};border-radius:8px;padding:8px 10px;color:white;break-inside:avoid;">
+        <div style="font-size:20px;font-weight:800;line-height:1.1;">${val}</div>
+        <div style="font-size:8px;opacity:0.85;margin-top:2px;">${label}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const w = window.open('', '_blank', 'width=900,height=1200');
+  if (!w) { showToast('Please allow popups for this site to print', 'error'); return; }
+
+  w.document.write(`<!DOCTYPE html><html><head>
+  <meta charset="UTF-8">
+  <title>PSP HUB Finance Dashboard ${year}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    @media print { body { margin:0; } }
+    * { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; font-family:Arial,sans-serif; margin:0; padding:0; }
+    body { font-size:10px; color:#334155; background:white; padding:0; }
+    .hdr { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:6px; border-bottom:3px solid #1a2744; margin-bottom:8px; }
+    .hdr h1 { font-size:15px; font-weight:800; color:#1a2744; }
+    .hdr .sub { font-size:8px; color:#64748b; margin-top:2px; }
+    .hdr .yr { font-size:13px; font-weight:700; color:#1a2744; text-align:right; }
+    .hdr .dt { font-size:8px; color:#64748b; text-align:right; }
+    .sec-lbl { font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; margin:6px 0 3px; }
+    .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-bottom:6px; }
+    .card { border:1px solid #e2e8f0; border-radius:6px; overflow:hidden; margin-bottom:6px; break-inside:avoid; }
+    .ct { font-size:10px; font-weight:700; color:#1a2744; padding:4px 8px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+    .cb { padding:4px 6px; }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
+    .two .card { margin-bottom:0; }
+    table { width:100%; border-collapse:collapse; font-size:8px; }
+    th { background:#1a2744; color:white; padding:3px 5px; text-align:left; font-size:7px; text-transform:uppercase; white-space:nowrap; }
+    td { padding:3px 5px; border-bottom:1px solid #f1f5f9; }
+    tr:nth-child(even) td { background:#f8fafc; }
+  </style></head><body>
+
+  <div class="hdr">
+    <div><h1>PSP HUB \u2014 Finance Dashboard</h1>
+    <div class="sub">Payroll Services PNG \u00b7 Concept Group Limited \u00b7 Confidential</div></div>
+    <div><div class="yr">Financial Year: ${year}</div><div class="dt">Printed: ${printDate}</div></div>
+  </div>
+
+  <div class="sec-lbl">${bilLabel}</div>
+  <div class="kpi-row">${kpiHtml(kpiCards.slice(0,4))}</div>
+  <div class="sec-lbl">${paLabel}</div>
+  <div class="kpi-row">${kpiHtml(kpiCards.slice(4))}</div>
+
+  <div class="two">
+    <div class="card"><div class="ct">Monthly Revenue (PGK, thousands)</div>
+      <div class="cb">${canvasToImg('chart-revenue-wrap', 150)}</div></div>
+    <div class="card"><div class="ct">New Hires vs Terminations</div>
+      <div class="cb">${canvasToImg('chart-nh-term-wrap', 150)}</div></div>
+  </div>
+
+  <div class="card"><div class="ct">Revenue by Client (PGK YTD)</div>
+    <div class="cb">${canvasToImg('chart-client-revenue-wrap', 200)}</div></div>
+
+  <div class="two">
+    <div class="card"><div class="ct">Employees \u2014 Last Pay Period</div>
+      <div class="cb">${canvasToImg('chart-last-payperiod-wrap', 200)}</div></div>
+    <div class="card"><div class="ct">Total Payslips Processed \u2014 YTD</div>
+      <div class="cb">${canvasToImg('chart-client-payslips-wrap', 200)}</div></div>
+  </div>
+
+  <div class="two">
+    <div class="card"><div class="ct">Pay Master Workload</div>
+      <div class="cb" style="padding:0;">${wlTable}</div></div>
+    <div class="card"><div class="ct">Lay-Offs vs Re-Hires</div>
+      <div class="cb">${canvasToImg('chart-lo-rh-wrap', 200)}</div></div>
+  </div>
+
+  </body></html>`);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 600);
 }
 
 // ─────────────────────────────────────────────
