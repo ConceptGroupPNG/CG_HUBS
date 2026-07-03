@@ -1095,7 +1095,7 @@
           <div style="margin-bottom:20px;">
             <div class="card">
               <div class="card-header"><h3>Revenue by Client (PGK YTD)</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><canvas id="chart-client-revenue"></canvas></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-client-revenue-wrap" style="position:relative;"><canvas id="chart-client-revenue"></canvas></div></div>
             </div>
           </div>
 
@@ -7557,8 +7557,8 @@ async function loadFinanceDashboard() {
     clientRevenue[c] = (clientRevenue[c]||0) + toPGK(i.TotalAmount||0, i.Currency||'PGK');
   });
   const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
-  const crCanvas = document.getElementById('chart-client-revenue');
-  if (crCanvas) crCanvas.height = Math.max(60, crSorted.length * 26);
+  const crWrap = document.getElementById('chart-client-revenue-wrap');
+  if (crWrap) crWrap.style.height = Math.max(60, crSorted.length * 26) + 'px';
   mkChart('chart-client-revenue', 'bar', {
     labels: crSorted.map(([c]) => c),
     datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v),
@@ -7566,6 +7566,7 @@ async function loadFinanceDashboard() {
       borderRadius: 4, barThickness: 22 }]
   }, {
     indexAxis: 'y',
+    maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
       datalabels: {
