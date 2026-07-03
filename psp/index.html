@@ -223,6 +223,63 @@
   .fin-pip-dot.ready    { background: var(--warning); }
   .fin-pip-dot.invoiced { background: var(--navy); }
 
+  /* ── Finance Dashboard Print ── */
+  @media print {
+    @page { size: A4 landscape; margin: 10mm 10mm; }
+
+    /* Hide everything; show only finance dashboard */
+    body > * { display: none !important; }
+    #dash-finance-content {
+      display: block !important;
+      position: fixed; top: 0; left: 0; width: 100%;
+      padding: 0; margin: 0;
+    }
+    #dash-finance-content * { visibility: visible; }
+
+    /* Show print header */
+    #fin-print-header { display: block !important; }
+
+    /* Hide controls */
+    #fin-year-filter, button, select, input, .btn { display: none !important; }
+
+    /* Cards — flat for print */
+    .card {
+      box-shadow: none !important;
+      border: 1px solid #e2e8f0 !important;
+      break-inside: avoid;
+      margin-bottom: 8px !important;
+    }
+
+    /* Force colour printing for charts, badges, avatars */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Charts — honour their container height */
+    canvas { max-width: 100% !important; }
+
+    /* Workload table — preserve coloured bars and avatars */
+    #pm-workload-table tr { break-inside: avoid; }
+    #pm-workload-table td div[style*="background:var(--teal)"] { 
+      background: #0e9f6e !important; 
+    }
+
+    /* KPI cards */
+    .kpi-grid { display: grid !important; }
+
+    /* Billing pipeline table */
+    .table-wrap table { font-size: 9px !important; }
+    .table-wrap th, .table-wrap td { padding: 4px 6px !important; }
+
+    /* Grid layouts */
+    .grid-2 { grid-template-columns: 1fr 1fr !important; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
+
+    /* Page breaks */
+    .fin-chart-fullwidth { break-before: auto; }
+  }
+
 </style>
 <style>
   :root {
@@ -1130,8 +1187,27 @@
           <!-- Charts Row 3 -->
           <div class="grid-2" style="margin-bottom:20px;">
             <div class="card">
-              <div class="card-header"><h3>Payslips by Pay Master</h3></div>
-              <div class="card-body" style="overflow-x:auto;"><div id="chart-member-payslips-wrap" style="position:relative;"><canvas id="chart-member-payslips"></canvas></div></div>
+              <div class="card-header">
+                <h3>Pay Master Workload</h3>
+                <span style="font-size:11px;color:var(--grey-500);font-weight:400;">YTD — payslips, clients, activities</span>
+              </div>
+              <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;">
+                  <thead>
+                    <tr style="background:var(--navy);">
+                      <th style="padding:8px 12px;text-align:left;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Pay Master</th>
+                      <th style="padding:8px 12px;text-align:left;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Payslips YTD</th>
+                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Clients</th>
+                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Pay Groups</th>
+                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Done / Total</th>
+                      <th style="padding:8px 12px;text-align:center;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pm-workload-table">
+                    <tr><td colspan="6"><div class="loading"><div class="spinner"></div></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
             <div class="card">
               <div class="card-header"><h3>Lay-Offs vs Re-Hires</h3></div>
@@ -7637,101 +7713,98 @@ async function loadFinanceDashboard() {
 
   // ── CHART 5: Payslips by Pay Master — stacked by Pay Group ──
   // Use billing records: for each finished pay run, attribute payslips to the
-  // Pay Master who handled the majority of activities in that pay run
-  const memberPGPayslips = {}; // { member: { paygroup: count } }
-  const allPayGroups = new Set();
+  // ── Pay Master Workload Summary Table ──
+  const pmWorkload = {}; // { member: { payslips, clients:Set, payGroups:Set, completed, pending } }
 
+  // Activities completed/pending from calendar (YTD)
+  const calYear = cache.calendar.filter(i => {
+    const d = spDateToDate(i.ActivityDateTime);
+    return d && d.getFullYear() === selectedYear;
+  });
+  calYear.forEach(i => {
+    const m = getPSPMember(i);
+    if (!m) return;
+    if (!pmWorkload[m]) pmWorkload[m] = { payslips:0, clients:new Set(), payGroups:new Set(), completed:0, pending:0 };
+    const status = getActStatus(i);
+    if (status === 'Finished') pmWorkload[m].completed++;
+    else pmWorkload[m].pending++;
+    if (i.PSPClient) pmWorkload[m].clients.add(i.PSPClient);
+    if (getPayGroup(i)) pmWorkload[m].payGroups.add(getPayGroup(i));
+  });
+
+  // Payslips from billing (YTD) — attribute to Pay Master by activity share
   billingYear.forEach(rec => {
+    const client = rec.PSPClient || '';
     const pg = getPayGroup(rec);
-    const payslips = rec.EmployeesPayslips || 0;
-    if (!payslips || !pg) return;
-    allPayGroups.add(pg);
-
-    // Find which Pay Masters handled activities for this pay run
-    const payRunActivities = cache.calendar.filter(i =>
-      i.PSPClient === rec.PSPClient &&
-      getPayGroup(i) === pg &&
-      i.PayNo === rec.PayNo
-    );
-
-    if (!payRunActivities.length) {
-      // No calendar match — attribute to 'Unassigned'
-      if (!memberPGPayslips['Unassigned']) memberPGPayslips['Unassigned'] = {};
-      memberPGPayslips['Unassigned'][pg] = (memberPGPayslips['Unassigned'][pg]||0) + payslips;
-      return;
-    }
-
-    // Count activities per member for this pay run
+    const payslips = parseInt(rec.EmployeesPayslips || rec.Employees || 0);
+    if (!payslips || !client || !pg) return;
+    const payRunActs = calYear.filter(i => i.PSPClient === client && getPayGroup(i) === pg && String(i.PayNo) === String(rec.PayNo));
+    if (!payRunActs.length) return;
     const memberCounts = {};
-    payRunActivities.forEach(i => {
-      const m = getPSPMember(i) || 'Unassigned';
-      memberCounts[m] = (memberCounts[m]||0) + 1;
-    });
-
-    // Distribute payslips proportionally across Pay Masters
-    const total = Object.values(memberCounts).reduce((s,v) => s+v, 0);
-    Object.entries(memberCounts).forEach(([member, count]) => {
-      if (!memberPGPayslips[member]) memberPGPayslips[member] = {};
-      memberPGPayslips[member][pg] = (memberPGPayslips[member][pg]||0) +
-        Math.round(payslips * count / total);
+    payRunActs.forEach(i => { const m = getPSPMember(i); if (m) memberCounts[m] = (memberCounts[m]||0)+1; });
+    const total = Object.values(memberCounts).reduce((s,v)=>s+v,0);
+    Object.entries(memberCounts).forEach(([m, count]) => {
+      if (!pmWorkload[m]) pmWorkload[m] = { payslips:0, clients:new Set(), payGroups:new Set(), completed:0, pending:0 };
+      pmWorkload[m].payslips += Math.round(payslips * count / total);
     });
   });
 
-  const members = Object.keys(memberPGPayslips).sort();
-  const pgList = [...allPayGroups].sort();
+  // Render table
+  const pmEntries = Object.entries(pmWorkload)
+    .map(([m, d]) => ({ member:m, payslips:d.payslips, clients:d.clients.size, payGroups:d.payGroups.size, completed:d.completed, pending:d.pending }))
+    .sort((a,b) => b.payslips - a.payslips);
 
-  // Build datasets — one per Pay Group
-  const pgDatasets = pgList.map((pg, idx) => ({
-    label: pg,
-    data: members.map(m => memberPGPayslips[m]?.[pg] || 0),
-    backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
-    borderRadius: 3,
-    barThickness: 22,
-  }));
-
-  const mpWrap = document.getElementById('chart-member-payslips-wrap');
-  if (mpWrap) mpWrap.style.height = Math.max(60, members.length * 26) + 'px';
-
-  mkChart('chart-member-payslips', 'bar', {
-    labels: members,
-    datasets: pgDatasets,
-  }, {
-    indexAxis: 'y',
-    plugins: {
-      legend: {
-        display: true, position: 'bottom',
-        labels: { font: { size: 10 }, padding: 8, boxWidth: 12 }
-      },
-      datalabels: {
-        display: ctx => {
-          // Show the label only on the LAST NON-ZERO segment for this row
-          // (the globally-last dataset index is often zero for most rows,
-          // since not every Pay Master has activity in every Pay Group)
-          const row = ctx.dataIndex;
-          const datasets = ctx.chart.data.datasets;
-          let lastNonZeroIdx = -1;
-          for (let i = 0; i < datasets.length; i++) {
-            if ((datasets[i].data[row] || 0) > 0) lastNonZeroIdx = i;
-          }
-          return ctx.datasetIndex === lastNonZeroIdx;
-        },
-        anchor: 'end', align: 'end',
-        color: '#334155', font: { size: 10, weight: '700' },
-        formatter: (v, ctx) => {
-          const total = ctx.chart.data.datasets.reduce((s,ds) => s + (ds.data[ctx.dataIndex]||0), 0);
-          return total > 0 ? total.toLocaleString() : '';
-        },
-        clip: false,
-      }
-    },
-    layout: { padding: { right: 44 } },
-    scales: {
-      x: { beginAtZero: true, stacked: true },
-      y: { stacked: true, ticks: { font: { size: 11 }, crossAlign: 'far' } }
+  const pmTable = document.getElementById('pm-workload-table');
+  if (pmTable) {
+    if (!pmEntries.length) {
+      pmTable.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--grey-400);">No data for selected year</td></tr>';
+    } else {
+      const maxPayslips = pmEntries[0]?.payslips || 1;
+      pmTable.innerHTML = pmEntries.map((pm, ri) => {
+        const initials = pm.member.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        const pct = Math.round((pm.payslips / maxPayslips) * 100);
+        const avatarColors = ['#1a2744','#065f46','#7f1d1d','#1e3a8a','#92400e','#4a1d96','#064e3b'];
+        const avatarBg = avatarColors[ri % avatarColors.length];
+        const total = pm.completed + pm.pending;
+        const completePct = total > 0 ? Math.round(pm.completed / total * 100) : 0;
+        return `<tr style="border-bottom:1px solid var(--grey-100);">
+          <td style="padding:10px 12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:28px;height:28px;border-radius:50%;background:${avatarBg};color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${initials}</div>
+              <span style="font-weight:600;color:var(--navy);font-size:12px;">${pm.member}</span>
+            </div>
+          </td>
+          <td style="padding:10px 12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;height:8px;background:var(--grey-100);border-radius:4px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:var(--teal);border-radius:4px;"></div>
+              </div>
+              <span style="font-size:12px;font-weight:700;color:var(--navy);min-width:40px;text-align:right;">${pm.payslips.toLocaleString()}</span>
+            </div>
+          </td>
+          <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--navy);">${pm.clients}</td>
+          <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--grey-600);">${pm.payGroups}</td>
+          <td style="padding:10px 12px;text-align:center;">
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
+              <span style="font-size:11px;font-weight:700;color:var(--teal);">${pm.completed}</span>
+              <span style="font-size:11px;color:var(--grey-400);">/</span>
+              <span style="font-size:11px;color:var(--grey-600);">${total}</span>
+            </div>
+            <div style="height:3px;background:var(--grey-100);border-radius:2px;margin-top:3px;overflow:hidden;">
+              <div style="width:${completePct}%;height:100%;background:var(--teal);border-radius:2px;"></div>
+            </div>
+          </td>
+          <td style="padding:10px 12px;text-align:center;">
+            ${pm.pending > 0
+              ? `<span style="background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">${pm.pending} pending</span>`
+              : `<span style="background:#d1fae5;color:#065f46;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">All done</span>`}
+          </td>
+        </tr>`;
+      }).join('');
     }
-  });
+  }
 
-  // ── CHART 6: Lay-Offs vs Re-Hires ──
+    // ── CHART 6: Lay-Offs vs Re-Hires ──
   const monthlyLO = Array(12).fill(0);
   const monthlyRH = Array(12).fill(0);
   billingYear.forEach(i => {
