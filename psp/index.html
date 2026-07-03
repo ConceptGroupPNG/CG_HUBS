@@ -9373,19 +9373,21 @@ function printFinanceDashboard() {
 
   function chartImg(src, h) {
     return src
-      ? `<img src="${src}" style="width:100%;height:${h};object-fit:contain;display:block;">`
+      ? `<img src="${src}" style="width:100%;max-width:100%;height:${h};object-fit:contain;display:block;">`
       : `<p style="color:#999;font-size:11px;text-align:center;padding:20px 0;">No data</p>`;
   }
 
-  const w = window.open('', '_blank', 'width=900,height=750');
+  const w = window.open('', '_blank', 'width=794,height=1123');
   if (!w) { showToast('Allow popups for this site to use Print', 'error'); return; }
 
   w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
 <title>PSP HUB Finance Dashboard ${year}</title>
 <style>
+  @page{size:210mm 297mm portrait!important;margin:10mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
   :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
+  html,body{width:190mm!important;max-width:190mm!important}
   body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
   h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
   h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
@@ -9416,10 +9418,12 @@ function printFinanceDashboard() {
   tr:nth-child(even) td{background:#f8fafc}
   /* Print */
   @media print{
-    @page{size:A4 portrait;margin:10mm}
+    @page{size:210mm 297mm;margin:10mm}
     button{display:none!important}
     .pb{break-before:page}
-    body{padding:0}
+    html,body{width:190mm!important;padding:0!important;margin:0!important}
+    img{max-width:100%!important}
+    .row{grid-template-columns:1fr 1fr!important}
   }
   .print-btn{margin-top:12px;padding:8px 20px;background:var(--teal);color:#fff;
     border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
