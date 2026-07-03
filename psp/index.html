@@ -9382,12 +9382,15 @@ function printFinanceDashboard() {
 
   w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=794px">
 <title>PSP HUB Finance Dashboard ${year}</title>
 <style>
-  @page{size:210mm 297mm portrait!important;margin:10mm}
+  @page{size:210mm 297mm;margin:10mm}
+  @page :first{size:210mm 297mm;margin:10mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
   :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
-  html,body{width:190mm!important;max-width:190mm!important}
+  html{width:210mm!important}
+  body{width:190mm!important;max-width:190mm!important;overflow-x:hidden!important}
   body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
   h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
   h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
@@ -9406,8 +9409,8 @@ function printFinanceDashboard() {
   .k1{background:#0e9f6e}.k2{background:#1a2744}.k3{background:#f59e0b}.k4{background:#cc1f2d}
   .k5{background:#1a2744}.k6{background:#0e9f6e}.k7{background:#f59e0b}.k8{background:#cc1f2d}
   /* Panels */
-  .panel{border:1px solid var(--g200);border-radius:8px;padding:12px;break-inside:avoid}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .panel{border:1px solid var(--g200);border-radius:8px;padding:10px;break-inside:avoid;min-width:0;overflow:hidden}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;max-width:100%}
   .row .panel{margin-bottom:0}
   .full{margin-bottom:12px}
   /* Table */
@@ -9475,7 +9478,7 @@ function printFinanceDashboard() {
 <!-- Pay Master Workload + Lay-Offs -->
 <div class="row pb">
   <div class="panel"><h2>Pay Master Workload</h2>${workloadHTML}</div>
-  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'240px')}</div>
+  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'320px')}</div>
 </div>
 
 <!-- Billing Pipeline -->
