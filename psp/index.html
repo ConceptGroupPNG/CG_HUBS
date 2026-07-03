@@ -9374,7 +9374,7 @@ function printFinanceDashboard() {
 
   function chartImg(src, h) {
     return src
-      ? `<img src="${src}" style="width:100%;height:${h};object-fit:contain;display:block;">`
+      ? `<img src="${src}" style="width:100%;display:block;">`
       : `<p style="color:#999;font-size:11px;text-align:center;padding:20px 0;">No data</p>`;
   }
 
@@ -9389,9 +9389,9 @@ function printFinanceDashboard() {
   @page{size:A4 portrait;margin:10mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;box-sizing:border-box}
   :root{--navy:#1a2744;--teal:#0e9f6e;--g200:#e2e8f0;--g500:#64748b;--g700:#334155}
-  html{width:794px!important}
-  body{width:754px!important;max-width:754px!important;padding:0 20px!important;overflow-x:hidden!important;box-sizing:border-box!important}
-  body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;color:#111;font-size:11px}
+  html,body{width:754px!important;max-width:754px!important;overflow:hidden!important;box-sizing:border-box!important}
+  body{font-family:'Segoe UI',Arial,sans-serif;padding:16px!important;color:#111;font-size:11px}
+  img{max-width:100%!important;height:auto}
   h1{font-size:20px;font-weight:800;color:var(--navy);margin:0 0 2px}
   h2{font-size:12px;font-weight:700;color:var(--navy);margin:0 0 8px}
   .sub{color:var(--g500);font-size:11px;margin-bottom:16px}
@@ -9468,17 +9468,17 @@ function printFinanceDashboard() {
 
 <!-- Monthly Revenue + NH/Term -->
 <div class="row" style="margin-top:12px">
-  <div class="panel"><h2>Monthly Revenue (PGK, thousands)</h2>${chartImg(imgRevenue,'180px')}</div>
-  <div class="panel"><h2>New Hires vs Terminations</h2>${chartImg(imgNHTerm,'180px')}</div>
+  <div class="panel"><h2>Monthly Revenue (PGK, thousands)</h2>${chartImg(imgRevenue)}</div>
+  <div class="panel"><h2>New Hires vs Terminations</h2>${chartImg(imgNHTerm)}</div>
 </div>
 
 <!-- Revenue by Client (page break before) -->
-<div class="panel full pb"><h2>Revenue by Client (PGK YTD)</h2>${chartImg(imgClRev,'320px')}</div>
+<div class="panel full pb"><h2>Revenue by Client (PGK YTD)</h2>${chartImg(imgClRev)}</div>
 
 <!-- Employees + Payslips -->
 <div class="row pb">
-  <div class="panel"><h2>Employees — Last Pay Period</h2>${chartImg(imgLastPP,'300px')}</div>
-  <div class="panel"><h2>Total Payslips Processed — YTD</h2>${chartImg(imgPayslips,'300px')}</div>
+  <div class="panel"><h2>Employees — Last Pay Period</h2>${chartImg(imgLastPP)}</div>
+  <div class="panel"><h2>Total Payslips Processed — YTD</h2>${chartImg(imgPayslips)}</div>
 </div>
 
 <!-- Pay Master Workload + Lay-Offs -->
@@ -9486,7 +9486,7 @@ function printFinanceDashboard() {
   <div class="panel" style="font-size:9px;"><h2>Pay Master Workload</h2>${workloadHTML}</div>
 </div>
 <div class="two">
-  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH,'220px')}</div>
+  <div class="panel"><h2>Lay-Offs vs Re-Hires</h2>${chartImg(imgLoRH)}</div>
   <div></div>
 </div>
 
