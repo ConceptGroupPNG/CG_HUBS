@@ -935,14 +935,11 @@
         <!-- Dashboard tab switcher -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
           <div class="tabs" style="margin:0;border:none;">
-            <div class="tab active" id="dash-tab-ops" onclick="switchDashTab('ops')">
-              <i class="ti ti-checklist" style="font-size:14px;margin-right:4px;"></i> Operations
+            <div class="tab active" id="dash-tab-kanban" onclick="switchDashTab('kanban')">
+              <i class="ti ti-layout-kanban" style="font-size:14px;margin-right:4px;"></i> Operations
             </div>
             <div class="tab" id="dash-tab-finance" onclick="switchDashTab('finance')">
               <i class="ti ti-chart-bar" style="font-size:14px;margin-right:4px;"></i> Finance
-            </div>
-            <div class="tab" id="dash-tab-kanban" onclick="switchDashTab('kanban')">
-              <i class="ti ti-layout-kanban" style="font-size:14px;margin-right:4px;"></i> Kanban
             </div>
           </div>
           <div id="fin-year-filter" style="display:none;align-items:center;gap:10px;">
@@ -954,7 +951,7 @@
               <i class="ti ti-printer"></i> Print Report
             </button>
           </div>
-          <div id="kanban-controls" style="display:none;align-items:center;gap:10px;">
+          <div id="kanban-controls" style="display:flex;align-items:center;gap:10px;">
             <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;">
               <button id="kb-scope-me" onclick="setKanbanScope('me')" class="btn btn-xs btn-teal" style="font-size:11px;font-weight:700;padding:4px 12px;">My Activities</button>
               <button id="kb-scope-all" onclick="setKanbanScope('all')" class="btn btn-xs btn-outline" style="font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);">All Pay Masters</button>
@@ -969,51 +966,7 @@
         </div>
 
         <!-- OPERATIONS TAB -->
-        <div id="dash-ops-content">
-          <div class="metrics-grid" id="dashboard-metrics">
-            <div class="metric-card mc-teal">
-              <div class="metric-icon"><i class="ti ti-checklist"></i></div>
-              <div class="metric-info">
-                <div class="metric-value" id="m-my-today">—</div>
-                <div class="metric-label">My Activities Today</div>
-              </div>
-            </div>
-            <div class="metric-card mc-navy">
-              <div class="metric-icon"><i class="ti ti-users"></i></div>
-              <div class="metric-info">
-                <div class="metric-value" id="m-all-today">—</div>
-                <div class="metric-label">All Activities Today</div>
-              </div>
-            </div>
-            <div class="metric-card mc-warning">
-              <div class="metric-icon"><i class="ti ti-clock-pause"></i></div>
-              <div class="metric-info">
-                <div class="metric-value" id="m-delayed">—</div>
-                <div class="metric-label">Delayed Today</div>
-              </div>
-            </div>
-            <div class="metric-card mc-red">
-              <div class="metric-icon"><i class="ti ti-clock-x"></i></div>
-              <div class="metric-info">
-                <div class="metric-value" id="m-overdue">—</div>
-                <div class="metric-label">Overdue (Not Started)</div>
-              </div>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div class="card">
-              <div class="card-header">
-                <h3>My Activities Today</h3>
-                <button class="btn btn-sm btn-outline" onclick="navigate('activities')">View All</button>
-              </div>
-              <div id="dash-my-activities"><div class="loading"><div class="spinner"></div></div></div>
-            </div>
-            <div class="card">
-              <div class="card-header"><h3>Delayed &amp; Overdue</h3></div>
-              <div id="dash-delayed"><div class="loading"><div class="spinner"></div></div></div>
-            </div>
-          </div>
-        </div>
+        
 
         <!-- FINANCE TAB -->
         <div id="dash-finance-content" style="display:none;">
@@ -1178,7 +1131,7 @@
         </div>
 
         <!-- KANBAN TAB -->
-        <div id="dash-kanban-content" style="display:none;">
+        <div id="dash-kanban-content" style="">
           <div id="kanban-board" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start;min-height:400px;">
             <!-- Columns injected by loadKanbanBoard() -->
           </div>
@@ -4074,6 +4027,9 @@ async function refreshCacheForPage(page) {
       cache.invoices = await getItems('invoices');
       cache.billing = await getItems('billing');
     }
+  if (currentDashTab === 'kanban' || currentDashTab !== 'finance') {
+    loadKanbanBoard();
+  }
     // Dashboard needs everything for both Operations and Finance tabs
     await refreshCache();
   }
@@ -7447,11 +7403,11 @@ function populateMemberFilter(elId, items) {
 // FINANCE DASHBOARD
 // ─────────────────────────────────────────────
 let finCharts = {};
-let currentDashTab = 'ops';
+let currentDashTab = 'kanban';
 
 function switchDashTab(tab) {
   currentDashTab = tab;
-  ['ops','finance','kanban'].forEach(t => {
+  ['finance','kanban'].forEach(t => {
     const tabEl = document.getElementById('dash-tab-' + t);
     const contentEl = document.getElementById('dash-' + t + '-content');
     if (tabEl) tabEl.classList.toggle('active', t === tab);
