@@ -7558,13 +7558,13 @@ async function loadFinanceDashboard() {
   });
   const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
   const crCanvas = document.getElementById('chart-client-revenue');
-  if (crCanvas) crCanvas.height = Math.max(120, crSorted.length * 20);
+  if (crCanvas) crCanvas.height = Math.max(80, crSorted.length * 32);
   mkChart('chart-client-revenue', 'bar', {
     labels: crSorted.map(([c]) => c),
     datasets: [{ label: 'PGK', data: crSorted.map(([,v]) => v),
       backgroundColor: crSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
-      borderRadius: 4, barThickness: 14,
-      categoryPercentage: 0.85, barPercentage: 0.9 }]
+      borderRadius: 4, barThickness: 22,
+      categoryPercentage: 1.0, barPercentage: 0.7 }]
   }, {
     indexAxis: 'y',
     plugins: {
