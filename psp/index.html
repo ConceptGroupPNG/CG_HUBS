@@ -7612,9 +7612,10 @@ async function loadFinanceDashboard() {
     labels: cpSorted.map(([c]) => c),
     datasets: [{ label: 'Payslips', data: cpSorted.map(([,v]) => v),
       backgroundColor: cpSorted.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
-      borderRadius: 4, barThickness: 16 }]
+      borderRadius: 4, barThickness: 22 }]
   }, {
     indexAxis: 'y',
+    maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
       datalabels: {
@@ -7685,7 +7686,7 @@ async function loadFinanceDashboard() {
     data: members.map(m => memberPGPayslips[m]?.[pg] || 0),
     backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
     borderRadius: 3,
-    barThickness: 18,
+    barThickness: 22,
   }));
 
   const mpWrap = document.getElementById('chart-member-payslips-wrap');
@@ -7798,7 +7799,7 @@ async function loadFinanceDashboard() {
       data: lpClients.map(([,d]) => d.payslips),
       backgroundColor: lpClients.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]),
       borderRadius: 4,
-      barThickness: 18,
+      barThickness: 22,
     }]
   }, {
     indexAxis: 'y',
