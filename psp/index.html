@@ -951,7 +951,9 @@
             <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;">
               <button id="kb-scope-me" onclick="setKanbanScope('me')" class="btn btn-xs btn-teal" style="font-size:11px;font-weight:700;padding:4px 12px;">My Activities</button>
               <button id="kb-scope-all" onclick="setKanbanScope('all')" class="btn btn-xs btn-outline" style="font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);">All Pay Masters</button>
+              <button id="kb-scope-paygroup" onclick="setKanbanScope('paygroup')" class="btn btn-xs btn-outline" style="font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);">Pay Group</button>
             </div>
+            <select id="kb-paygroup-select" onchange="setKanbanPayGroupFilter(this.value)" style="display:none;padding:5px 10px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:12px;font-weight:600;color:var(--navy);background:var(--white);outline:none;"></select>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--grey-600);cursor:pointer;user-select:none;">
               <div id="kb-refresh-toggle" onclick="toggleKanbanAutoRefresh()" style="width:34px;height:18px;background:var(--grey-300);border-radius:10px;cursor:pointer;position:relative;transition:background 0.2s;">
                 <div id="kb-refresh-knob" style="width:14px;height:14px;background:white;border-radius:50%;position:absolute;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
@@ -4117,7 +4119,7 @@ async function navigate(page) {
     if (icon) icon.style.animation = '';
   }
 
-  // Stop kanban auto-refresh when leaving dashboard
+  // Stop kanban auto-refresh and reset the Operations filter when leaving dashboard
   if (page !== 'dashboard' && kanbanRefreshTimer) {
     clearInterval(kanbanRefreshTimer);
     kanbanRefreshTimer = null;
@@ -4129,6 +4131,7 @@ async function navigate(page) {
     if (knob) knob.style.left = '2px';
     if (label) label.textContent = 'Auto-refresh: Off';
   }
+  if (page !== 'dashboard') resetKanbanScope();
   await loadPage(page);
 }
 
@@ -7404,7 +7407,7 @@ function switchDashTab(tab) {
   if (yearFilter) yearFilter.style.display = tab === 'finance' ? 'flex' : 'none';
   const kanbanControls = document.getElementById('kanban-controls');
   if (kanbanControls) kanbanControls.style.display = tab === 'kanban' ? 'flex' : 'none';
-  if (tab === 'finance') loadFinanceDashboard();
+  if (tab === 'finance') { resetKanbanScope(); loadFinanceDashboard(); }
   if (tab === 'kanban') loadKanbanBoard();
 }
 
@@ -9461,7 +9464,8 @@ function kbRelativeDate(date) {
   return `(${d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})})`;
 }
 // ─────────────────────────────────────────────
-let kanbanScope = 'me';       // 'me' | 'all'
+let kanbanScope = 'me';       // 'me' | 'all' | 'paygroup'
+let kanbanPayGroupFilter = ''; // active pay group when kanbanScope === 'paygroup'
 let kanbanAutoRefresh = false;
 let kanbanRefreshTimer = null;
 let kanbanDragId = null;      // id of card being dragged
@@ -9481,13 +9485,62 @@ const KANBAN_TRANSITIONS = {
   'Finished':    [],
 };
 
+function updateKanbanScopeButtons() {
+  const ids = { me: 'kb-scope-me', all: 'kb-scope-all', paygroup: 'kb-scope-paygroup' };
+  Object.entries(ids).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const active = kanbanScope === key;
+    el.className = active ? 'btn btn-xs btn-teal' : 'btn btn-xs btn-outline';
+    el.style.cssText = active
+      ? 'font-size:11px;font-weight:700;padding:4px 12px;'
+      : 'font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);';
+  });
+}
+
+function populateKanbanPayGroupOptions() {
+  const dd = document.getElementById('kb-paygroup-select');
+  if (!dd) return;
+  const groups = [...new Set(cache.calendar.map(i => getPayGroup(i)).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b));
+  dd.innerHTML = groups.map(g => `<option value="${g}">${g}</option>`).join('');
+  if (kanbanPayGroupFilter && groups.includes(kanbanPayGroupFilter)) dd.value = kanbanPayGroupFilter;
+}
+
 function setKanbanScope(scope) {
   kanbanScope = scope;
-  document.getElementById('kb-scope-me').className  = scope === 'me'  ? 'btn btn-xs btn-teal'    : 'btn btn-xs btn-outline';
-  document.getElementById('kb-scope-all').className = scope === 'all' ? 'btn btn-xs btn-teal'    : 'btn btn-xs btn-outline';
-  document.getElementById('kb-scope-me').style.cssText  = scope === 'me'  ? 'font-size:11px;font-weight:700;padding:4px 12px;' : 'font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);';
-  document.getElementById('kb-scope-all').style.cssText = scope === 'all' ? 'font-size:11px;font-weight:700;padding:4px 12px;' : 'font-size:11px;font-weight:700;padding:4px 12px;border:none;background:none;color:var(--grey-600);';
+  updateKanbanScopeButtons();
+  const dd = document.getElementById('kb-paygroup-select');
+  if (scope === 'paygroup') {
+    if (dd) {
+      populateKanbanPayGroupOptions();
+      dd.style.display = '';
+      if (!kanbanPayGroupFilter && dd.options.length) {
+        kanbanPayGroupFilter = dd.options[0].value;
+        dd.value = kanbanPayGroupFilter;
+      }
+    }
+  } else {
+    // Selecting a different button resets the pay group filter
+    kanbanPayGroupFilter = '';
+    if (dd) dd.style.display = 'none';
+  }
   loadKanbanBoard();
+}
+
+function setKanbanPayGroupFilter(val) {
+  kanbanPayGroupFilter = val;
+  loadKanbanBoard();
+}
+
+// Reset the Operations filter back to its default when leaving the Kanban view
+// (navigating to another dashboard tab or another page entirely)
+function resetKanbanScope() {
+  kanbanScope = 'me';
+  kanbanPayGroupFilter = '';
+  updateKanbanScopeButtons();
+  const dd = document.getElementById('kb-paygroup-select');
+  if (dd) dd.style.display = 'none';
 }
 
 function toggleKanbanAutoRefresh() {
@@ -9529,6 +9582,10 @@ function getKanbanItems() {
     if (kanbanScope === 'me') {
       const member = i.PSPMEmber || '';
       return member === me || member.includes(me.split(' ')[0]);
+    }
+    if (kanbanScope === 'paygroup') {
+      if (!kanbanPayGroupFilter) return false;
+      return getPayGroup(i) === kanbanPayGroupFilter;
     }
     return true;
   });
