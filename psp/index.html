@@ -2380,6 +2380,24 @@
   </div>
 </div>
 
+<!-- OUT-OF-ORDER VALIDATION MODAL -->
+<div class="modal-overlay" id="order-block-modal-overlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 style="font-size:16px;display:flex;align-items:center;gap:8px;">
+        <i class="ti ti-alert-triangle" style="color:#f59e0b;"></i> Out of Order
+      </h3>
+      <button class="modal-close" onclick="closeOrderBlockModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="order-block-message" style="font-size:13px;color:var(--grey-800);line-height:1.6;margin:0;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-teal" onclick="closeOrderBlockModal()">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div id="print-area"></div>
 <div id="toast-container"></div>
@@ -4226,6 +4244,42 @@ function getOrder(item) {
   return item?.Order0 || item?.Order || 0;
 }
 
+// Returns the earliest-order activity in the same pay run (same client + pay
+// group + pay no) that is still "Not Started" or "Delayed" and precedes `item`
+// in sequence — i.e. the activity that must be Started or Finished before
+// `item` may Start. Returns null if there's no such blocker (item is first,
+// or all predecessors are already Started or Finished).
+function getOrderBlocker(item) {
+  const thisOrder = getOrder(item) || 0;
+  const payRunItems = cache.calendar.filter(i =>
+    i.PSPClient === item.PSPClient &&
+    getPayGroup(i) === getPayGroup(item) &&
+    i.PayNo === item.PayNo &&
+    String(i.id) !== String(item.id)
+  );
+  const earlier = payRunItems
+    .filter(i => (getOrder(i) || 0) < thisOrder)
+    .sort((a,b) => (getOrder(a)||0) - (getOrder(b)||0));
+  return earlier.find(i => {
+    const s = getActStatus(i) || 'Not Started';
+    return s === 'Not Started' || s === 'Delayed';
+  }) || null;
+}
+
+function openOrderBlockModal(item, blocker) {
+  const blockerStatus = getActStatus(blocker) || 'Not Started';
+  const statusPhrase = blockerStatus === 'Delayed'
+    ? 'is still Delayed and hasn\'t been completed'
+    : 'hasn\'t been Started or Finished yet';
+  const msg = `<strong>"${item.ActivityMilestone || 'This activity'}"</strong> is Activity ${getOrder(item)} in this pay run, but Activity ${getOrder(blocker)} — <strong>"${blocker.ActivityMilestone || ''}"</strong> — ${statusPhrase}.<br><br>Activities must be started in order. Please start (or finish) Activity ${getOrder(blocker)} first.`;
+  document.getElementById('order-block-message').innerHTML = msg;
+  document.getElementById('order-block-modal-overlay').classList.add('open');
+}
+
+function closeOrderBlockModal() {
+  document.getElementById('order-block-modal-overlay').classList.remove('open');
+}
+
 function getPayGroup(item) {
   return item?.PayGroup || item?.['Pay_x0020_Group'] || item?.field_1 || '';
 }
@@ -4767,6 +4821,16 @@ async function saveStatus() {
   }
   const newStatus = document.getElementById('sm-status').value;
   const comments = document.getElementById('sm-comments').value.trim();
+
+  // Enforce sequential start order within the pay run
+  if (newStatus === 'Started' && current === 'Not Started') {
+    const blocker = getOrderBlocker(statusEditItem);
+    if (blocker) {
+      openOrderBlockModal(statusEditItem, blocker);
+      return;
+    }
+  }
+
   const now = new Date().toISOString();
   const fields = { Act_Status: newStatus };
 
@@ -9751,6 +9815,16 @@ async function kbQuickMove(id, targetStatus) {
 async function kbApplyMove(item, targetStatus) {
   const now = new Date().toISOString();
   const oldStatus = getActStatus(item) || item.Act_Status || 'Not Started'; // capture before mutation below
+
+  // Enforce sequential start order within the pay run
+  if (targetStatus === 'Started' && oldStatus === 'Not Started') {
+    const blocker = getOrderBlocker(item);
+    if (blocker) {
+      openOrderBlockModal(item, blocker);
+      return;
+    }
+  }
+
   const fields = { Act_Status: targetStatus };
   if (targetStatus === 'Started' && !item.StartDateTime) fields.StartDateTime = now;
   if (targetStatus === 'Delayed') {
