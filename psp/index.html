@@ -2398,6 +2398,25 @@
   </div>
 </div>
 
+<!-- KANBAN DELAYED/FINISHED COMMENT PROMPT -->
+<div class="modal-overlay" id="kb-comment-modal-overlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 id="kb-comment-modal-title" style="font-size:16px;">Add Comment</h3>
+      <button class="modal-close" onclick="cancelKanbanComment()">×</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="kb-comment-text" placeholder="Add a note about this status change..."
+        style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;color:var(--grey-900);resize:vertical;min-height:90px;outline:none;font-family:inherit;"
+        onfocus="this.style.borderColor='var(--navy)'" onblur="this.style.borderColor='var(--grey-200)'"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cancelKanbanComment()">Cancel</button>
+      <button class="btn btn-teal" onclick="confirmKanbanComment()">OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div id="print-area"></div>
 <div id="toast-container"></div>
@@ -9812,7 +9831,34 @@ async function kbQuickMove(id, targetStatus) {
   await kbApplyMove(item, targetStatus);
 }
 
-async function kbApplyMove(item, targetStatus) {
+let pendingKanbanMove = null; // { item, targetStatus } — awaiting comment from kb-comment-modal
+
+function openKanbanCommentModal(targetStatus) {
+  document.getElementById('kb-comment-modal-title').textContent =
+    targetStatus === 'Delayed' ? 'Add Delay Comment' : 'Add Completion Comment';
+  document.getElementById('kb-comment-text').value = '';
+  document.getElementById('kb-comment-modal-overlay').classList.add('open');
+}
+
+function closeKanbanCommentModal() {
+  document.getElementById('kb-comment-modal-overlay').classList.remove('open');
+}
+
+function cancelKanbanComment() {
+  pendingKanbanMove = null;
+  closeKanbanCommentModal();
+}
+
+function confirmKanbanComment() {
+  if (!pendingKanbanMove) return;
+  const comment = document.getElementById('kb-comment-text').value.trim();
+  const { item, targetStatus } = pendingKanbanMove;
+  pendingKanbanMove = null;
+  closeKanbanCommentModal();
+  kbApplyMove(item, targetStatus, comment); // comment now defined (possibly '') so it proceeds
+}
+
+async function kbApplyMove(item, targetStatus, comment) {
   const now = new Date().toISOString();
   const oldStatus = getActStatus(item) || item.Act_Status || 'Not Started'; // capture before mutation below
 
@@ -9825,15 +9871,26 @@ async function kbApplyMove(item, targetStatus) {
     }
   }
 
+  // Prompt for a comment when moving to Delayed or Finished (the Kanban board
+  // has no comments field otherwise). `comment` stays undefined until the
+  // small popup collects it, so this only fires once per move.
+  if ((targetStatus === 'Delayed' || targetStatus === 'Finished') && comment === undefined) {
+    pendingKanbanMove = { item, targetStatus };
+    openKanbanCommentModal(targetStatus);
+    return;
+  }
+
   const fields = { Act_Status: targetStatus };
   if (targetStatus === 'Started' && !item.StartDateTime) fields.StartDateTime = now;
   if (targetStatus === 'Delayed') {
     fields.DelayDateTime = now;
+    if (comment) fields.Comments = (item.Comments || '') + ` ! Delayed on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})} PM ${comment}`;
   }
   if (targetStatus === 'Finished') {
     fields.FinishDateTime = now;
     fields.FinishDateTimeNo = parseInt(now.slice(0,10).replace(/-/g,''), 10);
     if (!item.StartDateTime) fields.StartDateTime = now;
+    if (comment) fields.Comments = (item.Comments || '') + ` ! Finished on ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})} PM ${comment}`;
   }
 
   try {
@@ -9853,7 +9910,7 @@ async function kbApplyMove(item, targetStatus) {
       newStatus: targetStatus,
       changedBy: currentUser?.displayName || '',
       changedDate: now,
-      comments: '',
+      comments: comment || '',
     });
 
     // Check last-activity auto-process flag (same as status modal)
