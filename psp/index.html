@@ -3649,6 +3649,44 @@ const LISTS = {
 };
 
 // ─────────────────────────────────────────────
+// POWER AUTOMATE — HTTP-triggered Flows
+// ─────────────────────────────────────────────
+// Paste each Flow's "HTTP POST URL" here once created (Flow > Trigger > copy URL).
+// Each flow must use a "When an HTTP request is received" trigger with the JSON
+// schema documented alongside each triggerFlow() call below. Leave a value as-is
+// (starting with 'PASTE_') to keep that integration disabled — triggerFlow() will
+// no-op silently rather than throwing, so the app keeps working while flows are
+// being built/tested.
+const FLOWS = {
+  statusChange:  'https://defaultea9e105c2df647efa8e3b4aa1d7884.23.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/25/workflows/03dc91f9804e46b7b9e18fe4f758da5a/triggers/manual/paths/invoke?api-version=1',
+  invoiceExport: 'PASTE_FLOW2_INVOICE_EXPORT_HTTP_URL_HERE',
+  quotePrint:    'PASTE_FLOW3_QUOTE_PRINT_HTTP_URL_HERE',
+};
+
+// Fire-and-forget POST to a Power Automate HTTP trigger. Never throws — a Flow
+// being unconfigured, offline, or erroring must never block the underlying
+// SharePoint save/UI action that triggered it.
+async function triggerFlow(flowKey, payload) {
+  const url = FLOWS[flowKey];
+  if (!url || url.startsWith('PASTE_')) {
+    console.warn(`[triggerFlow] "${flowKey}" has no Flow URL configured — skipping.`);
+    return null;
+  }
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) console.warn(`[triggerFlow] "${flowKey}" returned HTTP ${r.status}`);
+    return r;
+  } catch (e) {
+    console.warn(`[triggerFlow] "${flowKey}" failed:`, e.message);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
 let accessToken = null;
@@ -4749,6 +4787,22 @@ async function saveStatus() {
     // update cache
     const idx = cache.calendar.findIndex(i => i.id === statusEditItem.id);
     if (idx >= 0) Object.assign(cache.calendar[idx], fields);
+
+    // Flow 1: notify Teams channel on status change (fire-and-forget)
+    if (newStatus !== current) {
+      triggerFlow('statusChange', {
+        activityId: String(statusEditItem.id),
+        client: statusEditItem.PSPClient || '',
+        payGroup: getPayGroup(statusEditItem) || '',
+        payNo: String(statusEditItem.PayNo || ''),
+        activityName: statusEditItem.Title || statusEditItem.ActivityName || '',
+        oldStatus: current,
+        newStatus: newStatus,
+        changedBy: currentUser?.displayName || '',
+        changedDate: now,
+        comments: comments || '',
+      });
+    }
 
     // Check if this was the last unfinished activity in the pay run
     if (newStatus === 'Finished') {
@@ -6016,8 +6070,7 @@ async function generateInvoice() {
   document.getElementById('inv-preview-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-function exportInvoiceCSV() {
-  if (!invoiceLines.length) return;
+function buildInvoiceCSV() {
   const headers = ['ContactName','EmailAddress','POAddressLine11','POCity','POCountry','PORegion','InvoiceNumber','Reference','InvoiceDate','DueDate','Total','InventoryItemCode','Description','Quantity','UnitAmount','AccountCode','TaxType','TaxAmount','TrackingName1','TrackingOption1','Currency'];
   const rows = invoiceLines.map(l => headers.map(h => {
     const map = {'POAddressLine11': l.POAddressLine1};
@@ -6026,10 +6079,17 @@ function exportInvoiceCSV() {
     return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g,'""')}"` : str;
   }).join(','));
   const csv = [headers.join(','), ...rows].join('\n');
+  const fileName = `${(invoiceLines[0]?.ContactName||'invoice').replace(/[^a-z0-9]/gi,'_')}_${invoiceLines[0]?.InvoiceNumber}_${new Date().toISOString().slice(0,10)}.csv`;
+  return { csv, fileName };
+}
+
+function exportInvoiceCSV() {
+  if (!invoiceLines.length) return;
+  const { csv, fileName } = buildInvoiceCSV();
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${(invoiceLines[0]?.ContactName||'invoice').replace(/[^a-z0-9]/gi,'_')}_${invoiceLines[0]?.InvoiceNumber}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = fileName;
   a.click();
   markAsBilled();
 }
@@ -6114,6 +6174,25 @@ async function markAsBilled() {
     console.warn('Could not save to PSP_Invoices:', e.message);
     console.warn('Full error:', e);
     showToast('Warning: Invoice exported but could not save to PSP_Invoices: ' + e.message, 'error');
+  }
+
+  // Flow 2: create the CSV in a SharePoint library, tag its metadata, and email a
+  // link to it (fire-and-forget — the CSV has already downloaded locally above).
+  try {
+    const { csv, fileName } = buildInvoiceCSV();
+    triggerFlow('invoiceExport', {
+      invoiceNumber: invNo,
+      clientName: clientName,
+      fileName: fileName,
+      csvContentBase64: btoa(unescape(encodeURIComponent(csv))),
+      totalAmount: Math.round(grandTotal * 100) / 100,
+      currency: clientDetails.Currency || 'PGK',
+      emailTo: clientDetails.EmailAddress || '',
+      exportedBy: currentUser?.displayName || '',
+      exportedDate: new Date().toISOString(),
+    });
+  } catch(e) {
+    console.warn('Could not trigger invoiceExport Flow:', e.message);
   }
 
   // Update last invoice number
@@ -6878,6 +6957,17 @@ function printQuoteDoc(id) {
     subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
   });
   printHTMLContent(docHtml);
+
+  // Flow 3: convert this quote to PDF, file it in SharePoint, and write the link
+  // back to PSP_Quotes.QuotesLink (fire-and-forget — printing proceeds regardless).
+  triggerFlow('quotePrint', {
+    quoteId: String(q.id),
+    quoteNumber: q.Title,
+    clientName: q.ContactName || q.PSPClient || '',
+    htmlContent: docHtml,
+    printedBy: currentUser?.displayName || '',
+    printedDate: new Date().toISOString(),
+  });
 }
 
 function printHTMLContent(innerHtml) {
@@ -9603,6 +9693,7 @@ async function kbQuickMove(id, targetStatus) {
 
 async function kbApplyMove(item, targetStatus) {
   const now = new Date().toISOString();
+  const oldStatus = getActStatus(item) || item.Act_Status || 'Not Started'; // capture before mutation below
   const fields = { Act_Status: targetStatus };
   if (targetStatus === 'Started' && !item.StartDateTime) fields.StartDateTime = now;
   if (targetStatus === 'Delayed') {
@@ -9619,6 +9710,20 @@ async function kbApplyMove(item, targetStatus) {
     // Update cache
     const idx = cache.calendar.findIndex(i => i.id === item.id);
     if (idx >= 0) Object.assign(cache.calendar[idx], fields);
+
+    // Flow 1: notify Teams channel on status change (fire-and-forget)
+    triggerFlow('statusChange', {
+      activityId: String(item.id),
+      client: item.PSPClient || '',
+      payGroup: getPayGroup(item) || '',
+      payNo: String(item.PayNo || ''),
+      activityName: item.Title || item.ActivityName || '',
+      oldStatus: oldStatus,
+      newStatus: targetStatus,
+      changedBy: currentUser?.displayName || '',
+      changedDate: now,
+      comments: '',
+    });
 
     // Check last-activity auto-process flag (same as status modal)
     if (targetStatus === 'Finished') {
