@@ -9730,6 +9730,16 @@ function kbCardHtml(item, col) {
   const status   = getKanbanStatus(item);
   const allowed  = KANBAN_TRANSITIONS[status] || [];
 
+  // Order X of N within this pay run (same client + pay group + pay no)
+  const thisOrder = getOrder(item) || 0;
+  const payRunItems = cache.calendar.filter(i =>
+    i.PSPClient === item.PSPClient &&
+    getPayGroup(i) === getPayGroup(item) &&
+    i.PayNo === item.PayNo
+  );
+  const maxOrder = payRunItems.reduce((max, i) => Math.max(max, getOrder(i) || 0), 0);
+  const orderLabel = thisOrder ? `${thisOrder}/${maxOrder || thisOrder}` : '';
+
   // Priority colour strip on left
   const isOverdue = !['Finished'].includes(status) && time && time < new Date();
   const stripColor = isOverdue ? '#cc1f2d' : col.color;
@@ -9746,8 +9756,11 @@ function kbCardHtml(item, col) {
       <div style="font-size:11px;font-weight:700;color:var(--navy);line-height:1.3;">${client}</div>
       ${payGroup ? `<span style="background:var(--teal);color:white;border-radius:6px;padding:1px 7px;font-size:9px;font-weight:700;white-space:nowrap;">${payGroup}</span>` : ''}
     </div>
-    <!-- Activity name -->
-    <div style="font-size:12px;color:var(--grey-800);margin-bottom:8px;line-height:1.4;">${activity}</div>
+    <!-- Activity name + order badge -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--grey-800);line-height:1.4;flex:1;">${activity}</div>
+      ${orderLabel ? `<span title="Activity order in this pay run" style="font-size:9px;font-weight:700;color:var(--grey-500);background:var(--grey-100);border-radius:6px;padding:1px 6px;white-space:nowrap;flex-shrink:0;">${orderLabel}</span>` : ''}
+    </div>
     <!-- Pay Master row -->
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
       <div style="width:22px;height:22px;border-radius:50%;background:${col.headerBg};color:white;
