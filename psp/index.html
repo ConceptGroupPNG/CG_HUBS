@@ -1833,9 +1833,8 @@
                 <th class="sort-th" data-table="clients" data-key="invoicename" onclick="setSort('clients','invoicename')" style="cursor:pointer;user-select:none;">Invoice Name (Xero) <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th class="sort-th" data-table="clients" data-key="currency" onclick="setSort('clients','currency')" style="cursor:pointer;user-select:none;">Currency <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th class="sort-th" data-table="clients" data-key="taxtype" onclick="setSort('clients','taxtype')" style="cursor:pointer;user-select:none;">Tax Type <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
-                <th>Pay Groups</th>
                 <th class="sort-th" data-table="clients" data-key="status" onclick="setSort('clients','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
-                <th style="width:100px;">Actions</th>
+                <th style="width:140px;">Actions</th>
               </tr></thead>
               <tbody id="cl-tbody"></tbody>
             </table>
@@ -8098,24 +8097,23 @@ function renderClientsList() {
 
   const tbody = document.getElementById('cl-tbody');
   if (!tbody) return;
-  if (!items.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--grey-400);">No clients found</td></tr>'; return; }
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--grey-400);">No clients found</td></tr>'; return; }
 
   tbody.innerHTML = items.map(c => {
-    const pgs = [...new Set(cache.activities.filter(a => a.PSPClient === c.PSPClient).map(a => a.PayGroup).filter(Boolean))].sort();
     const statusColor = (c.ClientStatus || 'Active') === 'Active' ? 'var(--teal)' : 'var(--grey-400)';
     const pspName = c.PSPClient || c.ContactName || c.Title || '—';
     const invoiceName = c.ClientInvoiceName || '';
+    const isActive = (c.ClientStatus || 'Active') === 'Active';
     return `<tr>
       <td><strong style="color:var(--navy);">${pspName}</strong></td>
       <td style="color:var(--grey-600);font-size:12px;">${invoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
       <td>${c.Currency||'PGK'}</td>
       <td style="font-size:12px;">${c.TaxType||'—'}</td>
-      <td style="font-size:12px;">${pgs.map(pg=>`<span style="background:var(--teal);color:white;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700;margin-right:3px;">${pg}</span>`).join('')||'<em style="color:var(--grey-400);">None</em>'}</td>
       <td><span style="font-weight:700;color:${statusColor};">${c.ClientStatus||'Active'}</span></td>
-      <td>
-        <button class="btn btn-xs btn-outline" onclick="openClientWizard('${c.id}')"><i class="ti ti-pencil"></i></button>
-        <button class="btn btn-xs" style="background:#eff6ff;color:#3b82f6;border:1.5px solid #93c5fd;" onclick="toggleClientStatus('${c.id}')" title="${(c.ClientStatus||'Active')==='Active'?'Deactivate':'Activate'}">
-          <i class="ti ti-${(c.ClientStatus||'Active')==='Active'?'toggle-right':'toggle-left'}"></i>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-xs btn-outline" onclick="openClientWizard('${c.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
+        <button class="btn btn-xs" style="background:#eff6ff;color:#3b82f6;border:1.5px solid #93c5fd;" onclick="toggleClientStatus('${c.id}')" title="${isActive?'Deactivate':'Activate'}">
+          <i class="ti ti-${isActive?'toggle-right':'toggle-left'}"></i> ${isActive?'Deactivate':'Activate'}
         </button>
       </td>
     </tr>`;
