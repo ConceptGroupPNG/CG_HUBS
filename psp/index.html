@@ -6317,6 +6317,21 @@ function reExportInvoice(id) {
   a.download = `${(inv.PSPClient||'').replace(/[^a-z0-9]/gi,'_')}_${inv.Title}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   showToast(`Re-exported ${inv.Title}`, 'success');
+
+  // Flow 2: create the CSV in a SharePoint library, tag its metadata, and email a
+  // link to it (fire-and-forget — the CSV has already downloaded locally above).
+  triggerFlow('invoiceExport', {
+    invoiceNumber: inv.Title,
+    clientName: inv.ContactName || inv.PSPClient || '',
+    fileName: a.download,
+    csvContentBase64: btoa(unescape(encodeURIComponent(csv))),
+    totalAmount: inv.TotalAmount || 0,
+    currency: inv.Currency || 'PGK',
+    emailTo: inv.EmailAddress || '',
+    exportedBy: currentUser?.displayName || '',
+    exportedByEmail: currentUser?.mail || currentUser?.userPrincipalName || '',
+    exportedDate: new Date().toISOString(),
+  });
 }
 
 // ─────────────────────────────────────────────
