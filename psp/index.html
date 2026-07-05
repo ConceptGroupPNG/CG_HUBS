@@ -5239,6 +5239,7 @@ async function markAsBilled() {
       currency: clientDetails.Currency || 'PGK',
       emailTo: clientDetails.EmailAddress || '',
       exportedBy: currentUser?.displayName || '',
+      exportedByEmail: currentUser?.mail || currentUser?.userPrincipalName || '',
       exportedDate: new Date().toISOString(),
     });
   } catch(e) {
