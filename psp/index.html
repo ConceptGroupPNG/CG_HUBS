@@ -1196,16 +1196,16 @@
               <table id="act-all-table">
                 <thead>
                   <tr>
-                    <th>Client</th>
-                    <th>Pay Group</th>
-                    <th>Pay No</th>
-                    <th>Order</th>
-                    <th>Milestone</th>
-                    <th>Scheduled</th>
-                    <th>Pay Master</th>
+                    <th class="sort-th" data-table="activities" data-key="client" onclick="setSort('activities','client')" style="cursor:pointer;user-select:none;">Client <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="paygroup" onclick="setSort('activities','paygroup')" style="cursor:pointer;user-select:none;">Pay Group <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="payno" onclick="setSort('activities','payno')" style="cursor:pointer;user-select:none;">Pay No <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="order" onclick="setSort('activities','order')" style="cursor:pointer;user-select:none;">Order <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="milestone" onclick="setSort('activities','milestone')" style="cursor:pointer;user-select:none;">Milestone <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="scheduled" onclick="setSort('activities','scheduled')" style="cursor:pointer;user-select:none;">Scheduled <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="activities" data-key="member" onclick="setSort('activities','member')" style="cursor:pointer;user-select:none;">Pay Master <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                     <th>Int/Ext</th>
                     <th>SLA</th>
-                    <th>Status</th>
+                    <th class="sort-th" data-table="activities" data-key="status" onclick="setSort('activities','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -1449,14 +1449,14 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Quote No</th>
-                    <th>Client</th>
-                    <th>Reference</th>
-                    <th>Quote Date</th>
-                    <th>Expiry</th>
-                    <th style="text-align:right;">Total</th>
-                    <th>Currency</th>
-                    <th>Status</th>
+                    <th class="sort-th" data-table="quotes" data-key="quoteno" onclick="setSort('quotes','quoteno')" style="cursor:pointer;user-select:none;">Quote No <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="client" onclick="setSort('quotes','client')" style="cursor:pointer;user-select:none;">Client <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="reference" onclick="setSort('quotes','reference')" style="cursor:pointer;user-select:none;">Reference <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="quotedate" onclick="setSort('quotes','quotedate')" style="cursor:pointer;user-select:none;">Quote Date <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="expiry" onclick="setSort('quotes','expiry')" style="cursor:pointer;user-select:none;">Expiry <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="total" onclick="setSort('quotes','total')" style="cursor:pointer;user-select:none;text-align:right;">Total <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="currency" onclick="setSort('quotes','currency')" style="cursor:pointer;user-select:none;">Currency <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="quotes" data-key="status" onclick="setSort('quotes','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -1593,17 +1593,17 @@
             <table>
               <thead>
                 <tr>
-                  <th>Invoice No</th>
-                  <th>Client</th>
-                  <th>Billing Month</th>
-                  <th>Invoice Date</th>
-                  <th>Due Date</th>
-                  <th>Pay Runs</th>
-                  <th style="text-align:right;">Sub Total</th>
-                  <th style="text-align:right;">Tax</th>
-                  <th style="text-align:right;">Total</th>
-                  <th>Currency</th>
-                  <th>Status</th>
+                  <th class="sort-th" data-table="invoices" data-key="invoiceno" onclick="setSort('invoices','invoiceno')" style="cursor:pointer;user-select:none;">Invoice No <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="client" onclick="setSort('invoices','client')" style="cursor:pointer;user-select:none;">Client <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="billingmonth" onclick="setSort('invoices','billingmonth')" style="cursor:pointer;user-select:none;">Billing Month <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="invoicedate" onclick="setSort('invoices','invoicedate')" style="cursor:pointer;user-select:none;">Invoice Date <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="duedate" onclick="setSort('invoices','duedate')" style="cursor:pointer;user-select:none;">Due Date <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="payruns" onclick="setSort('invoices','payruns')" style="cursor:pointer;user-select:none;">Pay Runs <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="subtotal" onclick="setSort('invoices','subtotal')" style="cursor:pointer;user-select:none;text-align:right;">Sub Total <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="tax" onclick="setSort('invoices','tax')" style="cursor:pointer;user-select:none;text-align:right;">Tax <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="total" onclick="setSort('invoices','total')" style="cursor:pointer;user-select:none;text-align:right;">Total <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="currency" onclick="setSort('invoices','currency')" style="cursor:pointer;user-select:none;">Currency <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  <th class="sort-th" data-table="invoices" data-key="status" onclick="setSort('invoices','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                                     <th>Actions</th>
                 </tr>
               </thead>
@@ -1829,12 +1829,12 @@
           <div class="card">
             <table class="data-table">
               <thead><tr>
-                <th>Client (PSP Name)</th>
-                <th>Invoice Name (Xero)</th>
-                <th>Currency</th>
-                <th>Tax Type</th>
+                <th class="sort-th" data-table="clients" data-key="client" onclick="setSort('clients','client')" style="cursor:pointer;user-select:none;">Client (PSP Name) <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                <th class="sort-th" data-table="clients" data-key="invoicename" onclick="setSort('clients','invoicename')" style="cursor:pointer;user-select:none;">Invoice Name (Xero) <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                <th class="sort-th" data-table="clients" data-key="currency" onclick="setSort('clients','currency')" style="cursor:pointer;user-select:none;">Currency <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                <th class="sort-th" data-table="clients" data-key="taxtype" onclick="setSort('clients','taxtype')" style="cursor:pointer;user-select:none;">Tax Type <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th>Pay Groups</th>
-                <th>Status</th>
+                <th class="sort-th" data-table="clients" data-key="status" onclick="setSort('clients','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th style="width:100px;">Actions</th>
               </tr></thead>
               <tbody id="cl-tbody"></tbody>
@@ -4169,6 +4169,13 @@ async function navigate(page) {
     if (label) label.textContent = 'Auto-refresh: Off';
   }
   if (page !== 'dashboard') resetKanbanScope();
+
+  // Reset column sort on any sortable table's page other than the one we're
+  // navigating to — so a table's sort only persists while you're still on it.
+  Object.entries(SORT_TABLE_PAGES).forEach(([table, tablePage]) => {
+    if (tablePage !== page) resetSortState(table);
+  });
+
   await loadPage(page);
 }
 
@@ -4311,6 +4318,113 @@ function getStatusClass(status) {
     'Finished':    'finished',
   };
   return map[status] || 'not-started';
+}
+
+// ─────────────────────────────────────────────
+// COLUMN SORTING (Activities/All, Clients, Quotes, Invoices)
+// ─────────────────────────────────────────────
+// key === null means "use each table's original default sort order" so nothing
+// changes until the user actually clicks a column header.
+const SORT_STATE = {
+  activities: { key: null, dir: 1 },
+  clients:    { key: null, dir: 1 },
+  quotes:     { key: null, dir: 1 },
+  invoices:   { key: null, dir: 1 },
+};
+
+const SORT_EXTRACTORS = {
+  activities: {
+    client:    i => i.PSPClient || '',
+    paygroup:  i => getPayGroup(i) || '',
+    payno:     i => i.PayNo || '',
+    order:     i => getOrder(i) || 0,
+    milestone: i => i.ActivityMilestone || '',
+    scheduled: i => i.ActivityDateTime || '',
+    member:    i => getPSPMember(i) || '',
+    status:    i => getActStatus(i) || 'Not Started',
+  },
+  clients: {
+    client:      c => c.PSPClient || c.ContactName || c.Title || '',
+    invoicename: c => c.ClientInvoiceName || '',
+    currency:    c => c.Currency || 'PGK',
+    taxtype:     c => c.TaxType || '',
+    status:      c => c.ClientStatus || 'Active',
+  },
+  quotes: {
+    quoteno:   i => i.Title || '',
+    client:    i => i.PSPClient || '',
+    reference: i => i.Reference || '',
+    quotedate: i => i.QuoteDate || '',
+    expiry:    i => i.ExpiryDate || '',
+    total:     i => i.TotalAmount || 0,
+    currency:  i => i.Currency || 'PGK',
+    status:    i => i.Status || 'Draft',
+  },
+  invoices: {
+    invoiceno:    i => i.Title || '',
+    client:       i => i.PSPClient || '',
+    billingmonth: i => i.BillingMonth || '',
+    invoicedate:  i => i.InvoiceDate || '',
+    duedate:      i => i.DueDate || '',
+    payruns:      i => i.PayRuns || '',
+    subtotal:     i => i.SubTotal || 0,
+    tax:          i => i.TaxAmount || 0,
+    total:        i => i.TotalAmount || 0,
+    currency:     i => i.Currency || 'PGK',
+    status:       i => i.Status || 'Issued',
+  },
+};
+
+function compareGeneric(va, vb, dir) {
+  if (va == null) va = '';
+  if (vb == null) vb = '';
+  if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+  const na = parseFloat(va), nb = parseFloat(vb);
+  const bothNumeric = String(va).trim() !== '' && String(vb).trim() !== '' && !isNaN(na) && !isNaN(nb);
+  if (bothNumeric) return (na - nb) * dir;
+  return String(va).localeCompare(String(vb), undefined, {sensitivity:'base'}) * dir;
+}
+
+function sortItemsBy(items, table, key, dir) {
+  const extractor = SORT_EXTRACTORS[table]?.[key];
+  if (!extractor) return items;
+  return [...items].sort((a,b) => compareGeneric(extractor(a), extractor(b), dir));
+}
+
+function setSort(table, key) {
+  const state = SORT_STATE[table];
+  if (state.key === key) state.dir *= -1;
+  else { state.key = key; state.dir = 1; }
+  updateSortHeaderIcons(table);
+  if (table === 'activities') renderActivities();
+  else if (table === 'clients') renderClientsList();
+  else if (table === 'quotes') renderQuotes();
+  else if (table === 'invoices') renderInvoices();
+}
+
+function updateSortHeaderIcons(table) {
+  const state = SORT_STATE[table];
+  document.querySelectorAll(`.sort-th[data-table="${table}"]`).forEach(th => {
+    const icon = th.querySelector('.sort-icon');
+    if (!icon) return;
+    if (th.dataset.key === state.key) {
+      icon.textContent = state.dir === 1 ? '▲' : '▼';
+      icon.style.opacity = '1';
+    } else {
+      icon.textContent = '⇅';
+      icon.style.opacity = '0.3';
+    }
+  });
+}
+
+// Maps each sortable table to the page it lives on, so navigate() can reset
+// a table's sort whenever the user leaves that page.
+const SORT_TABLE_PAGES = { activities: 'activities', clients: 'clients', quotes: 'quotes', invoices: 'invoices' };
+
+function resetSortState(table) {
+  SORT_STATE[table].key = null;
+  SORT_STATE[table].dir = 1;
+  updateSortHeaderIcons(table);
 }
 
 // ─────────────────────────────────────────────
@@ -4481,6 +4595,9 @@ function renderAllActivities() {
     if (a.PSPClient > b.PSPClient) return 1;
     return (getOrder(a)||0) - (getOrder(b)||0);
   });
+  if (SORT_STATE.activities.key) {
+    items = sortItemsBy(items, 'activities', SORT_STATE.activities.key, SORT_STATE.activities.dir);
+  }
 
   const tbody = document.getElementById('act-all-tbody');
   if (!tbody) return;
@@ -6662,6 +6779,9 @@ function renderQuotes() {
     (i.Reference||'').toLowerCase().includes(search)
   );
   items.sort((a,b) => (b.Title||'').localeCompare(a.Title||''));
+  if (SORT_STATE.quotes.key) {
+    items = sortItemsBy(items, 'quotes', SORT_STATE.quotes.key, SORT_STATE.quotes.dir);
+  }
 
   const tbody = document.getElementById('quotes-tbody');
   if (!items.length) {
@@ -7240,6 +7360,9 @@ function renderInvoices() {
     (i.PayRuns||'').toLowerCase().includes(search)
   );
   items.sort((a,b) => (b.Title||'').localeCompare(a.Title||''));
+  if (SORT_STATE.invoices.key) {
+    items = sortItemsBy(items, 'invoices', SORT_STATE.invoices.key, SORT_STATE.invoices.dir);
+  }
 
   const tbody = document.getElementById('invoices-tbody');
   if (!items.length) {
@@ -7969,6 +8092,9 @@ function renderClientsList() {
   );
   if (statusF) items = items.filter(c => (c.ClientStatus || 'Active') === statusF);
   items.sort((a,b) => (a.PSPClient||'').localeCompare(b.PSPClient||''));
+  if (SORT_STATE.clients.key) {
+    items = sortItemsBy(items, 'clients', SORT_STATE.clients.key, SORT_STATE.clients.dir);
+  }
 
   const tbody = document.getElementById('cl-tbody');
   if (!tbody) return;
