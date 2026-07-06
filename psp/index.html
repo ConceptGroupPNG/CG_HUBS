@@ -1280,6 +1280,9 @@
 
         <!-- All Activities: table view (hidden by default) -->
         <div id="act-all-container" style="display:none;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <button class="btn btn-sm btn-outline" onclick="exportActivitiesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+          </div>
           <div class="card">
             <div class="table-wrap">
               <table id="act-all-table">
@@ -1464,6 +1467,9 @@
               <option value="false">Unbilled Only</option>
               <option value="true">Billed</option>
             </select>
+            <button class="btn btn-sm btn-outline" onclick="exportBillingMetricsCSV()">
+              <i class="ti ti-download"></i> Export CSV
+            </button>
             <button class="btn btn-teal" onclick="openBillingForm()">
               <i class="ti ti-plus"></i> Add Pay Run
             </button>
@@ -1529,6 +1535,7 @@
               <option>Voided</option>
             </select>
             <input type="text" id="filter-q-search" placeholder="Search quote no, client, reference..." oninput="renderQuotes()">
+            <button class="btn btn-sm btn-outline" onclick="exportQuotesCSV()" style="margin-left:auto;"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="card">
             <div class="table-wrap">
@@ -1673,6 +1680,7 @@
             <option>2026</option><option>2025</option>
           </select>
           <input type="text" id="filter-inv-search" placeholder="Search invoice no, client..." oninput="renderInvoices()">
+          <button class="btn btn-sm btn-outline" onclick="exportInvoicesCSV()" style="margin-left:auto;"><i class="ti ti-download"></i> Export CSV</button>
         </div>
         <div class="card">
           <div class="table-wrap">
@@ -1908,6 +1916,7 @@
                 <option value="Inactive">Inactive</option>
               </select>
             </div>
+            <button class="btn btn-sm btn-outline" onclick="exportClientsCSV()"><i class="ti ti-download"></i> Export CSV</button>
             <button class="btn btn-teal" onclick="openClientWizard(null)">
               <i class="ti ti-plus"></i> Add Client
             </button>
@@ -3275,6 +3284,26 @@ function resetSortState(table) {
 }
 
 // ─────────────────────────────────────────────
+// CSV EXPORT (Activities, Clients, Quotes, Invoices, Billing Metrics)
+// ─────────────────────────────────────────────
+// Generic CSV builder + download. `rows` is an array of arrays (one per data
+// row); values are stringified and quoted only where needed. Exports exactly
+// what's currently filtered/sorted/on-screen for that table.
+function downloadCSV(filename, headers, rows) {
+  const esc = v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  showToast(`Exported ${rows.length} row${rows.length===1?'':'s'} to CSV`, 'success');
+}
+
+// ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
 async function loadDashboard() {
@@ -3418,6 +3447,18 @@ function renderMyActivities() {
   }).join('');
 }
 
+let lastActivitiesItems = [];
+
+function exportActivitiesCSV() {
+  const headers = ['Client','Pay Group','Pay No','Order','Milestone','Scheduled','Pay Master','Int/Ext','SLA','Status'];
+  const rows = lastActivitiesItems.map(i => [
+    i.PSPClient||'', getPayGroup(i)||'', i.PayNo||'', getOrder(i)||'',
+    i.ActivityMilestone||'', fmtDateTime(i.ActivityDateTime), getPSPMember(i)||'',
+    i.IntExt||'', i.SLA ? 'Yes' : 'No', getActStatus(i)||'Not Started',
+  ]);
+  downloadCSV(`Activities_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+}
+
 function renderAllActivities() {
   const dateFilter = document.getElementById('act-filter-date')?.value || 'today';
   const member     = document.getElementById('act-filter-member')?.value || '';
@@ -3445,6 +3486,7 @@ function renderAllActivities() {
   if (SORT_STATE.activities.key) {
     items = sortItemsBy(items, 'activities', SORT_STATE.activities.key, SORT_STATE.activities.dir);
   }
+  lastActivitiesItems = items;
 
   const tbody = document.getElementById('act-all-tbody');
   if (!tbody) return;
@@ -4516,6 +4558,20 @@ function getBillingMonth(item) {
   return d.toLocaleDateString('en-GB', {month: 'long'});
 }
 
+let lastBillingMetricsItems = [];
+
+function exportBillingMetricsCSV() {
+  const headers = ['Client','Pay Group','Pay No','PPE','Payrun','Billing Month','Employees/Payslips','Nationals','Expatriate','New Hires','Terminations','Non-Update Charge','Lay-Off','Re-Hire/Cease Lay-Off','Process','Metrics','Billed'];
+  const rows = lastBillingMetricsItems.map(i => [
+    i.PSPClient||'', getPayGroup(i)||'', i.PayNo||'', fmtDate(i.PayEnddate), i.Payrun||'', getBillingMonth(i)||'',
+    i.EmployeesPayslips||0, i.Nationals||0, i.Expatriate||0, i.NewHires||0, i.Terminations||0,
+    i.NonUpdateCharge||0, i.LayOff||0, i.CeaseLayOff||0,
+    i.Process ? 'Yes' : 'No', i.Metrics ? 'Yes' : 'No', i.Billing ? 'Yes' : 'No',
+  ]);
+  const clientPart = bmSelectedClient ? bmSelectedClient.replace(/[^a-z0-9]/gi,'_') + '_' : '';
+  downloadCSV(`${clientPart}BillingMetrics_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+}
+
 function renderBillingMetrics() {
   const pg = document.getElementById('filter-bm-paygroup')?.value || '';
   const month = document.getElementById('filter-bm-month')?.value || '';
@@ -4529,6 +4585,7 @@ function renderBillingMetrics() {
   if (billed === 'true') items = items.filter(i => i.Billing);
   if (billed === 'false') items = items.filter(i => !i.Billing);
   items.sort((a,b) => (spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0));
+  lastBillingMetricsItems = items;
   const tbody = document.getElementById('billing-metrics-tbody');
   if (!items.length) { tbody.innerHTML = '<tr><td colspan="17"><div class="empty-state"><i class="ti ti-chart-bar"></i><p>No billing records found</p></div></td></tr>'; return; }
   const tick = '<i class="ti ti-check" style="color:var(--teal);font-size:14px;"></i>';
@@ -5613,6 +5670,17 @@ async function loadQuotes() {
   renderQuotes();
 }
 
+let lastQuotesItems = [];
+
+function exportQuotesCSV() {
+  const headers = ['Quote No','Client','Reference','Quote Date','Expiry','Total','Currency','Status'];
+  const rows = lastQuotesItems.map(i => [
+    i.Title||'', i.PSPClient||'', i.Reference||'', fmtDate(i.QuoteDate), fmtDate(i.ExpiryDate),
+    (i.TotalAmount||0).toFixed(2), i.Currency||'PGK', i.Status||'Draft',
+  ]);
+  downloadCSV(`Quotes_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+}
+
 function renderQuotes() {
   const client = document.getElementById('filter-q-client')?.value || '';
   const status = document.getElementById('filter-q-status')?.value || '';
@@ -5630,6 +5698,7 @@ function renderQuotes() {
   if (SORT_STATE.quotes.key) {
     items = sortItemsBy(items, 'quotes', SORT_STATE.quotes.key, SORT_STATE.quotes.dir);
   }
+  lastQuotesItems = items;
 
   const tbody = document.getElementById('quotes-tbody');
   if (!items.length) {
@@ -6128,6 +6197,18 @@ async function loadInvoices() {
   renderInvoices();
 }
 
+let lastInvoicesItems = [];
+
+function exportInvoicesCSV() {
+  const headers = ['Invoice No','Client','Billing Month','Invoice Date','Due Date','Pay Runs','Sub Total','Tax','Total','Currency','Status'];
+  const rows = lastInvoicesItems.map(i => [
+    i.Title||'', i.PSPClient||'', i.BillingMonth||'', fmtDate(i.InvoiceDate), fmtDate(i.DueDate),
+    i.PayRuns||'', (i.SubTotal||0).toFixed(2), (i.TaxAmount||0).toFixed(2), (i.TotalAmount||0).toFixed(2),
+    i.Currency||'PGK', i.Status||'Issued',
+  ]);
+  downloadCSV(`Invoices_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+}
+
 function renderInvoices() {
   const client = document.getElementById('filter-inv-client')?.value || '';
   const status = document.getElementById('filter-inv-status')?.value || '';
@@ -6149,6 +6230,7 @@ function renderInvoices() {
   if (SORT_STATE.invoices.key) {
     items = sortItemsBy(items, 'invoices', SORT_STATE.invoices.key, SORT_STATE.invoices.dir);
   }
+  lastInvoicesItems = items;
 
   const tbody = document.getElementById('invoices-tbody');
   if (!items.length) {
@@ -6883,6 +6965,20 @@ async function loadClientsPage() {
   renderClientsList();
 }
 
+let lastClientsItems = [];
+
+function exportClientsCSV() {
+  const headers = ['Client (PSP Name)','Invoice Name (Xero)','Currency','Tax Type','Status'];
+  const rows = lastClientsItems.map(c => [
+    c.PSPClient || c.ContactName || c.Title || '',
+    c.ClientInvoiceName || '',
+    c.Currency || 'PGK',
+    c.TaxType || '',
+    c.ClientStatus || 'Active',
+  ]);
+  downloadCSV(`Clients_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+}
+
 function renderClientsList() {
   const search = (document.getElementById('cl-search')?.value || '').toLowerCase();
   const statusF = document.getElementById('cl-filter-status')?.value || '';
@@ -6896,6 +6992,7 @@ function renderClientsList() {
   if (SORT_STATE.clients.key) {
     items = sortItemsBy(items, 'clients', SORT_STATE.clients.key, SORT_STATE.clients.dir);
   }
+  lastClientsItems = items;
 
   const tbody = document.getElementById('cl-tbody');
   if (!tbody) return;
