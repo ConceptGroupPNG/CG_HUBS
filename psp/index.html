@@ -3295,7 +3295,9 @@ function downloadCSV(filename, headers, rows) {
     return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g,'""') + '"' : s;
   };
   const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
+  // Prefix a UTF-8 BOM — without it, Excel misreads non-ASCII characters
+  // (accented letters, curly quotes, en/em dashes, etc.) as garbled symbols.
+  const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -6968,14 +6970,34 @@ async function loadClientsPage() {
 let lastClientsItems = [];
 
 function exportClientsCSV() {
-  const headers = ['Client (PSP Name)','Invoice Name (Xero)','Currency','Tax Type','Status'];
-  const rows = lastClientsItems.map(c => [
-    c.PSPClient || c.ContactName || c.Title || '',
-    c.ClientInvoiceName || '',
-    c.Currency || 'PGK',
-    c.TaxType || '',
-    c.ClientStatus || 'Active',
-  ]);
+  const headers = [
+    'Client (PSP Name)','Invoice Name (Xero)','Email Address','Currency','Tax Type',
+    'Account Code','Inventory Item Code','Tracking Name 1','Tracking Option 1',
+    'Address Line 1','Address Line 2','City','Region','Country',
+    'Pay Groups','Status',
+  ];
+  const rows = lastClientsItems.map(c => {
+    const pspName = c.PSPClient || c.ContactName || c.Title || '';
+    const payGroups = [...new Set(cache.billing.filter(b => b.PSPClient === pspName).map(b => getPayGroup(b)).filter(Boolean))].sort().join('; ');
+    return [
+      pspName,
+      c.ClientInvoiceName || '',
+      c.EmailAddress || '',
+      c.Currency || 'PGK',
+      c.TaxType || '',
+      c.AccountCode || '',
+      c.InventoryItemCode || '',
+      c.TrackingName1 || '',
+      c.TrackingOption1 || '',
+      c.POAddressLine1 || '',
+      c.POAddressLine2 || '',
+      c.POCity || '',
+      c.PORegion || '',
+      c.POCountry || '',
+      payGroups,
+      c.ClientStatus || 'Active',
+    ];
+  });
   downloadCSV(`Clients_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
 }
 
