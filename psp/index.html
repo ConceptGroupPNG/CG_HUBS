@@ -3143,7 +3143,75 @@ async function navigate(page) {
     if (tablePage !== page) resetSortState(table);
   });
 
+  // Reset filters/search boxes on any other page's screen — so they only
+  // persist while you're still on that page, same as the sort/kanban resets.
+  Object.keys(PAGE_FILTER_FIELDS).forEach(p => {
+    if (p !== page) resetPageFilters(p);
+  });
+
   await loadPage(page);
+}
+
+// Filter/search fields to clear on any page other than the one being navigated
+// to. Each entry's `def` is the value that represents "no filter applied" for
+// that specific field (usually '', but a couple of selects default to a
+// non-blank first option).
+const PAGE_FILTER_FIELDS = {
+  activities: [
+    { id: 'act-filter-date', def: 'today' },
+    { id: 'act-filter-client', def: '' },
+    { id: 'act-filter-pg', def: '' },
+    { id: 'act-filter-member', def: '' },
+    { id: 'act-filter-status', def: '' },
+    { id: 'act-filter-search', def: '' },
+  ],
+  calendar: [
+    { id: 'filter-cal-client', def: '' },
+    { id: 'filter-cal-paygroup', def: '' },
+    { id: 'filter-cal-status', def: '' },
+  ],
+  quotes: [
+    { id: 'filter-q-client', def: '' },
+    { id: 'filter-q-status', def: '' },
+    { id: 'filter-q-search', def: '' },
+  ],
+  invoices: [
+    { id: 'filter-inv-client', def: '' },
+    { id: 'filter-inv-status', def: '' },
+    { id: 'filter-inv-month', def: '' },
+    { id: 'filter-inv-year', def: '' },
+    { id: 'filter-inv-search', def: '' },
+  ],
+  clients: [
+    { id: 'cl-search', def: '' },
+    { id: 'cl-filter-status', def: '' },
+  ],
+  'bulk-admin': [
+    { id: 'ph-filter-year', def: '' },
+    { id: 'ph-filter-country', def: '' },
+    { id: 'ph-filter-search', def: '' },
+  ],
+  'billing-metrics': [
+    { id: 'bm-client-select', def: '' },
+  ],
+};
+
+function resetPageFilters(page) {
+  const fields = PAGE_FILTER_FIELDS[page];
+  if (!fields) return;
+  fields.forEach(({id, def}) => {
+    const el = document.getElementById(id);
+    if (el) el.value = def;
+  });
+  // Billing Metrics shows a separate client-summary view once a client is
+  // picked — clearing the select alone wouldn't bring back the picker screen.
+  if (page === 'billing-metrics') {
+    bmSelectedClient = '';
+    const metricsView = document.getElementById('bm-metrics-view');
+    const picker = document.getElementById('bm-client-picker');
+    if (metricsView) metricsView.style.display = 'none';
+    if (picker) picker.style.display = '';
+  }
 }
 
 async function handleTokenExpiry() {
