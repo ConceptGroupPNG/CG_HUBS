@@ -4622,9 +4622,23 @@ async function saveModal() {
   }
 }
 
+function resetModalFooter() {
+  const footer = document.getElementById('modal-footer');
+  if (footer) {
+    footer.innerHTML = `
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" id="modal-save-btn" onclick="saveModal()">Save</button>`;
+  }
+}
+
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
   modalEntity = null;
+  // Some views (pspConfirm, viewQuoteById, invoice view/edit, etc.) replace the
+  // footer entirely with their own buttons and never put the default ones back.
+  // Restoring here guarantees #modal-save-btn always exists for the next modal
+  // that expects it (e.g. confirmDelete), regardless of what was open before.
+  resetModalFooter();
 }
 
 // ─────────────────────────────────────────────
@@ -5781,6 +5795,7 @@ function pspConfirm(message, title = 'PSP HUB') {
 
     const cleanup = (result) => {
       document.getElementById('modal-overlay').classList.remove('open');
+      resetModalFooter();
       resolve(result);
     };
     document.getElementById('psp-confirm-ok').onclick = () => cleanup(true);
