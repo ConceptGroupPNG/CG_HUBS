@@ -6424,6 +6424,9 @@ function renderInvoices() {
         <button class="btn btn-xs btn-teal" onclick="reExportInvoice('${i.id}')" title="Re-export CSV">
           <i class="ti ti-download"></i> Export
         </button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('invoices','${i.id}','${(i.Title||'').replace(/'/g,"\\'")} — ${(i.PSPClient||'').replace(/'/g,"\\'")}')" title="Delete">
+          <i class="ti ti-trash"></i> Delete
+        </button>
       </td>
     </tr>`).join('');
 }
