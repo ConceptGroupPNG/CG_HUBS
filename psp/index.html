@@ -966,7 +966,7 @@
         <i class="ti ti-calculator"></i> Billing Calculator
       </div>
       <div class="nav-item" onclick="navigate('bulk-admin')">
-        <i class="ti ti-adjustments"></i> Bulk Admin
+        <i class="ti ti-adjustments"></i> Administration
       </div>
     </div>
 
@@ -2400,6 +2400,38 @@
             </div>
           </div>
 
+          <!-- ── Card: Public Holidays ── -->
+          <div class="card" style="padding:0;overflow:hidden;grid-column:1 / -1;">
+            <div style="background:linear-gradient(135deg,#78350f,#d97706);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <i class="ti ti-calendar-event" style="color:#fde68a;font-size:18px;"></i>
+                <h3 style="color:white;margin:0;font-size:15px;">Public Holidays</h3>
+              </div>
+              <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:white;font-weight:700;" onclick="openHolidayForm()">
+                <i class="ti ti-plus"></i> Add Holiday
+              </button>
+            </div>
+            <div style="padding:20px;">
+              <div class="filter-bar" style="margin-bottom:14px;">
+                <select id="ph-filter-year" onchange="renderPublicHolidaysAdmin()">
+                  <option value="">All Years</option>
+                </select>
+                <select id="ph-filter-country" onchange="renderPublicHolidaysAdmin()">
+                  <option value="">All Countries</option>
+                </select>
+                <input type="text" id="ph-filter-search" placeholder="Search holiday..." oninput="renderPublicHolidaysAdmin()">
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Country</th><th>Abbreviation</th><th>Holiday</th><th>Date</th><th>Year</th><th>Actions</th></tr>
+                  </thead>
+                  <tbody id="ph-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
       </div>
@@ -3060,7 +3092,7 @@ async function navigate(page) {
     'generate-calendar': 'Generate Calendar',
     'billing-calc': 'Billing Calculator',
     'billing-metrics': 'Billing Metrics',
-    'bulk-admin': 'Bulk Admin',
+    'bulk-admin': 'Administration',
     'clients': 'Clients',
     'quotes': 'Quotes',
     'invoices': 'Invoices',
@@ -4464,7 +4496,7 @@ async function generateCalendar() {
       `Pay ${h.payNo}: ${h.milestone} on ${h.date.toLocaleDateString('en-GB')} — ${formatHolidayIndicator(h.holidays)}`
     ).join('<br>');
     await pspConfirm(
-      `<strong>${holidayLandings.length} generated activit${holidayLandings.length===1?'y':'ies'} fall on a Public Holiday:</strong><br><br>${lines}<br><br>Dates were generated as scheduled — no dates were moved automatically. Review and adjust via Bulk Admin &gt; Change Activity Date if needed.`,
+      `<strong>${holidayLandings.length} generated activit${holidayLandings.length===1?'y':'ies'} fall on a Public Holiday:</strong><br><br>${lines}<br><br>Dates were generated as scheduled — no dates were moved automatically. Review and adjust via Administration &gt; Change Activity Date if needed.`,
       'Public Holiday Notice'
     );
   }
@@ -7786,6 +7818,7 @@ async function loadBulkAdmin() {
   if (!cache.calendar.length) cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   if (!cache.billing.length) cache.billing = await getItems('billing');
+  cache.holidays = await getItems('holidays');
 
   // Wire up user picker for New Pay Master field
   renderUserPicker('ba-pm-new-member', 'ba-pm-member-dropdown', 'ba-pm-member-id', function(user) {
@@ -7806,6 +7839,9 @@ async function loadBulkAdmin() {
     sel.innerHTML = '<option value="">— Select Client —</option>' +
       clients.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
   });
+
+  populateHolidayFilters();
+  renderPublicHolidaysAdmin();
 }
 
 function baPopulatePayGroups(prefix) {
@@ -8156,6 +8192,142 @@ async function baDeleteNotStarted() {
 
   showToast(`Deleted ${calDone} activities and ${bilDone} billing records`, 'success');
   baPreviewDelete();
+}
+
+// ── Public Holidays Admin (Add/Edit/Delete) ──
+function populateHolidayFilters() {
+  const yearSel = document.getElementById('ph-filter-year');
+  const countrySel = document.getElementById('ph-filter-country');
+  if (yearSel) {
+    const cur = yearSel.value;
+    const years = [...new Set(cache.holidays.map(h => h.Year).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+    yearSel.innerHTML = '<option value="">All Years</option>' + years.map(y => `<option ${y===cur?'selected':''}>${y}</option>`).join('');
+  }
+  if (countrySel) {
+    const cur = countrySel.value;
+    const countries = [...new Set(cache.holidays.map(h => h.Title).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    countrySel.innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
+  }
+}
+
+function renderPublicHolidaysAdmin() {
+  const tbody = document.getElementById('ph-tbody');
+  if (!tbody) return;
+  const year    = document.getElementById('ph-filter-year')?.value || '';
+  const country = document.getElementById('ph-filter-country')?.value || '';
+  const search  = (document.getElementById('ph-filter-search')?.value || '').toLowerCase();
+
+  let items = [...cache.holidays];
+  if (year) items = items.filter(h => h.Year === year);
+  if (country) items = items.filter(h => h.Title === country);
+  if (search) items = items.filter(h => (h.Holiday||'').toLowerCase().includes(search) || (h.Title||'').toLowerCase().includes(search));
+  items.sort((a,b) => (spDateToDate(a.PH_Date)||0) - (spDateToDate(b.PH_Date)||0) || (a.Title||'').localeCompare(b.Title||''));
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--grey-400);">No public holidays found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(h => `
+    <tr>
+      <td><strong>${h.Title||'—'}</strong></td>
+      <td>${h.Abbreviation||'—'}</td>
+      <td>${h.Holiday||'—'}</td>
+      <td style="white-space:nowrap;">${fmtDate(h.PH_Date)}</td>
+      <td>${h.Year||'—'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-xs btn-outline" onclick="openHolidayForm('${h.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('holidays','${h.id}','${(h.Title||'').replace(/'/g,"\\'")} – ${(h.Holiday||'').replace(/'/g,"\\'")} (${fmtDate(h.PH_Date)})')" title="Delete"><i class="ti ti-trash"></i> Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openHolidayForm(id = null) {
+  const item = id ? cache.holidays.find(h => String(h.id) === String(id)) : null;
+  const countries = [...new Set(cache.holidays.map(h => h.Title).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+
+  document.getElementById('modal-title').textContent = item ? 'Edit Public Holiday' : 'Add Public Holiday';
+  document.getElementById('modal-body').innerHTML = `
+    <datalist id="ph-country-list">
+      ${countries.map(c => `<option value="${c}">`).join('')}
+    </datalist>
+    <div class="form-group">
+      <label>Country (full name)</label>
+      <input type="text" id="ph-country" list="ph-country-list" value="${item?.Title||''}" placeholder="e.g. Papua New Guinea" onchange="phAutofillAbbrev()">
+    </div>
+    <div class="form-group">
+      <label>Abbreviation</label>
+      <input type="text" id="ph-abbrev" value="${item?.Abbreviation||''}" placeholder="e.g. PNG" style="text-transform:uppercase;">
+    </div>
+    <div class="form-group">
+      <label>Holiday</label>
+      <input type="text" id="ph-holiday" value="${item?.Holiday||''}" placeholder="e.g. Christmas Day">
+    </div>
+    <div class="form-group">
+      <label>Date</label>
+      <input type="date" id="ph-date" value="${item?.PH_Date ? spDateToDate(item.PH_Date)?.toISOString().slice(0,10) : ''}" onchange="phAutofillYear()">
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <input type="text" id="ph-year" value="${item?.Year||''}" placeholder="e.g. 2026">
+    </div>
+  `;
+  document.getElementById('modal-save-btn').textContent = item ? 'Save Changes' : 'Add Holiday';
+  document.getElementById('modal-save-btn').className = 'btn btn-teal';
+  document.getElementById('modal-save-btn').onclick = () => saveHolidayForm(id);
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+// When a Country matching an existing holiday is chosen/typed, auto-fill its
+// known Abbreviation so it stays consistent across entries.
+function phAutofillAbbrev() {
+  const country = document.getElementById('ph-country')?.value || '';
+  const abbrevInput = document.getElementById('ph-abbrev');
+  if (!abbrevInput || abbrevInput.value) return; // don't overwrite something already typed
+  const match = cache.holidays.find(h => (h.Title||'').toLowerCase() === country.toLowerCase());
+  if (match?.Abbreviation) abbrevInput.value = match.Abbreviation;
+}
+
+function phAutofillYear() {
+  const dateVal = document.getElementById('ph-date')?.value;
+  const yearInput = document.getElementById('ph-year');
+  if (!dateVal || !yearInput) return;
+  yearInput.value = dateVal.slice(0,4);
+}
+
+async function saveHolidayForm(id) {
+  const country  = document.getElementById('ph-country')?.value.trim();
+  const abbrev   = document.getElementById('ph-abbrev')?.value.trim().toUpperCase();
+  const holiday  = document.getElementById('ph-holiday')?.value.trim();
+  const dateVal  = document.getElementById('ph-date')?.value;
+  const year     = document.getElementById('ph-year')?.value.trim() || (dateVal ? dateVal.slice(0,4) : '');
+
+  if (!country || !abbrev || !holiday || !dateVal) {
+    showToast('Please fill in Country, Abbreviation, Holiday, and Date', 'error');
+    return;
+  }
+
+  const fields = {
+    Title: country,
+    Abbreviation: abbrev,
+    Holiday: holiday,
+    PH_Date: new Date(dateVal).toISOString(),
+    Year: year,
+  };
+
+  try {
+    if (id) {
+      await saveWithFieldFallback(true, 'holidays', id, fields);
+    } else {
+      await createItem('holidays', fields);
+    }
+    cache.holidays = await getItems('holidays');
+    closeModal();
+    populateHolidayFilters();
+    renderPublicHolidaysAdmin();
+    showToast(id ? 'Public holiday updated' : 'Public holiday added', 'success');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 
