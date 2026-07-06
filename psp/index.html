@@ -1018,7 +1018,7 @@
       <div class="page active" id="page-dashboard">
 
         <!-- Dashboard tab switcher -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;position:relative;">
           <div class="tabs" style="margin:0;border:none;">
             <div class="tab active" id="dash-tab-kanban" onclick="switchDashTab('kanban')">
               <i class="ti ti-layout-kanban" style="font-size:14px;margin-right:4px;"></i> Operations
@@ -1026,6 +1026,9 @@
             <div class="tab" id="dash-tab-finance" onclick="switchDashTab('finance')">
               <i class="ti ti-chart-bar" style="font-size:14px;margin-right:4px;"></i> Finance
             </div>
+          </div>
+          <div id="holiday-banner" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#fef3c7,#fde68a);border:1.5px solid #f59e0b;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;color:#92400e;white-space:nowrap;align-items:center;gap:6px;">
+            <i class="ti ti-calendar-event"></i> <span id="holiday-banner-text"></span>
           </div>
           <div id="fin-year-filter" style="display:none;align-items:center;gap:10px;">
             <select id="fin-year-sel" onchange="loadFinanceDashboard()" style="padding:6px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--navy);background:var(--white);outline:none;">
@@ -2344,13 +2347,14 @@
                 </div>
                 <div class="form-group" style="margin:0;">
                   <label>New Date &amp; Time</label>
-                  <input type="datetime-local" id="ba-dt-new-datetime">
+                  <input type="datetime-local" id="ba-dt-new-datetime" onchange="baCheckHolidayWarning()">
+                  <div id="ba-dt-holiday-warning" style="display:none;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:6px 10px;font-size:11px;margin-top:6px;"></div>
                 </div>
               </div>
               <div id="ba-dt-allafter-fields" style="display:none;">
                 <div class="form-group" style="margin:0 0 8px;">
                   <label>Shift by (days)</label>
-                  <input type="number" id="ba-dt-shift-days" placeholder="e.g. 2 or -1" style="max-width:160px;">
+                  <input type="number" id="ba-dt-shift-days" placeholder="e.g. 2 or -1" style="max-width:160px;" onchange="baLoadDateActivities()">
                 </div>
                 <div id="ba-dt-allafter-preview" style="font-size:12px;color:var(--grey-600);"></div>
               </div>
@@ -2541,6 +2545,7 @@ const LISTS = {
   invoices:    'PSP_Invoices',
   quotes:      'PSP_Quotes',
   lastquote:   'PSP_Last_Quote',
+  holidays:    'PSP_Public_Holidays',
 };
 
 // ─────────────────────────────────────────────
@@ -2604,6 +2609,7 @@ const cache = {
   invoices: [],
   quotes: [],
   lastquote: [],
+  holidays: [],
   listsMap: {},
 };
 
@@ -2871,6 +2877,68 @@ function isThisWeek(val) {
   const weekEnd = new Date(t); weekEnd.setDate(t.getDate() + 6);
   return d >= t && d <= weekEnd;
 }
+
+// ─────────────────────────────────────────────
+// PUBLIC HOLIDAYS
+// ─────────────────────────────────────────────
+// PSP_Public_Holidays: Title = full country name, Abbreviation = country code
+// (e.g. PNG, FIJI, SI), Holiday = description, PH_Date = the date.
+function sameCalendarDay(a, b) {
+  return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+
+// Returns every holiday record (any country) falling on the given date.
+function getHolidaysOnDate(date) {
+  if (!date) return [];
+  return cache.holidays.filter(h => sameCalendarDay(spDateToDate(h.PH_Date), date));
+}
+
+// Country full name -> abbreviation, sourced from the holidays list itself
+// (no separate mapping table to maintain).
+function getCountryAbbrev(countryName) {
+  if (!countryName) return '';
+  const rec = cache.holidays.find(h => (h.Title||'').toLowerCase() === countryName.toLowerCase());
+  return rec?.Abbreviation || '';
+}
+
+// Resolves a client (by PSP name) to their country's holidays on a given date.
+function getClientHolidaysOnDate(clientName, date) {
+  const client = cache.clients.find(c => getClientName(c) === clientName || c.PSPClient === clientName);
+  const country = client?.POCountry;
+  if (!country) return [];
+  return getHolidaysOnDate(date).filter(h => (h.Title||'').toLowerCase() === country.toLowerCase());
+}
+
+// Builds the compact display string per the agreed format:
+//  - 1 country on holiday: "{Holiday description} {ABBREV}" (description truncated if long)
+//  - 2+ countries on holiday: "Public Holidays {ABBREV1} {ABBREV2}..."
+function formatHolidayIndicator(holidays) {
+  if (!holidays || !holidays.length) return '';
+  const byCountry = [...new Map(holidays.map(h => [h.Title, h])).values()];
+  if (byCountry.length === 1) {
+    const h = byCountry[0];
+    const desc = (h.Holiday || 'Public Holiday');
+    const truncated = desc.length > 28 ? desc.slice(0,27) + '…' : desc;
+    return `${truncated} ${h.Abbreviation || ''}`.trim();
+  }
+  return `Public Holidays ${byCountry.map(h => h.Abbreviation||'').filter(Boolean).join(' ')}`.trim();
+}
+
+// Shows/hides the centered "Public Holiday today" banner on the Operations
+// (Kanban) dashboard tab, covering every country present in PSP_Public_Holidays.
+function updateHolidayBanner() {
+  const banner = document.getElementById('holiday-banner');
+  const textEl = document.getElementById('holiday-banner-text');
+  if (!banner || !textEl) return;
+  const todaysHolidays = getHolidaysOnDate(today());
+  if (todaysHolidays.length) {
+    textEl.textContent = formatHolidayIndicator(todaysHolidays);
+    banner.style.display = 'flex';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
 function isOverdue(val, status) {
   const _s = (status || '').toLowerCase();
   if (_s === 'finished') return false;
@@ -3084,13 +3152,14 @@ async function loadPage(page) {
 // DATA LOADING
 // ─────────────────────────────────────────────
 async function refreshCache() {
-  const [cal, acts, bill, fees, clients, lastinv] = await Promise.all([
+  const [cal, acts, bill, fees, clients, lastinv, holidays] = await Promise.all([
     getItems('calendar', '', 5000, ['PSPMEmber']),
     getItems('activities', '', 5000, ['PSPMEmber']),
     getItems('billing'),
     getItems('fees'),
     getItems('clients'),
     getItems('lastinv'),
+    getItems('holidays'),
   ]);
   cache.calendar = cal;
   cache.activities = acts;
@@ -3098,6 +3167,7 @@ async function refreshCache() {
   cache.fees = fees;
   cache.clients = clients;
   cache.lastinv = lastinv;
+  cache.holidays = holidays;
 
 }
 
@@ -3330,6 +3400,7 @@ async function loadDashboard() {
     await loadFinanceDashboard();
   } else {
     loadKanbanBoard();
+    updateHolidayBanner();
   }
 }
 
@@ -3660,6 +3731,14 @@ function renderCalendar() {
   else renderCalList(container, label);
 }
 
+function calHolidayBadge(date) {
+  const hols = getHolidaysOnDate(date);
+  if (!hols.length) return '';
+  const abbrevs = [...new Set(hols.map(h=>h.Abbreviation).filter(Boolean))];
+  const titleText = hols.map(h => `${h.Title}: ${h.Holiday}`).join(' | ').replace(/"/g,'&quot;');
+  return ` <span class="cal-holiday-badge" title="${titleText}" style="background:#fde68a;color:#92400e;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:800;margin-left:4px;white-space:nowrap;">${abbrevs.join(' ')}</span>`;
+}
+
 function renderCal7Day(container, label) {
   const items = getFilteredCalItems();
   const anchor = new Date(calAnchor);
@@ -3682,7 +3761,7 @@ function renderCal7Day(container, label) {
   out += `<div class="cal-header-cell" style="background:var(--grey-100);color:var(--grey-500);font-size:10px;">TIME</div>`;
   days.forEach(d => {
     const isToday = d.toDateString() === todayStr;
-    out += `<div class="cal-header-cell${isToday?' today':''}">${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'})}</div>`;
+    out += `<div class="cal-header-cell${isToday?' today':''}">${d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'})}${calHolidayBadge(d)}</div>`;
   });
   hours.forEach(hr => {
     out += `<div class="cal-time-col">${String(hr).padStart(2,'0')}:00</div>`;
@@ -3729,7 +3808,7 @@ function renderCalMonth(container, label) {
     const shown = cellItems.slice(0,3);
     const extra = cellItems.length - 3;
     out += `<div class="cal-day-cell${isToday?' today':''}${isOther?' other-month':''}">
-      <div class="cal-month-header${isToday?' today':''}">${d.getDate()}</div>
+      <div class="cal-month-header${isToday?' today':''}">${d.getDate()}${calHolidayBadge(d)}</div>
       ${shown.map(i => calEventHtml(i,true)).join('')}
       ${extra > 0 ? `<div class="cal-more">+${extra} more</div>` : ''}
     </div>`;
@@ -3749,8 +3828,11 @@ function renderCalList(container, label) {
   container.innerHTML = `<div class="card"><div class="table-wrap"><table>
     <thead><tr><th>Client</th><th>Pay Group</th><th>Pay No</th><th>PPE</th>
     <th>Order</th><th>Milestone</th><th>Scheduled</th><th>Pay Master</th>
-    <th>Status</th><th>Start</th><th>Finish</th><th>Actions</th></tr></thead>
-    <tbody>${items.map(i => `<tr>
+    <th>Status</th><th>Start</th><th>Finish</th><th>Public Holiday</th><th>Actions</th></tr></thead>
+    <tbody>${items.map(i => {
+      const d = spDateToDate(i.ActivityDateTime);
+      const hols = getHolidaysOnDate(d);
+      return `<tr>
       <td>${i.PSPClient||'—'}</td>
       <td><strong>${getPayGroup(i)}</strong></td>
       <td>${i.PayNo||'—'}</td>
@@ -3762,11 +3844,12 @@ function renderCalList(container, label) {
       <td>${statusBadge(getActStatus(i)||'Not Started')}</td>
       <td>${fmtDateTime(i.StartDateTime)}</td>
       <td>${fmtDateTime(i.FinishDateTime)}</td>
+      <td style="font-size:11px;">${hols.length ? formatHolidayIndicator(hols) : '—'}</td>
       <td>
         <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
         <button class="btn btn-xs btn-danger" onclick="confirmDelete('calendar','${i.id}')">Del</button>
       </td>
-    </tr>`).join('')}
+    </tr>`;}).join('')}
     </tbody></table></div></div>`;
 }
 
@@ -4296,6 +4379,7 @@ async function generateCalendar() {
   btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Generating...';
 
   let totalCreated = 0;
+  let holidayLandings = [];
   let currentPPE = new Date(startPPEStr);
   let currentPayNo = startPayNo;
 
@@ -4303,6 +4387,10 @@ async function generateCalendar() {
     const payEndSerial = dateToExcelSerial(currentPPE);
     for (const t of tmpl) {
       const actDate = calcActivityDate(payEndSerial, t.Offset || 0, 9);
+      const hols = getClientHolidaysOnDate(client, actDate);
+      if (hols.length) {
+        holidayLandings.push({ milestone: t.ActivityMilestone, payNo: currentPayNo, date: actDate, holidays: hols });
+      }
       const fields = {
         PSPClient: t.PSPClient,
         PayGroup: t.PayGroup,
@@ -4370,6 +4458,16 @@ async function generateCalendar() {
   btn.innerHTML = '<i class="ti ti-calendar-plus"></i> Generate Calendar';
   const label = periods > 1 ? `Pay ${startPayNo}–${currentPayNo-1}` : `Pay ${startPayNo}`;
   showToast(`✓ Created ${totalCreated} activities for ${pg} ${label} — billing records initialised`, 'success');
+
+  if (holidayLandings.length) {
+    const lines = holidayLandings.map(h =>
+      `Pay ${h.payNo}: ${h.milestone} on ${h.date.toLocaleDateString('en-GB')} — ${formatHolidayIndicator(h.holidays)}`
+    ).join('<br>');
+    await pspConfirm(
+      `<strong>${holidayLandings.length} generated activit${holidayLandings.length===1?'y':'ies'} fall on a Public Holiday:</strong><br><br>${lines}<br><br>Dates were generated as scheduled — no dates were moved automatically. Review and adjust via Bulk Admin &gt; Change Activity Date if needed.`,
+      'Public Holiday Notice'
+    );
+  }
 }
 
 
@@ -6499,7 +6597,8 @@ function switchDashTab(tab) {
   const kanbanControls = document.getElementById('kanban-controls');
   if (kanbanControls) kanbanControls.style.display = tab === 'kanban' ? 'flex' : 'none';
   if (tab === 'finance') { resetKanbanScope(); loadFinanceDashboard(); }
-  if (tab === 'kanban') loadKanbanBoard();
+  if (tab === 'kanban') { loadKanbanBoard(); updateHolidayBanner(); }
+  else { document.getElementById('holiday-banner').style.display = 'none'; }
 }
 
 function getFinYear() {
@@ -7850,8 +7949,41 @@ function baLoadDateActivities() {
       i.PSPClient === client && getPayGroup(i) === pg &&
       getActStatus(i) === 'Not Started'
     );
+    const shiftDays = parseInt(document.getElementById('ba-dt-shift-days')?.value || '0', 10);
     const preview = document.getElementById('ba-dt-allafter-preview');
-    if (preview) preview.innerHTML = `<span style="color:var(--grey-600);">${notStarted.length} Not Started activities will shift</span>`;
+    if (preview) {
+      let html = `<span style="color:var(--grey-600);">${notStarted.length} Not Started activities will shift</span>`;
+      if (shiftDays) {
+        const landingOnHoliday = notStarted.filter(i => {
+          const d = spDateToDate(i.ActivityDateTime);
+          if (!d) return false;
+          const shifted = new Date(d); shifted.setDate(shifted.getDate() + shiftDays);
+          return getClientHolidaysOnDate(client, shifted).length > 0;
+        });
+        if (landingOnHoliday.length) {
+          html += `<br><span style="color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:4px 8px;display:inline-block;margin-top:6px;">
+            <i class="ti ti-alert-triangle"></i> ${landingOnHoliday.length} activit${landingOnHoliday.length===1?'y':'ies'} will land on a Public Holiday after the shift</span>`;
+        }
+      }
+      preview.innerHTML = html;
+    }
+  }
+}
+
+// Warns (non-blocking) if the "Once Only" new date/time falls on a public
+// holiday for the selected client's country.
+function baCheckHolidayWarning() {
+  const client = document.getElementById('ba-dt-client')?.value;
+  const newDT  = document.getElementById('ba-dt-new-datetime')?.value;
+  const warn   = document.getElementById('ba-dt-holiday-warning');
+  if (!warn) return;
+  if (!client || !newDT) { warn.style.display = 'none'; return; }
+  const hols = getClientHolidaysOnDate(client, new Date(newDT));
+  if (hols.length) {
+    warn.innerHTML = `<i class="ti ti-alert-triangle"></i> This date is a Public Holiday: ${formatHolidayIndicator(hols)}`;
+    warn.style.display = 'block';
+  } else {
+    warn.style.display = 'none';
   }
 }
 
@@ -7870,6 +8002,7 @@ function baShowCurrentDate() {
     const pad = n => String(n).padStart(2,'0');
     dtInput.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
+  baCheckHolidayWarning();
 }
 
 async function baApplyDateChange() {
