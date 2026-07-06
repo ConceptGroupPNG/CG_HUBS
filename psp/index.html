@@ -2424,7 +2424,7 @@
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Country</th><th>Abbreviation</th><th>Holiday</th><th>Date</th><th>Year</th><th>Actions</th></tr>
+                    <tr><th>Abbreviation</th><th>Holiday</th><th>Date</th><th>Year</th><th>Actions</th></tr>
                   </thead>
                   <tbody id="ph-tbody"></tbody>
                 </table>
@@ -2922,7 +2922,18 @@ function sameCalendarDay(a, b) {
 // Returns every holiday record (any country) falling on the given date.
 function getHolidaysOnDate(date) {
   if (!date) return [];
-  return cache.holidays.filter(h => sameCalendarDay(spDateToDate(h.PH_Date), date));
+  return cache.holidays.filter(h => sameCalendarDay(spDateToDate(getHolidayDate(h)), date));
+}
+
+// PSP_Public_Holidays' "Holiday" and "PH_Date" columns are exposed by Graph
+// under generic keys (field_1 / field_2) rather than their display names —
+// same quirk as PSP_Billing's Pay Group (getPayGroup). Centralized here so
+// every read/write goes through one place if that ever changes.
+function getHolidayDesc(h) {
+  return h?.Holiday || h?.field_1 || '';
+}
+function getHolidayDate(h) {
+  return h?.PH_Date || h?.field_2 || null;
 }
 
 // Country full name -> abbreviation, sourced from the holidays list itself
@@ -2949,7 +2960,7 @@ function formatHolidayIndicator(holidays) {
   const byCountry = [...new Map(holidays.map(h => [h.Title, h])).values()];
   if (byCountry.length === 1) {
     const h = byCountry[0];
-    const desc = (h.Holiday || 'Public Holiday');
+    const desc = (getHolidayDesc(h) || 'Public Holiday');
     const truncated = desc.length > 28 ? desc.slice(0,27) + '…' : desc;
     return `${truncated} ${h.Abbreviation || ''}`.trim();
   }
@@ -3767,7 +3778,7 @@ function calHolidayBadge(date) {
   const hols = getHolidaysOnDate(date);
   if (!hols.length) return '';
   const abbrevs = [...new Set(hols.map(h=>h.Abbreviation).filter(Boolean))];
-  const titleText = hols.map(h => `${h.Title}: ${h.Holiday}`).join(' | ').replace(/"/g,'&quot;');
+  const titleText = hols.map(h => `${h.Title}: ${getHolidayDesc(h)}`).join(' | ').replace(/"/g,'&quot;');
   return ` <span class="cal-holiday-badge" title="${titleText}" style="background:#fde68a;color:#92400e;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:800;margin-left:4px;white-space:nowrap;">${abbrevs.join(' ')}</span>`;
 }
 
@@ -8220,23 +8231,22 @@ function renderPublicHolidaysAdmin() {
   let items = [...cache.holidays];
   if (year) items = items.filter(h => h.Year === year);
   if (country) items = items.filter(h => h.Title === country);
-  if (search) items = items.filter(h => (h.Holiday||'').toLowerCase().includes(search) || (h.Title||'').toLowerCase().includes(search));
-  items.sort((a,b) => (spDateToDate(a.PH_Date)||0) - (spDateToDate(b.PH_Date)||0) || (a.Title||'').localeCompare(b.Title||''));
+  if (search) items = items.filter(h => (getHolidayDesc(h)||'').toLowerCase().includes(search) || (h.Title||'').toLowerCase().includes(search));
+  items.sort((a,b) => (spDateToDate(getHolidayDate(a))||0) - (spDateToDate(getHolidayDate(b))||0) || (a.Title||'').localeCompare(b.Title||''));
 
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--grey-400);">No public holidays found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--grey-400);">No public holidays found</td></tr>';
     return;
   }
   tbody.innerHTML = items.map(h => `
     <tr>
-      <td><strong>${h.Title||'—'}</strong></td>
-      <td>${h.Abbreviation||'—'}</td>
-      <td>${h.Holiday||'—'}</td>
-      <td style="white-space:nowrap;">${fmtDate(h.PH_Date)}</td>
+      <td><strong>${h.Abbreviation||'—'}</strong></td>
+      <td>${getHolidayDesc(h)||'—'}</td>
+      <td style="white-space:nowrap;">${fmtDate(getHolidayDate(h))}</td>
       <td>${h.Year||'—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="openHolidayForm('${h.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelete('holidays','${h.id}','${(h.Title||'').replace(/'/g,"\\'")} – ${(h.Holiday||'').replace(/'/g,"\\'")} (${fmtDate(h.PH_Date)})')" title="Delete"><i class="ti ti-trash"></i> Delete</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('holidays','${h.id}','${(h.Title||'').replace(/'/g,"\\'")} – ${(getHolidayDesc(h)||'').replace(/'/g,"\\'")} (${fmtDate(getHolidayDate(h))})')" title="Delete"><i class="ti ti-trash"></i> Delete</button>
       </td>
     </tr>`).join('');
 }
@@ -8260,11 +8270,11 @@ function openHolidayForm(id = null) {
     </div>
     <div class="form-group">
       <label>Holiday</label>
-      <input type="text" id="ph-holiday" value="${item?.Holiday||''}" placeholder="e.g. Christmas Day">
+      <input type="text" id="ph-holiday" value="${item ? getHolidayDesc(item) : ''}" placeholder="e.g. Christmas Day">
     </div>
     <div class="form-group">
       <label>Date</label>
-      <input type="date" id="ph-date" value="${item?.PH_Date ? spDateToDate(item.PH_Date)?.toISOString().slice(0,10) : ''}" onchange="phAutofillYear()">
+      <input type="date" id="ph-date" value="${item && getHolidayDate(item) ? spDateToDate(getHolidayDate(item))?.toISOString().slice(0,10) : ''}" onchange="phAutofillYear()">
     </div>
     <div class="form-group">
       <label>Year</label>
@@ -8309,8 +8319,8 @@ async function saveHolidayForm(id) {
   const fields = {
     Title: country,
     Abbreviation: abbrev,
-    Holiday: holiday,
-    PH_Date: new Date(dateVal).toISOString(),
+    field_1: holiday,   // "Holiday" column's real internal name (see getHolidayDesc)
+    field_2: new Date(dateVal).toISOString(),   // "PH_Date" column's real internal name (see getHolidayDate)
     Year: year,
   };
 
