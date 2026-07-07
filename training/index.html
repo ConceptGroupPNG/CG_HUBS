@@ -1833,10 +1833,22 @@ function sortItemsFor(entity, items){
         items.sort((a,b)=>(courseRunCount(a)-courseRunCount(b))*dir);
       } else if(key==='FeeExGST'){
         items.sort((a,b)=>((+a.FeeExGST||0)-(+b.FeeExGST||0))*dir);
-      } else {
+      } else if(key==='CourseName'){
+        // Primary field — Title genuinely mirrors CourseName, so this fallback is correct.
         items.sort((a,b)=>{
-          const va=(a[key]||a.Title||'').toString().toLowerCase();
-          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          const va=(a.CourseName||a.Title||'').toString().toLowerCase();
+          const vb=(b.CourseName||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // e.g. Category — genuinely blank when unset; renderCourses() shows
+        // '—' with no fallback, so sorting must not substitute the course
+        // name in for a blank category (that used to interleave uncategorised
+        // courses alphabetically by name instead of grouping them together).
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
           return va.localeCompare(vb)*dir;
         });
       }
@@ -1856,22 +1868,70 @@ function sortItemsFor(entity, items){
           const eB=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameB&&(at.RunStartDate||'').substring(0,10)===rB).length;
           return (eA-eB)*dir;
         });
-      } else {
+      } else if(key==='Status'){
+        // The Status column displays runStatus(r) — a computed Active/
+        // Completed/Scheduled/Postponed value derived from dates — not the
+        // raw stored field (which is only ever populated for "Postponed").
+        // Sorting on the raw field used to barely reflect what's on screen.
+        items.sort((a,b)=>runStatus(a).localeCompare(runStatus(b))*dir);
+      } else if(key==='Title'){
         items.sort((a,b)=>{
-          const va=(a[key]||a.Title||'').toString().toLowerCase();
-          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          const va=(a.Title||'').toString().toLowerCase();
+          const vb=(b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // StartDate / EndDate: genuinely blank when unset, no Title fallback.
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
           return va.localeCompare(vb)*dir;
         });
       }
       break;
     case 'organisations':
+      if(key==='OrgName'){
+        // Primary field — Title genuinely mirrors OrgName here.
+        items.sort((a,b)=>{
+          const va=(a.OrgName||a.Title||'').toString().toLowerCase().trim();
+          const vb=(b.OrgName||b.Title||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // e.g. ContactPerson — renderOrgs() shows '—' with no OrgName
+        // fallback, so a blank contact must not sort using the org's own
+        // name (that used to interleave orgs-with-no-contact alphabetically
+        // by org name instead of grouping them together).
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
     case 'certificates':
-      items.sort((a,b)=>{
-        const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
-        const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
-        if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
-        return va.localeCompare(vb)*dir;
-      });
+      if(key==='Title'){
+        // Primary field — Title genuinely mirrors CertificateNumber here.
+        items.sort((a,b)=>{
+          const va=(a.CertificateNumber||a.Title||'').toString().toLowerCase().trim();
+          const vb=(b.CertificateNumber||b.Title||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // AttendeeName / CourseRunTitle / IssueDate — renderCertificates()
+        // shows '—' with no CertificateNumber fallback for these, so a blank
+        // value must not sort using the certificate number.
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      }
       break;
     case 'attendees': {
       const getVal = (a,k) => {
@@ -1883,7 +1943,16 @@ function sortItemsFor(entity, items){
           }
           return String(raw);
         }
-        return (a[k]||a.Title||'').toString();
+        // Mirror the exact fallback chain renderAttendees() uses for display,
+        // per column. Previously every column fell back to a.Title when its
+        // own field was blank — but a.Title stores the attendee's own name,
+        // not a sensible stand-in for a blank Organisation/Course/etc. That
+        // caused attendees with no organisation to sort by their own name
+        // and interleave with real org names instead of grouping at the end.
+        if(k==='FullName') return (a.FullName||a.Title||'').toString();
+        if(k==='OrgName') return (a.OrgName||a.JobTitle||'').toString();
+        if(k==='CourseTitle') return (a.CourseTitle||a.InvoiceLineCourse||'').toString();
+        return (a[k]||'').toString();
       };
       items.sort((a,b)=>{
         const va = getVal(a,key).toLowerCase().trim();
@@ -1903,10 +1972,28 @@ function sortItemsFor(entity, items){
           const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
           return (ta-tb)*dir;
         });
-      } else {
+      } else if(key==='Status'){
+        // Matches the status-filter dropdown's own convention (filterTable:
+        // (q.Status||'Pending')) — a blank Status is treated as Pending, not
+        // sorted using the quote number.
+        items.sort((a,b)=>(a.Status||'Pending').localeCompare(b.Status||'Pending')*dir);
+      } else if(key==='OrgName'){
+        // renderQuotes() displays q.OrgName || attendeeForQuote(q)?.OrgName —
+        // the sort must check the same linked attendee, not fall back to the
+        // quote number for quotes with no organisation of their own.
+        const getOrg = (q) => q.OrgName || attendeeForQuote(q)?.OrgName || '';
         items.sort((a,b)=>{
-          const va=(a[key]||a.Title||'').toString().toLowerCase();
-          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          const va=getOrg(a).toString().toLowerCase().trim();
+          const vb=getOrg(b).toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // Title, QuoteDate — genuinely blank when unset, no fallback needed.
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
           return va.localeCompare(vb)*dir;
         });
       }
@@ -1921,10 +2008,30 @@ function sortItemsFor(entity, items){
         });
       } else if(key==='Status'){
         items.sort((a,b)=>invoiceStatus(a).localeCompare(invoiceStatus(b))*dir);
-      } else {
+      } else if(key==='InvoiceNumber'){
+        // Primary field — Title genuinely mirrors InvoiceNumber here.
         items.sort((a,b)=>{
-          const va=(a[key]||a.Title||'').toString().toLowerCase();
-          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          const va=(a.InvoiceNumber||a.Title||'').toString().toLowerCase();
+          const vb=(b.InvoiceNumber||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      } else if(key==='OrgName'){
+        // renderInvoices() displays i.OrgName || attendeeForInvoice(i)?.OrgName —
+        // mirror that instead of falling back to the invoice number.
+        const getOrg = (i) => i.OrgName || attendeeForInvoice(i)?.OrgName || '';
+        items.sort((a,b)=>{
+          const va=getOrg(a).toString().toLowerCase().trim();
+          const vb=getOrg(b).toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+          return va.localeCompare(vb)*dir;
+        });
+      } else {
+        // AttendeeName — renderInvoices() shows '—' with no Title fallback,
+        // so a blank attendee must not sort using the invoice number.
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase().trim();
+          const vb=(b[key]||'').toString().toLowerCase().trim();
+          if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
           return va.localeCompare(vb)*dir;
         });
       }
