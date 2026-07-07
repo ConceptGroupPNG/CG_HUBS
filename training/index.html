@@ -3321,6 +3321,15 @@ let invoiceLines = [];
 let invoiceLinesOriginalIds = [];
 let invoiceLineSeq = 0;
 
+// Pending (not-yet-saved) attendee rows being added inline from within the
+// Invoice modal. These only get written to CG_Attendees when the Invoice
+// modal itself is saved — same timing as invoiceLines above. Already-saved
+// attendees for this invoice continue to show in the separate read-only
+// "Linked Attendees" list (renderInvoiceAttendees), untouched by this.
+let invoiceAttendeeRows = [];
+let invoiceAttendeeSeq = 0;
+let invoiceAttendeeEditorInvNum = ''; // invoice number this editor session is scoped to (for seat lookups)
+
 async function initInvoiceLines(data){
   invoiceLines = [];
   invoiceLinesOriginalIds = [];
@@ -3376,12 +3385,13 @@ async function initInvoiceLines(data){
 function addInvoiceLine(){
   invoiceLines.push({_id:'il'+(++invoiceLineSeq),spId:null,CourseName:'',Quantity:1,FeeExGST:0,GSTAmount:0,LineTotal:0,RunStartDate:''});
   renderInvoiceLines();
+  renderInvoiceAttendeeEditor();
 }
 
 function removeInvoiceLine(lineId){
   invoiceLines = invoiceLines.filter(l=>l._id!==lineId);
   if(invoiceLines.length===0) addInvoiceLine();
-  else renderInvoiceLines();
+  else { renderInvoiceLines(); renderInvoiceAttendeeEditor(); }
 }
 
 function updateInvoiceLine(lineId, field, value){
@@ -3390,6 +3400,7 @@ function updateInvoiceLine(lineId, field, value){
   if(field==='CourseName' || field==='RunStartDate'){
     line[field] = value;
     renderInvoiceLines();
+    renderInvoiceAttendeeEditor();
     return;
   }
   line[field] = +value||0;
@@ -3408,6 +3419,8 @@ function updateInvoiceLine(lineId, field, value){
   if(ftFee) ftFee.textContent = fmt(totals.fee);
   if(ftGst) ftGst.textContent = fmt(totals.gst);
   if(ftTotal) ftTotal.textContent = fmt(totals.total);
+  // Quantity changes affect how many seats are left for attendee rows to claim.
+  if(field==='Quantity') renderInvoiceAttendeeEditor();
 }
 
 function invoiceLinesTotals(){
@@ -3505,6 +3518,194 @@ function renderInvoiceAttendees(data){
         </div>`
       }
     </div>`;
+}
+
+// ============================================================
+// INVOICE ATTENDEE QUICK-ADD EDITOR
+// (Add New / Attach Existing attendees inline, without leaving the Invoice modal)
+// ============================================================
+
+// Returns {qty, filled, pending, remaining} for a given course line name on
+// the invoice currently open in the editor. "filled" counts attendees
+// already saved to SharePoint against this invoice+course line (same match
+// rules as invoiceLineSeatStatus). "pending" counts OTHER not-yet-saved rows
+// in this same editing session already claiming that line, so capacity is
+// enforced across the whole batch you're building, not just one row at a time.
+function invoiceAttendeeLineCapacity(courseName, excludeRowId){
+  const line = invoiceLines.find(l=>(l.CourseName||'')===courseName);
+  const qty = +(line?.Quantity)||0;
+  const invNum = (invoiceAttendeeEditorInvNum||'').trim().toLowerCase();
+  const cname = (courseName||'').trim().toLowerCase();
+  const filled = (cache.attendees||[]).filter(a=>{
+    const aInv=(a.InvoiceRef||'').trim().toLowerCase();
+    if(aInv!==invNum || !invNum) return false;
+    const aLine=(a.InvoiceLineCourse||'').trim().toLowerCase();
+    if(aLine===cname) return true;
+    if(!aLine){
+      const aCourseTitle=(a.CourseTitle||'').trim().toLowerCase();
+      if(aCourseTitle===cname) return true;
+    }
+    return false;
+  }).length;
+  const pending = invoiceAttendeeRows.filter(r=>r._id!==excludeRowId && r.CourseLine===courseName).length;
+  return {qty, filled, pending, remaining: qty-filled-pending};
+}
+
+function initInvoiceAttendeeEditor(data){
+  invoiceAttendeeRows = [];
+  invoiceAttendeeSeq = 0;
+  invoiceAttendeeEditorInvNum = (data?.InvoiceNumber||data?.Title||'').trim();
+  renderInvoiceAttendeeEditor();
+}
+
+function addInvoiceAttendeeRow(){
+  invoiceAttendeeRows.push({_id:'ia'+(++invoiceAttendeeSeq), FullName:'', Email:'', OrgName:'', CourseLine:''});
+  renderInvoiceAttendeeEditor();
+}
+
+function removeInvoiceAttendeeRow(rowId){
+  invoiceAttendeeRows = invoiceAttendeeRows.filter(r=>r._id!==rowId);
+  renderInvoiceAttendeeEditor();
+}
+
+function updateInvoiceAttendeeRow(rowId, field, value){
+  const row = invoiceAttendeeRows.find(r=>r._id===rowId);
+  if(!row) return;
+  row[field] = value;
+  renderInvoiceAttendeeEditor();
+}
+
+// "Attach Existing" — looks up an attendee already in the system by name and
+// adds a NEW row prefilled with their details (name/email/org). This is a
+// brand new enrolment for THIS invoice; their existing enrolment elsewhere
+// is left completely untouched.
+function attachExistingAttendeeByName(){
+  const input = document.getElementById('attach-existing-input');
+  const name = (input?.value||'').trim();
+  if(!name){ toast('Type a name first','error'); return; }
+  const match = (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===name.toLowerCase());
+  if(!match){ toast('No existing attendee found with that name','error'); return; }
+  invoiceAttendeeRows.push({
+    _id: 'ia'+(++invoiceAttendeeSeq),
+    FullName: match.FullName||match.Title||'',
+    Email: match.Email||'',
+    OrgName: match.OrgName||'', // reuse their own details, rather than defaulting to the invoice's org
+    CourseLine: '',
+  });
+  if(input) input.value = '';
+  renderInvoiceAttendeeEditor();
+}
+
+function renderInvoiceAttendeeEditor(){
+  const container = document.getElementById('invoice-attendee-editor-container');
+  if(!container) return;
+
+  const availableLines = invoiceLines.filter(l=>l.CourseName);
+  const uniqueNames = [...new Set((cache.attendees||[]).map(a=>(a.FullName||a.Title||'').trim()).filter(Boolean))].sort();
+
+  const rowsHtml = invoiceAttendeeRows.map(row=>{
+    const optionsHtml = availableLines.map(l=>{
+      const cap = invoiceAttendeeLineCapacity(l.CourseName, row._id);
+      const isSelected = l.CourseName===row.CourseLine;
+      const isFull = cap.qty>0 && cap.remaining<=0 && !isSelected;
+      const label = cap.qty>0
+        ? `${l.CourseName} (${cap.filled+cap.pending}/${cap.qty}${isFull?' — Full':''})`
+        : `${l.CourseName} (no quantity set)`;
+      return `<option value="${l.CourseName.replace(/"/g,'&quot;')}" ${isSelected?'selected':''} ${isFull?'disabled':''}>${label}</option>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:4px 8px">
+        <input type="text" value="${(row.FullName||'').replace(/"/g,'&quot;')}" placeholder="Full name"
+          oninput="updateInvoiceAttendeeRow('${row._id}','FullName',this.value)"
+          style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+      </td>
+      <td style="padding:4px 8px">
+        <select onchange="updateInvoiceAttendeeRow('${row._id}','CourseLine',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+          <option value="">— Select course line —</option>
+          ${optionsHtml}
+        </select>
+      </td>
+      <td style="padding:4px 8px">
+        <input type="email" value="${(row.Email||'').replace(/"/g,'&quot;')}" placeholder="Email (optional)"
+          oninput="updateInvoiceAttendeeRow('${row._id}','Email',this.value)"
+          style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+      </td>
+      <td style="padding:4px 8px;text-align:center">
+        <button type="button" onclick="removeInvoiceAttendeeRow('${row._id}')" title="Remove row" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="margin-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
+        Add / Attach Attendees
+      </label>
+      ${availableLines.length ? '' : `<div style="margin-top:6px;font-size:12px;color:var(--g500);padding:4px 0">
+        Add a course line above first — attendees need a line to be attached to.
+      </div>`}
+      ${invoiceAttendeeRows.length ? `
+        <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="background:var(--g100)">
+              <th style="text-align:left;padding:6px 8px">Name</th>
+              <th style="text-align:left;padding:6px 8px">Course Line</th>
+              <th style="text-align:left;padding:6px 8px">Email</th>
+              <th style="width:36px"></th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>` : ''
+      }
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline btn-sm" onclick="addInvoiceAttendeeRow()" ${availableLines.length?'':'disabled'}><i class="ti ti-plus"></i> Add Attendee</button>
+        <input type="text" id="attach-existing-input" list="existing-attendee-names" placeholder="Type a name to attach existing…"
+          style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--g200);border-radius:6px;font-size:12px" ${availableLines.length?'':'disabled'}>
+        <datalist id="existing-attendee-names">${uniqueNames.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+        <button type="button" class="btn btn-outline btn-sm" onclick="attachExistingAttendeeByName()" ${availableLines.length?'':'disabled'}><i class="ti ti-users"></i> Attach Existing</button>
+      </div>
+    </div>`;
+}
+
+// Persists any complete pending rows (name + course line both set) as new
+// CG_Attendees records. Incomplete rows are silently skipped rather than
+// blocking the whole invoice save — the person can finish them later from
+// the Attendees page. Field shape mirrors FORM_DEFS.attendees.toFields()
+// exactly, so these records behave identically to ones added the long way.
+async function saveInvoiceAttendees(invoiceNumber, invoiceOrgName){
+  const rowsToSave = invoiceAttendeeRows.filter(r=>(r.FullName||'').trim() && r.CourseLine);
+  const skipped = invoiceAttendeeRows.length - rowsToSave.length;
+  if(!rowsToSave.length){
+    if(skipped) toast(`${skipped} attendee row${skipped>1?'s were':' was'} left incomplete and not saved (needs a name and a course line)`,'error');
+    return;
+  }
+  let savedCount = 0;
+  for(const row of rowsToSave){
+    const line = invoiceLines.find(l=>(l.CourseName||'')===row.CourseLine);
+    const fields = {
+      FullName: row.FullName.trim(),
+      Title: row.FullName.trim(),
+      Email: row.Email||'',
+      OrgName: row.OrgName || invoiceOrgName || '',
+      InvoiceRef: invoiceNumber,
+      InvoiceLineCourse: row.CourseLine,
+      CourseTitle: row.CourseLine,
+      RunStartDate: line?.RunStartDate || null,
+      AttendanceStatus: 'Registered',
+    };
+    try{
+      await saveWithFieldFallback(false, 'attendees', null, fields);
+      savedCount++;
+    }catch(e){
+      console.warn('Failed to save attendee row', row, e);
+      toast(`Could not add attendee "${row.FullName}": ${e.message}`,'error');
+    }
+  }
+  // Refresh the cache so Linked Attendees / seat counts reflect the new rows immediately
+  try{ cache.attendees = await getItems('attendees','$top=500'); }catch(e){}
+  invoiceAttendeeRows = [];
+  if(savedCount) toast(`${savedCount} attendee${savedCount>1?'s':''} added to ${invoiceNumber}`);
+  if(skipped) toast(`${skipped} attendee row${skipped>1?'s were':' was'} left incomplete and not saved`,'error');
 }
 
 async function saveInvoiceLines(invoiceNumber, createdItem=null){
@@ -4424,6 +4625,7 @@ async function openFormModal(entity, data){
   if(entity==='invoices'){
     html += '<div id="invoice-lines-container"></div>';
     html += '<div id="invoice-attendees-container"></div>';
+    html += '<div id="invoice-attendee-editor-container"></div>';
   }
 
   document.getElementById('modal-body').innerHTML = html;
@@ -4434,10 +4636,12 @@ async function openFormModal(entity, data){
     renderQuoteAttendees(data);
   }
 
-  // Invoices: render the line items editor below the header fields
+  // Invoices: render the line items editor, the read-only linked-attendees
+  // list, and the Add/Attach attendee quick-add editor below the header fields
   if(entity==='invoices'){
     await initInvoiceLines(data);
     renderInvoiceAttendees(data);
+    initInvoiceAttendeeEditor(data);
   }
 
   // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected
@@ -4529,19 +4733,22 @@ async function createInvoiceFromQuotePrompt(){
     const newInv = (cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title||'').trim().toLowerCase()===invoiceNumber.trim().toLowerCase());
     const orgEmail = (cache.organisations||[]).find(o=>(o.OrgName||o.Title||'')===(newInv?.OrgName||''))?.ContactEmail || '';
 
-    // Update the modal to show success + Xero export option
+    // Update the modal to show success + next-step options
     document.getElementById('invoice-prompt-modal').querySelector('.modal-header h2').innerHTML =
       '<i class="ti ti-circle-check" style="color:var(--teal)"></i> Invoice Created';
     document.getElementById('invoice-prompt-modal').querySelector('.modal-body').innerHTML = `
       <p style="font-size:13px;color:var(--g700);margin-bottom:16px">
         Invoice <strong>${invoiceNumber}</strong> has been created successfully from quote <strong>${quoteNumber}</strong>.
       </p>
-      <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="exportInvoiceXeroCSV('${invoiceNumber}','${(newInv?.OrgName||'').replace(/'/g,"\\'")}','${orgEmail.replace(/'/g,"\\'")}')">
+      <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="document.getElementById('invoice-prompt-modal').classList.remove('open'); editRow('invoices','${newInv?.id}')">
+        <i class="ti ti-users"></i> Add Attendees Now
+      </button>
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="exportInvoiceXeroCSV('${invoiceNumber}','${(newInv?.OrgName||'').replace(/'/g,"\\'")}','${orgEmail.replace(/'/g,"\\'")}')">
         <i class="ti ti-file-spreadsheet"></i> Download Xero CSV
       </button>
       <p style="font-size:11px;color:var(--g500);text-align:center">or close this dialog to continue</p>`;
     document.getElementById('invoice-prompt-modal').querySelector('.modal-footer').innerHTML =
-      '<button class="btn btn-outline" onclick="document.getElementById(\'invoice-prompt-modal\').classList.remove(\'open\');location.reload()">Close</button>';
+      '<button class="btn btn-outline" onclick="document.getElementById(\'invoice-prompt-modal\').classList.remove(\'open\')">Close</button>';
 
     await loadPage(currentPage);
     if(currentPage==='dashboard') loadDashboard();
@@ -4912,6 +5119,23 @@ async function saveModal(){
     }
   }
 
+  // Invoices: defensive re-check that none of the pending Add/Attach attendee
+  // rows now exceed their course line's purchased quantity. The dropdown
+  // already disables full options as they fill up, but this guards against
+  // a line's Quantity being reduced after rows were already assigned to it.
+  if(editingEntity==='invoices'){
+    const overCapacity = [];
+    invoiceAttendeeRows.forEach(row=>{
+      if(!row.CourseLine) return;
+      const cap = invoiceAttendeeLineCapacity(row.CourseLine, row._id);
+      if(cap.qty>0 && cap.remaining<0 && !overCapacity.includes(row.CourseLine)) overCapacity.push(row.CourseLine);
+    });
+    if(overCapacity.length){
+      toast(`Cannot save: more attendees are assigned than seats purchased for: ${overCapacity.join(', ')}`,'error');
+      throw new Error('validation');
+    }
+  }
+
   // Payments: block adding/editing a payment against an invoice with zero balance due
   if(editingEntity==='payments' && rawFields.InvoiceRef){
     const inv = (cache.invoices||[]).find(i=>String(i.id)===String(rawFields.InvoiceRef));
@@ -4963,6 +5187,8 @@ async function saveModal(){
     if(editingEntity==='invoices'){
       // Pass the created item (if new) so saveInvoiceLines can get the ID directly
       await saveInvoiceLines(fields.Title, createdItem);
+      // Persist any pending Add/Attach attendee rows from the quick-add editor
+      await saveInvoiceAttendees(fields.Title, fields.OrgName);
     }
     closeModal();
     await loadPage(currentPage);
