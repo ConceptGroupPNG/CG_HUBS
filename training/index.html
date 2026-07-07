@@ -3572,7 +3572,11 @@ function updateInvoiceAttendeeRow(rowId, field, value){
   const row = invoiceAttendeeRows.find(r=>r._id===rowId);
   if(!row) return;
   row[field] = value;
-  renderInvoiceAttendeeEditor();
+  // Only CourseLine selection affects what other rows' dropdowns should show
+  // (seat capacity is shared across rows), so that's the only field that
+  // needs a full re-render. Re-rendering on every keystroke in Name/Email
+  // rebuilds the whole table and steals focus after a single character.
+  if(field==='CourseLine') renderInvoiceAttendeeEditor();
 }
 
 // "Attach Existing" — looks up an attendee already in the system by name and
