@@ -1882,8 +1882,9 @@ function sortOrgs(key){
   let items=[...(cache.organisations||[])];
   const dir=orgsSortState.dir;
   items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
+    if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
     return va.localeCompare(vb)*dir;
   });
   renderOrgs(items);
@@ -1895,8 +1896,12 @@ function sortAttendees(key){
   let items=[...(cache.attendees||[])];
   const dir=attendeesSortState.dir;
   items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
+    // Always push blanks to the end regardless of sort direction
+    if(!va && !vb) return 0;
+    if(!va) return 1;
+    if(!vb) return -1;
     return va.localeCompare(vb)*dir;
   });
   renderAttendees(items);
@@ -1908,8 +1913,9 @@ function sortCerts(key){
   let items=[...(cache.certificates||[])];
   const dir=certsSortState.dir;
   items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
+    if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
     return va.localeCompare(vb)*dir;
   });
   renderCertificates(items);
