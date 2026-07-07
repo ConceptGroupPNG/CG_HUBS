@@ -1803,123 +1803,220 @@ let certsSortState = {key:null, dir:1};
 let quotesSortState = {key:null, dir:1};
 let invoicesSortState = {key:null, dir:1};
 let paymentsSortState = {key:null, dir:1};
-function sortCourses(key){
-  if(courseSortState.key===key) courseSortState.dir*=-1;
-  else { courseSortState.key=key; courseSortState.dir=1; }
-  let items=[...(cache.courses||[])];
-  const dir=courseSortState.dir;
-  if(key==='Runs'){
-    items.sort((a,b)=>{
-      const ra=courseRunCount(a), rb=courseRunCount(b);
-      return (ra-rb)*dir;
-    });
-  } else if(key==='FeeExGST'){
-    items.sort((a,b)=>((+a.FeeExGST||0)-(+b.FeeExGST||0))*dir);
-  } else {
-    items.sort((a,b)=>{
-      const va=(a[key]||a.Title||'').toString().toLowerCase();
-      const vb=(b[key]||b.Title||'').toString().toLowerCase();
-      return va.localeCompare(vb)*dir;
-    });
+
+// Map of entity name -> its sort state object (same references as above,
+// so mutating via SORT_STATES[entity] also updates the named variable).
+const SORT_STATES = {
+  courses: courseSortState,
+  runs: runsSortState,
+  organisations: orgsSortState,
+  attendees: attendeesSortState,
+  certificates: certsSortState,
+  quotes: quotesSortState,
+  invoices: invoicesSortState,
+  payments: paymentsSortState,
+};
+
+// Applies the currently active sort (per SORT_STATES[entity]) to a list of
+// items for that entity. Centralised so both the sort-header click handlers
+// AND filterTable() use identical comparator logic — this keeps sorting and
+// filtering/searching consistent with each other instead of clobbering one
+// another.
+function sortItemsFor(entity, items){
+  const state = SORT_STATES[entity];
+  if(!state || !state.key) return items;
+  const key = state.key, dir = state.dir;
+  items = [...items];
+  switch(entity){
+    case 'courses':
+      if(key==='Runs'){
+        items.sort((a,b)=>(courseRunCount(a)-courseRunCount(b))*dir);
+      } else if(key==='FeeExGST'){
+        items.sort((a,b)=>((+a.FeeExGST||0)-(+b.FeeExGST||0))*dir);
+      } else {
+        items.sort((a,b)=>{
+          const va=(a[key]||a.Title||'').toString().toLowerCase();
+          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
+    case 'runs':
+      if(key==='Duration'){
+        items.sort((a,b)=>{
+          const dA=a.EndDate&&a.StartDate?Math.round((new Date(a.EndDate)-new Date(a.StartDate))/864e5)+1:0;
+          const dB=b.EndDate&&b.StartDate?Math.round((new Date(b.EndDate)-new Date(b.StartDate))/864e5)+1:0;
+          return (dA-dB)*dir;
+        });
+      } else if(key==='Enrolled'){
+        items.sort((a,b)=>{
+          const rA=(a.StartDate||'').substring(0,10), nameA=(a.Title||'').replace(rA,'').trim().toLowerCase();
+          const rB=(b.StartDate||'').substring(0,10), nameB=(b.Title||'').replace(rB,'').trim().toLowerCase();
+          const eA=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameA&&(at.RunStartDate||'').substring(0,10)===rA).length;
+          const eB=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameB&&(at.RunStartDate||'').substring(0,10)===rB).length;
+          return (eA-eB)*dir;
+        });
+      } else {
+        items.sort((a,b)=>{
+          const va=(a[key]||a.Title||'').toString().toLowerCase();
+          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
+    case 'organisations':
+    case 'certificates':
+      items.sort((a,b)=>{
+        const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
+        const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
+        if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
+        return va.localeCompare(vb)*dir;
+      });
+      break;
+    case 'attendees': {
+      const getVal = (a,k) => {
+        if(k==='InvoiceRef'){
+          const raw = a.InvoiceRef||'';
+          if(raw && /^\d+$/.test(String(raw))){
+            const inv = (cache.invoices||[]).find(i=>String(i.id)===String(raw));
+            return inv ? (inv.InvoiceNumber||inv.Title||'') : '';
+          }
+          return String(raw);
+        }
+        return (a[k]||a.Title||'').toString();
+      };
+      items.sort((a,b)=>{
+        const va = getVal(a,key).toLowerCase().trim();
+        const vb = getVal(b,key).toLowerCase().trim();
+        if(!va && !vb) return 0;
+        if(!va) return 1;
+        if(!vb) return -1;
+        return va.localeCompare(vb)*dir;
+      });
+      break;
+    }
+    case 'quotes':
+      if(key==='Total'){
+        items.sort((a,b)=>{
+          const lt_a=quoteLineTotals(a.Title), lt_b=quoteLineTotals(b.Title);
+          const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
+          const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
+          return (ta-tb)*dir;
+        });
+      } else {
+        items.sort((a,b)=>{
+          const va=(a[key]||a.Title||'').toString().toLowerCase();
+          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
+    case 'invoices':
+      if(key==='Total'){
+        items.sort((a,b)=>{
+          const lt_a=invoiceLineTotals(a.InvoiceNumber||a.Title), lt_b=invoiceLineTotals(b.InvoiceNumber||b.Title);
+          const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
+          const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
+          return (ta-tb)*dir;
+        });
+      } else if(key==='Status'){
+        items.sort((a,b)=>invoiceStatus(a).localeCompare(invoiceStatus(b))*dir);
+      } else {
+        items.sort((a,b)=>{
+          const va=(a[key]||a.Title||'').toString().toLowerCase();
+          const vb=(b[key]||b.Title||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
+    case 'payments':
+      if(key==='AmountPaid'){
+        items.sort((a,b)=>((+a.AmountPaid||0)-(+b.AmountPaid||0))*dir);
+      } else if(key==='InvoiceTotal'){
+        items.sort((a,b)=>{
+          const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
+          const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
+          return ((+inv_a?.TotalAmount||0)-(+inv_b?.TotalAmount||0))*dir;
+        });
+      } else if(key==='BalanceDue'){
+        items.sort((a,b)=>{
+          const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
+          const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
+          const bal_a=Math.max(0,(+inv_a?.TotalAmount||0)-invoiceTotalPaid(inv_a||{}));
+          const bal_b=Math.max(0,(+inv_b?.TotalAmount||0)-invoiceTotalPaid(inv_b||{}));
+          return (bal_a-bal_b)*dir;
+        });
+      } else if(key==='Status'){
+        items.sort((a,b)=>paymentStatus(a).localeCompare(paymentStatus(b))*dir);
+      } else {
+        items.sort((a,b)=>{
+          const va=(a[key]||'').toString().toLowerCase();
+          const vb=(b[key]||'').toString().toLowerCase();
+          return va.localeCompare(vb)*dir;
+        });
+      }
+      break;
   }
-  renderCourses(items);
+  return items;
 }
-function sortQuotes(key){
-  if(quotesSortState.key===key) quotesSortState.dir*=-1;
-  else { quotesSortState.key=key; quotesSortState.dir=1; }
-  let items=[...(cache.quotes||[])];
-  const dir=quotesSortState.dir;
-  if(key==='Total'){
-    items.sort((a,b)=>{
-      const lt_a=quoteLineTotals(a.Title), lt_b=quoteLineTotals(b.Title);
-      const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
-      const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
-      return (ta-tb)*dir;
-    });
-  } else {
-    items.sort((a,b)=>{
-      const va=(a[key]||a.Title||'').toString().toLowerCase();
-      const vb=(b[key]||b.Title||'').toString().toLowerCase();
-      return va.localeCompare(vb)*dir;
-    });
-  }
-  renderQuotes(items);
+// Generic sort-header click handler. Toggles the sort key/direction for the
+// given entity, then re-derives the list from the CURRENTLY ACTIVE filters
+// (search box + dropdowns) rather than the raw cache — so sorting a filtered
+// table no longer silently drops the filter. Rendering (and any special
+// per-entity follow-up like refreshing the runs calendar) is delegated back
+// to filterTable(), which applies this same sort via sortItemsFor().
+function sortEntity(entity, key){
+  const state = SORT_STATES[entity];
+  if(state.key===key) state.dir*=-1;
+  else { state.key=key; state.dir=1; }
+  filterTable(entity);
 }
+
+// Updates the little header icon so the active sort column/direction is
+// actually visible to the user (previously every header always showed the
+// same neutral up/down icon, so a working sort still looked like nothing
+// had happened).
+function updateSortIndicators(entity){
+  const state = SORT_STATES[entity];
+  const page = document.getElementById('page-'+entity);
+  if(!page) return;
+  page.querySelectorAll('th.sortable').forEach(th=>{
+    const icon = th.querySelector('i');
+    if(!icon) return;
+    const onclickAttr = th.getAttribute('onclick')||'';
+    const m = onclickAttr.match(/\('([^']*)'\)/);
+    const key = m ? m[1] : null;
+    if(state && state.key && key===state.key){
+      // Use a plain unicode arrow rather than a ti-arrow-up/down icon class —
+      // this app's icon font was trimmed to only the glyphs already used
+      // elsewhere (ti-arrows-sort etc.), so those two classes would render
+      // as blank/missing glyphs.
+      icon.className = '';
+      icon.textContent = state.dir===1 ? '\u2191' : '\u2193';
+      icon.style.fontSize = '12px';
+      icon.style.fontStyle = 'normal';
+      icon.style.color = 'var(--teal)';
+      icon.style.fontWeight = '700';
+    } else {
+      icon.className = 'ti ti-arrows-sort';
+      icon.textContent = '';
+      icon.style.color = '';
+      icon.style.fontWeight = '';
+    }
+  });
+}
+
+function sortCourses(key){ sortEntity('courses', key); }
+function sortQuotes(key){ sortEntity('quotes', key); }
 
 // ── TAB SWITCHER ─────────────────────────────────────────────────────────────
-function sortRuns(key){
-  if(runsSortState.key===key) runsSortState.dir*=-1;
-  else { runsSortState.key=key; runsSortState.dir=1; }
-  let items=[...(cache.runs||[])];
-  const dir=runsSortState.dir;
-  if(key==='Duration'){
-    items.sort((a,b)=>{
-      const dA=a.EndDate&&a.StartDate?Math.round((new Date(a.EndDate)-new Date(a.StartDate))/864e5)+1:0;
-      const dB=b.EndDate&&b.StartDate?Math.round((new Date(b.EndDate)-new Date(b.StartDate))/864e5)+1:0;
-      return (dA-dB)*dir;
-    });
-  } else if(key==='Enrolled'){
-    items.sort((a,b)=>{
-      const rA=(a.StartDate||'').substring(0,10), nameA=(a.Title||'').replace(rA,'').trim().toLowerCase();
-      const rB=(b.StartDate||'').substring(0,10), nameB=(b.Title||'').replace(rB,'').trim().toLowerCase();
-      const eA=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameA&&(at.RunStartDate||'').substring(0,10)===rA).length;
-      const eB=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameB&&(at.RunStartDate||'').substring(0,10)===rB).length;
-      return (eA-eB)*dir;
-    });
-  } else {
-    items.sort((a,b)=>{
-      const va=(a[key]||a.Title||'').toString().toLowerCase();
-      const vb=(b[key]||b.Title||'').toString().toLowerCase();
-      return va.localeCompare(vb)*dir;
-    });
-  }
-  renderRuns(items);
-}
+function sortRuns(key){ sortEntity('runs', key); }
 
-function sortOrgs(key){
-  if(orgsSortState.key===key) orgsSortState.dir*=-1;
-  else { orgsSortState.key=key; orgsSortState.dir=1; }
-  let items=[...(cache.organisations||[])];
-  const dir=orgsSortState.dir;
-  items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
-    if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
-    return va.localeCompare(vb)*dir;
-  });
-  renderOrgs(items);
-}
+function sortOrgs(key){ sortEntity('organisations', key); }
 
-function sortAttendees(key){
-  if(attendeesSortState.key===key) attendeesSortState.dir*=-1;
-  else { attendeesSortState.key=key; attendeesSortState.dir=1; }
-  let items=[...(cache.attendees||[])];
-  const dir=attendeesSortState.dir;
-  items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
-    // Always push blanks to the end regardless of sort direction
-    if(!va && !vb) return 0;
-    if(!va) return 1;
-    if(!vb) return -1;
-    return va.localeCompare(vb)*dir;
-  });
-  renderAttendees(items);
-}
+function sortAttendees(key){ sortEntity('attendees', key); }
 
-function sortCerts(key){
-  if(certsSortState.key===key) certsSortState.dir*=-1;
-  else { certsSortState.key=key; certsSortState.dir=1; }
-  let items=[...(cache.certificates||[])];
-  const dir=certsSortState.dir;
-  items.sort((a,b)=>{
-    const va=(a[key]||a.Title||'').toString().toLowerCase().trim();
-    const vb=(b[key]||b.Title||'').toString().toLowerCase().trim();
-    if(!va&&!vb) return 0; if(!va) return 1; if(!vb) return -1;
-    return va.localeCompare(vb)*dir;
-  });
-  renderCertificates(items);
-}
+function sortCerts(key){ sortEntity('certificates', key); }
 
 function switchQuoteTab(tab){
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
@@ -2551,62 +2648,9 @@ function gqReset(){
   renderQuotePreview();
 }
 
-function sortInvoices(key){
-  if(invoicesSortState.key===key) invoicesSortState.dir*=-1;
-  else { invoicesSortState.key=key; invoicesSortState.dir=1; }
-  let items=[...(cache.invoices||[])];
-  const dir=invoicesSortState.dir;
-  if(key==='Total'){
-    items.sort((a,b)=>{
-      const lt_a=invoiceLineTotals(a.InvoiceNumber||a.Title), lt_b=invoiceLineTotals(b.InvoiceNumber||b.Title);
-      const ta=lt_a?lt_a.total:(+a.TotalAmount||0);
-      const tb=lt_b?lt_b.total:(+b.TotalAmount||0);
-      return (ta-tb)*dir;
-    });
-  } else if(key==='Status'){
-    items.sort((a,b)=>invoiceStatus(a).localeCompare(invoiceStatus(b))*dir);
-  } else {
-    items.sort((a,b)=>{
-      const va=(a[key]||a.Title||'').toString().toLowerCase();
-      const vb=(b[key]||b.Title||'').toString().toLowerCase();
-      return va.localeCompare(vb)*dir;
-    });
-  }
-  renderInvoices(items);
-}
+function sortInvoices(key){ sortEntity('invoices', key); }
 
-function sortPayments(key){
-  if(paymentsSortState.key===key) paymentsSortState.dir*=-1;
-  else { paymentsSortState.key=key; paymentsSortState.dir=1; }
-  let items=[...(cache.payments||[])];
-  const dir=paymentsSortState.dir;
-  if(key==='AmountPaid'){
-    items.sort((a,b)=>((+a.AmountPaid||0)-(+b.AmountPaid||0))*dir);
-  } else if(key==='InvoiceTotal'){
-    items.sort((a,b)=>{
-      const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
-      const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
-      return ((+inv_a?.TotalAmount||0)-(+inv_b?.TotalAmount||0))*dir;
-    });
-  } else if(key==='BalanceDue'){
-    items.sort((a,b)=>{
-      const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
-      const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
-      const bal_a=Math.max(0,(+inv_a?.TotalAmount||0)-invoiceTotalPaid(inv_a||{}));
-      const bal_b=Math.max(0,(+inv_b?.TotalAmount||0)-invoiceTotalPaid(inv_b||{}));
-      return (bal_a-bal_b)*dir;
-    });
-  } else if(key==='Status'){
-    items.sort((a,b)=>paymentStatus(a).localeCompare(paymentStatus(b))*dir);
-  } else {
-    items.sort((a,b)=>{
-      const va=(a[key]||'').toString().toLowerCase();
-      const vb=(b[key]||'').toString().toLowerCase();
-      return va.localeCompare(vb)*dir;
-    });
-  }
-  renderPayments(items);
-}
+function sortPayments(key){ sortEntity('payments', key); }
 
 function courseRunCount(c){
   const cName=(c.CourseName||c.Title||'').toLowerCase().trim();
@@ -2712,8 +2756,10 @@ function filterTable(entity){
     const st=(document.getElementById('pay-status')||{value:''}).value;
     if(st) items=items.filter(i=>paymentStatus(i)===st);
   }
+  items = sortItemsFor(entity, items);
   const renders = {courses:renderCourses,runs:renderRuns,organisations:renderOrgs,attendees:renderAttendees,quotes:renderQuotes,invoices:renderInvoices,payments:renderPayments,trainers:renderTrainers,venues:renderVenues,certificates:renderCertificates};
   if(renders[entity]) renders[entity](items);
+  updateSortIndicators(entity);
   // If runs filter changed while calendar view is active, refresh calendar with filtered items
   if(entity==='runs' && runsViewMode==='calendar'){
     const hasActiveFilter = q || (document.getElementById('runs-status')||{}).value
