@@ -362,7 +362,15 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header"><h2 id="runs-count">Course Runs</h2></div>
           <div class="table-wrap" id="runs-table-view">
-            <table><thead><tr><th>Course</th><th>Start</th><th>End</th><th>Duration</th><th>Trainer</th><th>Venue</th><th>Capacity</th><th>Enrolled</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortRuns('Title')">Course <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortRuns('StartDate')">Start <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortRuns('EndDate')">End <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortRuns('Duration')">Duration <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Trainer</th><th>Venue</th><th>Capacity</th>
+              <th class="sortable" onclick="sortRuns('Enrolled')">Enrolled <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortRuns('Status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th></tr></thead>
             <tbody id="runs-tbody"></tbody></table>
           </div>
           <div id="runs-calendar-view" style="display:none;padding:18px"></div>
@@ -378,7 +386,10 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header"><h2 id="orgs-count">Organisations</h2></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Organisation</th><th>Contact Person</th><th>Position</th><th>Email</th><th>Phone</th><th>Attendees</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortOrgs('OrgName')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortOrgs('ContactPerson')">Contact Person <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Position</th><th>Email</th><th>Phone</th><th>Attendees</th><th>Actions</th></tr></thead>
             <tbody id="orgs-tbody"></tbody></table>
           </div>
         </div>
@@ -402,7 +413,15 @@ select:focus{border-color:var(--teal)}
             <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
           </div>
           <div class="table-wrap">
-            <table><thead><tr><th>Name</th><th>Organisation</th><th>Invoice #</th><th>Course Run</th><th>Course Date</th><th>Email</th><th>Certificate</th><th>Status</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortAttendees('FullName')">Name <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortAttendees('OrgName')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortAttendees('InvoiceRef')">Invoice # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortAttendees('CourseTitle')">Course Run <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortAttendees('RunStartDate')">Course Date <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Email</th><th>Certificate</th>
+              <th class="sortable" onclick="sortAttendees('AttendanceStatus')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th></tr></thead>
             <tbody id="att-tbody"></tbody></table>
           </div>
         </div>
@@ -720,7 +739,12 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header"><h2 id="cert-count">Certificates</h2></div>
           <div class="table-wrap">
-            <table><thead><tr><th>Certificate #</th><th>Attendee</th><th>Organisation</th><th>Course Run</th><th>Issue Date</th><th>Actions</th></tr></thead>
+            <table><thead><tr>
+              <th class="sortable" onclick="sortCerts('Title')">Certificate # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCerts('AttendeeName')">Attendee <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCerts('CourseRunTitle')">Course Run <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCerts('IssueDate')">Issue Date <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Actions</th></tr></thead>
             <tbody id="cert-tbody"></tbody></table>
           </div>
         </div>
@@ -1772,6 +1796,10 @@ function renderRunsCalendar(items, jumpToResults){
 }
 
 let courseSortState = {key:null, dir:1};
+let runsSortState = {key:null, dir:1};
+let orgsSortState = {key:null, dir:1};
+let attendeesSortState = {key:null, dir:1};
+let certsSortState = {key:null, dir:1};
 let quotesSortState = {key:null, dir:1};
 let invoicesSortState = {key:null, dir:1};
 let paymentsSortState = {key:null, dir:1};
@@ -1819,6 +1847,74 @@ function sortQuotes(key){
 }
 
 // ── TAB SWITCHER ─────────────────────────────────────────────────────────────
+function sortRuns(key){
+  if(runsSortState.key===key) runsSortState.dir*=-1;
+  else { runsSortState.key=key; runsSortState.dir=1; }
+  let items=[...(cache.runs||[])];
+  const dir=runsSortState.dir;
+  if(key==='Duration'){
+    items.sort((a,b)=>{
+      const dA=a.EndDate&&a.StartDate?Math.round((new Date(a.EndDate)-new Date(a.StartDate))/864e5)+1:0;
+      const dB=b.EndDate&&b.StartDate?Math.round((new Date(b.EndDate)-new Date(b.StartDate))/864e5)+1:0;
+      return (dA-dB)*dir;
+    });
+  } else if(key==='Enrolled'){
+    items.sort((a,b)=>{
+      const rA=(a.StartDate||'').substring(0,10), nameA=(a.Title||'').replace(rA,'').trim().toLowerCase();
+      const rB=(b.StartDate||'').substring(0,10), nameB=(b.Title||'').replace(rB,'').trim().toLowerCase();
+      const eA=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameA&&(at.RunStartDate||'').substring(0,10)===rA).length;
+      const eB=(cache.attendees||[]).filter(at=>(at.CourseTitle||'').toLowerCase().trim()===nameB&&(at.RunStartDate||'').substring(0,10)===rB).length;
+      return (eA-eB)*dir;
+    });
+  } else {
+    items.sort((a,b)=>{
+      const va=(a[key]||a.Title||'').toString().toLowerCase();
+      const vb=(b[key]||b.Title||'').toString().toLowerCase();
+      return va.localeCompare(vb)*dir;
+    });
+  }
+  renderRuns(items);
+}
+
+function sortOrgs(key){
+  if(orgsSortState.key===key) orgsSortState.dir*=-1;
+  else { orgsSortState.key=key; orgsSortState.dir=1; }
+  let items=[...(cache.organisations||[])];
+  const dir=orgsSortState.dir;
+  items.sort((a,b)=>{
+    const va=(a[key]||a.Title||'').toString().toLowerCase();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    return va.localeCompare(vb)*dir;
+  });
+  renderOrgs(items);
+}
+
+function sortAttendees(key){
+  if(attendeesSortState.key===key) attendeesSortState.dir*=-1;
+  else { attendeesSortState.key=key; attendeesSortState.dir=1; }
+  let items=[...(cache.attendees||[])];
+  const dir=attendeesSortState.dir;
+  items.sort((a,b)=>{
+    const va=(a[key]||a.Title||'').toString().toLowerCase();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    return va.localeCompare(vb)*dir;
+  });
+  renderAttendees(items);
+}
+
+function sortCerts(key){
+  if(certsSortState.key===key) certsSortState.dir*=-1;
+  else { certsSortState.key=key; certsSortState.dir=1; }
+  let items=[...(cache.certificates||[])];
+  const dir=certsSortState.dir;
+  items.sort((a,b)=>{
+    const va=(a[key]||a.Title||'').toString().toLowerCase();
+    const vb=(b[key]||b.Title||'').toString().toLowerCase();
+    return va.localeCompare(vb)*dir;
+  });
+  renderCertificates(items);
+}
+
 function switchQuoteTab(tab){
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active', (tab==='list'&&i===0)||(tab==='generate'&&i===1));
