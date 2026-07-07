@@ -1278,8 +1278,26 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if(el) el.textContent = PAGE_CONFIG.dashboard.sub;
 });
 
+// Pages that have a search box / filter-bar (dashboard has neither).
+const LISTING_PAGES = new Set(['courses','runs','organisations','attendees','quotes','invoices','payments','trainers','venues','certificates']);
+
+// Resets a listing page's search box, filter dropdowns/dates, and active
+// sort back to their defaults. Every page's data is fully reloaded from
+// SharePoint on each navigation anyway (see loadPage), so leaving a stale
+// search term, filter, or sort arrow in place just makes the page look like
+// it remembers state it doesn't actually apply to the freshly-loaded data.
+function resetPageState(entity){
+  const state = SORT_STATES[entity];
+  if(state){ state.key=null; state.dir=1; }
+  clearFilters(entity);
+}
+
 function nav(page){
+  const previousPage = currentPage;
   currentPage = page;
+  if(previousPage && previousPage!==page && LISTING_PAGES.has(previousPage)){
+    resetPageState(previousPage);
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
