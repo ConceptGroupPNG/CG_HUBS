@@ -5675,10 +5675,14 @@ function processImportFile() {
     showToast('No file loaded', 'error'); return;
   }
 
-  // Build ContactName -> PSPClient lookup using ClientInvoiceName
+  // Build ContactName -> PSPClient lookup using ClientInvoiceName (the field
+  // this exact matching is documented against — PSP_Client_Details has no
+  // separate ContactName field, so falling back to getClientName() here would
+  // key off PSPClient instead and silently miss any client whose Xero invoice
+  // name differs from their PSP name).
   const nameToClient = {};
   cache.clients.forEach(c => {
-    const invName = getClientName(c);
+    const invName = c.ClientInvoiceName || getClientName(c);
     if (invName) nameToClient[invName] = c.PSPClient;
   });
 
