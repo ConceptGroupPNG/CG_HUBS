@@ -5679,11 +5679,14 @@ function processImportFile() {
   // this exact matching is documented against — PSP_Client_Details has no
   // separate ContactName field, so falling back to getClientName() here would
   // key off PSPClient instead and silently miss any client whose Xero invoice
-  // name differs from their PSP name).
+  // name differs from their PSP name). Matched case-insensitively and trimmed,
+  // since a stray space or casing difference between SharePoint and the Xero
+  // CSV would otherwise cause an exact-match failure.
+  const normName = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const nameToClient = {};
   cache.clients.forEach(c => {
     const invName = c.ClientInvoiceName || getClientName(c);
-    if (invName) nameToClient[invName] = c.PSPClient;
+    if (invName) nameToClient[normName(invName)] = c.PSPClient;
   });
 
   const defaultStatus = document.getElementById('imp-default-status').value;
@@ -5702,7 +5705,10 @@ function processImportFile() {
   Object.entries(grouped).forEach(([invNo, rows]) => {
     const first = rows[0];
     const contactName = first.ContactName || '';
-    const matchedClient = nameToClient[contactName] || null;
+    const matchedClient = nameToClient[normName(contactName)] || null;
+    if (!matchedClient && contactName) {
+      console.warn(`[Import Invoices] No client match for CSV ContactName "${contactName}". Known invoice names:`, Object.keys(nameToClient));
+    }
     const total = parseFloat(first.Total) || 0;
     const taxTotal = parseFloat(first.TaxTotal || rows.reduce((s,r)=>s+(parseFloat(r.TaxAmount)||0),0)) || 0;
     const invDate = parseImportDate(first.InvoiceDate);
