@@ -5707,7 +5707,8 @@ function processImportFile() {
     const contactName = first.ContactName || '';
     const matchedClient = nameToClient[normName(contactName)] || null;
     if (!matchedClient && contactName) {
-      console.warn(`[Import Invoices] No client match for CSV ContactName "${contactName}". Known invoice names:`, Object.keys(nameToClient));
+      console.warn(`[Import Invoices] No client match for CSV ContactName "${contactName}" (normalized: "${normName(contactName)}")`);
+      console.warn(`[Import Invoices] Known invoice names (normalized):\n` + Object.keys(nameToClient).map(k => `"${k}"`).join('\n'));
     }
     const total = parseFloat(first.Total) || 0;
     const taxTotal = parseFloat(first.TaxTotal || rows.reduce((s,r)=>s+(parseFloat(r.TaxAmount)||0),0)) || 0;
