@@ -2946,7 +2946,7 @@ function getCountryAbbrev(countryName) {
 
 // Resolves a client (by PSP name) to their country's holidays on a given date.
 function getClientHolidaysOnDate(clientName, date) {
-  const client = cache.clients.find(c => getClientName(c) === clientName || c.PSPClient === clientName);
+  const client = cache.clients.find(c => getClientName(c) === clientName);
   const country = client?.POCountry;
   if (!country) return [];
   return getHolidaysOnDate(date).filter(h => (h.Title||'').toLowerCase() === country.toLowerCase());
@@ -5577,7 +5577,7 @@ async function loadImportInvoices() {
   const sorted = [...cache.clients].sort((a,b) => getClientName(a).localeCompare(getClientName(b)));
   refEl.innerHTML = sorted.map(c => `
     <div style="padding:10px 16px;border-bottom:1px solid var(--grey-100);">
-      <div style="font-size:12px;font-weight:700;color:var(--navy);">${c.PSPClient || '—'}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--navy);">${getClientName(c)}</div>
       <div style="font-size:11px;color:var(--grey-500);">Invoice name: ${getClientName(c)} · ${c.Currency||'PGK'}</div>
     </div>`).join('');
 
@@ -5686,7 +5686,8 @@ function processImportFile() {
   const nameToClient = {};
   cache.clients.forEach(c => {
     const invName = c.ClientInvoiceName || getClientName(c);
-    if (invName) nameToClient[normName(invName)] = c.PSPClient;
+    const pspVal = c.PSPClient || c.ContactName || c.Title || '';
+    if (invName && pspVal) nameToClient[normName(invName)] = pspVal;
   });
 
   const defaultStatus = document.getElementById('imp-default-status').value;
@@ -5729,7 +5730,7 @@ function processImportFile() {
 
     const payRuns = [...new Set(lines.filter(l=>l.PayGroup&&l.PayNo).map(l=>`${l.PayGroup} Pay ${l.PayNo}`))].join(', ');
 
-    const clientRecord = matchedClient ? cache.clients.find(c => c.PSPClient === matchedClient) : null;
+    const clientRecord = matchedClient ? cache.clients.find(c => getClientName(c) === matchedClient) : null;
 
     preview.push({
       Title: invNo,
@@ -6261,7 +6262,7 @@ function viewQuoteById(id) {
   if (!q) return;
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
-  const clientRecord = cache.clients.find(c => c.PSPClient === q.PSPClient);
+  const clientRecord = cache.clients.find(c => getClientName(c) === q.PSPClient);
 
   const rows = lines.map(l => `
     <tr>
@@ -6300,7 +6301,7 @@ function printQuoteDoc(id) {
   if (!q) return;
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
-  const clientRecord = cache.clients.find(c => c.PSPClient === q.PSPClient);
+  const clientRecord = cache.clients.find(c => getClientName(c) === q.PSPClient);
   const rows = lines.map(l => `
     <tr>
       <td style="padding:8px 4px;">${l.Description}</td>
@@ -7385,7 +7386,7 @@ function wizStep1Next() {
   if (!client) { showToast('PSP Client Name is required', 'error'); return; }
   // Check for duplicate name on new client
   if (!wizClientId) {
-    const exists = cache.clients.find(c => (c.PSPClient||'').toLowerCase() === client.toLowerCase());
+    const exists = cache.clients.find(c => getClientName(c).toLowerCase() === client.toLowerCase());
     if (exists) { showToast('A client with this name already exists', 'error'); return; }
   }
   wizGoStep(2);
@@ -7846,7 +7847,12 @@ async function wizSaveClient() {
     const country      = document.getElementById('wiz-country').value.trim();
 
     const clientFields = {
-      Title: client, PSPClient: client, ClientInvoiceName: invoiceName,
+      // NOTE: the "PSPClient" display column's real SharePoint internal name
+      // is "ContactName" (renamed at some point after creation) — writing to
+      // a literal "PSPClient" key gets silently stripped by the field-fallback
+      // logic, so new/edited clients would otherwise save Title correctly but
+      // never actually populate the PSP Client Name column at all.
+      Title: client, ContactName: client, ClientInvoiceName: invoiceName,
       Currency: currency, TaxType: taxType, EmailAddress: email,
       AccountCode: accountCode, InventoryItemCode: itemCode,
       TrackingName1: trackName, TrackingOption1: trackOption,
