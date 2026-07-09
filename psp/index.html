@@ -5620,6 +5620,10 @@ function clearImportFile() {
 
 // Simple but robust CSV parser handling quoted fields with commas/newlines
 function parseCSV(text) {
+  // Strip a UTF-8 BOM if present — common in Excel-saved CSVs — otherwise the
+  // very first header (e.g. "PSPClient") silently becomes "\uFEFFPSPClient"
+  // and is never recognized as that column.
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows = [];
   let row = [], field = '', inQuotes = false;
   for (let i = 0; i < text.length; i++) {
@@ -5684,10 +5688,16 @@ function processImportFile() {
   // CSV would otherwise cause an exact-match failure.
   const normName = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const nameToClient = {};
+  // Separate lookup of known PSP entity names themselves — used when the CSV
+  // provides an explicit PSPClient column, to disambiguate cases where several
+  // PSP clients share one Xero contact (ContactName) and can't be told apart
+  // from ContactName alone.
+  const pspNameLookup = {};
   cache.clients.forEach(c => {
     const invName = c.ClientInvoiceName || getClientName(c);
     const pspVal = c.PSPClient || c.ContactName || c.Title || '';
     if (invName && pspVal) nameToClient[normName(invName)] = pspVal;
+    if (pspVal) pspNameLookup[normName(pspVal)] = pspVal;
   });
 
   const defaultStatus = document.getElementById('imp-default-status').value;
@@ -5706,10 +5716,26 @@ function processImportFile() {
   Object.entries(grouped).forEach(([invNo, rows]) => {
     const first = rows[0];
     const contactName = first.ContactName || '';
-    const matchedClient = nameToClient[normName(contactName)] || null;
-    if (!matchedClient && contactName) {
-      console.warn(`[Import Invoices] No client match for CSV ContactName "${contactName}" (normalized: "${normName(contactName)}")`);
-      console.warn(`[Import Invoices] Known invoice names (normalized):\n` + Object.keys(nameToClient).map(k => `"${k}"`).join('\n'));
+    const csvPspClient = (first.PSPClient || '').trim();
+
+    let matchedClient;
+    if (csvPspClient) {
+      // CSV explicitly names the PSP entity — trust it as the disambiguating
+      // identifier (this is how sub-entities sharing one Xero ContactName,
+      // e.g. Dayforce's regional entities, get told apart correctly).
+      matchedClient = pspNameLookup[normName(csvPspClient)] || null;
+      if (!matchedClient) {
+        console.warn(`[Import Invoices] CSV PSPClient "${csvPspClient}" (normalized: "${normName(csvPspClient)}") does not match any known client.`);
+        console.warn(`[Import Invoices] Known PSP client names (normalized):\n` + Object.keys(pspNameLookup).map(k => `"${k}"`).join('\n'));
+      }
+    } else {
+      // No PSPClient column, or blank for this row — standard Xero export,
+      // fall back to matching via ContactName -> ClientInvoiceName.
+      matchedClient = nameToClient[normName(contactName)] || null;
+      if (!matchedClient && contactName) {
+        console.warn(`[Import Invoices] No client match for CSV ContactName "${contactName}" (normalized: "${normName(contactName)}")`);
+        console.warn(`[Import Invoices] Known invoice names (normalized):\n` + Object.keys(nameToClient).map(k => `"${k}"`).join('\n'));
+      }
     }
     const total = parseFloat(first.Total) || 0;
     const taxTotal = parseFloat(first.TaxTotal || rows.reduce((s,r)=>s+(parseFloat(r.TaxAmount)||0),0)) || 0;
