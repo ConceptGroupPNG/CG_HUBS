@@ -5989,6 +5989,7 @@ function renderQuotes() {
       <td style="white-space:nowrap;">
         <button class="btn btn-xs btn-outline" onclick="viewQuoteById('${i.id}')" title="View"><i class="ti ti-eye"></i> View</button>
         <button class="btn btn-xs btn-outline" onclick="editQuoteById('${i.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
+        <button class="btn btn-xs btn-outline" onclick="editQuoteStatus('${i.id}')" title="Update Status"><i class="ti ti-tag"></i> Status</button>
         ${i.Status !== 'Invoiced' && i.Status !== 'Voided' && i.Status !== 'Declined' ? `<button class="btn btn-xs btn-teal" onclick="convertQuoteToInvoice('${i.id}')" title="Convert to Draft Invoice"><i class="ti ti-arrow-right"></i> Convert</button>` : ''}
         <button class="btn btn-xs btn-danger" onclick="confirmDelete('quotes','${i.id}')" title="Delete"><i class="ti ti-trash"></i> Delete</button>
       </td>
@@ -6344,6 +6345,7 @@ function printQuoteDoc(id) {
     subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
   });
   printHTMLContent(docHtml);
+  markQuoteSentIfDraft(q.id).then(() => renderQuotes());
 
   // Flow 3: convert this quote to PDF, file it in SharePoint, and write the link
   // back to PSP_Quotes.QuotesLink (fire-and-forget — printing proceeds regardless).
@@ -6379,6 +6381,7 @@ function emailQuoteDoc(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
   openEmailDraft(q.EmailAddress, q.Title, q.Currency||'PGK', (q.TotalAmount||0).toFixed(2));
+  markQuoteSentIfDraft(q.id).then(() => renderQuotes());
 }
 
 function openEmailDraft(emailAddr, quoteNo, currency, total) {
@@ -6449,6 +6452,67 @@ async function convertQuoteToInvoice(id) {
     renderQuotes();
     showToast(`Quote converted to Draft Invoice ${invNo}`, 'success');
   } catch(e) { showToast('Error converting quote: ' + e.message, 'error'); }
+}
+
+// Manual status editor — covers Draft/Sent/Declined/Voided. "Invoiced" is
+// deliberately excluded here since it's only ever set by convertQuoteToInvoice()
+// alongside a real linked invoice; faking it here would leave LinkedInvoiceNo
+// pointing nowhere.
+function editQuoteStatus(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  if (q.Status === 'Invoiced') {
+    showToast(`This quote was converted to invoice ${q.LinkedInvoiceNo || 'N/A'} — its status is managed automatically`, 'error');
+    return;
+  }
+  document.getElementById('modal-title').textContent = 'Update Quote Status';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Quote</label>
+      <input type="text" readonly value="${q.Title} — ${q.PSPClient||''}" style="font-weight:700;">
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="q-status-sel">
+        <option ${q.Status==='Draft'||!q.Status?'selected':''}>Draft</option>
+        <option ${q.Status==='Sent'?'selected':''}>Sent</option>
+        <option ${q.Status==='Declined'?'selected':''}>Declined</option>
+        <option ${q.Status==='Voided'?'selected':''}>Voided</option>
+      </select>
+    </div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-teal" onclick="saveQuoteStatus('${id}')"><i class="ti ti-check"></i> Save</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveQuoteStatus(id) {
+  const status = document.getElementById('q-status-sel').value;
+  try {
+    await saveWithFieldFallback(true, 'quotes', id, { Status: status });
+    const idx = cache.quotes.findIndex(i => String(i.id) === String(id));
+    if (idx >= 0) cache.quotes[idx].Status = status;
+    closeModal();
+    renderQuotes();
+    showToast(`Quote status updated to ${status}`, 'success');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// Auto-mark a quote as Sent the first time it's printed or emailed — only
+// advances from Draft; never overwrites Invoiced/Declined/Voided/already-Sent.
+async function markQuoteSentIfDraft(id) {
+  const idx = cache.quotes.findIndex(i => String(i.id) === String(id));
+  if (idx < 0) return;
+  const q = cache.quotes[idx];
+  if (q.Status && q.Status !== 'Draft') return; // already progressed past Draft
+  try {
+    await saveWithFieldFallback(true, 'quotes', id, { Status: 'Sent' });
+    cache.quotes[idx].Status = 'Sent';
+  } catch(e) {
+    console.warn('Could not auto-update quote status to Sent:', e.message);
+  }
 }
 
 // ─────────────────────────────────────────────
