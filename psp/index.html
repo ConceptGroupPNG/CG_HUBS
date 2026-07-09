@@ -4720,7 +4720,7 @@ async function loadBillingMetrics() {
   // Populate the client picker dropdown
   const sel = document.getElementById('bm-client-select');
   if (sel) {
-    const clients = [...new Set(cache.billing.map(i => i.PSPClient).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+    const clients = [...new Set(cache.clients.map(c => getClientName(c)).filter(Boolean))].sort((a,b) => a.localeCompare(b));
     sel.innerHTML = '<option value="">— Select Client —</option>' +
       clients.map(c => `<option value="${c}">${c}</option>`).join('');
   }
@@ -5904,7 +5904,7 @@ function startNewQuote() {
 async function loadQuotes() {
   if (!cache.quotes.length) cache.quotes = await getItems('quotes');
   if (!cache.clients.length) cache.clients = await getItems('clients');
-  populateClientFilter('filter-q-client', cache.quotes);
+  populateClientFilter('filter-q-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderQuotes();
 }
 
@@ -6431,7 +6431,8 @@ async function convertQuoteToInvoice(id) {
 
 async function loadInvoices() {
   if (!cache.invoices.length) cache.invoices = await getItems('invoices');
-  populateClientFilter('filter-inv-client', cache.invoices.map(i => ({PSPClient: i.PSPClient})));
+  if (!cache.clients.length) cache.clients = await getItems('clients');
+  populateClientFilter('filter-inv-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderInvoices();
 }
 
