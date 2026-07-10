@@ -6059,23 +6059,26 @@ function updateQuoteLine(id, field, value) {
 
 function renderQuoteLines() {
   const container = document.getElementById('gq-lines-container');
-  container.innerHTML = quoteLines.map(l => `
-    <div style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;align-items:center;margin-bottom:8px;">
-      <input type="text" placeholder="Description" value="${(l.description||'').replace(/"/g,'&quot;')}"
+  container.innerHTML = quoteLines.map(l => {
+    const escDesc = (l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `
+    <div style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+      <textarea placeholder="Description" rows="2"
         oninput="updateQuoteLine('${l.id}','description',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escDesc}</textarea>
       <input type="number" placeholder="Qty" value="${l.quantity}" min="0" step="0.5"
         oninput="updateQuoteLine('${l.id}','quantity',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
       <input type="number" placeholder="Unit Price" value="${l.unitPrice}" min="0" step="0.01"
         oninput="updateQuoteLine('${l.id}','unitPrice',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
       <input type="number" placeholder="Tax%" value="${l.taxPercent}" min="0" max="100"
         oninput="updateQuoteLine('${l.id}','taxPercent',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;">
-      <div id="qline-total-${l.id}" style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
-      <button onclick="removeQuoteLine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;">✕</button>
-    </div>`).join('');
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+      <div id="qline-total-${l.id}" style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;margin-top:8px;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
+      <button onclick="removeQuoteLine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+    </div>`;
+  }).join('');
   updateQuoteTotals(true);
 }
 
@@ -6112,7 +6115,7 @@ function renderQuotePreview() {
 
   const rows = quoteLines.filter(l => l.description).map(l => `
     <tr>
-      <td style="padding:8px 4px;">${l.description}</td>
+      <td style="padding:8px 4px;">${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
       <td style="text-align:right;padding:8px 4px;">${l.quantity}</td>
       <td style="text-align:right;padding:8px 4px;">${l.unitPrice.toFixed(2)}</td>
       <td style="text-align:right;padding:8px 4px;">${l.taxPercent}%</td>
@@ -6293,7 +6296,7 @@ function viewQuoteById(id) {
 
   const rows = lines.map(l => `
     <tr>
-      <td style="padding:8px 4px;">${l.Description}</td>
+      <td style="padding:8px 4px;">${(l.Description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
       <td style="text-align:right;padding:8px 4px;">${l.Quantity}</td>
       <td style="text-align:right;padding:8px 4px;">${(l.UnitPrice||0).toFixed(2)}</td>
       <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
@@ -6331,7 +6334,7 @@ function printQuoteDoc(id) {
   const clientRecord = cache.clients.find(c => getClientName(c) === q.PSPClient);
   const rows = lines.map(l => `
     <tr>
-      <td style="padding:8px 4px;">${l.Description}</td>
+      <td style="padding:8px 4px;">${(l.Description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
       <td style="text-align:right;padding:8px 4px;">${l.Quantity}</td>
       <td style="text-align:right;padding:8px 4px;">${(l.UnitPrice||0).toFixed(2)}</td>
       <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
