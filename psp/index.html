@@ -1909,10 +1909,9 @@
         <div id="clients-list-view">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <div class="search-box">
-                <i class="ti ti-search" style="color:var(--grey-400);font-size:14px;"></i>
-                <input type="text" id="cl-search" placeholder="Search clients..." oninput="renderClientsList()" style="border:none;outline:none;font-size:13px;width:200px;">
-              </div>
+              <select id="cl-filter-client" onchange="renderClientsList()" style="padding:7px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;color:var(--navy);background:var(--white);min-width:220px;">
+                <option value="">All Clients</option>
+              </select>
               <select id="cl-filter-status" onchange="renderClientsList()" style="padding:7px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;color:var(--navy);background:var(--white);">
                 <option value="">All Status</option>
                 <option value="Active">Active</option>
@@ -3183,7 +3182,7 @@ const PAGE_FILTER_FIELDS = {
     { id: 'filter-inv-search', def: '' },
   ],
   clients: [
-    { id: 'cl-search', def: '' },
+    { id: 'cl-filter-client', def: '' },
     { id: 'cl-filter-status', def: '' },
   ],
   'bulk-admin': [
@@ -7338,6 +7337,7 @@ async function loadClientsPage() {
   if (!cache.clients.length) cache.clients = await getItems('clients');
   if (!cache.fees.length)    cache.fees    = await getItems('fees');
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  populateClientFilter('cl-filter-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderClientsList();
 }
 
@@ -7376,13 +7376,10 @@ function exportClientsCSV() {
 }
 
 function renderClientsList() {
-  const search = (document.getElementById('cl-search')?.value || '').toLowerCase();
+  const clientF = document.getElementById('cl-filter-client')?.value || '';
   const statusF = document.getElementById('cl-filter-status')?.value || '';
   let items = [...cache.clients];
-  if (search) items = items.filter(c =>
-    (c.PSPClient||c.ContactName||c.Title||'').toLowerCase().includes(search) ||
-    (c.ClientInvoiceName||'').toLowerCase().includes(search)
-  );
+  if (clientF) items = items.filter(c => getClientName(c) === clientF);
   if (statusF) items = items.filter(c => (c.ClientStatus || 'Active') === statusF);
   items.sort((a,b) => (a.PSPClient||'').localeCompare(b.PSPClient||''));
   if (SORT_STATE.clients.key) {
