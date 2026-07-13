@@ -1573,7 +1573,7 @@
                 <div class="form-row">
                   <div class="form-group">
                     <label>Client *</label>
-                    <select id="gq-client" onchange="updateQuoteTotals()">
+                    <select id="gq-client" onchange="onQuoteClientChange()">
                       <option value="">Select Client...</option>
                     </select>
                   </div>
@@ -5333,6 +5333,12 @@ async function generateInvoice() {
   if (!clientDetails) { showToast('Client details not found', 'error'); return; }
   invoiceLines = [];
   const methodEGroups = {};
+  // DD/MM/YY (short year) formatter — matches the per-pay-group line format
+  // used in Method E's reference invoices, e.g. "PPE: 11/06/26"
+  const toDDMMYY = (dateStr, fullYear) => dateStr.replace(/(\d+)\s(\w{3})\s(\d+)/, (m,d,mo,y)=>{
+    const months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+    return `${d.padStart(2,'0')}/${months[mo]}/${fullYear ? y : y.slice(-2)}`;
+  });
   for (const rec of nominatedRecords) {
     const pg = getPayGroup(rec);
     const fees = cache.fees.find(f => f.Title === clientName && (f.field_1 === pg || f.PayGroup === pg));
@@ -5340,15 +5346,23 @@ async function generateInvoice() {
     if (fees.CalcMethod === 'E') {
       const key = rec.PayNo;
       if (!methodEGroups[key]) methodEGroups[key] = { rec, fees, descs: [] };
-      methodEGroups[key].descs.push(`${pg} Pay ${rec.PayNo} PPE: ${fmtDate(rec.PayEnddate)}`);
+      const emp = rec.EmployeesPayslips || 0;
+      const payrunId = rec.Payrun || '';
+      const ppeDDMMYY = toDDMMYY(fmtDate(rec.PayEnddate));
+      methodEGroups[key].descs.push(`${pg} Pay ${rec.PayNo} PPE: ${ppeDDMMYY}, ${emp} Employees Paid${payrunId ? ` (Payrun: ${payrunId})` : ''}`);
     } else {
       invoiceLines.push(...calcInvoiceLines(rec, fees, clientDetails, invNo, invDate, dueDate, month));
     }
   }
   for (const [payNo, group] of Object.entries(methodEGroups)) {
-    const unitAmt = group.feePayRun || 0;
+    // Per-pay-run flat fee (PSP_Processing_Fees field_5) — every pay group
+    // combined under one Method E charge is configured with the same value,
+    // so it doesn't matter which pay group's fee record this came from.
+    const unitAmt = group.fees.field_5 !== undefined ? group.fees.field_5 : 0;
     const taxRate = clientDetails.TaxType === 'Zero Rated' ? 0 : 0.1;
     const tax = Math.round(unitAmt * taxRate * 100) / 100;
+    const ppeFull = fmtDate(group.rec.PayEnddate);
+    const desc = group.descs.join('\n') + `\nStandard Monthly Charge Pay No: ${payNo} PPE: ${toDDMMYY(ppeFull, true)}`;
     invoiceLines.push({
       InvoiceNumber: invNo, Reference: '', InvoiceDate: invDate, DueDate: dueDate,
       ContactName: clientDetails.ClientInvoiceName, EmailAddress: clientDetails.EmailAddress,
@@ -5357,8 +5371,8 @@ async function generateInvoice() {
       InventoryItemCode: clientDetails.InventoryItemCode||'Bureau', AccountCode: clientDetails.AccountCode||'201',
       TaxType: clientDetails.TaxType, TrackingName1: clientDetails.TrackingName1||'Department',
       TrackingOption1: clientDetails.TrackingOption1||'Bureau/PSP', Currency: clientDetails.Currency||'PGK',
-      Order:9, PayGroup:'', PayNo:payNo, PPE:fmtDate(group.rec.PayEnddate), Category:'Processing Charges:',
-      Quantity:1, Description:group.descs.join('\n'), UnitAmount:unitAmt, SubTotal:unitAmt, TaxAmount:tax, Total:0,
+      Order:9, PayGroup:'', PayNo:payNo, PPE:ppeFull, Category:'Processing Charges:',
+      Quantity:1, Description:desc, UnitAmount:unitAmt, SubTotal:unitAmt, TaxAmount:tax, Total:0,
     });
   }
   const total = invoiceLines.reduce((s,l) => s+l.SubTotal+l.TaxAmount, 0);
@@ -6024,6 +6038,28 @@ async function loadGenerateQuote() {
   }
 }
 
+// Zero Rated clients must never have taxed line items on quotes/invoices.
+function getClientTaxRate(clientName) {
+  const c = cache.clients.find(cl => getClientName(cl) === clientName);
+  return c?.TaxType === 'Zero Rated' ? 0 : 10;
+}
+
+// When the client changes: a Zero Rated client forces every existing line
+// item to 0% (they must never be taxed) — a standard-tax client just updates
+// totals/preview and leaves any manually-set line tax rates alone, so we
+// don't silently overwrite something someone intentionally customized.
+function onQuoteClientChange() {
+  const clientName = document.getElementById('gq-client')?.value;
+  const c = cache.clients.find(cl => getClientName(cl) === clientName);
+  if (c?.TaxType === 'Zero Rated' && quoteLines.some(l => l.taxPercent !== 0)) {
+    quoteLines.forEach(l => { l.taxPercent = 0; });
+    renderQuoteLines();
+    showToast(`${clientName} is Zero Rated — all line items set to 0% tax`, 'success');
+  } else {
+    updateQuoteTotals();
+  }
+}
+
 function addQuoteLine(prefill = null) {
   quoteLineCounter++;
   const id = 'qline_' + quoteLineCounter;
@@ -6032,7 +6068,7 @@ function addQuoteLine(prefill = null) {
     description: prefill?.Description || '',
     quantity: prefill?.Quantity || 1,
     unitPrice: prefill?.UnitPrice || 0,
-    taxPercent: prefill?.TaxPercent !== undefined ? prefill.TaxPercent : 10,
+    taxPercent: prefill?.TaxPercent !== undefined ? prefill.TaxPercent : getClientTaxRate(document.getElementById('gq-client')?.value),
   });
   renderQuoteLines();
 }
