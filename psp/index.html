@@ -3142,11 +3142,10 @@ async function navigate(page) {
     if (tablePage !== page) resetSortState(table);
   });
 
-  // Reset filters/search boxes on any other page's screen — so they only
-  // persist while you're still on that page, same as the sort/kanban resets.
-  Object.keys(PAGE_FILTER_FIELDS).forEach(p => {
-    if (p !== page) resetPageFilters(p);
-  });
+  // Reset filters/search boxes on every registered page, including the one
+  // being navigated to — every page should present a clean, unfiltered view
+  // each time it's entered, not whatever was left over from before.
+  Object.keys(PAGE_FILTER_FIELDS).forEach(p => resetPageFilters(p));
 
   await loadPage(page);
 }
@@ -3490,9 +3489,9 @@ function downloadCSV(filename, headers, rows) {
 // DASHBOARD
 // ─────────────────────────────────────────────
 async function loadDashboard() {
-  if (!cache.calendar.length) {
-    try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); return; }
-  }
+  // Always refetch — Operations/Finance widgets should reflect current
+  // SharePoint data every time the Dashboard is visited.
+  try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); return; }
   const todayItems = cache.calendar.filter(i => isToday(i.ActivityDateTime));
   const myToday = todayItems.filter(i => getPSPMember(i) === currentUser.displayName);
   const delayed = cache.calendar.filter(i => getActStatus(i) === 'Delayed' && isToday(i.ActivityDateTime));
@@ -3519,7 +3518,7 @@ async function loadDashboard() {
 // MY ACTIVITIES
 // ─────────────────────────────────────────────
 async function loadActivities() {
-  if (!cache.calendar.length) await refreshCalendarCache();
+  await refreshCalendarCache(); // always fresh, not just when the cache is empty
   // Populate filters
   populateClientFilter('act-filter-client', cache.calendar);
   populatePayGroupFilter('act-filter-pg', cache.calendar);
@@ -3707,7 +3706,7 @@ let calViewMode = '7';
 let calAnchor = new Date();
 
 async function loadCalendar() {
-  if (!cache.calendar.length) await refreshCalendarCache();
+  await refreshCalendarCache(); // always fresh, not just when the cache is empty
   populateClientFilter('filter-cal-client', cache.calendar);
   populatePayGroupFilter('filter-cal-paygroup', cache.calendar);
   calAnchor = new Date();
@@ -4713,8 +4712,8 @@ function closeModal() {
 // BILLING METRICS
 // ─────────────────────────────────────────────
 async function loadBillingMetrics() {
-  if (!cache.billing.length) cache.billing = await getItems('billing');
-  if (!cache.clients.length) cache.clients = await getItems('clients');
+  cache.billing = await getItems('billing'); // always fresh
+  cache.clients = await getItems('clients');
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
 
   // Populate the client picker dropdown
@@ -4725,13 +4724,11 @@ async function loadBillingMetrics() {
       clients.map(c => `<option value="${c}">${c}</option>`).join('');
   }
 
-  // If a client was previously selected, restore view
-  if (bmSelectedClient) {
-    showBmClientView(bmSelectedClient);
-  } else {
-    document.getElementById('bm-client-picker').style.display = '';
-    document.getElementById('bm-metrics-view').style.display = 'none';
-  }
+  // Always start at the client picker — a page visit should never silently
+  // resume wherever it was last left.
+  bmSelectedClient = '';
+  document.getElementById('bm-client-picker').style.display = '';
+  document.getElementById('bm-metrics-view').style.display = 'none';
 }
 
 let bmSelectedClient = '';
@@ -5012,6 +5009,8 @@ async function saveBillingMetrics() {
     // Stage 2: Metrics flag is set to true on save (field is included in fields object above)
     cache.billing = await getItems('billing');
     closeModal();
+    const pgFilter = document.getElementById('filter-bm-paygroup');
+    if (pgFilter) pgFilter.value = ''; // clear the sub-filter without leaving this client's summary
     renderBillingMetrics();
     const msg = modalIsEdit ? 'Billing metrics updated' : 'Billing metrics added — record marked as Metrics ready';
     showToast(msg, 'success');
@@ -5952,7 +5951,7 @@ function startNewQuote() {
 }
 
 async function loadQuotes() {
-  if (!cache.quotes.length) cache.quotes = await getItems('quotes');
+  cache.quotes = await getItems('quotes'); // always fresh
   if (!cache.clients.length) cache.clients = await getItems('clients');
   populateClientFilter('filter-q-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderQuotes();
@@ -6309,6 +6308,7 @@ async function saveQuote() {
     currentQuoteId = null;
     quoteLines = [];
     switchQuoteTab('quotes');
+    resetPageFilters('quotes');
     renderQuotes();
   } catch(e) { showToast('Error saving quote: ' + e.message, 'error'); }
 }
@@ -6824,7 +6824,14 @@ function confirmDelete(entity, id, name) {
       cache[entity] = entity === 'calendar' ? await getItems(entity,'',5000,['PSPMEmber']) : await getItems(entity);
       closeModal();
       showToast('Deleted successfully', 'success');
-      loadPage(currentPage);
+      if (currentPage === 'billing-metrics' && bmSelectedClient) {
+        // Stay within the current client's summary rather than resetting to
+        // the picker — same reasoning as the add/edit pay run save path.
+        renderBillingMetrics();
+      } else {
+        resetPageFilters(currentPage);
+        loadPage(currentPage);
+      }
       document.getElementById('modal-save-btn').textContent = 'Save';
       document.getElementById('modal-save-btn').className = 'btn btn-teal';
       document.getElementById('modal-save-btn').onclick = saveModal;
@@ -7347,8 +7354,8 @@ const CALC_METHODS = [
 ];
 
 async function loadClientsPage() {
-  if (!cache.clients.length) cache.clients = await getItems('clients');
-  if (!cache.fees.length)    cache.fees    = await getItems('fees');
+  cache.clients = await getItems('clients'); // always fresh
+  cache.fees    = await getItems('fees');
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   populateClientFilter('cl-filter-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderClientsList();
@@ -8053,7 +8060,8 @@ async function wizSaveClient() {
 
     showToast(`Client "${client}" saved successfully`, 'success');
     closeClientWizard();
-    renderClientsList();
+    resetPageFilters('clients');
+    loadClientsPage();
 
     // Prompt to generate calendar for new client
     if (!wizClientId && wizPayGroups.some(pg => pg.isNew)) {
