@@ -3242,7 +3242,8 @@ async function loadPage(page) {
     try { await loadGenerateQuote(); } catch(e) { console.warn('loadGenerateQuote failed:', e); }
   }
   else if (page === 'invoices') {
-    await loadInvoices();
+    switchInvoiceTab('invoices'); // always land on the Summary list, never wherever it was last left; this also resets filters and fetches fresh data
+    invClearClient(); // always start Generate Invoice at Step 1 (Select Client)
     try { await loadGenerateInvoice(); } catch(e) { console.warn('loadGenerateInvoice failed:', e); }
     try { await loadImportInvoices(); } catch(e) { console.warn('loadImportInvoices failed:', e); }
   }
@@ -5574,6 +5575,16 @@ function switchInvoiceTab(tab) {
     if (tabBtn) tabBtn.classList.toggle('active', key === tab);
     if (contentEl) contentEl.style.display = key === tab ? '' : 'none';
   });
+  // Each sub-tab should present a clean, predictable starting state every
+  // time it's clicked — not wherever it happened to be left previously.
+  if (tab === 'invoices') {
+    resetPageFilters('invoices');
+    loadInvoices();
+  } else if (tab === 'generate') {
+    invClearClient();
+  } else if (tab === 'import') {
+    loadImportInvoices();
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -6558,7 +6569,9 @@ async function markQuoteSentIfDraft(id) {
 // ─────────────────────────────────────────────
 
 async function loadInvoices() {
-  if (!cache.invoices.length) cache.invoices = await getItems('invoices');
+  // Always refetch — this page should reflect current SharePoint data every
+  // time it's visited, not whatever was cached from earlier in the session.
+  cache.invoices = await getItems('invoices');
   if (!cache.clients.length) cache.clients = await getItems('clients');
   populateClientFilter('filter-inv-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderInvoices();
