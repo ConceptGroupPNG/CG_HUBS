@@ -6333,11 +6333,13 @@ function addAppendixTask(prefill = null) {
     hours: prefill?.Hours || 0,
   });
   renderAppendixTasks();
+  renderQuotePreview();
 }
 
 function removeAppendixTask(id) {
   appendixTasks = appendixTasks.filter(t => t.id !== id);
   renderAppendixTasks();
+  renderQuotePreview();
 }
 
 function updateAppendixTask(id, field, value) {
