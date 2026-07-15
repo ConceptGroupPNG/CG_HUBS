@@ -2773,6 +2773,10 @@ function signOut() {
 // ─────────────────────────────────────────────
 // GRAPH API
 // ─────────────────────────────────────────────
+// Guards against handleTokenExpiry() firing multiple times if several Graph
+// calls happen to fail around the same moment (e.g. a Promise.all refresh).
+let handlingTokenExpiry = false;
+
 async function graphFetch(url, opts = {}) {
   if (!accessToken) throw new Error('No access token');
   const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...(opts.headers || {}) };
@@ -2784,7 +2788,17 @@ async function graphFetch(url, opts = {}) {
       headers.Authorization = `Bearer ${accessToken}`;
       r = await fetch(url, { ...opts, headers });
     } else {
-      throw new Error('401 Unauthorized — session expired');
+      // Refresh token is also dead — the session is genuinely over, not just
+      // this one request. Trigger the sign-in redirect right here, once,
+      // rather than leaving it to whichever save/load function happened to
+      // be the one that failed — that's what caused every subsequent action
+      // to just show a repeating "session expired" toast instead of actually
+      // getting the user back to a working sign-in screen.
+      if (!handlingTokenExpiry) {
+        handlingTokenExpiry = true;
+        handleTokenExpiry();
+      }
+      throw new Error('SESSION_EXPIRED');
     }
   }
   if (!r.ok) {
@@ -3046,6 +3060,12 @@ function dateToExcelSerial(date) {
 // UI HELPERS
 // ─────────────────────────────────────────────
 function showToast(msg, type = 'default') {
+  // Suppress the specific noisy "Error: SESSION_EXPIRED" toasts that the many
+  // scattered generic catch blocks (`catch(e) { showToast('Error: '+e.message) }`)
+  // would otherwise each fire in the same moment graphFetch detects a dead
+  // session — handleTokenExpiry() already shows its own clear message, this
+  // just stops every other in-flight call from piling redundant noise on top.
+  if (typeof msg === 'string' && msg.includes('SESSION_EXPIRED')) return;
   const c = document.getElementById('toast-container');
   const t = document.createElement('div');
   t.className = `toast ${type}`;
@@ -3259,6 +3279,7 @@ async function handleTokenExpiry() {
   const newToken = await refreshToken();
   if (newToken) {
     accessToken = newToken;
+    handlingTokenExpiry = false; // session recovered — a later genuine expiry should be able to trigger this again
     showToast('Session refreshed — reloading...', 'success');
     setTimeout(() => loadPage(currentPage), 500);
   } else {
@@ -3292,7 +3313,7 @@ async function loadPage(page) {
   else if (page === 'billing-calc') loadBillingCalc();
   else if (page === 'bulk-admin') await loadBulkAdmin();
   } catch(e) {
-    if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
+    if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized') || e.message.includes('SESSION_EXPIRED'))) {
       await handleTokenExpiry();
     } else {
       showToast('Error loading page: ' + e.message, 'error');
@@ -5079,7 +5100,7 @@ async function loadGenerateInvoice() {
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     document.getElementById('inv-month').value = monthNames[lastDayPrev.getMonth()];
   } catch(e) {
-    if (e.message && e.message.includes('401')) {
+    if (e.message && (e.message.includes('401') || e.message.includes('SESSION_EXPIRED'))) {
       await handleTokenExpiry();
     } else {
       showToast('Error loading invoice data: ' + e.message, 'error');
