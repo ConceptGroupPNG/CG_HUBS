@@ -1532,7 +1532,7 @@
             <select id="filter-q-doctype" onchange="renderQuotes()">
               <option value="">All Types</option>
               <option value="Quote">Quote</option>
-              <option value="SA">Service Acknowledgement Form</option>
+              <option value="SA">Service Acknowledgement</option>
             </select>
             <select id="filter-q-status" onchange="renderQuotes()">
               <option value="">All Statuses</option>
@@ -1581,7 +1581,7 @@
                     <i class="ti ti-file-description"></i> Quote
                   </button>
                   <button id="gq-doctype-sa" onclick="setQuoteDocType('SA')" class="btn btn-xs btn-outline" style="flex:1;font-size:12px;font-weight:700;padding:6px 12px;border:none;background:none;color:var(--grey-600);">
-                    <i class="ti ti-clipboard-text"></i> Service Acknowledgement Form
+                    <i class="ti ti-clipboard-text"></i> Service Acknowledgement
                   </button>
                 </div>
                 <div class="form-row">
@@ -1634,7 +1634,7 @@
                   <div style="font-size:11px;color:var(--grey-500);margin-top:2px;">VAT Excluded — tax applied automatically at invoicing based on client tax status</div>
                 </div>
 
-                <!-- APPENDIX 1 — Task List and Estimates (Service Acknowledgement Form only) -->
+                <!-- APPENDIX 1 — Task List and Estimates (Service Acknowledgement only) -->
                 <div id="gq-appendix-section" style="display:none;margin-top:24px;padding-top:20px;border-top:2px solid var(--grey-200);">
                   <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);margin-bottom:10px;">Appendix 1 — Task List and Estimates</div>
                   <div class="form-group">
@@ -6011,7 +6011,7 @@ let lastQuotesItems = [];
 function exportQuotesCSV() {
   const headers = ['Doc No','Type','Client','Reference','Date','Expiry','Total Hours','Total','Currency','Status'];
   const rows = lastQuotesItems.map(i => [
-    i.Title||'', i.DocType === 'SA' ? 'Service Acknowledgement Form' : 'Quote', i.PSPClient||'', i.Reference||'',
+    i.Title||'', i.DocType === 'SA' ? 'Service Acknowledgement' : 'Quote', i.PSPClient||'', i.Reference||'',
     fmtDate(i.QuoteDate), fmtDate(i.ExpiryDate), i.DocType === 'SA' ? (i.TotalHours||0) : '',
     (i.TotalAmount||0).toFixed(2), i.Currency||'PGK', i.Status||'Draft',
   ]);
@@ -6117,6 +6117,19 @@ function setQuoteDocType(type) {
     ? 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;'
     : 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;border:none;background:none;color:var(--grey-600);';
 
+  // Once editing an existing document, its type is locked — switching would
+  // orphan the assigned number/sequence and break the shape of already-saved
+  // line items, so the opposite type's button is disabled while editing.
+  const isEditing = !!currentQuoteId;
+  const quoteBtn = document.getElementById('gq-doctype-quote');
+  const saBtn = document.getElementById('gq-doctype-sa');
+  quoteBtn.disabled = isEditing && isSA;
+  saBtn.disabled = isEditing && !isSA;
+  quoteBtn.style.opacity = quoteBtn.disabled ? '0.4' : '1';
+  quoteBtn.style.cursor = quoteBtn.disabled ? 'not-allowed' : 'pointer';
+  saBtn.style.opacity = saBtn.disabled ? '0.4' : '1';
+  saBtn.style.cursor = saBtn.disabled ? 'not-allowed' : 'pointer';
+
   document.getElementById('gq-date-label').textContent = isSA ? 'Effective Delivery Date' : 'Quote Date';
   document.getElementById('gq-expiry-group').style.display = isSA ? 'none' : '';
   document.getElementById('gq-reference-label').textContent = isSA ? 'Project / Change Description (short)' : 'Reference';
@@ -6126,7 +6139,7 @@ function setQuoteDocType(type) {
   document.getElementById('gq-totals-quote').style.display = isSA ? 'none' : '';
   document.getElementById('gq-totals-sa').style.display = isSA ? '' : 'none';
   document.getElementById('gq-appendix-section').style.display = isSA ? '' : 'none';
-  document.getElementById('gq-save-btn').innerHTML = `<i class="ti ti-device-floppy"></i> Save ${isSA ? 'Service Acknowledgement Form' : 'Quote'}`;
+  document.getElementById('gq-save-btn').innerHTML = `<i class="ti ti-device-floppy"></i> Save ${isSA ? 'Service Acknowledgement' : 'Quote'}`;
 
   generateQuoteNumberPreview();
   renderQuoteLines();
@@ -6450,7 +6463,7 @@ function buildQuoteDocumentHTML(d) {
     </div>`;
 }
 
-// Builds the Service Acknowledgement Form document — structurally different
+// Builds the Service Acknowledgement document — structurally different
 // from a Quote (General Info / Service Fee / Invoice & Payment / signature
 // block / Appendix 1 task breakdown), matching the agreed DOCX template.
 function buildSADocumentHTML(d) {
@@ -6651,7 +6664,7 @@ async function saveQuote() {
       }
     }
     cache.quotes = await getItems('quotes');
-    showToast(`${isSA ? 'Service Acknowledgement Form' : 'Quote'} ${quoteNo} saved`, 'success');
+    showToast(`${isSA ? 'Service Acknowledgement' : 'Quote'} ${quoteNo} saved`, 'success');
     currentQuoteId = null;
     quoteLines = [];
     appendixTasks = [];
@@ -6807,7 +6820,7 @@ function emailQuoteDoc(id) {
 
 function openEmailDraft(emailAddr, quoteNo, currency, total, docType = 'Quote') {
   const isSA = docType === 'SA';
-  const docLabel = isSA ? 'Service Acknowledgement Form' : 'Quote';
+  const docLabel = isSA ? 'Service Acknowledgement' : 'Quote';
   const to = (emailAddr || '').split(/[,;]/)[0].trim();
   const subject = encodeURIComponent(`${docLabel} ${quoteNo} from Concept Group Limited`);
   const body = encodeURIComponent(`Please find attached ${docLabel} ${quoteNo}${isSA ? '' : ` for ${currency} ${total}`}.\n\nKind regards,\n${currentUser?.displayName || ''}\nConcept Group Limited`);
@@ -6818,7 +6831,7 @@ function openEmailDraft(emailAddr, quoteNo, currency, total, docType = 'Quote') 
 async function convertQuoteToInvoice(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
-  const docLabel = q.DocType === 'SA' ? 'Service Acknowledgement Form' : 'quote';
+  const docLabel = q.DocType === 'SA' ? 'Service Acknowledgement' : 'quote';
   if (q.Status === 'Declined' || q.Status === 'Voided' || q.Status === 'Invoiced') {
     showToast(`Cannot convert a ${q.Status} ${docLabel} to an invoice`, 'error');
     return;
