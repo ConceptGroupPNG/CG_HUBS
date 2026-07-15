@@ -1529,6 +1529,11 @@
             <select id="filter-q-client" onchange="renderQuotes()">
               <option value="">All Clients</option>
             </select>
+            <select id="filter-q-doctype" onchange="renderQuotes()">
+              <option value="">All Types</option>
+              <option value="Quote">Quote</option>
+              <option value="SA">Service Acknowledgement Form</option>
+            </select>
             <select id="filter-q-status" onchange="renderQuotes()">
               <option value="">All Statuses</option>
               <option>Draft</option>
@@ -1546,6 +1551,7 @@
                 <thead>
                   <tr>
                     <th class="sort-th" data-table="quotes" data-key="quoteno" onclick="setSort('quotes','quoteno')" style="cursor:pointer;user-select:none;">Quote No <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th>Type</th>
                     <th class="sort-th" data-table="quotes" data-key="client" onclick="setSort('quotes','client')" style="cursor:pointer;user-select:none;">Client <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                     <th class="sort-th" data-table="quotes" data-key="reference" onclick="setSort('quotes','reference')" style="cursor:pointer;user-select:none;">Reference <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                     <th class="sort-th" data-table="quotes" data-key="quotedate" onclick="setSort('quotes','quotedate')" style="cursor:pointer;user-select:none;">Quote Date <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
@@ -1557,7 +1563,7 @@
                   </tr>
                 </thead>
                 <tbody id="quotes-tbody">
-                  <tr><td colspan="9"><div class="loading"><div class="spinner"></div></div></td></tr>
+                  <tr><td colspan="10"><div class="loading"><div class="spinner"></div></div></td></tr>
                 </tbody>
               </table>
             </div>
@@ -1570,6 +1576,14 @@
             <div class="card">
               <div class="card-header"><h3>Quote Details</h3></div>
               <div class="card-body">
+                <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;margin-bottom:16px;">
+                  <button id="gq-doctype-quote" onclick="setQuoteDocType('Quote')" class="btn btn-xs btn-teal" style="flex:1;font-size:12px;font-weight:700;padding:6px 12px;">
+                    <i class="ti ti-file-description"></i> Quote
+                  </button>
+                  <button id="gq-doctype-sa" onclick="setQuoteDocType('SA')" class="btn btn-xs btn-outline" style="flex:1;font-size:12px;font-weight:700;padding:6px 12px;border:none;background:none;color:var(--grey-600);">
+                    <i class="ti ti-clipboard-text"></i> Service Acknowledgement Form
+                  </button>
+                </div>
                 <div class="form-row">
                   <div class="form-group">
                     <label>Client *</label>
@@ -1584,36 +1598,61 @@
                 </div>
                 <div class="form-row">
                   <div class="form-group">
-                    <label>Quote Date</label>
+                    <label id="gq-date-label">Quote Date</label>
                     <input type="date" id="gq-date" onchange="renderQuotePreview()">
                   </div>
-                  <div class="form-group">
+                  <div class="form-group" id="gq-expiry-group">
                     <label>Expiry Date</label>
                     <input type="date" id="gq-expiry" onchange="renderQuotePreview()">
                   </div>
                 </div>
                 <div class="form-group">
-                  <label>Reference</label>
+                  <label id="gq-reference-label">Reference</label>
                   <input type="text" id="gq-reference" placeholder="Short description of the work" oninput="renderQuotePreview()">
                 </div>
                 <div class="form-group">
-                  <label>Quote No <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span></label>
+                  <label id="gq-quoteno-label">Quote No <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span></label>
                   <input type="text" id="gq-quoteno" readonly style="background:var(--grey-100);color:var(--grey-500);font-weight:700;">
                 </div>
 
                 <div style="margin:20px 0 10px;display:flex;align-items:center;justify-content:space-between;">
-                  <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);">Line Items</div>
+                  <div id="gq-lines-heading" style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);">Line Items</div>
                   <button class="btn btn-xs btn-teal" onclick="addQuoteLine()"><i class="ti ti-plus"></i> Add Line</button>
+                </div>
+                <div id="gq-lines-header" style="display:none;grid-template-columns:1fr 70px 90px 32px;gap:6px;padding:0 0 4px;font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;">
+                  <div>Description</div><div style="text-align:right;">Hours</div><div style="text-align:right;">Cost</div><div></div>
                 </div>
                 <div id="gq-lines-container"></div>
 
-                <div style="margin-top:16px;padding-top:16px;border-top:2px solid var(--grey-200);text-align:right;">
+                <div id="gq-totals-quote" style="margin-top:16px;padding-top:16px;border-top:2px solid var(--grey-200);text-align:right;">
                   <div style="font-size:12px;color:var(--grey-500);">Subtotal: <strong id="gq-subtotal" style="color:var(--navy);">0.00</strong></div>
                   <div style="font-size:12px;color:var(--grey-500);">Tax: <strong id="gq-tax" style="color:var(--navy);">0.00</strong></div>
                   <div style="font-size:16px;font-weight:800;color:var(--navy);margin-top:4px;">Total: <span id="gq-total">0.00</span></div>
                 </div>
+                <div id="gq-totals-sa" style="display:none;margin-top:16px;padding-top:16px;border-top:2px solid var(--grey-200);text-align:right;">
+                  <div style="font-size:16px;font-weight:800;color:var(--navy);">Total Cost: <span id="gq-sa-total">0.00</span></div>
+                  <div style="font-size:11px;color:var(--grey-500);margin-top:2px;">VAT Excluded — tax applied automatically at invoicing based on client tax status</div>
+                </div>
 
-                <button class="btn btn-teal" onclick="saveQuote()" style="width:100%;margin-top:16px;">
+                <!-- APPENDIX 1 — Task List and Estimates (Service Acknowledgement Form only) -->
+                <div id="gq-appendix-section" style="display:none;margin-top:24px;padding-top:20px;border-top:2px solid var(--grey-200);">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);margin-bottom:10px;">Appendix 1 — Task List and Estimates</div>
+                  <div class="form-group">
+                    <label>Project / Change Description</label>
+                    <input type="text" id="gq-appendix-title" placeholder="e.g. Additional Hours for Configuration, Testing and Implementation of..." oninput="renderQuotePreview()">
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;">
+                    <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);">Tasks</div>
+                    <button class="btn btn-xs btn-teal" onclick="addAppendixTask()"><i class="ti ti-plus"></i> Add Task</button>
+                  </div>
+                  <div id="gq-appendix-header" style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;padding:0 0 4px;font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;">
+                    <div>Task</div><div>Description</div><div style="text-align:right;">Hours</div><div></div>
+                  </div>
+                  <div id="gq-appendix-container"></div>
+                  <div id="gq-appendix-hours-check" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:700;"></div>
+                </div>
+
+                <button class="btn btn-teal" id="gq-save-btn" onclick="saveQuote()" style="width:100%;margin-top:16px;">
                   <i class="ti ti-device-floppy"></i> Save Quote
                 </button>
               </div>
@@ -2576,6 +2615,7 @@ const LISTS = {
   invoices:    'PSP_Invoices',
   quotes:      'PSP_Quotes',
   lastquote:   'PSP_Last_Quote',
+  lastsa:      'PSP_Last_SA',
   holidays:    'PSP_Public_Holidays',
 };
 
@@ -2640,6 +2680,7 @@ const cache = {
   invoices: [],
   quotes: [],
   lastquote: [],
+  lastsa: [],
   holidays: [],
   listsMap: {},
 };
@@ -3170,6 +3211,7 @@ const PAGE_FILTER_FIELDS = {
   ],
   quotes: [
     { id: 'filter-q-client', def: '' },
+    { id: 'filter-q-doctype', def: '' },
     { id: 'filter-q-status', def: '' },
     { id: 'filter-q-search', def: '' },
   ],
@@ -5905,6 +5947,9 @@ async function confirmImport() {
 let quoteLines = [];
 let quoteLineCounter = 0;
 let currentQuoteId = null;
+let quoteDocType = 'Quote'; // 'Quote' | 'SA'
+let appendixTasks = [];
+let appendixTaskCounter = 0;
 
 // Branded confirm dialog replacing the native browser confirm() —
 // shows "PSP HUB" instead of the page URL, matches app styling.
@@ -5943,10 +5988,14 @@ function switchQuoteTab(tab) {
 function startNewQuote() {
   currentQuoteId = null;
   quoteLines = [];
+  appendixTasks = [];
+  appendixTaskCounter = 0;
   switchQuoteTab('generate');
   document.getElementById('gq-client').value = '';
   document.getElementById('gq-contact').value = '';
   document.getElementById('gq-reference').value = '';
+  document.getElementById('gq-appendix-title').value = '';
+  setQuoteDocType('Quote'); // always start fresh at the Quote type; toggle within the form for SA
   loadGenerateQuote();
 }
 
@@ -5960,9 +6009,10 @@ async function loadQuotes() {
 let lastQuotesItems = [];
 
 function exportQuotesCSV() {
-  const headers = ['Quote No','Client','Reference','Quote Date','Expiry','Total','Currency','Status'];
+  const headers = ['Doc No','Type','Client','Reference','Date','Expiry','Total Hours','Total','Currency','Status'];
   const rows = lastQuotesItems.map(i => [
-    i.Title||'', i.PSPClient||'', i.Reference||'', fmtDate(i.QuoteDate), fmtDate(i.ExpiryDate),
+    i.Title||'', i.DocType === 'SA' ? 'Service Acknowledgement Form' : 'Quote', i.PSPClient||'', i.Reference||'',
+    fmtDate(i.QuoteDate), fmtDate(i.ExpiryDate), i.DocType === 'SA' ? (i.TotalHours||0) : '',
     (i.TotalAmount||0).toFixed(2), i.Currency||'PGK', i.Status||'Draft',
   ]);
   downloadCSV(`Quotes_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
@@ -5970,11 +6020,13 @@ function exportQuotesCSV() {
 
 function renderQuotes() {
   const client = document.getElementById('filter-q-client')?.value || '';
+  const docType = document.getElementById('filter-q-doctype')?.value || '';
   const status = document.getElementById('filter-q-status')?.value || '';
   const search = (document.getElementById('filter-q-search')?.value || '').toLowerCase();
 
   let items = [...cache.quotes];
   if (client) items = items.filter(i => i.PSPClient === client);
+  if (docType) items = items.filter(i => (i.DocType||'Quote') === docType);
   if (status) items = items.filter(i => (i.Status||'Draft') === status);
   if (search) items = items.filter(i =>
     (i.Title||'').toLowerCase().includes(search) ||
@@ -5989,7 +6041,7 @@ function renderQuotes() {
 
   const tbody = document.getElementById('quotes-tbody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ti ti-file-description"></i><p>No quotes found</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ti ti-file-description"></i><p>No quotes found</p></div></td></tr>';
     return;
   }
 
@@ -5997,11 +6049,15 @@ function renderQuotes() {
     const map = { Draft:'not-started', Sent:'started', Invoiced:'finished', Declined:'delayed', Voided:'delayed' };
     return `<span class="badge badge-${map[s]||'not-started'}">${s||'Draft'}</span>`;
   };
+  const typeBadge = t => t === 'SA'
+    ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;">SA</span>'
+    : '<span class="badge" style="background:#e0f2fe;color:#075985;">Quote</span>';
 
   tbody.innerHTML = items.map(i => {
     const reviewFlag = i.NeedsClientReview ? ' <i class="ti ti-alert-triangle" style="color:var(--warning);font-size:13px;" title="Client needs to be added to PSP_Client_Details"></i>' : '';
     return `<tr>
       <td><strong style="color:var(--navy);">${i.Title||'—'}</strong></td>
+      <td>${typeBadge(i.DocType)}</td>
       <td>${i.PSPClient||'—'}${reviewFlag}</td>
       <td style="font-size:12px;max-width:240px;">${i.Reference||'—'}</td>
       <td style="white-space:nowrap;">${fmtDate(i.QuoteDate)}</td>
@@ -6024,6 +6080,7 @@ function renderQuotes() {
 async function loadGenerateQuote() {
   if (!cache.clients.length) cache.clients = await getItems('clients');
   if (!cache.lastquote.length) cache.lastquote = await getItems('lastquote');
+  if (!cache.lastsa.length) cache.lastsa = await getItems('lastsa');
 
   const sel = document.getElementById('gq-client');
   const sortedClients = cache.clients.map(c => getClientName(c)).filter(Boolean).sort((a,b) => a.localeCompare(b));
@@ -6034,11 +6091,7 @@ async function loadGenerateQuote() {
   document.getElementById('gq-date').value = today.toISOString().slice(0,10);
   document.getElementById('gq-expiry').value = expiry.toISOString().slice(0,10);
 
-  const lastNo = cache.lastquote[0]?.LastQuoteNumber;
-  const lastNoNum = parseInt(String(lastNo || '518').trim(), 10) || 518;
-  const nextNo = (lastNoNum + 1).toString().padStart(4, '0');
-  document.getElementById('gq-quoteno').value = 'QU-' + nextNo;
-  console.log('[PSP_HUB] Quote number calc: lastquote cache =', cache.lastquote[0], '→ next =', 'QU-' + nextNo);
+  generateQuoteNumberPreview();
 
   if (!currentQuoteId) {
     quoteLines = [];
@@ -6046,6 +6099,57 @@ async function loadGenerateQuote() {
     addQuoteLine();
   }
 }
+
+// Toggles the Generate Quote form between "Quote" and "Service Acknowledgement
+// Form" modes — swaps field labels, line-item columns, totals display, and
+// shows/hides the Appendix 1 task builder. Also regenerates the document
+// number preview using the correct sequence/prefix for the selected type.
+function setQuoteDocType(type) {
+  quoteDocType = type;
+  const isSA = type === 'SA';
+
+  document.getElementById('gq-doctype-quote').className = !isSA ? 'btn btn-xs btn-teal' : 'btn btn-xs btn-outline';
+  document.getElementById('gq-doctype-quote').style.cssText = !isSA
+    ? 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;'
+    : 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;border:none;background:none;color:var(--grey-600);';
+  document.getElementById('gq-doctype-sa').className = isSA ? 'btn btn-xs btn-teal' : 'btn btn-xs btn-outline';
+  document.getElementById('gq-doctype-sa').style.cssText = isSA
+    ? 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;'
+    : 'flex:1;font-size:12px;font-weight:700;padding:6px 12px;border:none;background:none;color:var(--grey-600);';
+
+  document.getElementById('gq-date-label').textContent = isSA ? 'Effective Delivery Date' : 'Quote Date';
+  document.getElementById('gq-expiry-group').style.display = isSA ? 'none' : '';
+  document.getElementById('gq-reference-label').textContent = isSA ? 'Project / Change Description (short)' : 'Reference';
+  document.getElementById('gq-quoteno-label').innerHTML = (isSA ? 'SA No' : 'Quote No') + ' <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span>';
+  document.getElementById('gq-lines-heading').textContent = isSA ? 'Service Info and Service Fee (VAT Excluded)' : 'Line Items';
+  document.getElementById('gq-lines-header').style.display = isSA ? 'grid' : 'none';
+  document.getElementById('gq-totals-quote').style.display = isSA ? 'none' : '';
+  document.getElementById('gq-totals-sa').style.display = isSA ? '' : 'none';
+  document.getElementById('gq-appendix-section').style.display = isSA ? '' : 'none';
+  document.getElementById('gq-save-btn').innerHTML = `<i class="ti ti-device-floppy"></i> Save ${isSA ? 'Service Acknowledgement Form' : 'Quote'}`;
+
+  generateQuoteNumberPreview();
+  renderQuoteLines();
+  renderAppendixTasks();
+}
+
+// Regenerates the auto-number field for whichever DocType is currently
+// selected — QU-XXXX from PSP_Last_Quote, or SA-XXXX from PSP_Last_SA.
+function generateQuoteNumberPreview() {
+  if (currentQuoteId) return; // editing an existing doc — number is fixed, don't recompute
+  if (quoteDocType === 'SA') {
+    const lastNo = cache.lastsa[0]?.LastSANumber;
+    const lastNoNum = parseInt(String(lastNo || '0').trim(), 10) || 0;
+    const nextNo = (lastNoNum + 1).toString().padStart(4, '0');
+    document.getElementById('gq-quoteno').value = 'SA-' + nextNo;
+  } else {
+    const lastNo = cache.lastquote[0]?.LastQuoteNumber;
+    const lastNoNum = parseInt(String(lastNo || '518').trim(), 10) || 518;
+    const nextNo = (lastNoNum + 1).toString().padStart(4, '0');
+    document.getElementById('gq-quoteno').value = 'QU-' + nextNo;
+  }
+}
+
 
 // Zero Rated clients must never have taxed line items on quotes/invoices.
 function getClientTaxRate(clientName) {
@@ -6075,7 +6179,8 @@ function addQuoteLine(prefill = null) {
   quoteLines.push({
     id,
     description: prefill?.Description || '',
-    quantity: prefill?.Quantity || 1,
+    hours: prefill?.Hours || 0,
+    quantity: quoteDocType === 'SA' ? 1 : (prefill?.Quantity || 1),
     unitPrice: prefill?.UnitPrice || 0,
     taxPercent: prefill?.TaxPercent !== undefined ? prefill.TaxPercent : getClientTaxRate(document.getElementById('gq-client')?.value),
   });
@@ -6097,47 +6202,137 @@ function updateQuoteLine(id, field, value) {
   // rebuilding the inputs (which would steal focus mid-keystroke)
   const lineTotalEl = document.getElementById('qline-total-' + id);
   if (lineTotalEl) {
-    lineTotalEl.textContent = (line.quantity * line.unitPrice * (1 + line.taxPercent/100)).toFixed(2);
+    lineTotalEl.textContent = quoteDocType === 'SA'
+      ? line.unitPrice.toFixed(2)
+      : (line.quantity * line.unitPrice * (1 + line.taxPercent/100)).toFixed(2);
   }
   updateQuoteTotals();
 }
 
 function renderQuoteLines() {
   const container = document.getElementById('gq-lines-container');
-  container.innerHTML = quoteLines.map(l => {
-    const escDesc = (l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return `
-    <div style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;align-items:start;margin-bottom:8px;">
-      <textarea placeholder="Description" rows="2"
-        oninput="updateQuoteLine('${l.id}','description',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escDesc}</textarea>
-      <input type="number" placeholder="Qty" value="${l.quantity}" min="0" step="0.5"
-        oninput="updateQuoteLine('${l.id}','quantity',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
-      <input type="number" placeholder="Unit Price" value="${l.unitPrice}" min="0" step="0.01"
-        oninput="updateQuoteLine('${l.id}','unitPrice',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
-      <input type="number" placeholder="Tax%" value="${l.taxPercent}" min="0" max="100"
-        oninput="updateQuoteLine('${l.id}','taxPercent',this.value)"
-        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
-      <div id="qline-total-${l.id}" style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;margin-top:8px;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
-      <button onclick="removeQuoteLine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
-    </div>`;
-  }).join('');
+  if (quoteDocType === 'SA') {
+    container.innerHTML = quoteLines.map(l => {
+      const escDesc = (l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `
+      <div style="display:grid;grid-template-columns:1fr 70px 90px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+        <textarea placeholder="Description of scope item" rows="2"
+          oninput="updateQuoteLine('${l.id}','description',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escDesc}</textarea>
+        <input type="number" placeholder="Hours" value="${l.hours}" min="0" step="0.5"
+          oninput="updateQuoteLine('${l.id}','hours',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+        <input type="number" placeholder="Cost" value="${l.unitPrice}" min="0" step="0.01"
+          oninput="updateQuoteLine('${l.id}','unitPrice',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+        <button onclick="removeQuoteLine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+      </div>`;
+    }).join('');
+  } else {
+    container.innerHTML = quoteLines.map(l => {
+      const escDesc = (l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `
+      <div style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+        <textarea placeholder="Description" rows="2"
+          oninput="updateQuoteLine('${l.id}','description',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escDesc}</textarea>
+        <input type="number" placeholder="Qty" value="${l.quantity}" min="0" step="0.5"
+          oninput="updateQuoteLine('${l.id}','quantity',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+        <input type="number" placeholder="Unit Price" value="${l.unitPrice}" min="0" step="0.01"
+          oninput="updateQuoteLine('${l.id}','unitPrice',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+        <input type="number" placeholder="Tax%" value="${l.taxPercent}" min="0" max="100"
+          oninput="updateQuoteLine('${l.id}','taxPercent',this.value)"
+          style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+        <div id="qline-total-${l.id}" style="font-size:12px;font-weight:700;color:var(--navy);text-align:right;margin-top:8px;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</div>
+        <button onclick="removeQuoteLine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+      </div>`;
+    }).join('');
+  }
   updateQuoteTotals(true);
 }
 
 function updateQuoteTotals() {
-  let subtotal = 0, tax = 0;
-  quoteLines.forEach(l => {
-    const lineSub = (l.quantity||0) * (l.unitPrice||0);
-    subtotal += lineSub;
-    tax += lineSub * ((l.taxPercent||0)/100);
-  });
-  document.getElementById('gq-subtotal').textContent = subtotal.toFixed(2);
-  document.getElementById('gq-tax').textContent = tax.toFixed(2);
-  document.getElementById('gq-total').textContent = (subtotal+tax).toFixed(2);
+  if (quoteDocType === 'SA') {
+    const total = quoteLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+    document.getElementById('gq-sa-total').textContent = total.toFixed(2);
+    updateAppendixHoursCheck();
+  } else {
+    let subtotal = 0, tax = 0;
+    quoteLines.forEach(l => {
+      const lineSub = (l.quantity||0) * (l.unitPrice||0);
+      subtotal += lineSub;
+      tax += lineSub * ((l.taxPercent||0)/100);
+    });
+    document.getElementById('gq-subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('gq-tax').textContent = tax.toFixed(2);
+    document.getElementById('gq-total').textContent = (subtotal+tax).toFixed(2);
+  }
   renderQuotePreview();
+}
+
+// Live-checks Section 2's total hours against Appendix 1's total hours —
+// mirrors the hard block enforced at save time, so the mismatch is visible
+// before someone even tries to save.
+function updateAppendixHoursCheck() {
+  const el = document.getElementById('gq-appendix-hours-check');
+  if (!el) return;
+  const lineHours = quoteLines.reduce((s,l) => s + (l.hours||0), 0);
+  const taskHours = appendixTasks.reduce((s,t) => s + (t.hours||0), 0);
+  const match = Math.abs(lineHours - taskHours) < 0.001;
+  el.textContent = match
+    ? `✓ Hours match: ${lineHours} hours`
+    : `⚠ Hours mismatch — Service Fee: ${lineHours} hours, Appendix 1: ${taskHours} hours. These must match before saving.`;
+  el.style.background = match ? '#f0fdf4' : '#fef3c7';
+  el.style.color = match ? '#166534' : '#92400e';
+}
+
+// ── Appendix 1 — Task List and Estimates ──
+function addAppendixTask(prefill = null) {
+  appendixTaskCounter++;
+  const id = 'atask_' + appendixTaskCounter;
+  appendixTasks.push({
+    id,
+    task: prefill?.Task || '',
+    description: prefill?.Description || '',
+    hours: prefill?.Hours || 0,
+  });
+  renderAppendixTasks();
+}
+
+function removeAppendixTask(id) {
+  appendixTasks = appendixTasks.filter(t => t.id !== id);
+  renderAppendixTasks();
+}
+
+function updateAppendixTask(id, field, value) {
+  const t = appendixTasks.find(x => x.id === id);
+  if (!t) return;
+  t[field] = field === 'hours' ? (parseFloat(value) || 0) : value;
+  updateAppendixHoursCheck();
+  renderQuotePreview();
+}
+
+function renderAppendixTasks() {
+  const container = document.getElementById('gq-appendix-container');
+  if (!container) return;
+  container.innerHTML = appendixTasks.map(t => {
+    const escTask = (t.task||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const escDesc = (t.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+      <textarea placeholder="Task name" rows="2" oninput="updateAppendixTask('${t.id}','task',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escTask}</textarea>
+      <textarea placeholder="Description / sub-steps" rows="2" oninput="updateAppendixTask('${t.id}','description',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;">${escDesc}</textarea>
+      <input type="number" placeholder="Hours" value="${t.hours}" min="0" step="0.5"
+        oninput="updateAppendixTask('${t.id}','hours',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--grey-200);border-radius:6px;font-size:12px;margin-top:1px;">
+      <button onclick="removeAppendixTask('${t.id}')" title="Remove task" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+    </div>`;
+  }).join('');
+  updateAppendixHoursCheck();
 }
 
 function renderQuotePreview() {
@@ -6154,27 +6349,52 @@ function renderQuotePreview() {
   const currency = clientRecord?.Currency || 'PGK';
   const quoteNo = document.getElementById('gq-quoteno').value;
   const quoteDate = document.getElementById('gq-date').value;
-  const expiryDate = document.getElementById('gq-expiry').value;
   const reference = document.getElementById('gq-reference').value;
   const contact = document.getElementById('gq-contact').value;
 
-  const rows = quoteLines.filter(l => l.description).map(l => `
-    <tr>
-      <td style="padding:8px 4px;">${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
-      <td style="text-align:right;padding:8px 4px;">${l.quantity}</td>
-      <td style="text-align:right;padding:8px 4px;">${l.unitPrice.toFixed(2)}</td>
-      <td style="text-align:right;padding:8px 4px;">${l.taxPercent}%</td>
-      <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</td>
-    </tr>`).join('');
+  if (quoteDocType === 'SA') {
+    const serviceRows = quoteLines.filter(l => l.description).map((l,i) => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${i+1}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${l.hours} Hours</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:right;">${l.unitPrice.toFixed(2)}</td>
+      </tr>`).join('');
+    const appendixRows = appendixTasks.filter(t => t.task).map(t => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;font-weight:700;">${(t.task||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${(t.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${t.hours} Hours</td>
+      </tr>`).join('');
+    const totalCost = quoteLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+    const totalHours = appendixTasks.reduce((s,t) => s + (t.hours||0), 0);
 
-  const subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
-  const tax = parseFloat(document.getElementById('gq-tax').textContent);
-  const total = parseFloat(document.getElementById('gq-total').textContent);
+    previewEl.innerHTML = buildSADocumentHTML({
+      saNo: quoteNo, effectiveDate: quoteDate, clientName, clientRecord, currency,
+      serviceRows, totalCost,
+      appendixTitle: document.getElementById('gq-appendix-title').value,
+      appendixRows, totalHours,
+    });
+  } else {
+    const rows = quoteLines.filter(l => l.description).map(l => `
+      <tr>
+        <td style="padding:8px 4px;">${(l.description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
+        <td style="text-align:right;padding:8px 4px;">${l.quantity}</td>
+        <td style="text-align:right;padding:8px 4px;">${l.unitPrice.toFixed(2)}</td>
+        <td style="text-align:right;padding:8px 4px;">${l.taxPercent}%</td>
+        <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.quantity*l.unitPrice*(1+l.taxPercent/100)).toFixed(2)}</td>
+      </tr>`).join('');
 
-  previewEl.innerHTML = buildQuoteDocumentHTML({
-    quoteNo, quoteDate, expiryDate, reference, contact,
-    clientName, clientRecord, currency, rows, subtotal, tax, total,
-  });
+    const expiryDate = document.getElementById('gq-expiry').value;
+    const subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
+    const tax = parseFloat(document.getElementById('gq-tax').textContent);
+    const total = parseFloat(document.getElementById('gq-total').textContent);
+
+    previewEl.innerHTML = buildQuoteDocumentHTML({
+      quoteNo, quoteDate, expiryDate, reference, contact,
+      clientName, clientRecord, currency, rows, subtotal, tax, total,
+    });
+  }
 
   document.getElementById('btn-print-quote').style.display = '';
   document.getElementById('btn-email-quote').style.display = '';
@@ -6230,29 +6450,132 @@ function buildQuoteDocumentHTML(d) {
     </div>`;
 }
 
+// Builds the Service Acknowledgement Form document — structurally different
+// from a Quote (General Info / Service Fee / Invoice & Payment / signature
+// block / Appendix 1 task breakdown), matching the agreed DOCX template.
+function buildSADocumentHTML(d) {
+  const addr = d.clientRecord ? [d.clientRecord.POAddressLine1, d.clientRecord.POAddressLine2, d.clientRecord.POCity, d.clientRecord.POCountry].filter(Boolean).join(', ') : '';
+  const fmtD = v => v ? new Date(v).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '';
+  const cell = 'padding:8px 10px;border:1px solid #999;font-size:12px;';
+  const labelCell = `${cell}background:#f2f2f2;font-weight:700;width:220px;`;
+  return `
+    <div id="sa-doc-content" style="padding:24px;background:white;font-family:Arial,sans-serif;color:#1a2744;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div>
+          <div style="font-size:20px;font-weight:700;color:#3B2E1E;">Concept Group</div>
+          <div style="font-size:11px;color:#555;font-style:italic;">Sect. 51 Lot 35, Airvos Avenue, Touaguba Hill, P.O. Box 190, Waigani, National Capital District</div>
+        </div>
+        <img src="${CONCEPT_LOGO_URI}" style="height:50px;">
+      </div>
+      <div style="text-align:center;font-size:18px;font-weight:800;margin:20px 0 4px;">SERVICE ACKNOWLEDGEMENT FORM</div>
+      <div style="text-align:center;font-size:12px;font-weight:700;color:var(--navy,#1a2744);margin-bottom:20px;">${d.saNo}</div>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">1. General Info</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tr><td style="${labelCell}">Effective Delivery Date</td><td style="${cell}">${fmtD(d.effectiveDate)}</td></tr>
+        <tr><td style="${labelCell}">Client Name</td><td style="${cell}">${d.clientName}${addr ? ` <span style="color:#666;">(${addr})</span>` : ''}</td></tr>
+        <tr><td style="${labelCell}">Service Provider</td><td style="${cell}">Concept Group</td></tr>
+      </table>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">2. Service Info and Service Fee (VAT Excluded)</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="${cell}background:#f2f2f2;width:34px;">#</th>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Description</th>
+            <th style="${cell}background:#f2f2f2;width:110px;">Estimated Hours</th>
+            <th style="${cell}background:#f2f2f2;width:120px;">Cost ${d.currency}</th>
+          </tr>
+        </thead>
+        <tbody>${d.serviceRows}</tbody>
+      </table>
+      <div style="text-align:right;font-size:13px;font-weight:800;margin:-8px 0 16px;">Total Cost ${d.currency}: ${d.totalCost.toFixed(2)}</div>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">3. Invoice and Payment</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <tr><td style="${labelCell}">Invoicing</td><td style="${cell}">To be invoiced upon completion.</td></tr>
+        <tr><td style="${labelCell}">Payment Due-Date</td><td style="${cell}">14 Days from date of Invoice.</td></tr>
+      </table>
+
+      <div style="font-size:12px;margin-bottom:36px;">
+        I accept the above service quotation and service detail:
+        <div style="margin-top:28px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signature</div>
+        <div style="margin-top:20px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signee Full Name</div>
+        <div style="margin-top:20px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signee Title / Company</div>
+        <div style="margin-top:20px;">Date: _______________________</div>
+      </div>
+
+      <div style="page-break-before:always;font-size:16px;font-weight:800;margin-bottom:6px;">Appendix 1</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Task List and Estimates for ${d.appendixTitle || ''}</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
+        <thead>
+          <tr>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Task / Activity</th>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Description</th>
+            <th style="${cell}background:#f2f2f2;width:90px;">Duration</th>
+          </tr>
+        </thead>
+        <tbody>${d.appendixRows}
+          <tr><td style="${cell}font-weight:800;" colspan="2">Total Hours</td><td style="${cell}font-weight:800;text-align:center;">${d.totalHours}</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:10px;color:#666;font-style:italic;">* Note: This is our best estimate at this time. It may not be a complete list of the work to be done. If there are further findings by Concept, we will alert the client and seek authorization for an additional effort before work starts.</div>
+    </div>`;
+}
+
 async function saveQuote() {
   const clientName = document.getElementById('gq-client').value;
   if (!clientName) { showToast('Please select a client', 'error'); return; }
   if (!quoteLines.some(l => l.description)) { showToast('Please add at least one line item', 'error'); return; }
 
+  const isSA = quoteDocType === 'SA';
+
+  // Hard block: Section 2 hours must exactly match Appendix 1 total hours for SAs.
+  if (isSA) {
+    if (!document.getElementById('gq-appendix-title').value.trim()) {
+      showToast('Please enter a Project / Change Description for Appendix 1', 'error'); return;
+    }
+    if (!appendixTasks.some(t => t.task)) {
+      showToast('Please add at least one task to Appendix 1', 'error'); return;
+    }
+    const lineHours = quoteLines.reduce((s,l) => s + (l.hours||0), 0);
+    const taskHours = appendixTasks.reduce((s,t) => s + (t.hours||0), 0);
+    if (Math.abs(lineHours - taskHours) > 0.001) {
+      showToast(`Cannot save: Service Fee shows ${lineHours} hours but Appendix 1 totals ${taskHours} hours. These must match exactly.`, 'error');
+      return;
+    }
+  }
+
   const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
   const quoteNo = document.getElementById('gq-quoteno').value;
-  const subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
-  const tax = parseFloat(document.getElementById('gq-tax').textContent);
-  const total = parseFloat(document.getElementById('gq-total').textContent);
+
+  let subtotal, tax, total;
+  if (isSA) {
+    subtotal = quoteLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+    tax = quoteLines.reduce((s,l) => s + (l.unitPrice||0) * ((l.taxPercent||0)/100), 0);
+    total = subtotal + tax;
+  } else {
+    subtotal = parseFloat(document.getElementById('gq-subtotal').textContent);
+    tax = parseFloat(document.getElementById('gq-tax').textContent);
+    total = parseFloat(document.getElementById('gq-total').textContent);
+  }
 
   const lines = quoteLines.filter(l => l.description).map(l => ({
-    Description: l.description, Quantity: l.quantity, UnitPrice: l.unitPrice,
+    Description: l.description, Quantity: l.quantity, UnitPrice: l.unitPrice, Hours: l.hours,
     TaxPercent: l.taxPercent, LineTotal: Math.round(l.quantity*l.unitPrice*(1+l.taxPercent/100)*100)/100,
   }));
 
   const fields = {
     Title: quoteNo,
+    DocType: quoteDocType,
     PSPClient: clientRecord?.PSPClient || clientName,
     ContactName: clientName,
     ContactPerson: document.getElementById('gq-contact').value,
     QuoteDate: document.getElementById('gq-date').value ? new Date(document.getElementById('gq-date').value).toISOString() : null,
-    ExpiryDate: document.getElementById('gq-expiry').value ? new Date(document.getElementById('gq-expiry').value).toISOString() : null,
+    ExpiryDate: isSA ? null : (document.getElementById('gq-expiry').value ? new Date(document.getElementById('gq-expiry').value).toISOString() : null),
     Reference: document.getElementById('gq-reference').value,
     Currency: clientRecord?.Currency || 'PGK',
     TaxType: clientRecord?.TaxType || 'Tax on Sales',
@@ -6264,6 +6587,9 @@ async function saveQuote() {
     EmailAddress: clientRecord?.EmailAddress || '',
     CreatedBy: currentUser?.displayName || '',
     NeedsClientReview: !clientRecord,
+    AppendixTitle: isSA ? document.getElementById('gq-appendix-title').value : '',
+    AppendixTasks: isSA ? JSON.stringify(appendixTasks.filter(t => t.task).map(t => ({Task:t.task, Description:t.description, Hours:t.hours}))) : '',
+    TotalHours: isSA ? appendixTasks.reduce((s,t) => s + (t.hours||0), 0) : 0,
   };
   if (fields.Status === undefined) delete fields.Status;
 
@@ -6280,33 +6606,55 @@ async function saveQuote() {
     if (qId) {
       await saveWithFieldFallback(true, 'quotes', qId, { LineItems: JSON.stringify(lines) });
     }
-    // Increment last quote number only for brand-new quotes
+    // Increment the correct sequence only for brand-new documents — QU- and
+    // SA- are tracked completely independently of each other.
     if (!currentQuoteId) {
-      const newNo = quoteNo.replace('QU-','');
-      const lastRec = cache.lastquote[0];
-      if (lastRec) {
-        const result = await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNumber: newNo });
-        // Re-fetch to verify the write actually took effect (saveWithFieldFallback may have
-        // silently stripped LastQuoteNumber itself if the column's internal name doesn't match)
-        cache.lastquote = await getItems('lastquote');
-        const verifyVal = cache.lastquote[0]?.LastQuoteNumber;
-        if (String(verifyVal) !== String(newNo)) {
-          console.error(`[PSP_HUB] WARNING: PSP_Last_Quote was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'. The next quote number will be wrong. Check that the LastQuoteNumber column's internal name matches its display name in SharePoint.`);
-          showToast(`Warning: Quote number tracking may not have saved correctly — please verify PSP_Last_Quote`, 'error');
+      if (isSA) {
+        const newNo = quoteNo.replace('SA-','');
+        const lastRec = cache.lastsa[0];
+        if (lastRec) {
+          await saveWithFieldFallback(true, 'lastsa', lastRec.id, { LastSANumber: newNo });
+          cache.lastsa = await getItems('lastsa');
+          const verifyVal = cache.lastsa[0]?.LastSANumber;
+          if (String(verifyVal) !== String(newNo)) {
+            console.error(`[PSP_HUB] WARNING: PSP_Last_SA was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'.`);
+            showToast(`Warning: SA number tracking may not have saved correctly — please verify PSP_Last_SA`, 'error');
+          } else {
+            console.log('[PSP_HUB] PSP_Last_SA verified updated to', newNo);
+          }
         } else {
-          console.log('[PSP_HUB] PSP_Last_Quote verified updated to', newNo);
+          await createItem('lastsa', { Title: 'LastSA', LastSANumber: newNo });
+          cache.lastsa = await getItems('lastsa');
+          console.log('[PSP_HUB] PSP_Last_SA row created with', newNo);
         }
       } else {
-        // No row exists yet in PSP_Last_Quote — create one
-        const created = await createItem('lastquote', { Title: 'LastQuote', LastQuoteNumber: newNo });
-        cache.lastquote = await getItems('lastquote');
-        console.log('[PSP_HUB] PSP_Last_Quote row created with', newNo);
+        const newNo = quoteNo.replace('QU-','');
+        const lastRec = cache.lastquote[0];
+        if (lastRec) {
+          await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNumber: newNo });
+          // Re-fetch to verify the write actually took effect (saveWithFieldFallback may have
+          // silently stripped LastQuoteNumber itself if the column's internal name doesn't match)
+          cache.lastquote = await getItems('lastquote');
+          const verifyVal = cache.lastquote[0]?.LastQuoteNumber;
+          if (String(verifyVal) !== String(newNo)) {
+            console.error(`[PSP_HUB] WARNING: PSP_Last_Quote was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'. The next quote number will be wrong. Check that the LastQuoteNumber column's internal name matches its display name in SharePoint.`);
+            showToast(`Warning: Quote number tracking may not have saved correctly — please verify PSP_Last_Quote`, 'error');
+          } else {
+            console.log('[PSP_HUB] PSP_Last_Quote verified updated to', newNo);
+          }
+        } else {
+          // No row exists yet in PSP_Last_Quote — create one
+          await createItem('lastquote', { Title: 'LastQuote', LastQuoteNumber: newNo });
+          cache.lastquote = await getItems('lastquote');
+          console.log('[PSP_HUB] PSP_Last_Quote row created with', newNo);
+        }
       }
     }
     cache.quotes = await getItems('quotes');
-    showToast(`Quote ${quoteNo} saved`, 'success');
+    showToast(`${isSA ? 'Service Acknowledgement Form' : 'Quote'} ${quoteNo} saved`, 'success');
     currentQuoteId = null;
     quoteLines = [];
+    appendixTasks = [];
     switchQuoteTab('quotes');
     resetPageFilters('quotes');
     renderQuotes();
@@ -6318,12 +6666,14 @@ function editQuoteById(id) {
   if (!q) return;
   currentQuoteId = id;
   switchQuoteTab('generate');
+  setQuoteDocType(q.DocType || 'Quote'); // sets UI mode before populating fields/lines below
   document.getElementById('gq-client').value = q.ContactName || q.PSPClient || '';
   document.getElementById('gq-contact').value = q.ContactPerson || '';
   document.getElementById('gq-date').value = q.QuoteDate ? spDateToDate(q.QuoteDate)?.toISOString().slice(0,10) : '';
   document.getElementById('gq-expiry').value = q.ExpiryDate ? spDateToDate(q.ExpiryDate)?.toISOString().slice(0,10) : '';
   document.getElementById('gq-reference').value = q.Reference || '';
   document.getElementById('gq-quoteno').value = q.Title;
+  document.getElementById('gq-appendix-title').value = q.AppendixTitle || '';
 
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
@@ -6331,14 +6681,45 @@ function editQuoteById(id) {
   quoteLineCounter = 0;
   if (lines.length) lines.forEach(l => addQuoteLine(l));
   else addQuoteLine();
+
+  let tasks = [];
+  try { tasks = JSON.parse(q.AppendixTasks || '[]'); } catch(e) {}
+  appendixTasks = [];
+  appendixTaskCounter = 0;
+  tasks.forEach(t => addAppendixTask(t));
+  renderAppendixTasks();
 }
 
-function viewQuoteById(id) {
-  const q = cache.quotes.find(i => String(i.id) === String(id));
-  if (!q) return;
+// Builds the correct document HTML for a saved PSP_Quotes record, branching
+// on DocType — shared by viewQuoteById() and printQuoteDoc() so the two
+// never drift out of sync with each other.
+function buildDocHtmlForSavedQuote(q) {
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
   const clientRecord = cache.clients.find(c => getClientName(c) === q.PSPClient);
+
+  if (q.DocType === 'SA') {
+    let tasks = [];
+    try { tasks = JSON.parse(q.AppendixTasks || '[]'); } catch(e) {}
+    const serviceRows = lines.map((l,i) => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${i+1}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${(l.Description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${l.Hours||0} Hours</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:right;">${(l.UnitPrice||0).toFixed(2)}</td>
+      </tr>`).join('');
+    const appendixRows = tasks.map(t => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;font-weight:700;">${(t.Task||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${(t.Description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
+        <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${t.Hours||0} Hours</td>
+      </tr>`).join('');
+    return buildSADocumentHTML({
+      saNo: q.Title, effectiveDate: q.QuoteDate, clientName: q.ContactName || q.PSPClient, clientRecord,
+      currency: q.Currency || 'PGK', serviceRows, totalCost: q.SubTotal||0,
+      appendixTitle: q.AppendixTitle || '', appendixRows, totalHours: q.TotalHours||0,
+    });
+  }
 
   const rows = lines.map(l => `
     <tr>
@@ -6348,14 +6729,19 @@ function viewQuoteById(id) {
       <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
       <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.LineTotal||0).toFixed(2)}</td>
     </tr>`).join('');
-
-  const docHtml = buildQuoteDocumentHTML({
+  return buildQuoteDocumentHTML({
     quoteNo: q.Title, quoteDate: q.QuoteDate, expiryDate: q.ExpiryDate,
     reference: q.Reference, contact: q.ContactPerson,
     clientName: q.ContactName || q.PSPClient, clientRecord,
     currency: q.Currency || 'PGK', rows,
     subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
   });
+}
+
+function viewQuoteById(id) {
+  const q = cache.quotes.find(i => String(i.id) === String(id));
+  if (!q) return;
+  const docHtml = buildDocHtmlForSavedQuote(q);
 
   document.getElementById('modal-title').textContent = q.Title + ' — ' + q.PSPClient;
   document.getElementById('modal-body').innerHTML = `<div style="border:1px solid var(--grey-200);border-radius:8px;overflow:hidden;">${docHtml}</div>`;
@@ -6367,7 +6753,7 @@ function viewQuoteById(id) {
 }
 
 function printQuotePreview() {
-  const content = document.getElementById('quote-doc-content');
+  const content = document.getElementById(quoteDocType === 'SA' ? 'sa-doc-content' : 'quote-doc-content');
   if (!content) return;
   printHTMLContent(content.outerHTML);
 }
@@ -6375,32 +6761,16 @@ function printQuotePreview() {
 function printQuoteDoc(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
-  let lines = [];
-  try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
-  const clientRecord = cache.clients.find(c => getClientName(c) === q.PSPClient);
-  const rows = lines.map(l => `
-    <tr>
-      <td style="padding:8px 4px;">${(l.Description||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</td>
-      <td style="text-align:right;padding:8px 4px;">${l.Quantity}</td>
-      <td style="text-align:right;padding:8px 4px;">${(l.UnitPrice||0).toFixed(2)}</td>
-      <td style="text-align:right;padding:8px 4px;">${l.TaxPercent}%</td>
-      <td style="text-align:right;padding:8px 4px;font-weight:600;">${(l.LineTotal||0).toFixed(2)}</td>
-    </tr>`).join('');
-  const docHtml = buildQuoteDocumentHTML({
-    quoteNo: q.Title, quoteDate: q.QuoteDate, expiryDate: q.ExpiryDate,
-    reference: q.Reference, contact: q.ContactPerson,
-    clientName: q.ContactName || q.PSPClient, clientRecord,
-    currency: q.Currency || 'PGK', rows,
-    subtotal: q.SubTotal||0, tax: q.TaxAmount||0, total: q.TotalAmount||0,
-  });
+  const docHtml = buildDocHtmlForSavedQuote(q);
   printHTMLContent(docHtml);
   markQuoteSentIfDraft(q.id).then(() => renderQuotes());
 
-  // Flow 3: convert this quote to PDF, file it in SharePoint, and write the link
-  // back to PSP_Quotes.QuotesLink (fire-and-forget — printing proceeds regardless).
+  // Flow 3: convert this quote/SA to PDF, file it in SharePoint, and write the
+  // link back to PSP_Quotes.QuotesLink (fire-and-forget — printing proceeds regardless).
   triggerFlow('quotePrint', {
     quoteId: String(q.id),
     quoteNumber: q.Title,
+    docType: q.DocType || 'Quote',
     clientName: q.ContactName || q.PSPClient || '',
     htmlContent: docHtml,
     printedBy: currentUser?.displayName || '',
@@ -6421,31 +6791,36 @@ function emailQuotePreview() {
   const clientName = document.getElementById('gq-client').value;
   const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
   const quoteNo = document.getElementById('gq-quoteno').value;
-  const total = document.getElementById('gq-total').textContent;
+  const total = quoteDocType === 'SA'
+    ? document.getElementById('gq-sa-total').textContent
+    : document.getElementById('gq-total').textContent;
   const currency = clientRecord?.Currency || 'PGK';
-  openEmailDraft(clientRecord?.EmailAddress, quoteNo, currency, total);
+  openEmailDraft(clientRecord?.EmailAddress, quoteNo, currency, total, quoteDocType);
 }
 
 function emailQuoteDoc(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
-  openEmailDraft(q.EmailAddress, q.Title, q.Currency||'PGK', (q.TotalAmount||0).toFixed(2));
+  openEmailDraft(q.EmailAddress, q.Title, q.Currency||'PGK', (q.TotalAmount||0).toFixed(2), q.DocType || 'Quote');
   markQuoteSentIfDraft(q.id).then(() => renderQuotes());
 }
 
-function openEmailDraft(emailAddr, quoteNo, currency, total) {
+function openEmailDraft(emailAddr, quoteNo, currency, total, docType = 'Quote') {
+  const isSA = docType === 'SA';
+  const docLabel = isSA ? 'Service Acknowledgement Form' : 'Quote';
   const to = (emailAddr || '').split(/[,;]/)[0].trim();
-  const subject = encodeURIComponent(`Quote ${quoteNo} from Concept Group Limited`);
-  const body = encodeURIComponent(`Please find attached Quote ${quoteNo} for ${currency} ${total}.\n\nKind regards,\n${currentUser?.displayName || ''}\nConcept Group Limited`);
+  const subject = encodeURIComponent(`${docLabel} ${quoteNo} from Concept Group Limited`);
+  const body = encodeURIComponent(`Please find attached ${docLabel} ${quoteNo}${isSA ? '' : ` for ${currency} ${total}`}.\n\nKind regards,\n${currentUser?.displayName || ''}\nConcept Group Limited`);
   window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-  showToast('Email draft opened — please print/save the quote as PDF and attach it manually', 'success');
+  showToast(`Email draft opened — please print/save the ${docLabel.toLowerCase()} as PDF and attach it manually`, 'success');
 }
 
 async function convertQuoteToInvoice(id) {
   const q = cache.quotes.find(i => String(i.id) === String(id));
   if (!q) return;
+  const docLabel = q.DocType === 'SA' ? 'Service Acknowledgement Form' : 'quote';
   if (q.Status === 'Declined' || q.Status === 'Voided' || q.Status === 'Invoiced') {
-    showToast(`Cannot convert a ${q.Status} quote to an invoice`, 'error');
+    showToast(`Cannot convert a ${q.Status} ${docLabel} to an invoice`, 'error');
     return;
   }
   if (!await pspConfirm(`Convert <strong>${q.Title}</strong> to a Draft Invoice in PSP_Invoices?`)) return;
@@ -6478,7 +6853,7 @@ async function convertQuoteToInvoice(id) {
       SubTotal: q.SubTotal, TaxAmount: q.TaxAmount, TotalAmount: q.TotalAmount,
       AccountCode: String(q.AccountCode||'201'),
       Reference: q.Reference,
-      ExportedBy: 'Quote Conversion — ' + (currentUser?.displayName||''),
+      ExportedBy: (q.DocType === 'SA' ? 'SA Conversion — ' : 'Quote Conversion — ') + (currentUser?.displayName||''),
       ExportedDate: new Date().toISOString(),
       Status: 'Draft',
     };
