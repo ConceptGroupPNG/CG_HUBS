@@ -753,7 +753,9 @@ select:focus{border-color:var(--teal)}
             <table><thead><tr>
               <th class="sortable" onclick="sortCerts('Title')">Certificate # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               <th class="sortable" onclick="sortCerts('AttendeeName')">Attendee <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th>Organisation</th>
               <th class="sortable" onclick="sortCerts('CourseRunTitle')">Course Run <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+              <th class="sortable" onclick="sortCerts('CertificateType')">Type <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               <th class="sortable" onclick="sortCerts('IssueDate')">Issue Date <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               <th>Actions</th></tr></thead>
             <tbody id="cert-tbody"></tbody></table>
@@ -817,6 +819,26 @@ select:focus{border-color:var(--teal)}
   </div>
 </div>
 
+<div id="cert-print-modal" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-icon-badge"><i class="ti ti-award"></i></div>
+        <div>
+          <h3>Print Certificates</h3>
+          <div class="modal-subtitle" id="cert-print-subtitle"></div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('cert-print-modal').classList.remove('open')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="cert-print-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('cert-print-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" id="cert-print-btn" onclick="generateAndPrintCertificates()"><i class="ti ti-printer"></i>Generate &amp; Print</button>
+    </div>
+  </div>
+</div>
+
 <div id="confirm-modal" class="modal-overlay">
   <div class="modal confirm-modal">
     <div class="confirm-body">
@@ -865,6 +887,7 @@ const LISTS = {
   payments:     'CG_Payments',
   trainers:     'CG_Trainers',
   certificates: 'CG_Certificates',
+  lastcertificate: 'CG_Last_Certificate',
   venues:       'CG_Venue',
 };
 
@@ -2969,6 +2992,7 @@ function renderRuns(items){
       <td>${statusBadge(runStatus(r))}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="printRosterById('${r.id}')" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
+        <button class="btn-icon" onclick="openPrintCertificatesModal('${r.id}')" title="Print Certificates" style="color:#8b5cf6"><i class="ti ti-award"></i></button>
         <button class="btn-icon" onclick="editRow('runs','${r.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('runs','${r.id}','Run ${fmtDate(r.StartDate)}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -3109,6 +3133,7 @@ let gqLines = [];      // [{_id, CourseName, Quantity, FeeExGST, GSTAmount, Line
 let gqLineSeq = 0;
 let gqLastSavedNumber = null; // tracks which quote number was last successfully saved
 const CONCEPT_LOGO_URI = document.querySelector('.sidebar-logo img')?.src || '';
+const CONCEPT_TRAINING_LOGO_URI = 'data:image/webp;base64,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';
 // generating temporary client-side ids
 
 async function initQuoteLines(data){
@@ -4099,6 +4124,7 @@ function renderCertificates(items){
       <td>${c.AttendeeName||'—'}</td>
       <td style="font-size:12px">${orgName}</td>
       <td style="font-size:12px">${c.CourseRunTitle||'—'}</td>
+      <td>${c.CertificateType==='Attainment' ? '<span class="badge" style="background:var(--purple-l);color:#5b21b6">Attainment</span>' : '<span class="badge" style="background:var(--blue-l);color:#1e40af">Attendance</span>'}</td>
       <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="editRow('certificates','${c.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
@@ -4119,8 +4145,11 @@ const FORM_DEFS = {
       {key:'Category',label:'Category',type:'select',opts:['Payroll','HR','Safety','Other'],required:true},
       {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number'},
       {key:'GSTRate',label:'GST Rate (%)',type:'number'},
+      {key:'CertPrefix',label:'Certificate Prefix',type:'text',sectionLabel:'Certificates',full:true},
+      {key:'AttainmentEligible',label:'Offers Certificate of Attainment',type:'checkbox',full:true},
     ],
-    toFields: (f)=>({CourseName:f.CourseName,Category:f.Category,FeeExGST:+f.FeeExGST||0,GSTRate:+f.GSTRate||10,Title:f.CourseName}),
+    toFields: (f)=>({CourseName:f.CourseName,Category:f.Category,FeeExGST:+f.FeeExGST||0,GSTRate:+f.GSTRate||10,Title:f.CourseName,
+      CertPrefix:(f.CertPrefix||'').trim().toUpperCase(),AttainmentEligible:f.AttainmentEligible==='true'||f.AttainmentEligible===true}),
   },
   runs: {
     title: (d)=> d?'Edit Course Run':'Add Course Run',
@@ -4349,12 +4378,13 @@ const FORM_DEFS = {
     title: (d)=> d?'Edit Certificate':'Add Certificate',
     fields: [
       {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true,full:true},
+      {key:'CertificateType',label:'Certificate Type',type:'select',opts:['Attendance','Attainment']},
       {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName',searchable:true,onchange:'refreshCertRunOptions()'},
       {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',matchKey:'RunLabel',searchable:true},
       {key:'IssueDate',label:'Issue Date',type:'date'},
     ],
     toFields: (f)=>{
-      const out = {CertificateNumber:f.CertificateNumber,IssueDate:f.IssueDate||null,Title:f.CertificateNumber};
+      const out = {CertificateNumber:f.CertificateNumber,CertificateType:f.CertificateType||'Attendance',IssueDate:f.IssueDate||null,Title:f.CertificateNumber};
       if(f.AttendeeRef){
         const att=(cache.attendees||[]).find(a=>String(a.id)===String(f.AttendeeRef));
         if(att) out.AttendeeName = att.FullName||att.Title||'';
@@ -4401,6 +4431,7 @@ const FIELD_ICONS = {
   InvoiceNumber:'ti-file-invoice', InvoiceDate:'ti-calendar',
   AmountPaid:'ti-currency-kina', DatePaid:'ti-calendar',
   Specialisation:'ti-star', Phone:'ti-phone', VenueName:'ti-map-pin', AttendeeRef:'ti-user',
+  CertPrefix:'ti-hash', AttainmentEligible:'ti-certificate', CertificateType:'ti-certificate',
 };
 function fieldIconFor(f){
   return FIELD_ICONS[f.key] || (f.type==='date' ? 'ti-calendar' : f.type==='lookup' ? 'ti-link' : 'ti-forms');
@@ -4408,6 +4439,7 @@ function fieldIconFor(f){
 const SECTION_ICONS = {
   'Second Contact':'ti-user', 'Organisation':'ti-building', 'Course & Invoice Link':'ti-link',
   'Status & Compliance':'ti-shield-check', 'Schedule':'ti-calendar', 'Logistics':'ti-map-pin',
+  'Certificates':'ti-award',
 };
 function fieldLabelHtml(f, extra=''){
   return `<i class="ti ${fieldIconFor(f)}" aria-hidden="true"></i>${f.label}${f.required?'<span class="req-dot"></span>':''}${extra}`;
@@ -4453,6 +4485,271 @@ function printRosterById(id){
   const run = (cache.runs||[]).find(r=>String(r.id)===String(id));
   if(!run){ toast('Run not found - try refreshing the page','error'); return; }
   printRoster(run);
+}
+
+// ============================================================
+// CERTIFICATE PRINTING (per Course Run)
+// ============================================================
+
+// Resolves the CG_Courses record a run belongs to, by matching course name
+// the same way the rest of the app already does (Title = "CourseName StartDate").
+function courseForRun(run){
+  const rDate=(run.StartDate||'').substring(0,10);
+  const courseName=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+  return (cache.courses||[]).find(c=>(c.CourseName||c.Title||'').trim().toLowerCase()===courseName);
+}
+
+// Returns the next certificate number for a prefix, resetting to 0001 each
+// new year. Tracked in CG_Last_Certificate, one row per "PREFIX-YEAR" key -
+// mirrors the CG_Last_Quote pattern already used for quote numbers.
+async function getNextCertificateNumber(prefix){
+  const year = new Date().getFullYear();
+  const trackerKey = `${prefix}-${year}`;
+  if(!cache.lastcertificate){ try{ cache.lastcertificate = await getItems('lastcertificate','$top=999'); }catch(e){ cache.lastcertificate = []; } }
+  const tracker = (cache.lastcertificate||[]).find(t=>(t.Title||'')===trackerKey);
+  const nextSeq = tracker ? (+tracker.LastNumber||0)+1 : 1;
+  const certNumber = `${prefix}${year}${String(nextSeq).padStart(4,'0')}`;
+  if(tracker){
+    await saveWithFieldFallback(true, 'lastcertificate', tracker.id, {LastNumber: nextSeq, Title: trackerKey});
+    tracker.LastNumber = nextSeq;
+  } else {
+    const created = await saveWithFieldFallback(false, 'lastcertificate', null, {Title: trackerKey, LastNumber: nextSeq});
+    cache.lastcertificate.push({id: created?.id, Title: trackerKey, LastNumber: nextSeq});
+  }
+  return certNumber;
+}
+
+// Finds a certificate already issued for this exact attendee+course+run+type,
+// so re-printing (e.g. a lost copy) reuses the same number instead of
+// burning a new one.
+function findExistingCertificate(attendeeName, courseName, runDate, certType){
+  const an = (attendeeName||'').trim().toLowerCase();
+  const cn = (courseName||'').trim().toLowerCase();
+  return (cache.certificates||[]).find(c=>
+    (c.AttendeeName||'').trim().toLowerCase()===an &&
+    (c.CourseRunTitle||'').trim().toLowerCase()===cn &&
+    (c.RunStartDate||'').substring(0,10)===runDate &&
+    (c.CertificateType||'Attendance')===certType
+  );
+}
+
+let _certPrintCtx = null;
+
+async function openPrintCertificatesModal(runId){
+  const run = (cache.runs||[]).find(r=>String(r.id)===String(runId));
+  if(!run){ toast('Run not found - try refreshing the page','error'); return; }
+  if(!cache.courses){ try{ cache.courses = await getItems('courses','$top=500'); }catch(e){} }
+  if(!cache.certificates){ try{ cache.certificates = await getItems('certificates','$top=999'); }catch(e){} }
+  const course = courseForRun(run);
+  const rDate=(run.StartDate||'').substring(0,10);
+  const courseName=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+  const atts = (cache.attendees||[]).filter(a=>{
+    const at=(a.CourseTitle||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const ad=(a.RunStartDate||'').substring(0,10);
+    return at===courseName.toLowerCase() && ad===rDate;
+  });
+  _certPrintCtx = {run, course, atts};
+  document.getElementById('cert-print-subtitle').textContent = `${courseName} — ${fmtDateLong(run.StartDate)}`;
+  document.getElementById('cert-print-body').innerHTML = renderCertPrintBody(run, course, atts);
+  document.getElementById('cert-print-modal').classList.add('open');
+}
+
+function renderCertPrintBody(run, course, atts){
+  if(!atts.length){
+    return `<div style="text-align:center;padding:20px;color:var(--g500);font-size:13px">No attendees are enrolled in this course run yet.</div>`;
+  }
+  if(!course || !course.CertPrefix){
+    return `<div style="padding:12px;background:var(--amber-l);border-radius:var(--r);color:#92400e;font-size:13px">
+      This course doesn't have a Certificate Prefix set yet. Add one on the Course record first
+      (Courses &rarr; Edit &rarr; Certificates section) before printing certificates for this run.
+    </div>`;
+  }
+  const attainmentEligible = course.AttainmentEligible===true || course.AttainmentEligible==='true';
+  const rows = atts.map(a=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--g100);font-size:13px">
+      <input type="checkbox" class="cert-print-att" value="${a.id}" checked>
+      <span style="flex:1">${a.FullName||a.Title||''}</span>
+      <span style="color:var(--g500);font-size:12px">${a.OrgName||a.JobTitle||''}</span>
+    </label>`).join('');
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Attendees (${atts.length})</span>
+      <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" checked onchange="toggleAllCertAttendees(this.checked)"> Select all
+      </label>
+    </div>
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--g200);border-radius:var(--r);padding:0 10px">${rows}</div>
+    <div style="margin-top:16px">
+      <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Certificate Type</span>
+      <div style="display:flex;gap:16px;margin-top:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="cert-type-attendance" checked> Certificate of Attendance
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:${attainmentEligible?'pointer':'default'};${attainmentEligible?'':'opacity:.4'}">
+          <input type="checkbox" id="cert-type-attainment" ${attainmentEligible?'':'disabled'}> Certificate of Attainment
+        </label>
+      </div>
+      ${attainmentEligible?'':`<div style="font-size:11px;color:var(--g500);margin-top:4px">This course isn't flagged for Certificate of Attainment.</div>`}
+    </div>`;
+}
+
+function toggleAllCertAttendees(checked){
+  document.querySelectorAll('.cert-print-att').forEach(cb=>cb.checked=checked);
+}
+
+async function generateAndPrintCertificates(){
+  if(!_certPrintCtx){ toast('Something went wrong — please reopen this dialog','error'); return; }
+  const { run, course, atts } = _certPrintCtx;
+  const selectedIds = new Set([...document.querySelectorAll('.cert-print-att:checked')].map(cb=>cb.value));
+  if(!selectedIds.size){ toast('Select at least one attendee','error'); return; }
+  const wantAttendance = document.getElementById('cert-type-attendance')?.checked;
+  const wantAttainment = document.getElementById('cert-type-attainment')?.checked;
+  if(!wantAttendance && !wantAttainment){ toast('Select at least one certificate type','error'); return; }
+
+  const selectedAtts = atts.filter(a=>selectedIds.has(String(a.id)));
+  const types = [];
+  if(wantAttendance) types.push('Attendance');
+  if(wantAttainment) types.push('Attainment');
+
+  const btn = document.getElementById('cert-print-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-refresh"></i> Generating...';
+
+  const rDate=(run.StartDate||'').substring(0,10);
+  const courseName=(run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+  const certsToPrint = [];
+
+  try{
+    for(const att of selectedAtts){
+      const attName = att.FullName||att.Title||'';
+      for(const type of types){
+        let cert = findExistingCertificate(attName, courseName, rDate, type);
+        const nowIso = new Date().toISOString();
+        if(cert){
+          // Reprint: reuse the same number, just bump the Last Printed timestamp
+          await saveWithFieldFallback(true, 'certificates', cert.id, {LastPrintedDateTime: nowIso});
+          cert = {...cert, LastPrintedDateTime: nowIso};
+        } else {
+          const certNumber = await getNextCertificateNumber(course.CertPrefix);
+          const fields = {
+            CertificateNumber: certNumber, Title: certNumber, CertificateType: type,
+            AttendeeName: attName, CourseRunTitle: courseName, RunStartDate: rDate,
+            IssueDate: rDate, LastPrintedDateTime: nowIso,
+          };
+          const created = await saveWithFieldFallback(false, 'certificates', null, fields);
+          cert = {id: created?.id, ...fields};
+        }
+        certsToPrint.push({cert, attendee: att});
+      }
+    }
+
+    cache.certificates = await getItems('certificates','$top=999');
+    openCertificatePrintWindow(certsToPrint, run);
+    document.getElementById('cert-print-modal').classList.remove('open');
+    toast(`${certsToPrint.length} certificate${certsToPrint.length>1?'s':''} ready to print`);
+    if(currentPage==='certificates') loadPage('certificates');
+  } catch(e){
+    toast('Could not generate certificates: '+e.message,'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-printer"></i>Generate &amp; Print';
+  }
+}
+
+function ordinalDay(n){
+  n = +n;
+  if(n>=11 && n<=13) return n+'th';
+  switch(n%10){
+    case 1: return n+'st';
+    case 2: return n+'nd';
+    case 3: return n+'rd';
+    default: return n+'th';
+  }
+}
+function fmtCertDate(dateStr){
+  const d = new Date((dateStr||'').substring(0,10));
+  if(isNaN(d)) return '';
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${ordinalDay(d.getDate())} ${months[d.getMonth()]}`;
+}
+function fmtCertDateRange(startStr, endStr){
+  const s = new Date((startStr||'').substring(0,10));
+  const e = new Date((endStr||startStr||'').substring(0,10));
+  if(isNaN(s)) return '';
+  const year = s.getFullYear();
+  if(isNaN(e) || s.getTime()===e.getTime()){
+    return `Conducted on ${fmtCertDate(startStr)}, ${year}`;
+  }
+  return `Conducted from ${fmtCertDate(startStr)} to ${fmtCertDate(endStr)}, ${year}`;
+}
+
+// Renders one certificate as a full print page. Logos are referenced as
+// external files (not base64) — place concept-group-logo.png and
+// concept-training-logo.png in an /assets folder next to index.html.
+// The corner accents are a CSS approximation of the decorative chevron
+// border in the brand colours, since the exact artwork isn't available yet.
+function certificatePageHtml(cert, attendee, run){
+  const isAttainment = cert.CertificateType==='Attainment';
+  const title = isAttainment ? 'CERTIFICATE OF ATTAINMENT' : 'CERTIFICATE OF ATTENDANCE';
+  const bodyText = isAttainment ? 'Has successfully attended and completed the course' : 'Has attended and completed the course';
+  const dateRange = fmtCertDateRange(run.StartDate, run.EndDate);
+  const orgName = attendee?.OrgName || attendee?.JobTitle || '';
+  const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
+  return `<div class="cert-page">
+    <div class="cert-corner-tl"></div><div class="cert-corner-tl-accent"></div>
+    <div class="cert-corner-br"></div><div class="cert-corner-br-accent"></div>
+    <div class="cert-logos">
+      <img src="${CONCEPT_LOGO_URI}" onerror="this.style.visibility='hidden'">
+      <img src="${CONCEPT_TRAINING_LOGO_URI}">
+    </div>
+    <div class="cert-title">${title}</div>
+    <div class="cert-sub">This is to certify that</div>
+    <div class="cert-name">${attName}</div>
+    <div class="cert-org">${orgName}</div>
+    <div class="cert-sub">${bodyText}</div>
+    <div class="cert-course">${cert.CourseRunTitle||''}</div>
+    <div class="cert-dates">${dateRange}</div>
+    <div class="cert-sign-row">
+      <div>Signed: <span class="cert-sign-line"></span></div>
+      <div>Date: <span class="cert-sign-line" style="min-width:100px">${fmtDate(cert.IssueDate)}</span></div>
+    </div>
+    <div class="cert-lic">Concept Training Services<br>Lic No. 082</div>
+    <div class="cert-number">${cert.CertificateNumber}</div>
+  </div>`;
+}
+
+function openCertificatePrintWindow(certsToPrint, run){
+  const w = window.open('','_blank','width=1000,height=800');
+  const pages = certsToPrint.map(({cert, attendee}) => certificatePageHtml(cert, attendee, run)).join('\n');
+  w.document.write(`<!DOCTYPE html><html><head><title>Certificates</title>
+  <style>
+    @page{size:landscape;margin:0}
+    body{font-family:Georgia,'Times New Roman',serif;margin:0;padding:0}
+    .cert-page{width:1100px;min-height:780px;padding:60px 70px;position:relative;page-break-after:always;box-sizing:border-box;overflow:hidden}
+    .cert-page:last-child{page-break-after:auto}
+    .cert-corner-tl{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:200px 200px 0 0;border-color:#1b7a4d transparent transparent transparent;z-index:1}
+    .cert-corner-tl-accent{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:130px 130px 0 0;border-color:#d4a72c transparent transparent transparent;z-index:1}
+    .cert-corner-br{position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 200px 200px;border-color:transparent transparent #1b7a4d transparent;z-index:1}
+    .cert-corner-br-accent{position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 130px 130px;border-color:transparent transparent #d4a72c transparent;z-index:1}
+    .cert-logos{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2}
+    .cert-logos img{height:55px}
+    .cert-title{text-align:center;font-size:34px;font-weight:700;letter-spacing:1px;margin:30px 0 18px;position:relative;z-index:2}
+    .cert-sub{text-align:center;font-size:14px;color:#333;margin-bottom:6px;position:relative;z-index:2}
+    .cert-name{text-align:center;font-family:'Brush Script MT','Segoe Script',cursive;font-size:44px;color:#111;margin:8px 0;position:relative;z-index:2}
+    .cert-org{text-align:center;font-size:16px;font-weight:700;margin-bottom:16px;position:relative;z-index:2}
+    .cert-course{text-align:center;font-size:20px;font-weight:700;line-height:1.3;margin:14px 0;position:relative;z-index:2}
+    .cert-dates{text-align:center;font-size:13px;color:#333;margin-bottom:50px;position:relative;z-index:2}
+    .cert-sign-row{display:flex;justify-content:flex-end;gap:30px;position:relative;z-index:2;padding-right:40px}
+    .cert-sign-row div{font-size:13px}
+    .cert-sign-line{display:inline-block;min-width:200px;border-bottom:1px solid #333;margin-left:8px}
+    .cert-lic{position:absolute;left:70px;bottom:70px;background:#1b7a4d;color:#fff;padding:10px 16px;font-size:11px;font-weight:700;border-radius:2px;z-index:2}
+    .cert-number{position:absolute;right:70px;bottom:30px;font-size:11px;color:#555;z-index:2}
+    @media print{.print-btn{display:none}}
+  </style></head><body>
+  ${pages}
+  <button class="print-btn" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;padding:10px 22px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;z-index:999">🖨 Print All</button>
+  </body></html>`);
+  w.document.close();
 }
 
 async function openFormModal(entity, data){
