@@ -4696,8 +4696,8 @@ function certificatePageHtml(cert, attendee, run){
   const orgName = attendee?.OrgName || attendee?.JobTitle || '';
   const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
   return `<div class="cert-page">
-    <div class="cert-corner-tl"></div>
-    <div class="cert-corner-br"></div>
+    <div class="cert-corner cert-tl1"></div><div class="cert-corner cert-tl2"></div><div class="cert-corner cert-tl3"></div><div class="cert-corner cert-tl4"></div><div class="cert-corner cert-tl5"></div><div class="cert-corner cert-tl6"></div><div class="cert-corner cert-tl7"></div>
+    <div class="cert-corner cert-br1"></div><div class="cert-corner cert-br2"></div><div class="cert-corner cert-br3"></div><div class="cert-corner cert-br4"></div><div class="cert-corner cert-br5"></div><div class="cert-corner cert-br6"></div><div class="cert-corner cert-br7"></div>
     <div class="cert-logos">
       <img src="${CONCEPT_LOGO_URI}" onerror="this.style.visibility='hidden'">
       <img src="${CONCEPT_TRAINING_LOGO_URI}">
@@ -4727,20 +4727,21 @@ function openCertificatePrintWindow(certsToPrint, run){
     body{font-family:Georgia,'Times New Roman',serif;margin:0;padding:0}
     .cert-page{width:1100px;min-height:780px;padding:60px 70px;position:relative;page-break-after:always;box-sizing:border-box;overflow:hidden}
     .cert-page:last-child{page-break-after:auto}
-    .cert-corner-tl{position:absolute;top:0;left:0;width:260px;height:260px;clip-path:polygon(0 0,100% 0,0 100%);
-      background:linear-gradient(135deg,
-        #c9a227 0 14px, #ffffff 14px 20px,
-        #1e6b45 20px 40px, #ffffff 40px 46px,
-        #c9a227 46px 58px, #ffffff 58px 64px,
-        #1e6b45 64px 84px, transparent 84px);
-      z-index:1}
-    .cert-corner-br{position:absolute;bottom:0;right:0;width:260px;height:260px;clip-path:polygon(100% 100%,0 100%,100% 0);
-      background:linear-gradient(315deg,
-        #c9a227 0 14px, #ffffff 14px 20px,
-        #1e6b45 20px 40px, #ffffff 40px 46px,
-        #c9a227 46px 58px, #ffffff 58px 64px,
-        #1e6b45 64px 84px, transparent 84px);
-      z-index:1}
+    .cert-corner{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;z-index:1}
+    .cert-tl1{border-width:220px 220px 0 0;border-color:#1e6b45 transparent transparent transparent}
+    .cert-tl2{border-width:190px 190px 0 0;border-color:#ffffff transparent transparent transparent}
+    .cert-tl3{border-width:160px 160px 0 0;border-color:#c9a227 transparent transparent transparent}
+    .cert-tl4{border-width:130px 130px 0 0;border-color:#ffffff transparent transparent transparent}
+    .cert-tl5{border-width:100px 100px 0 0;border-color:#1e6b45 transparent transparent transparent}
+    .cert-tl6{border-width:70px 70px 0 0;border-color:#ffffff transparent transparent transparent}
+    .cert-tl7{border-width:40px 40px 0 0;border-color:#c9a227 transparent transparent transparent}
+    .cert-br1{top:auto;left:auto;bottom:0;right:0;border-width:0 0 220px 220px;border-color:transparent transparent #1e6b45 transparent}
+    .cert-br2{top:auto;left:auto;bottom:0;right:0;border-width:0 0 190px 190px;border-color:transparent transparent #ffffff transparent}
+    .cert-br3{top:auto;left:auto;bottom:0;right:0;border-width:0 0 160px 160px;border-color:transparent transparent #c9a227 transparent}
+    .cert-br4{top:auto;left:auto;bottom:0;right:0;border-width:0 0 130px 130px;border-color:transparent transparent #ffffff transparent}
+    .cert-br5{top:auto;left:auto;bottom:0;right:0;border-width:0 0 100px 100px;border-color:transparent transparent #1e6b45 transparent}
+    .cert-br6{top:auto;left:auto;bottom:0;right:0;border-width:0 0 70px 70px;border-color:transparent transparent #ffffff transparent}
+    .cert-br7{top:auto;left:auto;bottom:0;right:0;border-width:0 0 40px 40px;border-color:transparent transparent #c9a227 transparent}
     .cert-logos{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2}
     .cert-logos img{height:55px}
     .cert-title{text-align:center;font-size:34px;font-weight:700;letter-spacing:1px;margin:30px 0 calc(18px + 20mm);position:relative;z-index:2}
