@@ -4727,12 +4727,12 @@ function openCertificatePrintWindow(certsToPrint, run){
   <style>
     @page{size:landscape;margin:0}
     body{font-family:Georgia,'Times New Roman',serif;margin:0;padding:0}
-    .cert-page{width:1100px;min-height:780px;padding:60px 70px;position:relative;page-break-after:always;box-sizing:border-box;overflow:hidden}
+    .cert-page{width:100%;min-height:100vh;padding:60px 70px;position:relative;page-break-after:always;box-sizing:border-box;overflow:hidden}
     .cert-page:last-child{page-break-after:auto}
-    .cert-corner-img{position:absolute;height:480px;width:auto;z-index:1}
+    .cert-corner-img{position:absolute;height:340px;width:auto;z-index:1}
     .cert-corner-tl{top:0;left:0}
-    .cert-corner-br{bottom:calc(-16px - 5mm);right:calc(-16px - 5mm);transform:rotate(180deg)}
-    .cert-logos{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2;padding:0}
+    .cert-corner-br{bottom:0;right:0;transform:rotate(180deg)}
+    .cert-logos{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2;padding:0 95px}
     .cert-logos img{height:72px}
     .cert-title{text-align:center;font-size:34px;font-weight:700;letter-spacing:1px;margin:56px 0 calc(18px + 20mm);position:relative;z-index:2}
     .cert-sub{text-align:center;font-size:14px;color:#333;margin-bottom:6px;position:relative;z-index:2}
