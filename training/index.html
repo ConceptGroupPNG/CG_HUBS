@@ -4696,8 +4696,8 @@ function certificatePageHtml(cert, attendee, run){
   const orgName = attendee?.OrgName || attendee?.JobTitle || '';
   const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
   return `<div class="cert-page">
-    <div class="cert-corner-tl"></div><div class="cert-corner-tl-accent"></div>
-    <div class="cert-corner-br"></div><div class="cert-corner-br-accent"></div>
+    <div class="cert-corner-tl"></div>
+    <div class="cert-corner-br"></div>
     <div class="cert-logos">
       <img src="${CONCEPT_LOGO_URI}" onerror="this.style.visibility='hidden'">
       <img src="${CONCEPT_TRAINING_LOGO_URI}">
@@ -4727,10 +4727,20 @@ function openCertificatePrintWindow(certsToPrint, run){
     body{font-family:Georgia,'Times New Roman',serif;margin:0;padding:0}
     .cert-page{width:1100px;min-height:780px;padding:60px 70px;position:relative;page-break-after:always;box-sizing:border-box;overflow:hidden}
     .cert-page:last-child{page-break-after:auto}
-    .cert-corner-tl{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:200px 200px 0 0;border-color:#1b7a4d transparent transparent transparent;z-index:1}
-    .cert-corner-tl-accent{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:130px 130px 0 0;border-color:#d4a72c transparent transparent transparent;z-index:1}
-    .cert-corner-br{position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 200px 200px;border-color:transparent transparent #1b7a4d transparent;z-index:1}
-    .cert-corner-br-accent{position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 130px 130px;border-color:transparent transparent #d4a72c transparent;z-index:1}
+    .cert-corner-tl{position:absolute;top:0;left:0;width:260px;height:260px;clip-path:polygon(0 0,100% 0,0 100%);
+      background:linear-gradient(135deg,
+        #c9a227 0 14px, #ffffff 14px 20px,
+        #1e6b45 20px 40px, #ffffff 40px 46px,
+        #c9a227 46px 58px, #ffffff 58px 64px,
+        #1e6b45 64px 84px, transparent 84px);
+      z-index:1}
+    .cert-corner-br{position:absolute;bottom:0;right:0;width:260px;height:260px;clip-path:polygon(100% 100%,0 100%,100% 0);
+      background:linear-gradient(315deg,
+        #c9a227 0 14px, #ffffff 14px 20px,
+        #1e6b45 20px 40px, #ffffff 40px 46px,
+        #c9a227 46px 58px, #ffffff 58px 64px,
+        #1e6b45 64px 84px, transparent 84px);
+      z-index:1}
     .cert-logos{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2}
     .cert-logos img{height:55px}
     .cert-title{text-align:center;font-size:34px;font-weight:700;letter-spacing:1px;margin:30px 0 calc(18px + 20mm);position:relative;z-index:2}
