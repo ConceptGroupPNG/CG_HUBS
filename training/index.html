@@ -148,19 +148,30 @@ select:focus{border-color:var(--teal)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:300;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
 .modal-overlay.open{display:flex}
 .modal{background:var(--white);border-radius:var(--rl);width:100%;max-width:640px;box-shadow:0 24px 64px rgba(0,0,0,.22)}
-.modal-header{padding:18px 22px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between}
-.modal-header h3{font-size:15px;font-weight:700}
+.modal-header{padding:16px 22px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between}
+.modal-header-left{display:flex;align-items:center;gap:12px;min-width:0}
+.modal-icon-badge{width:36px;height:36px;border-radius:10px;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.modal-icon-badge i{color:#4ade80;font-size:18px}
+.modal-header h3{font-size:15px;font-weight:700;margin:0}
+.modal-subtitle{font-size:11px;color:var(--g500);font-weight:500;margin-top:1px}
 .modal-close{width:30px;height:30px;border-radius:var(--r);border:1px solid var(--g200);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--g500);background:transparent;font-size:17px}
 .modal-close:hover{background:var(--g50)}
 .modal-body{padding:18px 22px;max-height:70vh;overflow-y:auto}
 .modal-footer{padding:14px 22px;border-top:1px solid var(--g200);display:flex;align-items:center;justify-content:flex-end;gap:8px;background:var(--g50);border-radius:0 0 var(--rl) var(--rl)}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.fg{display:flex;flex-direction:column;gap:4px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
+.fg{display:flex;flex-direction:column;gap:5px;border-left:3px solid var(--g200);padding-left:10px;transition:border-color .15s}
 .fg.full{grid-column:1/-1}
-.fg label{font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px}
-.fg input,.fg select,.fg textarea{padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g900);outline:none;transition:border-color .15s;background:#fff;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
-.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--teal)}
+.fg:focus-within{border-left-color:var(--teal)}
+.fg label{font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:5px}
+.fg label i{font-size:13px;color:var(--g400);flex-shrink:0}
+.fg label .req-dot{width:4px;height:4px;border-radius:50%;background:var(--teal);display:inline-block;flex-shrink:0}
+.fg input,.fg select,.fg textarea{padding:8px 10px;border:1px solid var(--g200);border-radius:var(--r);font-size:13px;color:var(--g900);outline:none;transition:border-color .15s,box-shadow .15s,background .15s;background:var(--g50);width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(14,159,110,.13);background:#fff}
 .fg textarea{resize:vertical;min-height:70px}
+.form-section-header{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--g200)}
+.form-section-header:first-child{margin-top:0;padding-top:0;border-top:none}
+.form-section-header i{color:var(--teal);font-size:15px;flex-shrink:0}
+.form-section-header span{font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px}
 
 /* Confirm modal */
 .confirm-modal{max-width:400px}
@@ -757,7 +768,16 @@ select:focus{border-color:var(--teal)}
 <!-- MODALS -->
 <div id="entity-modal" class="modal-overlay">
   <div class="modal">
-    <div class="modal-header"><h3 id="modal-title">Add Record</h3><button class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-icon-badge"><i id="modal-icon" class="ti ti-file-text"></i></div>
+        <div>
+          <h3 id="modal-title">Add Record</h3>
+          <div class="modal-subtitle" id="modal-subtitle"></div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" id="modal-print-reg-btn" onclick="printRegistrationNotice()" style="display:none;margin-right:auto"><i class="ti ti-printer"></i>Print Registration Notice</button>
@@ -3175,7 +3195,10 @@ function renderQuoteLines(){
   const totals = quoteLinesTotal();
   container.innerHTML = `
     <div style="margin-top:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">Line Items</label>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
+        <i class="ti ti-list-details" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
+        <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Line Items</span>
+      </div>
       <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <thead><tr style="background:var(--g100)">
@@ -3242,9 +3265,10 @@ function renderQuoteAttendees(data){
   }
   container.innerHTML = `
     <div style="margin-top:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
-        Linked Attendees (${linked.length})
-      </label>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
+        <i class="ti ti-users" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
+        <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Linked Attendees (${linked.length})</span>
+      </div>
       ${linked.length ? `
         <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
           <table style="width:100%;font-size:12px;border-collapse:collapse">
@@ -3438,7 +3462,10 @@ function renderInvoiceLines(){
   const totals = invoiceLinesTotals();
   container.innerHTML = `
     <div style="margin-top:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">Line Items</label>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
+        <i class="ti ti-list-details" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
+        <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Line Items</span>
+      </div>
       <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <thead><tr style="background:var(--g100)">
@@ -3491,9 +3518,10 @@ function renderInvoiceAttendees(data){
   const linked = invNum ? (cache.attendees||[]).filter(a=>(a.InvoiceRef||'').trim().toLowerCase()===invNum) : [];
   container.innerHTML = `
     <div style="margin-top:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
-        Linked Attendees (${linked.length})
-      </label>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
+        <i class="ti ti-users" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
+        <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Linked Attendees (${linked.length})</span>
+      </div>
       ${linked.length ? `
         <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
           <table style="width:100%;font-size:12px;border-collapse:collapse">
@@ -3642,9 +3670,10 @@ function renderInvoiceAttendeeEditor(){
 
   container.innerHTML = `
     <div style="margin-top:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">
-        Add / Attach Attendees
-      </label>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
+        <i class="ti ti-user-plus" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
+        <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Add / Attach Attendees</span>
+      </div>
       ${availableLines.length ? '' : `<div style="margin-top:6px;font-size:12px;color:var(--g500);padding:4px 0">
         Add a course line above first — attendees need a line to be attached to.
       </div>`}
@@ -4097,9 +4126,9 @@ const FORM_DEFS = {
     title: (d)=> d?'Edit Course Run':'Add Course Run',
     fields: [
       {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true,matchKey:'CourseName'},
-      {key:'StartDate',label:'Start Date',type:'date',required:true},
+      {key:'StartDate',label:'Start Date',type:'date',required:true,sectionLabel:'Schedule'},
       {key:'EndDate',label:'End Date',type:'date',required:true},
-      {key:'TrainerRef',label:'Trainer',type:'lookup',entity:'trainers',display:'TrainerName',matchKey:'TrainerName'},
+      {key:'TrainerRef',label:'Trainer',type:'lookup',entity:'trainers',display:'TrainerName',matchKey:'TrainerName',sectionLabel:'Logistics'},
       {key:'VenueRef',label:'Venue',type:'lookup',entity:'venues',display:'VenueName',matchKey:'VenueName',onchange:'onVenueChange()'},
       {key:'Capacity',label:'Capacity',type:'number'},
       {key:'Status',label:'Status',type:'select',opts:['Scheduled','Active','Completed','Postponed']},
@@ -4156,11 +4185,11 @@ const FORM_DEFS = {
       {key:'JobTitle',label:'Job Title',type:'text'},
       {key:'Email',label:'Email',type:'email'},
       {key:'Mobile',label:'Mobile',type:'text'},
-      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName'},
-      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
+      {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName',sectionLabel:'Organisation'},
+      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()',sectionLabel:'Course & Invoice Link'},
       {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions();updateSeatBadge(\'RunRef\',\'InvoiceLineCourse\')'},
       {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse'},
-      {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox'},
+      {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox',sectionLabel:'Status & Compliance'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
     ],
@@ -4343,6 +4372,47 @@ const FORM_DEFS = {
   },
 };
 
+// Icon badge + subtitle shown in the modal header, per entity — gives each
+// form an instantly-recognisable identity instead of a plain title string.
+const ENTITY_ICONS = {
+  courses:'ti-books', runs:'ti-calendar-event', organisations:'ti-building',
+  attendees:'ti-user-plus', quotes:'ti-file-text', invoices:'ti-file-invoice',
+  payments:'ti-cash', certificates:'ti-award', trainers:'ti-user-star', venues:'ti-map-pin',
+};
+const ENTITY_SUBTITLES = {
+  courses:'Course catalogue', runs:'Scheduled course run', organisations:'Client organisation',
+  attendees:'Course enrolment', quotes:'Client quote', invoices:'Client invoice',
+  payments:'Invoice payment', certificates:'Completion certificate', trainers:'Course trainer', venues:'Training venue',
+};
+
+// Small icon shown next to each field label. Keyed explicitly by field key
+// (rather than guessed from the label text) so it stays accurate as fields
+// get renamed or reused across different entities' forms.
+const FIELD_ICONS = {
+  CourseName:'ti-books', Category:'ti-tag', FeeExGST:'ti-currency-kina', GSTRate:'ti-percentage',
+  CourseRef:'ti-books', StartDate:'ti-calendar', EndDate:'ti-calendar-check', TrainerRef:'ti-user-star',
+  VenueRef:'ti-map-pin', Capacity:'ti-users', Status:'ti-flag',
+  OrgName:'ti-building', ContactPerson:'ti-user', ContactPosition:'ti-briefcase', ContactEmail:'ti-mail', ContactPhone:'ti-phone',
+  Contact2Person:'ti-user', Contact2Position:'ti-briefcase', Contact2Email:'ti-mail', Contact2Phone:'ti-phone',
+  FullName:'ti-user', JobTitle:'ti-briefcase', Email:'ti-mail', Mobile:'ti-phone',
+  OrgRef:'ti-building', InvoiceRef:'ti-file-invoice', InvoiceLineCourse:'ti-list-details', RunRef:'ti-calendar-event',
+  Section65A:'ti-shield-check', CertificateNumber:'ti-award', AttendanceStatus:'ti-flag',
+  QuoteNumber:'ti-file-text', QuoteDate:'ti-calendar', QuoteRefLookup:'ti-file-text',
+  InvoiceNumber:'ti-file-invoice', InvoiceDate:'ti-calendar',
+  AmountPaid:'ti-currency-kina', DatePaid:'ti-calendar',
+  Specialisation:'ti-star', Phone:'ti-phone', VenueName:'ti-map-pin', AttendeeRef:'ti-user',
+};
+function fieldIconFor(f){
+  return FIELD_ICONS[f.key] || (f.type==='date' ? 'ti-calendar' : f.type==='lookup' ? 'ti-link' : 'ti-forms');
+}
+const SECTION_ICONS = {
+  'Second Contact':'ti-user', 'Organisation':'ti-building', 'Course & Invoice Link':'ti-link',
+  'Status & Compliance':'ti-shield-check', 'Schedule':'ti-calendar', 'Logistics':'ti-map-pin',
+};
+function fieldLabelHtml(f, extra=''){
+  return `<i class="ti ${fieldIconFor(f)}" aria-hidden="true"></i>${f.label}${f.required?'<span class="req-dot"></span>':''}${extra}`;
+}
+
 function resolveSearchableLookup(key, entity, display){
   const searchEl = document.getElementById('mf-'+key+'-search');
   const hiddenEl = document.getElementById('mf-'+key);
@@ -4409,13 +4479,15 @@ async function openFormModal(entity, data){
   }
   document.getElementById('modal-title').textContent = def.title(data);
   document.getElementById('modal-save-label').textContent = data ? 'Save Changes' : 'Create';
+  const modalIconEl = document.getElementById('modal-icon');
+  if(modalIconEl) modalIconEl.className = 'ti ' + (ENTITY_ICONS[entity]||'ti-file-text');
+  const modalSubEl = document.getElementById('modal-subtitle');
+  if(modalSubEl) modalSubEl.textContent = ENTITY_SUBTITLES[entity]||'';
 
   let html = '<div class="form-grid">';
   def.fields.forEach(f=>{
     if(f.sectionLabel){
-      html += `<div class="fg full" style="margin-top:8px;padding-top:12px;border-top:1px solid var(--g200)">
-        <label style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.4px">${f.sectionLabel}</label>
-      </div>`;
+      html += `<div class="form-section-header"><i class="ti ${SECTION_ICONS[f.sectionLabel]||'ti-forms'}" aria-hidden="true"></i><span>${f.sectionLabel}</span></div>`;
     }
     let val = data?.[f.key] ?? '';
     if(!val && f.fallbackKey) val = data?.[f.fallbackKey] ?? '';
@@ -4580,7 +4652,7 @@ async function openFormModal(entity, data){
         // (e.g. Invoices, Attendees) where scrolling a plain <select> is painful.
         const listId = 'dl-'+f.key;
         const badgeHtml = f.showSeatBadge ? `<span id="seat-badge-${f.key}" style="margin-left:6px"></span>` : '';
-        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}${badgeHtml}</label>
+        html += `<div class="${cls}"><label>${fieldLabelHtml(f, badgeHtml)}</label>
           <input type="text" id="mf-${f.key}-search" list="${listId}"
             placeholder="Type to search..."
             value="${selectedOpt ? getLabel(selectedOpt).replace(/"/g,'&quot;') : ''}"
@@ -4592,21 +4664,21 @@ async function openFormModal(entity, data){
           <input type="hidden" id="mf-${f.key}" value="${selectedId||''}">
         </div>`;
       } else {
-        html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
+        html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
           <option value="">— Select —</option>
           ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
         </select></div>`;
       }
     } else if(f.type==='select'){
-      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label><select id="mf-${f.key}">
+      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}">
         ${f.opts.map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('')}
       </select></div>`;
     } else if(f.type==='checkbox'){
-      html += `<div class="${cls}"><label>${f.label}</label>
+      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label>
         <select id="mf-${f.key}"><option value="true" ${val===true||val==='true'?'selected':''}>Yes</option><option value="false" ${!val||val===false||val==='false'?'selected':''}>No</option></select></div>`;
     } else {
       const v = f.type==='date' && val ? val.substring(0,10) : val;
-      html += `<div class="${cls}"><label>${f.label}${f.required?' *':''}</label>
+      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label>
         <input type="${f.type}" id="mf-${f.key}" value="${v||''}" ${f.required?'required':''}></div>`;
     }
   });
