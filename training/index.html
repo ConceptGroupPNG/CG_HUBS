@@ -4349,7 +4349,7 @@ const FORM_DEFS = {
     title: (d)=> d?'Edit Certificate':'Add Certificate',
     fields: [
       {key:'CertificateNumber',label:'Certificate Number',type:'text',required:true,full:true},
-      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName',searchable:true},
+      {key:'AttendeeRef',label:'Attendee',type:'lookup',entity:'attendees',display:'FullName',matchKey:'AttendeeName',searchable:true,onchange:'refreshCertRunOptions()'},
       {key:'RunRef',label:'Course Run',type:'lookup',entity:'runs',display:'RunLabel',matchKey:'RunLabel',searchable:true},
       {key:'IssueDate',label:'Issue Date',type:'date'},
     ],
@@ -4526,6 +4526,17 @@ async function openFormModal(entity, data){
             const isCurrentlySaved = savedDate && rDate===savedDate;
             return isCurrentlySaved || runStatus(r)!=='Completed';
           });
+        }
+      }
+      // For the Certificates form's Course Run field, narrow the run list down
+      // to only runs the selected Attendee actually enrolled in (matched by
+      // name across all of their CG_Attendees rows, since one person can have
+      // several enrolments). Before an Attendee is chosen, show every run so
+      // the field isn't confusingly empty.
+      if(f.key==='RunRef' && f.entity==='runs' && editingEntity==='certificates'){
+        const attName = (data?.AttendeeName||'').trim();
+        if(attName){
+          opts = runsEnrolledByAttendeeName(attName);
         }
       }
       // Build a display label for each option; runs need a synthetic "Course - Date" label
@@ -5057,6 +5068,73 @@ function refreshCourseDateOptions(){
     toast('No upcoming or active runs found for this course yet','error');
   } else if(courseName && runs.length===1){
     // Auto-select the only available date
+    if(searchEl) searchEl.value = getRunLabel(runs[0]);
+    if(hiddenEl) hiddenEl.value = runs[0].id;
+  }
+}
+
+// Returns every CG_CourseRuns record a given attendee NAME actually enrolled
+// in, by scanning all of that name's CG_Attendees rows (a person can have
+// several enrolments across different courses/dates) rather than just the
+// one row that happened to be picked in a lookup.
+function runsEnrolledByAttendeeName(name){
+  const attName = (name||'').trim().toLowerCase();
+  if(!attName) return cache.runs||[];
+  const enrolledKeys = new Set();
+  (cache.attendees||[]).forEach(a=>{
+    if((a.FullName||a.Title||'').trim().toLowerCase()!==attName) return;
+    const courseName = (a.CourseTitle||'').trim().toLowerCase();
+    const runDate = (a.RunStartDate||'').substring(0,10);
+    if(courseName) enrolledKeys.add(courseName+'|'+runDate);
+  });
+  return (cache.runs||[]).filter(r=>{
+    const rDate=(r.StartDate||'').substring(0,10);
+    const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+    return enrolledKeys.has(cName+'|'+rDate);
+  });
+}
+
+let _lastCertRunFilterAttendee = null;
+
+function refreshCertRunOptions(){
+  const attId = document.getElementById('mf-AttendeeRef')?.value;
+  const dl = document.getElementById('dl-RunRef');
+  const searchEl = document.getElementById('mf-RunRef-search');
+  const hiddenEl = document.getElementById('mf-RunRef');
+  if(!dl) return;
+
+  let attName = '';
+  if(attId){
+    const att = (cache.attendees||[]).find(a=>String(a.id)===String(attId));
+    attName = (att?.FullName||att?.Title||'').trim();
+  }
+
+  // Skip re-filtering (and clearing the current selection) if the resolved
+  // attendee hasn't actually changed since the last call - oninput fires on
+  // every keystroke, but the attendee only changes once a real match is made.
+  if(attName === _lastCertRunFilterAttendee) return;
+  _lastCertRunFilterAttendee = attName;
+
+  const runs = (attName ? runsEnrolledByAttendeeName(attName) : (cache.runs||[]))
+    .slice().sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+
+  const getRunLabel = (r) => {
+    const rDate=(r.StartDate||'').substring(0,10);
+    const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+    return `${cName} — ${rDate}`;
+  };
+
+  dl.innerHTML = runs.map(r=>`<option data-id="${r.id}" value="${getRunLabel(r).replace(/"/g,'&quot;')}"></option>`).join('');
+
+  // Clear the current Course Run selection since the available options changed -
+  // the previously selected run may not belong to the newly selected attendee
+  if(searchEl) searchEl.value = '';
+  if(hiddenEl) hiddenEl.value = '';
+
+  if(attName && runs.length===0){
+    toast(`No course runs found for ${attName} - check they have a linked enrolment`,'error');
+  } else if(attName && runs.length===1){
+    // Auto-select the only available run
     if(searchEl) searchEl.value = getRunLabel(runs[0]);
     if(hiddenEl) hiddenEl.value = runs[0].id;
   }
