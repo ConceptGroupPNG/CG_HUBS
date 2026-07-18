@@ -4698,6 +4698,7 @@ function certificatePageHtml(cert, attendee, run, idx){
   const orgName = attendee?.OrgName || attendee?.JobTitle || '';
   const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
   const qrId = `cert-qr-${idx}`;
+  const qrValue = `${cert.CertificateNumber} - ${attName}`.replace(/"/g,'&quot;');
   return `<div class="cert-page">
     <img class="cert-corner-img cert-corner-tl" src="${CERT_CORNER_URI}">
     <img class="cert-corner-img cert-corner-br" src="${CERT_CORNER_URI}">
@@ -4718,7 +4719,7 @@ function certificatePageHtml(cert, attendee, run, idx){
     </div>
     <div class="cert-lic">Concept Training Services<br>Lic No. 082</div>
     <div class="cert-qr-wrap">
-      <div class="cert-qr" id="${qrId}" data-value="${cert.CertificateNumber}"></div>
+      <div class="cert-qr" id="${qrId}" data-value="${qrValue}"></div>
       <div class="cert-number">${cert.CertificateNumber}</div>
     </div>
   </div>`;
