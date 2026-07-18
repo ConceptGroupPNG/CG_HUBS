@@ -4690,13 +4690,14 @@ function fmtCertDateRange(startStr, endStr){
 // concept-training-logo.png in an /assets folder next to index.html.
 // The corner accents are a CSS approximation of the decorative chevron
 // border in the brand colours, since the exact artwork isn't available yet.
-function certificatePageHtml(cert, attendee, run){
+function certificatePageHtml(cert, attendee, run, idx){
   const isAttainment = cert.CertificateType==='Attainment';
   const title = isAttainment ? 'CERTIFICATE OF ATTAINMENT' : 'CERTIFICATE OF ATTENDANCE';
   const bodyText = isAttainment ? 'Has successfully attended and completed the course' : 'Has attended and completed the course';
   const dateRange = fmtCertDateRange(run.StartDate, run.EndDate);
   const orgName = attendee?.OrgName || attendee?.JobTitle || '';
   const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
+  const qrId = `cert-qr-${idx}`;
   return `<div class="cert-page">
     <img class="cert-corner-img cert-corner-tl" src="${CERT_CORNER_URI}">
     <img class="cert-corner-img cert-corner-br" src="${CERT_CORNER_URI}">
@@ -4716,14 +4717,18 @@ function certificatePageHtml(cert, attendee, run){
       <div>Date: <span class="cert-sign-line" style="min-width:100px">${fmtDate(cert.IssueDate)}</span></div>
     </div>
     <div class="cert-lic">Concept Training Services<br>Lic No. 082</div>
-    <div class="cert-number">${cert.CertificateNumber}</div>
+    <div class="cert-qr-wrap">
+      <div class="cert-qr" id="${qrId}" data-value="${cert.CertificateNumber}"></div>
+      <div class="cert-number">${cert.CertificateNumber}</div>
+    </div>
   </div>`;
 }
 
 function openCertificatePrintWindow(certsToPrint, run){
   const w = window.open('','_blank','width=1000,height=800');
-  const pages = certsToPrint.map(({cert, attendee}) => certificatePageHtml(cert, attendee, run)).join('\n');
+  const pages = certsToPrint.map(({cert, attendee}, idx) => certificatePageHtml(cert, attendee, run, idx)).join('\n');
   w.document.write(`<!DOCTYPE html><html><head><title>Certificates</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
   <style>
     @page{size:landscape;margin:0}
     body{font-family:Georgia,'Times New Roman',serif;margin:0;padding:0}
@@ -4744,11 +4749,24 @@ function openCertificatePrintWindow(certsToPrint, run){
     .cert-sign-row div{font-size:13px}
     .cert-sign-line{display:inline-block;min-width:200px;border-bottom:1px solid #333;margin-left:8px}
     .cert-lic{position:absolute;left:70px;bottom:30px;background:#1b7a4d;color:#fff;padding:10px 16px;font-size:11px;font-weight:700;border-radius:2px;z-index:2}
-    .cert-number{position:absolute;right:70px;bottom:30px;font-size:11px;color:#555;z-index:2}
+    .cert-qr-wrap{position:absolute;right:190px;bottom:30px;z-index:2;text-align:right}
+    .cert-qr{width:60px;height:60px;margin-left:auto}
+    .cert-qr svg{display:block;width:100%;height:100%}
+    .cert-number{font-size:11px;color:#555;margin-top:4px}
     @media print{.print-btn{display:none}}
   </style></head><body>
   ${pages}
   <button class="print-btn" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;padding:10px 22px;background:#0e9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;z-index:999">🖨 Print All</button>
+  <script>
+    document.querySelectorAll('.cert-qr').forEach(function(el){
+      var value = el.getAttribute('data-value');
+      if(window.QRCode && value){
+        QRCode.toString(value, {type:'svg', margin:0}, function(err, svg){
+          if(!err) el.innerHTML = svg;
+        });
+      }
+    });
+  <\/script>
   </body></html>`);
   w.document.close();
 }
