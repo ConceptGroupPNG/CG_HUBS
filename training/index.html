@@ -4693,7 +4693,7 @@ function fmtCertDateRange(startStr, endStr){
 function certificatePageHtml(cert, attendee, run, idx){
   const isAttainment = cert.CertificateType==='Attainment';
   const title = isAttainment ? 'CERTIFICATE OF ATTAINMENT' : 'CERTIFICATE OF ATTENDANCE';
-  const bodyText = isAttainment ? 'Has successfully attended and completed the course' : 'Has attended and completed the course';
+  const bodyText = isAttainment ? 'Has passed the exam on the course' : 'Has attended and completed the course';
   const dateRange = fmtCertDateRange(run.StartDate, run.EndDate);
   const orgName = attendee?.OrgName || attendee?.JobTitle || '';
   const attName = attendee?.FullName || attendee?.Title || cert.AttendeeName || '';
