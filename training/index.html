@@ -4226,7 +4226,7 @@ const FORM_DEFS = {
       {key:'IsInternal',label:'Internal Attendee (No Invoice)',type:'checkbox',full:true,onchange:'onAttendeeInternalToggle()',sectionLabel:'Course & Invoice Link'},
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
       {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions();updateSeatBadge(\'RunRef\',\'InvoiceLineCourse\')'},
-      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',matchKey:'CourseName',searchable:true,onchange:'refreshCourseDateOptionsFromCourseRef()'},
+      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',matchKey:'AttendeeCourseTitle',searchable:true,onchange:'refreshCourseDateOptionsFromCourseRef()'},
       {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse'},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox',sectionLabel:'Status & Compliance'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
@@ -4956,6 +4956,13 @@ async function openFormModal(entity, data){
             return cName===curTitle && rDate===curDate;
           });
           if(match) selectedId = match.id;
+        } else if(f.matchKey==='AttendeeCourseTitle'){
+          // For an Attendee record's direct Course field - unlike Runs, the
+          // course name here lives in data.CourseTitle directly, not data.Title
+          // (data.Title on an Attendee record is just their own name).
+          const curName=(data.CourseTitle||'').trim().toLowerCase();
+          const match=opts.find(o=>(o.CourseName||o.Title||'').trim().toLowerCase()===curName);
+          if(match) selectedId = match.id;
         } else if(f.matchKey==='CourseName'){
           // For runs: data.Title = "CourseName StartDate" - extract course name
           const rDate=(data.StartDate||'').substring(0,10);
@@ -5103,7 +5110,7 @@ async function openFormModal(entity, data){
   // and set Invoice-vs-direct-Course field visibility to match the record's Internal flag
   if(entity==='attendees'){
     updateSeatBadge('RunRef','InvoiceLineCourse');
-    onAttendeeInternalToggle();
+    onAttendeeInternalToggle(true);
     updatePrintRegButtonVisibility();
     // Re-check the print button's visibility whenever any field in the form
     // changes, since its criteria depend on several fields together (name,
@@ -5398,7 +5405,7 @@ let _lastCourseDateFilterCourse = null;
 // form depending on whether "Internal Attendee (No Invoice)" is checked.
 // Called both on user toggle and once on initial form render, so editing an
 // existing record shows the right fields immediately.
-function onAttendeeInternalToggle(){
+function onAttendeeInternalToggle(isInitialRender){
   const val = document.getElementById('mf-IsInternal')?.value;
   const isInternal = val==='true' || val===true;
   const invoiceFg = document.getElementById('fg-InvoiceRef');
@@ -5407,8 +5414,11 @@ function onAttendeeInternalToggle(){
   if(invoiceFg) invoiceFg.style.display = isInternal ? 'none' : '';
   if(invoiceLineFg) invoiceLineFg.style.display = isInternal ? 'none' : '';
   if(courseFg) courseFg.style.display = isInternal ? '' : 'none';
-  // Re-filter the Course Date options against whichever path is now active,
-  // so switching modes doesn't leave a stale, wrongly-scoped date list.
+  // Re-filter the Course Date options against whichever path is now active -
+  // but only when the user actually just toggled the checkbox. On the
+  // automatic call made when the form first opens, this would otherwise wipe
+  // out a Course Date that was correctly pre-filled from the saved record.
+  if(isInitialRender) return;
   if(isInternal) refreshCourseDateOptionsFromCourseRef();
   else refreshCourseDateOptions();
 }
