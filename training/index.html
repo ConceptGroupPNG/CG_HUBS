@@ -5110,15 +5110,6 @@ async function openFormModal(entity, data){
   // and set Invoice-vs-direct-Course field visibility to match the record's Internal flag
   if(entity==='attendees'){
     updateSeatBadge('RunRef','InvoiceLineCourse');
-    // Legacy records: an attendee that has course info but no invoice, and
-    // was never flagged Internal (predates this feature, or was missed) -
-    // default the form to Internal/direct-course mode so their existing
-    // course is actually visible, instead of hidden behind a blank Invoice
-    // Course Line field. Saving from here correctly flags them Internal too.
-    if(data && !data.InvoiceRef && data.CourseTitle && !(data.IsInternal===true||data.IsInternal==='true')){
-      const internalSel = document.getElementById('mf-IsInternal');
-      if(internalSel) internalSel.value = 'true';
-    }
     onAttendeeInternalToggle(true);
     updatePrintRegButtonVisibility();
     // Re-check the print button's visibility whenever any field in the form
