@@ -421,7 +421,10 @@ select:focus{border-color:var(--teal)}
         <div class="card">
           <div class="card-header">
             <h2 id="att-count">Attendees</h2>
-            <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-outline" style="font-size:12px" onclick="checkAttendeeStatusAnomalies()"><i class="ti ti-alert-triangle"></i> Check Status Anomalies</button>
+              <button class="btn btn-outline" style="font-size:12px" onclick="exportAttendeesCSV()"><i class="ti ti-download"></i> Export CSV</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table><thead><tr>
@@ -835,6 +838,25 @@ select:focus{border-color:var(--teal)}
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="document.getElementById('cert-print-modal').classList.remove('open')">Cancel</button>
       <button class="btn btn-primary" id="cert-print-btn" onclick="generateAndPrintCertificates()"><i class="ti ti-printer"></i>Generate &amp; Print</button>
+    </div>
+  </div>
+</div>
+
+<div id="status-anomaly-modal" class="modal-overlay">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-icon-badge"><i class="ti ti-alert-triangle"></i></div>
+        <div>
+          <h3>Status Anomalies</h3>
+          <div class="modal-subtitle" id="status-anomaly-subtitle"></div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('status-anomaly-modal').classList.remove('open')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="status-anomaly-body" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('status-anomaly-modal').classList.remove('open')">Close</button>
     </div>
   </div>
 </div>
@@ -6657,6 +6679,98 @@ function exportAttendeesCSV(){
   a.href=url; a.download='CG_Attendees_'+new Date().toISOString().substring(0,10)+'.csv';
   a.click(); URL.revokeObjectURL(url);
   toast('Exported '+atts.length+' attendees to CSV','success');
+}
+
+// Scans every attendee against their linked Course Run and flags anyone
+// marked Attended/Completed whose Run's own chronological status (computed
+// live from its dates, same as everywhere else in the app) isn't actually
+// Completed yet - i.e. their status claims something that hasn't happened.
+// This is read-only: it never changes any data, only reports on it.
+async function checkAttendeeStatusAnomalies(){
+  if(!cache.runs){ try{ cache.runs = await getItems('runs','$top=500'); }catch(e){} }
+  if(!cache.attendees){ try{ cache.attendees = await getItems('attendees','$top=999'); }catch(e){} }
+
+  const runForAttendee = (a) => {
+    const courseName = (a.CourseTitle||'').trim().toLowerCase();
+    const runDate = (a.RunStartDate||'').substring(0,10);
+    if(!courseName || !runDate) return null;
+    return (cache.runs||[]).find(r=>{
+      const rDate=(r.StartDate||'').substring(0,10);
+      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+      return cName===courseName && rDate===runDate;
+    }) || null;
+  };
+
+  const flagged = [];
+  (cache.attendees||[]).forEach(a=>{
+    const status = a.AttendanceStatus||'';
+    if(status!=='Completed' && status!=='Attended') return;
+    const run = runForAttendee(a);
+    if(!run) return; // can't verify without a matching run - not flagged either way
+    const actualRunStatus = runStatus(run);
+    if(actualRunStatus!=='Completed'){
+      flagged.push({attendee:a, run, actualRunStatus});
+    }
+  });
+
+  renderStatusAnomalyReport(flagged);
+  document.getElementById('status-anomaly-modal').classList.add('open');
+}
+
+function renderStatusAnomalyReport(flagged){
+  const subtitle = document.getElementById('status-anomaly-subtitle');
+  const body = document.getElementById('status-anomaly-body');
+  if(subtitle) subtitle.textContent = flagged.length
+    ? `${flagged.length} attendee${flagged.length>1?'s':''} marked Attended/Completed ahead of their Run`
+    : 'No anomalies found';
+
+  if(!flagged.length){
+    body.innerHTML = `<div style="text-align:center;padding:30px;color:var(--g500);font-size:13px">
+      <i class="ti ti-circle-check" style="font-size:28px;color:var(--teal);display:block;margin-bottom:10px"></i>
+      No attendees are marked Attended or Completed on a Run that hasn't actually finished yet.
+    </div>`;
+    return;
+  }
+
+  // Group by Run so it's easy to see whether this is one isolated case or a
+  // batch (e.g. everyone on the same run flagged together usually points to
+  // a bulk import or a copy-paste habit, rather than individual mistakes).
+  const byRun = {};
+  flagged.forEach(f=>{
+    const key = `${f.run.Title||''}|${f.run.id}`;
+    if(!byRun[key]) byRun[key] = {run:f.run, items:[]};
+    byRun[key].items.push(f);
+  });
+
+  const runStatusLabel = {Scheduled:'Scheduled (not started)', Active:'Active (in progress)', Postponed:'Postponed'};
+
+  body.innerHTML = Object.values(byRun).map(group=>{
+    const rDate=(group.run.StartDate||'').substring(0,10);
+    const courseName=(group.run.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim();
+    const rows = group.items.map(f=>`
+      <tr>
+        <td class="td-bold">${f.attendee.FullName||f.attendee.Title||'—'}</td>
+        <td style="font-size:12px">${f.attendee.OrgName||f.attendee.JobTitle||'—'}</td>
+        <td>${statusBadge(f.attendee.AttendanceStatus)}</td>
+        <td><button class="btn-icon" onclick="document.getElementById('status-anomaly-modal').classList.remove('open');editRow('attendees','${f.attendee.id}')" title="Edit this attendee"><i class="ti ti-pencil"></i></button></td>
+      </tr>`).join('');
+    return `
+      <div style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-weight:700;font-size:13px;color:var(--navy)">${courseName} — ${fmtDate(group.run.StartDate)}</span>
+          <span class="badge" style="background:#fef3c7;color:#92400e">${runStatusLabel[group.items[0].actualRunStatus]||group.items[0].actualRunStatus}</span>
+        </div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr style="background:var(--g100)">
+            <th style="text-align:left;padding:6px 8px">Name</th>
+            <th style="text-align:left;padding:6px 8px">Organisation</th>
+            <th style="text-align:left;padding:6px 8px">Status</th>
+            <th style="width:36px"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
 }
 
 // ── SALES FUNNEL ──────────────────────────────────────────────────────────
