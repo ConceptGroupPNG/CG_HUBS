@@ -4135,6 +4135,7 @@ function renderCertificates(items){
       <td>${c.CertificateType==='Attainment' ? '<span class="badge" style="background:var(--purple-l);color:#5b21b6">Attainment</span>' : '<span class="badge" style="background:var(--blue-l);color:#1e40af">Attendance</span>'}</td>
       <td style="white-space:nowrap">${fmtDate(c.IssueDate)}</td>
       <td><div class="td-actions">
+        ${(c.CertificateNumber||c.Title) ? `<button class="btn-icon" onclick="reprintCertificateById('${c.id}')" title="Print / Reprint Certificate" style="color:#8b5cf6"><i class="ti ti-printer"></i></button>` : ''}
         <button class="btn-icon" onclick="editRow('certificates','${c.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
         <button class="btn-icon danger" onclick="confirmDelete('certificates','${c.id}','${(c.CertificateNumber||c.Title||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
       </div></td>
@@ -4738,6 +4739,42 @@ function certificatePageHtml(cert, attendee, run, idx){
       <div class="cert-number">${cert.CertificateNumber}</div>
     </div>
   </div>`;
+}
+
+// Reprints a single certificate directly from the Certificates list. Reuses
+// the same rendering pipeline as printing from a Course Run, and follows the
+// same reuse-the-number convention: this never creates a new certificate or
+// number, it just re-renders the existing one and bumps LastPrintedDateTime.
+async function reprintCertificateById(id){
+  const cert = (cache.certificates||[]).find(c=>String(c.id)===String(id));
+  if(!cert){ toast('Certificate not found - try refreshing the page','error'); return; }
+  if(!cert.CertificateNumber && !cert.Title){ toast('This record has no certificate number to print','error'); return; }
+
+  // Resolve the matching Run (for accurate date-range formatting) and Attendee
+  // (for name/organisation display) - falls back gracefully if either was
+  // since renamed or deleted, so a reprint never hard-fails outright.
+  const courseName = (cert.CourseRunTitle||'').trim().toLowerCase();
+  const runDate = (cert.RunStartDate||'').substring(0,10);
+  const run = (cache.runs||[]).find(r=>{
+    const rDate=(r.StartDate||'').substring(0,10);
+    const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+    return cName===courseName && rDate===runDate;
+  }) || {StartDate: cert.RunStartDate, EndDate: cert.RunStartDate};
+
+  const attName = (cert.AttendeeName||'').trim().toLowerCase();
+  const attendee = attName ? (cache.attendees||[]).find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName) : null;
+
+  const nowIso = new Date().toISOString();
+  try{
+    await saveWithFieldFallback(true, 'certificates', cert.id, {LastPrintedDateTime: nowIso});
+    cert.LastPrintedDateTime = nowIso;
+  }catch(e){
+    // Don't block the reprint itself just because the timestamp update failed
+    toast('Could not update last-printed time: '+e.message,'error');
+  }
+
+  openCertificatePrintWindow([{cert, attendee}], run);
+  toast(`Reprinting ${cert.CertificateNumber||cert.Title}`);
 }
 
 function openCertificatePrintWindow(certsToPrint, run){
