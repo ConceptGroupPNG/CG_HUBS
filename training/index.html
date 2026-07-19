@@ -2974,6 +2974,9 @@ function renderRuns(items){
       return match;
     }).length;
 
+    const capacity = +(r.Capacity)||7;
+    const overCapacity = enrolled > capacity;
+
     return `<tr>
       <td class="td-bold" style="max-width:160px">${(r.Title||'').replace(rDate2,'').replace(/\s+/g,' ').trim()||r.Title||'—'}</td>
       <td style="white-space:nowrap">${fmtDate(r.StartDate)}</td>
@@ -2987,8 +2990,10 @@ function renderRuns(items){
       })()}</td>
       <td>${r.Trainer||'—'}</td>
       <td style="font-size:12px">${r.Venue||'—'}</td>
-      <td>${r.Capacity||7}</td>
-      <td><strong>${enrolled}</strong></td>
+      <td>${capacity}</td>
+      <td>${overCapacity
+        ? `<span style="color:var(--red);font-weight:700;display:inline-flex;align-items:center;gap:4px" title="Over capacity: ${enrolled} enrolled against a capacity of ${capacity}"><i class="ti ti-alert-triangle" style="font-size:14px"></i>${enrolled}</span>`
+        : `<strong>${enrolled}</strong>`}</td>
       <td>${statusBadge(runStatus(r))}</td>
       <td><div class="td-actions">
         <button class="btn-icon" onclick="printRosterById('${r.id}')" title="Print Roster" style="color:#0e9f6e"><i class="ti ti-printer"></i></button>
@@ -3092,10 +3097,11 @@ function renderAttendees(items){
     const sameName=(a.FullName||a.Title||'').trim().toLowerCase();
     const courseCount = sameName ? items.filter(x=>(x.FullName||x.Title||'').trim().toLowerCase()===sameName).length : 1;
     const multiBadge = courseCount>1 ? `<span title="${courseCount} course enrolments for this person" style="font-size:10px;background:var(--g100);color:var(--g500);border-radius:10px;padding:1px 6px;margin-left:6px">×${courseCount}</span>` : '';
+    const internalBadge = (a.IsInternal===true||a.IsInternal==='true') ? `<span title="Internal attendee - no invoice" style="font-size:10px;background:var(--teal-l);color:var(--teal-d);border-radius:10px;padding:1px 6px;margin-left:6px;font-weight:700">Internal</span>` : '';
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px">
         <div class="av av-b">${initials(a.FullName||a.Title)}</div>
-        <span class="td-bold">${a.FullName||a.Title||'—'}</span>${multiBadge}
+        <span class="td-bold">${a.FullName||a.Title||'—'}</span>${multiBadge}${internalBadge}
       </div></td>
       <td style="font-size:12px">${orgDisplay}</td>
       <td style="font-size:12px">${a.InvoiceRef||'—'}</td>
@@ -4217,17 +4223,20 @@ const FORM_DEFS = {
       {key:'Email',label:'Email',type:'email'},
       {key:'Mobile',label:'Mobile',type:'text'},
       {key:'OrgRef',label:'Organisation',type:'lookup',entity:'organisations',display:'OrgName',valueKey:'OrgName',matchKey:'OrgName',sectionLabel:'Organisation'},
-      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()',sectionLabel:'Course & Invoice Link'},
+      {key:'IsInternal',label:'Internal Attendee (No Invoice)',type:'checkbox',full:true,onchange:'onAttendeeInternalToggle()',sectionLabel:'Course & Invoice Link'},
+      {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
       {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions();updateSeatBadge(\'RunRef\',\'InvoiceLineCourse\')'},
+      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',matchKey:'CourseName',searchable:true,onchange:'refreshCourseDateOptionsFromCourseRef()'},
       {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse'},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox',sectionLabel:'Status & Compliance'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
     ],
     toFields: (f)=>{
+      const isInternal = f.IsInternal==='true'||f.IsInternal===true;
       const out = {FullName:f.FullName,JobTitle:f.JobTitle,Email:f.Email,Mobile:f.Mobile,
         Section65A:f.Section65A==='true'||f.Section65A===true,
-        CertificateNumber:f.CertificateNumber,
+        CertificateNumber:f.CertificateNumber,IsInternal:isInternal,
         AttendanceStatus:f.AttendanceStatus||'Registered',Title:f.FullName};
       // Resolve organisation lookup to text fields
       if(f.OrgRef){
@@ -4252,19 +4261,24 @@ const FORM_DEFS = {
         }
       }
       // Resolve invoice lookup -> store invoice number text
-      if(f.InvoiceRef){
+      // (Internal attendees never carry an invoice, even if one was picked
+      // before the Internal checkbox was ticked - the hidden field's stale
+      // value doesn't get cleared just by hiding it.)
+      if(!isInternal && f.InvoiceRef){
         const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
         if(inv) out.InvoiceRef = inv.InvoiceNumber||inv.Title||'';
       } else {
         out.InvoiceRef = '';
       }
       // Resolve invoice line lookup -> store course name text.
+      // Skipped entirely for Internal attendees, even if a stale value is
+      // still sitting in the hidden field from before the checkbox was ticked.
       // Last-resort recovery: if the hidden ID is empty but the visible search
       // box clearly shows a course (e.g. the dropdown displayed a pre-selected
       // value that didn't get resolved into the hidden field), try to recover
       // the line directly from the displayed text before giving up.
-      let invoiceLineId = f.InvoiceLineCourse;
-      if(!invoiceLineId){
+      let invoiceLineId = isInternal ? '' : f.InvoiceLineCourse;
+      if(!isInternal && !invoiceLineId){
         const searchBox = document.getElementById('mf-InvoiceLineCourse-search');
         const typed = (searchBox?.value||'').trim();
         if(typed){
@@ -4434,6 +4448,7 @@ const FIELD_ICONS = {
   AmountPaid:'ti-currency-kina', DatePaid:'ti-calendar',
   Specialisation:'ti-star', Phone:'ti-phone', VenueName:'ti-map-pin', AttendeeRef:'ti-user',
   CertPrefix:'ti-hash', AttainmentEligible:'ti-certificate', CertificateType:'ti-certificate',
+  IsInternal:'ti-building-community', CourseRef:'ti-books',
 };
 function fieldIconFor(f){
   return FIELD_ICONS[f.key] || (f.type==='date' ? 'ti-calendar' : f.type==='lookup' ? 'ti-link' : 'ti-forms');
@@ -5016,7 +5031,7 @@ async function openFormModal(entity, data){
         // (e.g. Invoices, Attendees) where scrolling a plain <select> is painful.
         const listId = 'dl-'+f.key;
         const badgeHtml = f.showSeatBadge ? `<span id="seat-badge-${f.key}" style="margin-left:6px"></span>` : '';
-        html += `<div class="${cls}"><label>${fieldLabelHtml(f, badgeHtml)}</label>
+        html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f, badgeHtml)}</label>
           <input type="text" id="mf-${f.key}-search" list="${listId}"
             placeholder="Type to search..."
             value="${selectedOpt ? getLabel(selectedOpt).replace(/"/g,'&quot;') : ''}"
@@ -5028,21 +5043,21 @@ async function openFormModal(entity, data){
           <input type="hidden" id="mf-${f.key}" value="${selectedId||''}">
         </div>`;
       } else {
-        html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
+        html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}>
           <option value="">— Select —</option>
           ${opts.map(o=>`<option value="${o.id}" ${String(o.id)===String(selectedId)?'selected':''}>${getLabel(o)}</option>`).join('')}
         </select></div>`;
       }
     } else if(f.type==='select'){
-      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}">
+      html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f)}</label><select id="mf-${f.key}">
         ${f.opts.map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('')}
       </select></div>`;
     } else if(f.type==='checkbox'){
-      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label>
+      html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f)}</label>
         <select id="mf-${f.key}"><option value="true" ${val===true||val==='true'?'selected':''}>Yes</option><option value="false" ${!val||val===false||val==='false'?'selected':''}>No</option></select></div>`;
     } else {
       const v = f.type==='date' && val ? val.substring(0,10) : val;
-      html += `<div class="${cls}"><label>${fieldLabelHtml(f)}</label>
+      html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f)}</label>
         <input type="${f.type}" id="mf-${f.key}" value="${v||''}" ${f.required?'required':''}></div>`;
     }
   });
@@ -5084,9 +5099,11 @@ async function openFormModal(entity, data){
     initInvoiceAttendeeEditor(data);
   }
 
-  // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected
+  // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected,
+  // and set Invoice-vs-direct-Course field visibility to match the record's Internal flag
   if(entity==='attendees'){
     updateSeatBadge('RunRef','InvoiceLineCourse');
+    onAttendeeInternalToggle();
     updatePrintRegButtonVisibility();
     // Re-check the print button's visibility whenever any field in the form
     // changes, since its criteria depend on several fields together (name,
@@ -5376,6 +5393,73 @@ function updateSeatBadge(key, sourceKey){
 }
 
 let _lastCourseDateFilterCourse = null;
+
+// Shows/hides the Invoice fields vs the direct Course field on the Attendee
+// form depending on whether "Internal Attendee (No Invoice)" is checked.
+// Called both on user toggle and once on initial form render, so editing an
+// existing record shows the right fields immediately.
+function onAttendeeInternalToggle(){
+  const val = document.getElementById('mf-IsInternal')?.value;
+  const isInternal = val==='true' || val===true;
+  const invoiceFg = document.getElementById('fg-InvoiceRef');
+  const invoiceLineFg = document.getElementById('fg-InvoiceLineCourse');
+  const courseFg = document.getElementById('fg-CourseRef');
+  if(invoiceFg) invoiceFg.style.display = isInternal ? 'none' : '';
+  if(invoiceLineFg) invoiceLineFg.style.display = isInternal ? 'none' : '';
+  if(courseFg) courseFg.style.display = isInternal ? '' : 'none';
+  // Re-filter the Course Date options against whichever path is now active,
+  // so switching modes doesn't leave a stale, wrongly-scoped date list.
+  if(isInternal) refreshCourseDateOptionsFromCourseRef();
+  else refreshCourseDateOptions();
+}
+
+let _lastCourseDateFilterCourseDirect = null;
+
+// Same as refreshCourseDateOptions(), but keyed off the direct Course field
+// (CourseRef) instead of an Invoice Course Line — used for internal
+// attendees who aren't linked to any invoice.
+function refreshCourseDateOptionsFromCourseRef(){
+  const courseId = document.getElementById('mf-CourseRef')?.value;
+  const dl = document.getElementById('dl-RunRef');
+  const searchEl = document.getElementById('mf-RunRef-search');
+  const hiddenEl = document.getElementById('mf-RunRef');
+  if(!dl) return;
+
+  let courseName = '';
+  if(courseId){
+    const c=(cache.courses||[]).find(x=>String(x.id)===String(courseId));
+    if(c) courseName = (c.CourseName||c.Title||'').trim().toLowerCase();
+  }
+
+  if(courseName === _lastCourseDateFilterCourseDirect) return;
+  _lastCourseDateFilterCourseDirect = courseName;
+
+  let runs = cache.runs||[];
+  if(courseName){
+    runs = runs.filter(r=>{
+      const rDate=(r.StartDate||'').substring(0,10);
+      const cName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+      return cName===courseName && runStatus(r)!=='Completed';
+    });
+  } else {
+    runs = runs.filter(r=>runStatus(r)!=='Completed');
+  }
+  runs.sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+
+  const getRunLabel = (r) => fmtDateLong(r.StartDate);
+
+  dl.innerHTML = runs.map(r=>`<option data-id="${r.id}" value="${getRunLabel(r).replace(/"/g,'&quot;')}"></option>`).join('');
+
+  if(searchEl) searchEl.value = '';
+  if(hiddenEl) hiddenEl.value = '';
+
+  if(courseName && runs.length===0){
+    toast('No upcoming or active runs found for this course yet','error');
+  } else if(courseName && runs.length===1){
+    if(searchEl) searchEl.value = getRunLabel(runs[0]);
+    if(hiddenEl) hiddenEl.value = runs[0].id;
+  }
+}
 
 function refreshCourseDateOptions(){
   const ilId = document.getElementById('mf-InvoiceLineCourse')?.value;
