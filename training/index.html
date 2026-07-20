@@ -324,7 +324,7 @@ select:focus{border-color:var(--teal)}
             <div class="card-body" style="padding:0 18px 12px" id="dash-unfilled"><div class="loading"><div class="spinner"></div></div></div>
           </div>
           <div class="card" style="margin:0;grid-column:1/-1">
-            <div class="card-header"><h2>Invoice Seat Allocation</h2><span style="font-size:11px;color:var(--g500)">Value of filled seats vs. balance still unallocated, per invoice</span></div>
+            <div class="card-header"><h2>Invoice Seat Allocation</h2><span style="font-size:11px;color:var(--g500)">Invoices with unallocated seat value still outstanding</span></div>
             <div class="card-body" style="padding:0 18px 12px" id="dash-allocation"><div class="loading"><div class="spinner"></div></div></div>
           </div>
         </div>
@@ -1662,16 +1662,23 @@ function buildSeatAllocation(invs, invLines, atts){
     });
   });
 
-  // Largest outstanding balance first - surfaces the most actionable rows
-  rows.sort((a,b)=>b.balance-a.balance);
+  const hadAnyInvoices = rows.length > 0;
+  // Only show invoices that actually still need attention - a fully
+  // allocated (K0 balance) invoice has nothing left to chase, so it no
+  // longer belongs in a widget meant to highlight what's outstanding.
+  const outstandingRows = rows.filter(r=>r.balance>0);
 
-  if(!rows.length){
-    el.innerHTML='<div style="color:var(--g500);font-size:13px;padding:8px 0">No invoices with line items yet</div>';
+  // Largest outstanding balance first - surfaces the most actionable rows
+  outstandingRows.sort((a,b)=>b.balance-a.balance);
+
+  if(!outstandingRows.length){
+    el.innerHTML = `<div style="color:var(--g500);font-size:13px;padding:8px 0">${hadAnyInvoices ? 'All invoiced seats are fully allocated - nothing outstanding' : 'No invoices with line items yet'}</div>`;
     return;
   }
-  const grandTotal = rows.reduce((s,r)=>s+r.total,0);
-  const grandAllocated = rows.reduce((s,r)=>s+r.allocated,0);
-  const grandBalance = rows.reduce((s,r)=>s+r.balance,0);
+  const rowsToRender = outstandingRows;
+  const grandTotal = rowsToRender.reduce((s,r)=>s+r.total,0);
+  const grandAllocated = rowsToRender.reduce((s,r)=>s+r.allocated,0);
+  const grandBalance = rowsToRender.reduce((s,r)=>s+r.balance,0);
 
   el.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
     <thead><tr style="border-bottom:1px solid var(--g200)">
@@ -1681,7 +1688,7 @@ function buildSeatAllocation(invs, invLines, atts){
       <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Allocated</th>
       <th style="text-align:right;padding:5px 8px;color:var(--g500);font-weight:600">Balance</th>
     </tr></thead>
-    <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
+    <tbody>${rowsToRender.map(r=>`<tr style="border-bottom:1px solid var(--g100)">
       <td style="padding:5px 8px;font-weight:600">${r.invNum}</td>
       <td style="padding:5px 8px">${r.org}</td>
       <td style="padding:5px 8px;text-align:right">${fmt(r.total)}</td>
