@@ -408,6 +408,14 @@ select:focus{border-color:var(--teal)}
 
       <!-- ATTENDEES -->
       <div id="page-attendees" class="page">
+        <!-- Tab bar -->
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchAttendeesTab('list')">Attendees List</button>
+          <button class="tab-btn" onclick="switchAttendeesTab('audit')">Audit Reconciliation</button>
+        </div>
+
+        <!-- TAB: Attendees List (existing content) -->
+        <div id="atttab-list" class="tab-panel active">
         <div class="filter-bar">
           <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search attendees..." id="att-q" oninput="filterTable('attendees')"></div>
           <select id="att-run" onchange="filterTable('attendees')"><option value="">All courses</option></select>
@@ -439,6 +447,24 @@ select:focus{border-color:var(--teal)}
             <tbody id="att-tbody"></tbody></table>
           </div>
         </div>
+        </div><!-- /atttab-list -->
+
+        <!-- TAB: Audit Reconciliation -->
+        <div id="atttab-audit" class="tab-panel">
+          <div class="card" style="padding:20px">
+            <h2 style="margin-bottom:4px">Audit Reconciliation</h2>
+            <p style="color:var(--g500);font-size:13px;margin-bottom:16px">
+              Upload a master tracking spreadsheet (.xlsx) to compare against what's actually in the app. Missing attendees and organisations are created automatically once you confirm; anything that already exists but differs is flagged for you to review field-by-field before anything changes.
+            </p>
+            <div id="audit-upload-zone" style="border:2px dashed var(--g200);border-radius:var(--rl);padding:30px;text-align:center;cursor:pointer" onclick="document.getElementById('audit-file-input').click()">
+              <i class="ti ti-file-spreadsheet" style="font-size:28px;color:var(--g400)"></i>
+              <div style="margin-top:8px;font-size:13px;color:var(--g600)">Click to choose an .xlsx file, or drag one here</div>
+              <input type="file" id="audit-file-input" accept=".xlsx" style="display:none" onchange="handleAuditFileSelect(event)">
+            </div>
+            <div id="audit-status" style="margin-top:14px;font-size:13px;color:var(--g500)"></div>
+            <div id="audit-results"></div>
+          </div>
+        </div><!-- /atttab-audit -->
       </div>
 
       <!-- QUOTES -->
@@ -6085,6 +6111,14 @@ function switchInvoiceTab(tab){
   document.getElementById('invtab-import').classList.toggle('active', tab==='import');
 }
 
+function switchAttendeesTab(tab){
+  document.querySelectorAll('#page-attendees .tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active',(tab==='list'&&i===0)||(tab==='audit'&&i===1));
+  });
+  document.getElementById('atttab-list').classList.toggle('active', tab==='list');
+  document.getElementById('atttab-audit').classList.toggle('active', tab==='audit');
+}
+
 function handleImportDrop(e){
   const file = e.dataTransfer.files[0];
   if(file) parseImportCSV(file);
@@ -6643,6 +6677,394 @@ function printRoster(run){
 }
 
 // ── EXPORT ATTENDEES CSV ──────────────────────────────────────────────────
+// ============================================================
+// AUDIT RECONCILIATION
+// Compares an uploaded master-tracking spreadsheet against live app data.
+// Missing Attendees/Organisations are staged for one-click creation;
+// anything that already exists but differs is flagged for per-field review.
+// Certificates are cross-checked but never auto-created (see design notes).
+// ============================================================
+
+let _auditRunRows = [];   // rows staged for auto-create, kept for the apply step
+let _auditRunOrgs = [];
+let _auditLastResult = null; // full categorized result, kept so per-field Update buttons can look up exact values
+let _auditLibLoaded = false;
+
+function normAuditText(s){ return (s||'').toString().trim().toLowerCase().replace(/\s+/g,' '); }
+
+// Normalizes the many real-world formats seen for an invoice reference in
+// the sheet ("INV-5544", "INV 4578", "INV - 5599") into one comparable form,
+// and separately identifies "Internal" and Quote-number references, which
+// are NOT invoice numbers and need different handling.
+function normalizeAuditInvoiceRef(raw){
+  if(!raw) return {type:'blank'};
+  const t = raw.toString().trim();
+  if(/^internal$/i.test(t)) return {type:'internal'};
+  if(/^qu[\s-]?\d+/i.test(t)) return {type:'quote', value:t.replace(/\s+/g,'').toUpperCase()};
+  const m = t.match(/^inv\D*(\d+)/i);
+  if(m) return {type:'invoice', value:'INV-'+m[1]};
+  return {type:'other', value:t.toUpperCase()};
+}
+
+function findAuditRun(courseName, dateFromStr){
+  const cName = normAuditText(courseName);
+  return (cache.runs||[]).find(r=>{
+    const rDate=(r.StartDate||'').substring(0,10);
+    const rName=normAuditText((r.Title||'').replace(rDate,''));
+    return rName===cName && rDate===dateFromStr;
+  }) || null;
+}
+function findAuditAttendee(name, courseName, dateFromStr){
+  const n = normAuditText(name), cName = normAuditText(courseName);
+  return (cache.attendees||[]).find(a=>{
+    const an = normAuditText(a.FullName||a.Title);
+    const acName = normAuditText(a.CourseTitle);
+    const aDate = (a.RunStartDate||'').substring(0,10);
+    return an===n && acName===cName && aDate===dateFromStr;
+  }) || null;
+}
+function findAuditOrg(orgName){
+  const n = normAuditText(orgName);
+  return (cache.organisations||[]).find(o=>normAuditText(o.OrgName||o.Title)===n) || null;
+}
+
+function handleAuditFileSelect(event){
+  const file = event.target.files[0];
+  if(file) loadAuditFile(file);
+}
+
+// Lazily loads SheetJS only when this tool is actually used, rather than on
+// every page load. Uses the same onload/onerror readiness pattern as the
+// certificate QR code library, after that earlier lesson: a synchronous
+// "is it loaded yet" check can race ahead of a slow-loading script.
+function loadAuditFile(file){
+  const statusEl = document.getElementById('audit-status');
+  const resultsEl = document.getElementById('audit-results');
+  resultsEl.innerHTML = '';
+  statusEl.textContent = 'Loading spreadsheet reader...';
+
+  const proceed = () => parseAuditWorkbook(file);
+
+  if(_auditLibLoaded || window.XLSX){
+    _auditLibLoaded = true;
+    proceed();
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  let waited = 0;
+  const waitInterval = setInterval(()=>{
+    waited += 50;
+    if(window.XLSX){
+      clearInterval(waitInterval);
+      _auditLibLoaded = true;
+      proceed();
+    } else if(waited >= 8000){
+      clearInterval(waitInterval);
+      statusEl.textContent = '';
+      toast('Could not load the spreadsheet reader - check your internet connection and try again','error');
+    }
+  }, 50);
+  document.head.appendChild(script);
+}
+
+function parseAuditWorkbook(file){
+  const statusEl = document.getElementById('audit-status');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try{
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, {type:'array', cellDates:true});
+      // Prefer a sheet literally named "Sheet2" (matches the known template);
+      // otherwise fall back to whichever sheet has the most rows, since the
+      // reference/trainer sheet is always much shorter.
+      let sheetName = workbook.SheetNames.find(n=>n.toLowerCase()==='sheet2');
+      if(!sheetName){
+        sheetName = workbook.SheetNames.reduce((best,n)=>{
+          const rows = XLSX.utils.sheet_to_json(workbook.Sheets[n]).length;
+          return rows > (best.rows||0) ? {name:n, rows} : best;
+        }, {}).name || workbook.SheetNames[0];
+      }
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {defval:''});
+      statusEl.textContent = `Loaded ${rows.length} rows from "${sheetName}" - comparing against live app data...`;
+      runAuditReconciliation(rows);
+    }catch(err){
+      statusEl.textContent = '';
+      toast('Could not read that file: '+err.message,'error');
+    }
+  };
+  reader.onerror = () => { statusEl.textContent = ''; toast('Could not read the file','error'); };
+  reader.readAsArrayBuffer(file);
+}
+
+async function runAuditReconciliation(rows){
+  if(!cache.attendees){ try{ cache.attendees = await getItems('attendees','$top=999'); }catch(e){} }
+  if(!cache.organisations){ try{ cache.organisations = await getItems('organisations','$top=500'); }catch(e){} }
+  if(!cache.runs){ try{ cache.runs = await getItems('runs','$top=500'); }catch(e){} }
+  if(!cache.certificates){ try{ cache.certificates = await getItems('certificates','$top=999'); }catch(e){} }
+
+  const result = { newAttendees:[], newOrgs:[], attendeeAnomalies:[], orgAnomalies:[], certIssues:[], badRows:[] };
+  const seenOrgNames = new Set();
+  const seenRowKeys = new Set();
+
+  rows.forEach((row, idx)=>{
+    const courseName = (row.CourseName||'').toString().trim();
+    const attName = (row.AttendeeName||'').toString().trim();
+    const orgName = (row.OrganisationName||'').toString().trim();
+    let dateFrom = row.DateFrom;
+    if(dateFrom && !(dateFrom instanceof Date)) dateFrom = new Date(dateFrom);
+
+    if(!courseName || !attName || !dateFrom || isNaN(dateFrom)){
+      result.badRows.push({idx, attName: attName||'(blank)', reason: !courseName?'Missing course name':(!attName?'Missing attendee name':'Missing/invalid run date')});
+      return;
+    }
+    const dateFromStr = dateFrom.toISOString().substring(0,10);
+    const rowKey = normAuditText(attName)+'|'+normAuditText(courseName)+'|'+dateFromStr;
+    if(seenRowKeys.has(rowKey)){
+      result.badRows.push({idx, attName, reason:'Duplicate row in the spreadsheet (same person, course and date already appears earlier)'});
+      return;
+    }
+    seenRowKeys.add(rowKey);
+
+    const run = findAuditRun(courseName, dateFromStr);
+    if(!run){
+      result.badRows.push({idx, attName, reason:`No matching Course Run in the app for "${courseName}" starting ${dateFromStr}`});
+      return;
+    }
+
+    // Organisation check
+    let org = null;
+    if(orgName){
+      org = findAuditOrg(orgName);
+      if(!org){
+        if(!seenOrgNames.has(normAuditText(orgName))){
+          seenOrgNames.add(normAuditText(orgName));
+          result.newOrgs.push({
+            orgName,
+            contactName: row.OrganisationContactName,
+            contactPosition: row.OrganisationContactPosition,
+            contactEmail: row.OrgaisationContactEmail,
+            contactPhone: row.OrganisationContactNumber,
+          });
+        }
+      } else {
+        const diffs = [];
+        const cmp = (label, sheetVal, appVal, appField) => {
+          const sv=(sheetVal||'').toString().trim(), av=(appVal||'').toString().trim();
+          if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField});
+        };
+        cmp('Contact Person', row.OrganisationContactName, org.ContactPerson, 'ContactPerson');
+        cmp('Contact Position', row.OrganisationContactPosition, org.ContactPosition, 'ContactPosition');
+        cmp('Contact Email', row.OrgaisationContactEmail, org.ContactEmail, 'ContactEmail');
+        cmp('Contact Phone', row.OrganisationContactNumber, org.ContactPhone, 'ContactPhone');
+        if(diffs.length && !result.orgAnomalies.some(a=>a.org.id===org.id)){
+          result.orgAnomalies.push({org, diffs});
+        }
+      }
+    }
+
+    // Attendee check
+    const invInfo = normalizeAuditInvoiceRef(row.InvoiceNumber);
+    const existingAttendee = findAuditAttendee(attName, courseName, dateFromStr);
+    if(!existingAttendee){
+      result.newAttendees.push({row, run, orgName, invInfo});
+    } else {
+      const diffs = [];
+      const cmp = (label, sheetVal, appVal, appField) => {
+        const sv=(sheetVal||'').toString().trim(), av=(appVal||'').toString().trim();
+        if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField});
+      };
+      cmp('Job Title', row.AttendeePosition, existingAttendee.JobTitle, 'JobTitle');
+      cmp('Email', row.AttendeeEmailAddress, existingAttendee.Email, 'Email');
+      if(invInfo.type==='invoice'){
+        const appInv = normalizeAuditInvoiceRef(existingAttendee.InvoiceRef);
+        if(appInv.type!=='invoice' || appInv.value!==invInfo.value){
+          diffs.push({label:'Invoice Reference', sheetVal:invInfo.value, appVal:existingAttendee.InvoiceRef||'(blank)', appField:'InvoiceRef'});
+        }
+      } else if(invInfo.type==='internal' && !(existingAttendee.IsInternal===true||existingAttendee.IsInternal==='true')){
+        diffs.push({label:'Internal Flag', sheetVal:'Internal (per sheet)', appVal: (existingAttendee.IsInternal?'Yes':'No'), appField:'IsInternal'});
+      }
+      if(diffs.length) result.attendeeAnomalies.push({attendee:existingAttendee, diffs});
+
+      ['CertificateAttendance','CertificateAttainment'].forEach(col=>{
+        const certNum = (row[col]||'').toString().trim();
+        if(!certNum) return;
+        const type = col==='CertificateAttendance' ? 'Attendance' : 'Attainment';
+        const existingCert = (cache.certificates||[]).find(c=>normAuditText(c.CertificateNumber||c.Title)===normAuditText(certNum));
+        if(!existingCert){
+          result.certIssues.push({attendeeName:attName, certNum, type, issue:'Listed in the sheet but not found in Certificates'});
+        } else if(normAuditText(existingCert.AttendeeName)!==normAuditText(attName)){
+          result.certIssues.push({attendeeName:attName, certNum, type, issue:`Exists but is linked to "${existingCert.AttendeeName}" in the app`});
+        } else if(existingCert.CertificateType!==type){
+          result.certIssues.push({attendeeName:attName, certNum, type, issue:`Exists but is type "${existingCert.CertificateType}" in the app, sheet says ${type}`});
+        }
+      });
+    }
+  });
+
+  renderAuditResults(result);
+}
+
+function renderAuditResults(result){
+  _auditRunRows = result.newAttendees;
+  _auditRunOrgs = result.newOrgs;
+  _auditLastResult = result;
+  const statusEl = document.getElementById('audit-status');
+  const el = document.getElementById('audit-results');
+  statusEl.textContent = '';
+
+  const sections = [];
+
+  if(result.newOrgs.length){
+    sections.push(`
+      <div class="callout new" style="margin-top:16px">
+        <div class="callout-icon">★</div>
+        <div>
+          <strong>${result.newOrgs.length} new organisation${result.newOrgs.length>1?'s':''} to create</strong>
+          ${result.newOrgs.map(o=>o.orgName).join(', ')}
+        </div>
+      </div>`);
+  }
+  if(result.newAttendees.length){
+    sections.push(`
+      <div class="callout new" style="margin-top:16px">
+        <div class="callout-icon">★</div>
+        <div>
+          <strong>${result.newAttendees.length} new attendee${result.newAttendees.length>1?'s':''} to create</strong>
+          ${result.newAttendees.slice(0,8).map(r=>(r.row.AttendeeName||'')).join(', ')}${result.newAttendees.length>8?`, +${result.newAttendees.length-8} more`:''}
+        </div>
+      </div>`);
+  }
+  if(result.newOrgs.length || result.newAttendees.length){
+    sections.push(`<button class="btn btn-primary" style="margin-top:10px" onclick="applyAuditCreates()"><i class="ti ti-check"></i> Create ${result.newOrgs.length+result.newAttendees.length} New Record${(result.newOrgs.length+result.newAttendees.length)>1?'s':''}</button>`);
+  }
+
+  if(result.attendeeAnomalies.length || result.orgAnomalies.length){
+    const rows = [];
+    result.attendeeAnomalies.forEach((a,ai)=>{
+      a.diffs.forEach((d,di)=>{
+        rows.push(`<tr>
+          <td class="td-bold">${a.attendee.FullName||a.attendee.Title}</td>
+          <td>${d.label}</td>
+          <td style="color:var(--g500)">${d.appVal}</td>
+          <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
+          <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('attendee',${ai},'${d.appField}',this)">Update</button></td>
+        </tr>`);
+      });
+    });
+    result.orgAnomalies.forEach((a,ai)=>{
+      a.diffs.forEach((d,di)=>{
+        rows.push(`<tr>
+          <td class="td-bold">${a.org.OrgName||a.org.Title} <span class="badge navy" style="margin-left:4px">Org</span></td>
+          <td>${d.label}</td>
+          <td style="color:var(--g500)">${d.appVal}</td>
+          <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
+          <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('org',${ai},'${d.appField}',this)">Update</button></td>
+        </tr>`);
+      });
+    });
+    sections.push(`
+      <h3 style="margin-top:20px">Anomalies to Review (${rows.length})</h3>
+      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">These records already exist in the app but differ from the sheet. Nothing changes until you click Update on a specific row.</p>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr><th>Record</th><th>Field</th><th>Currently in App</th><th>In Spreadsheet</th><th></th></tr></thead>
+        <tbody id="audit-anomaly-tbody">${rows.join('')}</tbody>
+      </table></div>`);
+  }
+
+  if(result.certIssues.length){
+    sections.push(`
+      <h3 style="margin-top:20px">Certificate Issues (${result.certIssues.length})</h3>
+      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">Certificate numbers are never created automatically from this tool - review these manually on the Certificates page.</p>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr><th>Attendee</th><th>Type</th><th>Certificate #</th><th>Issue</th></tr></thead>
+        <tbody>${result.certIssues.map(c=>`<tr><td class="td-bold">${c.attendeeName}</td><td>${c.type}</td><td>${c.certNum}</td><td style="color:var(--amber)">${c.issue}</td></tr>`).join('')}</tbody>
+      </table></div>`);
+  }
+
+  if(result.badRows.length){
+    sections.push(`
+      <h3 style="margin-top:20px">Rows That Could Not Be Processed (${result.badRows.length})</h3>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr><th>Row</th><th>Attendee</th><th>Reason</th></tr></thead>
+        <tbody>${result.badRows.map(b=>`<tr><td>#${b.idx+2}</td><td class="td-bold">${b.attName}</td><td style="color:var(--red)">${b.reason}</td></tr>`).join('')}</tbody>
+      </table></div>`);
+  }
+
+  const totalIssues = result.newAttendees.length+result.newOrgs.length+result.attendeeAnomalies.length+result.orgAnomalies.length+result.certIssues.length+result.badRows.length;
+  if(!totalIssues){
+    sections.push(`<div style="text-align:center;padding:30px;color:var(--g500);font-size:13px">
+      <i class="ti ti-circle-check" style="font-size:28px;color:var(--teal);display:block;margin-bottom:10px"></i>
+      Everything in the spreadsheet matches the app. No anomalies found.
+    </div>`);
+  }
+
+  el.innerHTML = sections.join('');
+}
+
+async function applyAuditCreates(){
+  const btn = event?.target?.closest('button');
+  if(btn){ btn.disabled = true; btn.innerHTML = '<i class="ti ti-refresh"></i> Creating...'; }
+  let createdOrgs = 0, createdAtts = 0, errors = [];
+
+  for(const o of _auditRunOrgs){
+    try{
+      await saveWithFieldFallback(false, 'organisations', null, {
+        OrgName: o.orgName, Title: o.orgName,
+        ContactPerson: o.contactName||'', ContactPosition: o.contactPosition||'',
+        ContactEmail: o.contactEmail||'', ContactPhone: o.contactPhone||'',
+      });
+      createdOrgs++;
+    }catch(e){ errors.push(`Org "${o.orgName}": ${e.message}`); }
+  }
+  try{ cache.organisations = await getItems('organisations','$top=500'); }catch(e){}
+
+  for(const r of _auditRunRows){
+    try{
+      const isInternal = r.invInfo.type==='internal';
+      await saveWithFieldFallback(false, 'attendees', null, {
+        FullName: r.row.AttendeeName, Title: r.row.AttendeeName,
+        JobTitle: r.row.AttendeePosition||'', Email: r.row.AttendeeEmailAddress||'',
+        OrgName: r.orgName||'', IsInternal: isInternal,
+        InvoiceRef: r.invInfo.type==='invoice' ? r.invInfo.value : '',
+        CourseTitle: (r.run.Title||'').replace((r.run.StartDate||'').substring(0,10),'').replace(/\s+/g,' ').trim(),
+        RunStartDate: (r.run.StartDate||'').substring(0,10),
+        AttendanceStatus: 'Registered',
+      });
+      createdAtts++;
+    }catch(e){ errors.push(`Attendee "${r.row.AttendeeName}": ${e.message}`); }
+  }
+  try{ cache.attendees = await getItems('attendees','$top=999'); }catch(e){}
+
+  if(btn){ btn.remove(); }
+  toast(`Created ${createdOrgs} organisation${createdOrgs===1?'':'s'} and ${createdAtts} attendee${createdAtts===1?'':'s'}${errors.length?` (${errors.length} failed)`:''}`, errors.length?'error':'success');
+  if(errors.length) console.warn('Audit create errors:', errors);
+  if(currentPage==='attendees') loadPage('attendees');
+}
+
+async function applyAuditAnomalyFix(kind, index, field, btnEl){
+  if(!_auditLastResult){ toast('Run the reconciliation again before applying fixes','error'); return; }
+  const entry = kind==='attendee' ? _auditLastResult.attendeeAnomalies[index] : _auditLastResult.orgAnomalies[index];
+  if(!entry){ toast('Could not find that record - try re-running the reconciliation','error'); return; }
+  const diff = entry.diffs.find(d=>d.appField===field);
+  if(!diff){ toast('Could not find that field - try re-running the reconciliation','error'); return; }
+
+  btnEl.disabled = true; btnEl.textContent = '...';
+  try{
+    const record = kind==='attendee' ? entry.attendee : entry.org;
+    const newValue = field==='IsInternal' ? true : diff.sheetVal;
+    await saveWithFieldFallback(true, kind==='attendee'?'attendees':'organisations', record.id, {[field]: newValue});
+    record[field] = newValue; // keep in-memory cache in sync
+    btnEl.closest('tr').style.opacity = '0.4';
+    btnEl.textContent = 'Updated';
+    toast(`Updated ${diff.label} for ${kind==='attendee' ? (record.FullName||record.Title) : (record.OrgName||record.Title)}`);
+    if(currentPage==='attendees') loadPage('attendees');
+  }catch(e){
+    btnEl.disabled = false; btnEl.textContent = 'Update';
+    toast('Could not apply that update: '+e.message,'error');
+  }
+}
+
 function exportAttendeesCSV(){
   // Export current filtered table rows, not full cache
   const tbody = document.getElementById('att-tbody');
