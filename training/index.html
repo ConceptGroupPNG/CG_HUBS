@@ -6896,14 +6896,18 @@ async function runAuditReconciliation(rows){
         const type = col==='CertificateAttendance' ? 'Attendance' : 'Attainment';
         const existingCert = (cache.certificates||[]).find(c=>normAuditText(c.CertificateNumber||c.Title)===normAuditText(certNum));
         if(!existingCert){
-          result.certIssues.push({attendeeName:attName, certNum, type, issue:'Listed in the sheet but not found in Certificates'});
+          result.certIssues.push({
+            attendeeName:attName, certNum, type, fixable:true, action:'create',
+            attendee:existingAttendee, run, courseName,
+            issue:'Listed in the sheet but not found in Certificates',
+          });
         } else if(normAuditText(existingCert.AttendeeName)!==normAuditText(attName)){
           result.certIssues.push({attendeeName:attName, certNum, type, issue:`Exists but is linked to "${existingCert.AttendeeName}" in the app`});
         } else if(existingCert.CertificateType!==type){
           const isMissingType = !existingCert.CertificateType;
           result.certIssues.push({
             attendeeName:attName, certNum, type, cert:existingCert,
-            fixable: isMissingType,
+            fixable: isMissingType, action:'fixType',
             issue: isMissingType
               ? `Exists but has no Certificate Type set in the app (sheet says ${type})`
               : `Exists but is type "${existingCert.CertificateType}" in the app, sheet says ${type}`,
@@ -7007,7 +7011,7 @@ function renderAuditResults(result){
       <p style="font-size:12px;color:var(--g500);margin-bottom:8px">Certificate numbers are never created automatically from this tool. Where a certificate exists but has no Type set at all, you can fill that in from the sheet directly; a genuine type conflict (app and sheet disagree) still needs manual review on the Certificates page.</p>
       <div class="table-wrap"><table style="font-size:12px">
         <thead><tr><th>Attendee</th><th>Type</th><th>Certificate #</th><th>Issue</th><th></th></tr></thead>
-        <tbody id="audit-cert-tbody">${result.certIssues.map((c,ci)=>`<tr><td class="td-bold">${c.attendeeName}</td><td>${c.type}</td><td>${c.certNum}</td><td style="color:var(--amber)">${c.issue}</td><td>${c.fixable?`<button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditCertTypeFix(${ci},this)">Update</button>`:''}</td></tr>`).join('')}</tbody>
+        <tbody id="audit-cert-tbody">${result.certIssues.map((c,ci)=>`<tr><td class="td-bold">${c.attendeeName}</td><td>${c.type}</td><td>${c.certNum}</td><td style="color:var(--amber)">${c.issue}</td><td>${c.fixable?`<button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="${c.action==='create'?'applyAuditCertCreateFix':'applyAuditCertTypeFix'}(${ci},this)">${c.action==='create'?'Create':'Update'}</button>`:''}</td></tr>`).join('')}</tbody>
       </table></div>`);
   }
 
@@ -7069,6 +7073,39 @@ async function applyAuditCreates(){
   toast(`Created ${createdOrgs} organisation${createdOrgs===1?'':'s'} and ${createdAtts} attendee${createdAtts===1?'':'s'}${errors.length?` (${errors.length} failed)`:''}`, errors.length?'error':'success');
   if(errors.length) console.warn('Audit create errors:', errors);
   if(currentPage==='attendees') loadPage('attendees');
+}
+
+// Backfills a certificate that's listed in the sheet but has no record at
+// all in CG_Certificates - using the EXACT number from the sheet (this is a
+// historical record of something already issued, not a new certificate
+// being generated, so it must never go through the auto-increment sequence).
+async function applyAuditCertCreateFix(certIssueIndex, btnEl){
+  if(!_auditLastResult){ toast('Run the reconciliation again before applying fixes','error'); return; }
+  const entry = _auditLastResult.certIssues[certIssueIndex];
+  if(!entry || !entry.fixable || entry.action!=='create' || !entry.attendee || !entry.run){
+    toast('This issue cannot be auto-fixed - please add it manually on the Certificates page','error'); return;
+  }
+
+  btnEl.disabled = true; btnEl.textContent = '...';
+  try{
+    const fields = {
+      CertificateNumber: entry.certNum, Title: entry.certNum, CertificateType: entry.type,
+      AttendeeName: entry.attendee.FullName||entry.attendee.Title||entry.attendeeName,
+      CourseRunTitle: entry.courseName,
+      RunStartDate: (entry.run.StartDate||'').substring(0,10),
+      IssueDate: (entry.run.StartDate||'').substring(0,10),
+    };
+    const created = await saveWithFieldFallback(false, 'certificates', null, fields);
+    if(!cache.certificates) cache.certificates = [];
+    cache.certificates.push({id: created?.id, ...fields});
+    btnEl.closest('tr').style.opacity = '0.4';
+    btnEl.textContent = 'Created';
+    toast(`Created certificate ${entry.certNum} for ${fields.AttendeeName}`);
+    if(currentPage==='certificates') loadPage('certificates');
+  }catch(e){
+    btnEl.disabled = false; btnEl.textContent = 'Create';
+    toast('Could not create that certificate: '+e.message,'error');
+  }
 }
 
 async function applyAuditCertTypeFix(certIssueIndex, btnEl){
