@@ -6900,7 +6900,14 @@ async function runAuditReconciliation(rows){
         } else if(normAuditText(existingCert.AttendeeName)!==normAuditText(attName)){
           result.certIssues.push({attendeeName:attName, certNum, type, issue:`Exists but is linked to "${existingCert.AttendeeName}" in the app`});
         } else if(existingCert.CertificateType!==type){
-          result.certIssues.push({attendeeName:attName, certNum, type, issue:`Exists but is type "${existingCert.CertificateType}" in the app, sheet says ${type}`});
+          const isMissingType = !existingCert.CertificateType;
+          result.certIssues.push({
+            attendeeName:attName, certNum, type, cert:existingCert,
+            fixable: isMissingType,
+            issue: isMissingType
+              ? `Exists but has no Certificate Type set in the app (sheet says ${type})`
+              : `Exists but is type "${existingCert.CertificateType}" in the app, sheet says ${type}`,
+          });
         }
       });
     }
@@ -6997,10 +7004,10 @@ function renderAuditResults(result){
   if(result.certIssues.length){
     sections.push(`
       <h3 style="margin-top:20px">Certificate Issues (${result.certIssues.length})</h3>
-      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">Certificate numbers are never created automatically from this tool - review these manually on the Certificates page.</p>
+      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">Certificate numbers are never created automatically from this tool. Where a certificate exists but has no Type set at all, you can fill that in from the sheet directly; a genuine type conflict (app and sheet disagree) still needs manual review on the Certificates page.</p>
       <div class="table-wrap"><table style="font-size:12px">
-        <thead><tr><th>Attendee</th><th>Type</th><th>Certificate #</th><th>Issue</th></tr></thead>
-        <tbody>${result.certIssues.map(c=>`<tr><td class="td-bold">${c.attendeeName}</td><td>${c.type}</td><td>${c.certNum}</td><td style="color:var(--amber)">${c.issue}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>Attendee</th><th>Type</th><th>Certificate #</th><th>Issue</th><th></th></tr></thead>
+        <tbody id="audit-cert-tbody">${result.certIssues.map((c,ci)=>`<tr><td class="td-bold">${c.attendeeName}</td><td>${c.type}</td><td>${c.certNum}</td><td style="color:var(--amber)">${c.issue}</td><td>${c.fixable?`<button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditCertTypeFix(${ci},this)">Update</button>`:''}</td></tr>`).join('')}</tbody>
       </table></div>`);
   }
 
@@ -7062,6 +7069,25 @@ async function applyAuditCreates(){
   toast(`Created ${createdOrgs} organisation${createdOrgs===1?'':'s'} and ${createdAtts} attendee${createdAtts===1?'':'s'}${errors.length?` (${errors.length} failed)`:''}`, errors.length?'error':'success');
   if(errors.length) console.warn('Audit create errors:', errors);
   if(currentPage==='attendees') loadPage('attendees');
+}
+
+async function applyAuditCertTypeFix(certIssueIndex, btnEl){
+  if(!_auditLastResult){ toast('Run the reconciliation again before applying fixes','error'); return; }
+  const entry = _auditLastResult.certIssues[certIssueIndex];
+  if(!entry || !entry.fixable || !entry.cert){ toast('This issue cannot be auto-fixed - please update it manually on the Certificates page','error'); return; }
+
+  btnEl.disabled = true; btnEl.textContent = '...';
+  try{
+    await saveWithFieldFallback(true, 'certificates', entry.cert.id, {CertificateType: entry.type});
+    entry.cert.CertificateType = entry.type;
+    btnEl.closest('tr').style.opacity = '0.4';
+    btnEl.textContent = 'Updated';
+    toast(`Set ${entry.certNum} to ${entry.type}`);
+    if(currentPage==='certificates') loadPage('certificates');
+  }catch(e){
+    btnEl.disabled = false; btnEl.textContent = 'Update';
+    toast('Could not apply that update: '+e.message,'error');
+  }
 }
 
 async function applyAllAuditMissingFields(btnEl){
