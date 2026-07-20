@@ -411,7 +411,7 @@ select:focus{border-color:var(--teal)}
         <!-- Tab bar -->
         <div class="tab-bar">
           <button class="tab-btn active" onclick="switchAttendeesTab('list')">Attendees List</button>
-          <button class="tab-btn" onclick="switchAttendeesTab('audit')">Audit Reconciliation</button>
+          <button class="tab-btn" id="att-audit-tab-btn" onclick="switchAttendeesTab('audit')" style="display:none">Audit Reconciliation</button>
         </div>
 
         <!-- TAB: Attendees List (existing content) -->
@@ -993,6 +993,25 @@ function parseJwt(t){
   try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));}
   catch{return {};}
 }
+// The Audit Reconciliation tool writes bulk changes to production data, so
+// it stays hidden from the tab bar for everyone except this one account.
+// This hides it from casual view for other staff - it is not a hardened
+// security boundary (saveWithFieldFallback itself has no server-side check),
+// which matches what was asked: keep it out of sight, not lock it down.
+const AUDIT_TOOL_AUTHORIZED_USER = 'mscully@concept.com.pg';
+function updateAuditTabVisibility(){
+  const btn = document.getElementById('att-audit-tab-btn');
+  if(!btn) return;
+  const username = (currentUser?.username||'').trim().toLowerCase();
+  const authorized = username === AUDIT_TOOL_AUTHORIZED_USER.toLowerCase();
+  btn.style.display = authorized ? '' : 'none';
+  // If the tab happened to be open when authorization is (re-)evaluated and
+  // it turns out this user shouldn't see it, drop back to the normal list.
+  if(!authorized && document.getElementById('atttab-audit')?.classList.contains('active')){
+    switchAttendeesTab('list');
+  }
+}
+
 function saveTokens(data){
   _accessToken  = data.access_token;
   _refreshToken = data.refresh_token || _refreshToken;
@@ -1008,6 +1027,7 @@ function saveTokens(data){
     const username = c.preferred_username || c.upn || c.unique_name || c.email || '';
     currentUser = {name: name||username, username};
     store.set('cg_user', JSON.stringify(currentUser));
+    updateAuditTabVisibility();
   }
 }
 
@@ -1023,6 +1043,7 @@ async function fetchUserProfile(){
     const name = me.displayName || (me.givenName&&me.surname ? me.givenName+' '+me.surname : '') || me.userPrincipalName || 'User';
     currentUser = {name, username: me.userPrincipalName||''};
     store.set('cg_user', JSON.stringify(currentUser));
+    updateAuditTabVisibility();
     // Update UI
     const ini = name.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
     document.getElementById('user-av').textContent   = ini;
@@ -1171,6 +1192,7 @@ window.addEventListener('load', async()=>{
   if(storedToken && storedExpiry > Date.now()){
     _accessToken=storedToken; _refreshToken=storedRefresh; _tokenExpiry=storedExpiry;
     currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
+    updateAuditTabVisibility();
     await initApp();
     return;
   }
@@ -1179,6 +1201,7 @@ window.addEventListener('load', async()=>{
     try {
       await getToken();
       currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
+      updateAuditTabVisibility();
       await initApp();
       return;
     } catch(e){}
