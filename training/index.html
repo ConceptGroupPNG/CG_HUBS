@@ -6818,7 +6818,11 @@ async function runAuditReconciliation(rows){
       result.badRows.push({idx, attName: attName||'(blank)', reason: !courseName?'Missing course name':(!attName?'Missing attendee name':'Missing/invalid run date')});
       return;
     }
-    const dateFromStr = dateFrom.toISOString().substring(0,10);
+    // NOTE: deliberately NOT using toISOString() here - it converts through
+    // UTC first, which shifts a local midnight date back a full day in any
+    // timezone ahead of UTC (PNG is UTC+10). Extracting the Date object's own
+    // local components avoids any UTC conversion entirely.
+    const dateFromStr = dateFrom.getFullYear()+'-'+String(dateFrom.getMonth()+1).padStart(2,'0')+'-'+String(dateFrom.getDate()).padStart(2,'0');
     const rowKey = normAuditText(attName)+'|'+normAuditText(courseName)+'|'+dateFromStr;
     if(seenRowKeys.has(rowKey)){
       result.badRows.push({idx, attName, reason:'Duplicate row in the spreadsheet (same person, course and date already appears earlier)'});
@@ -6851,7 +6855,7 @@ async function runAuditReconciliation(rows){
         const diffs = [];
         const cmp = (label, sheetVal, appVal, appField) => {
           const sv=(sheetVal||'').toString().trim(), av=(appVal||'').toString().trim();
-          if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField});
+          if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField, diffType: av?'conflict':'missing'});
         };
         cmp('Contact Person', row.OrganisationContactName, org.ContactPerson, 'ContactPerson');
         cmp('Contact Position', row.OrganisationContactPosition, org.ContactPosition, 'ContactPosition');
@@ -6872,17 +6876,17 @@ async function runAuditReconciliation(rows){
       const diffs = [];
       const cmp = (label, sheetVal, appVal, appField) => {
         const sv=(sheetVal||'').toString().trim(), av=(appVal||'').toString().trim();
-        if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField});
+        if(sv && normAuditText(sv)!==normAuditText(av)) diffs.push({label, sheetVal:sv, appVal:av||'(blank)', appField, diffType: av?'conflict':'missing'});
       };
       cmp('Job Title', row.AttendeePosition, existingAttendee.JobTitle, 'JobTitle');
       cmp('Email', row.AttendeeEmailAddress, existingAttendee.Email, 'Email');
       if(invInfo.type==='invoice'){
         const appInv = normalizeAuditInvoiceRef(existingAttendee.InvoiceRef);
         if(appInv.type!=='invoice' || appInv.value!==invInfo.value){
-          diffs.push({label:'Invoice Reference', sheetVal:invInfo.value, appVal:existingAttendee.InvoiceRef||'(blank)', appField:'InvoiceRef'});
+          diffs.push({label:'Invoice Reference', sheetVal:invInfo.value, appVal:existingAttendee.InvoiceRef||'(blank)', appField:'InvoiceRef', diffType: existingAttendee.InvoiceRef?'conflict':'missing'});
         }
       } else if(invInfo.type==='internal' && !(existingAttendee.IsInternal===true||existingAttendee.IsInternal==='true')){
-        diffs.push({label:'Internal Flag', sheetVal:'Internal (per sheet)', appVal: (existingAttendee.IsInternal?'Yes':'No'), appField:'IsInternal'});
+        diffs.push({label:'Internal Flag', sheetVal:'Internal (per sheet)', appVal: (existingAttendee.IsInternal?'Yes':'No'), appField:'IsInternal', diffType:'missing'});
       }
       if(diffs.length) result.attendeeAnomalies.push({attendee:existingAttendee, diffs});
 
@@ -6939,36 +6943,54 @@ function renderAuditResults(result){
     sections.push(`<button class="btn btn-primary" style="margin-top:10px" onclick="applyAuditCreates()"><i class="ti ti-check"></i> Create ${result.newOrgs.length+result.newAttendees.length} New Record${(result.newOrgs.length+result.newAttendees.length)>1?'s':''}</button>`);
   }
 
-  if(result.attendeeAnomalies.length || result.orgAnomalies.length){
-    const rows = [];
-    result.attendeeAnomalies.forEach((a,ai)=>{
-      a.diffs.forEach((d,di)=>{
-        rows.push(`<tr>
-          <td class="td-bold">${a.attendee.FullName||a.attendee.Title}</td>
-          <td>${d.label}</td>
-          <td style="color:var(--g500)">${d.appVal}</td>
-          <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
-          <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('attendee',${ai},'${d.appField}',this)">Update</button></td>
-        </tr>`);
-      });
+  // Split into two genuinely different situations: a blank field the sheet
+  // can fill in (the actual purpose of this pass - data missed at import),
+  // versus a field that already holds a different value (a real conflict
+  // that deserves individual judgement, not a blanket overwrite).
+  const missingRows = [];
+  const conflictRows = [];
+  result.attendeeAnomalies.forEach((a,ai)=>{
+    a.diffs.forEach(d=>{
+      const row = `<tr>
+        <td class="td-bold">${a.attendee.FullName||a.attendee.Title}</td>
+        <td>${d.label}</td>
+        <td style="color:var(--g500)">${d.appVal}</td>
+        <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
+        <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('attendee',${ai},'${d.appField}',this)">Update</button></td>
+      </tr>`;
+      (d.diffType==='missing' ? missingRows : conflictRows).push(row);
     });
-    result.orgAnomalies.forEach((a,ai)=>{
-      a.diffs.forEach((d,di)=>{
-        rows.push(`<tr>
-          <td class="td-bold">${a.org.OrgName||a.org.Title} <span class="badge navy" style="margin-left:4px">Org</span></td>
-          <td>${d.label}</td>
-          <td style="color:var(--g500)">${d.appVal}</td>
-          <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
-          <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('org',${ai},'${d.appField}',this)">Update</button></td>
-        </tr>`);
-      });
+  });
+  result.orgAnomalies.forEach((a,ai)=>{
+    a.diffs.forEach(d=>{
+      const row = `<tr>
+        <td class="td-bold">${a.org.OrgName||a.org.Title} <span class="badge navy" style="margin-left:4px">Org</span></td>
+        <td>${d.label}</td>
+        <td style="color:var(--g500)">${d.appVal}</td>
+        <td style="color:var(--teal-d);font-weight:600">${d.sheetVal}</td>
+        <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="applyAuditAnomalyFix('org',${ai},'${d.appField}',this)">Update</button></td>
+      </tr>`;
+      (d.diffType==='missing' ? missingRows : conflictRows).push(row);
     });
+  });
+
+  if(missingRows.length){
     sections.push(`
-      <h3 style="margin-top:20px">Anomalies to Review (${rows.length})</h3>
-      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">These records already exist in the app but differ from the sheet. Nothing changes until you click Update on a specific row.</p>
+      <h3 style="margin-top:20px">Missing Data To Add (${missingRows.length})</h3>
+      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">These fields are blank in the app and the sheet has the answer - this is the main thing this pass is for. Click Update per row, or use Fill All below.</p>
+      <button class="btn btn-primary" style="margin-bottom:8px" onclick="applyAllAuditMissingFields(this)"><i class="ti ti-check"></i> Fill All ${missingRows.length} Missing Field${missingRows.length>1?'s':''}</button>
       <div class="table-wrap"><table style="font-size:12px">
         <thead><tr><th>Record</th><th>Field</th><th>Currently in App</th><th>In Spreadsheet</th><th></th></tr></thead>
-        <tbody id="audit-anomaly-tbody">${rows.join('')}</tbody>
+        <tbody id="audit-missing-tbody">${missingRows.join('')}</tbody>
+      </table></div>`);
+  }
+  if(conflictRows.length){
+    sections.push(`
+      <h3 style="margin-top:20px">Conflicting Data (${conflictRows.length})</h3>
+      <p style="font-size:12px;color:var(--g500);margin-bottom:8px">These already have a value in the app that differs from the sheet - review individually, since the app's value may be a deliberate correction rather than an error. Nothing changes until you click Update on a specific row.</p>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr><th>Record</th><th>Field</th><th>Currently in App</th><th>In Spreadsheet</th><th></th></tr></thead>
+        <tbody>${conflictRows.join('')}</tbody>
       </table></div>`);
   }
 
@@ -7039,6 +7061,39 @@ async function applyAuditCreates(){
   if(btn){ btn.remove(); }
   toast(`Created ${createdOrgs} organisation${createdOrgs===1?'':'s'} and ${createdAtts} attendee${createdAtts===1?'':'s'}${errors.length?` (${errors.length} failed)`:''}`, errors.length?'error':'success');
   if(errors.length) console.warn('Audit create errors:', errors);
+  if(currentPage==='attendees') loadPage('attendees');
+}
+
+async function applyAllAuditMissingFields(btnEl){
+  if(!_auditLastResult){ toast('Run the reconciliation again before applying fixes','error'); return; }
+  btnEl.disabled = true; btnEl.innerHTML = '<i class="ti ti-refresh"></i> Filling in...';
+  let applied = 0, errors = [];
+
+  for(const entry of _auditLastResult.attendeeAnomalies){
+    for(const diff of entry.diffs.filter(d=>d.diffType==='missing')){
+      try{
+        const newValue = diff.appField==='IsInternal' ? true : diff.sheetVal;
+        await saveWithFieldFallback(true, 'attendees', entry.attendee.id, {[diff.appField]: newValue});
+        entry.attendee[diff.appField] = newValue;
+        applied++;
+      }catch(e){ errors.push(`${entry.attendee.FullName||entry.attendee.Title} - ${diff.label}: ${e.message}`); }
+    }
+  }
+  for(const entry of _auditLastResult.orgAnomalies){
+    for(const diff of entry.diffs.filter(d=>d.diffType==='missing')){
+      try{
+        await saveWithFieldFallback(true, 'organisations', entry.org.id, {[diff.appField]: diff.sheetVal});
+        entry.org[diff.appField] = diff.sheetVal;
+        applied++;
+      }catch(e){ errors.push(`${entry.org.OrgName||entry.org.Title} - ${diff.label}: ${e.message}`); }
+    }
+  }
+
+  btnEl.remove();
+  const tbody = document.getElementById('audit-missing-tbody');
+  if(tbody) tbody.querySelectorAll('tr').forEach(tr=>tr.style.opacity='0.4');
+  toast(`Filled in ${applied} missing field${applied===1?'':'s'}${errors.length?` (${errors.length} failed)`:''}`, errors.length?'error':'success');
+  if(errors.length) console.warn('Audit fill-in errors:', errors);
   if(currentPage==='attendees') loadPage('attendees');
 }
 
