@@ -4231,6 +4231,14 @@ function renderUserPicker(inputId, dropdownId, selectedId, onSelect) {
   const dropdown = document.getElementById(dropdownId);
   if (!input || !dropdown) return;
 
+  // Without this, clicking a suggestion first fires the input's blur handler
+  // (because focus is about to shift), which starts closing the dropdown —
+  // and on a real click, that can finish closing it before the click itself
+  // completes, so the click falls through to whatever's underneath instead
+  // of the suggestion. Preventing the default mousedown behavior stops the
+  // input from ever losing focus during the click, so blur never fires.
+  dropdown.addEventListener('mousedown', (e) => e.preventDefault());
+
   input.addEventListener('input', () => {
     clearTimeout(userPickerTimer);
     const q = input.value.trim();
