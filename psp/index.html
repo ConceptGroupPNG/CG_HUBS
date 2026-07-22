@@ -3361,6 +3361,23 @@ function getPSPMember(item) {
   return item?.PSPMEmber || item?.PSPMember || '';
 }
 
+// PSPMEmber/PSPMember are genuine SharePoint Person/Group columns — writing a
+// plain display-name string to them is silently accepted by Graph but never
+// actually persists (no error, nothing changes). Writes must use the numeric
+// SharePoint user ID via the "<Field>LookupId" convention instead. Since we
+// don't have a way to resolve an arbitrary M365 user to their SharePoint list
+// user ID without an extra API call, this instead looks up an ID already
+// sitting in our own cached data — reliable for reassigning to anyone who's
+// already assigned to at least one existing activity or template.
+function resolveMemberLookupId(displayName) {
+  if (!displayName) return null;
+  const calRec = cache.calendar.find(i => getPSPMember(i) === displayName && i.PSPMEmberLookupId);
+  if (calRec) return parseInt(calRec.PSPMEmberLookupId, 10);
+  const tmplRec = cache.activities.find(i => getPSPMember(i) === displayName && i.PSPMemberLookupId);
+  if (tmplRec) return parseInt(tmplRec.PSPMemberLookupId, 10);
+  return null;
+}
+
 function getActStatus(item) {
   return item?.Act_Status || '';
 }
@@ -4426,6 +4443,13 @@ async function saveGenTemplate(client, pg, cycle, id) {
   const milestone = document.getElementById('gtf-milestone').value.trim();
   if (!orderVal || !milestone) { showToast('Order and Milestone are required', 'error'); return; }
 
+  const memberName = userPickerSelected.displayName || document.getElementById('gtf-member').value;
+  const lookupId = resolveMemberLookupId(memberName);
+  if (memberName && !lookupId) {
+    showToast(`Can't assign ${memberName} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up.`, 'error');
+    return;
+  }
+
   const fields = {
     PSPClient: client,
     PayGroup: pg,
@@ -4433,7 +4457,7 @@ async function saveGenTemplate(client, pg, cycle, id) {
     Order0: orderVal,
     Offset: parseInt(document.getElementById('gtf-offset').value) || 0,
     ActivityMilestone: milestone,
-    PSPMember: userPickerSelected.displayName || document.getElementById('gtf-member').value,
+    PSPMemberLookupId: lookupId,
     Contact: document.getElementById('gtf-contact').value,
     IntExt: document.getElementById('gtf-intext').value,
     ClientBAU: document.getElementById('gtf-clientbau').value,
@@ -4732,13 +4756,19 @@ async function openTemplateFormById(id) {
 async function saveModal() {
   if (modalEntity === 'activities') {
     const id = document.getElementById('modal-save-btn').getAttribute('data-id');
+    const memberName = userPickerSelected.displayName || document.getElementById('f-member').value;
+    const lookupId = resolveMemberLookupId(memberName);
+    if (memberName && !lookupId) {
+      showToast(`Can't assign ${memberName} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up.`, 'error');
+      return;
+    }
     const fields = {
       PSPClient: document.getElementById('f-client').value,
       PayGroup: document.getElementById('f-paygroup').value,
       Order0: parseInt(document.getElementById('f-order').value),
       Offset: parseInt(document.getElementById('f-offset').value),
       ActivityMilestone: document.getElementById('f-milestone').value,
-      PSPMember: userPickerSelected.displayName || document.getElementById('f-member').value,
+      PSPMemberLookupId: lookupId,
       Contact: document.getElementById('f-contact').value,
       Cycle: document.getElementById('f-cycle').value,
       IntExt: document.getElementById('f-intext').value,
@@ -8187,7 +8217,7 @@ async function wizCloneTemplate(absIdx, source, sel) {
       PSPClient: clientName, PayGroup: pg.pg, Cycle: pg.cycle || src.Cycle,
       Order0: src.Order0, Offset: src.Offset,
       ActivityMilestone: src.ActivityMilestone,
-      PSPMember: src.PSPMember, Contact: src.Contact,
+      PSPMemberLookupId: src.PSPMemberLookupId ? parseInt(src.PSPMemberLookupId, 10) : null, Contact: src.Contact,
       IntExt: src.IntExt, ClientBAU: src.ClientBAU,
       SLA: src.SLA, Template: true,
     };
@@ -8329,6 +8359,13 @@ async function saveTemplateForm() {
     const orderVal  = parseInt(document.getElementById('f-order')?.value || '0');
     if (!milestone || !orderVal) { showToast('Order and Milestone are required', 'error'); return; }
 
+    const memberName = userPickerSelected?.displayName || document.getElementById('f-member')?.value || '';
+    const lookupId = resolveMemberLookupId(memberName);
+    if (memberName && !lookupId) {
+      showToast(`Can't assign ${memberName} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up.`, 'error');
+      return;
+    }
+
     const fields = {
       PSPClient: wizTmplContext.client,
       PayGroup: wizTmplContext.pg,
@@ -8336,7 +8373,7 @@ async function saveTemplateForm() {
       Order0: orderVal,
       Offset: parseInt(document.getElementById('f-offset')?.value || '0'),
       ActivityMilestone: milestone,
-      PSPMember: userPickerSelected?.displayName || document.getElementById('f-member')?.value || '',
+      PSPMemberLookupId: lookupId,
       Contact: document.getElementById('f-contact')?.value || '',
       IntExt: document.getElementById('f-intext')?.value || 'Internal',
       ClientBAU: document.getElementById('f-clientbau')?.value || '',
@@ -8375,11 +8412,17 @@ async function saveTemplateForm() {
   const milestone = document.getElementById('f-milestone')?.value.trim();
   const orderVal = parseInt(document.getElementById('f-order')?.value || '0');
   if (!orderVal || !milestone) { showToast('Order and Milestone are required', 'error'); return; }
+  const memberName = userPickerSelected.displayName || document.getElementById('f-member').value;
+  const lookupId = resolveMemberLookupId(memberName);
+  if (memberName && !lookupId) {
+    showToast(`Can't assign ${memberName} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up.`, 'error');
+    return;
+  }
   const fields = {
     PSPClient: client, PayGroup: pg, Cycle: cycle, Order0: orderVal,
     Offset: parseInt(document.getElementById('f-offset')?.value) || 0,
     ActivityMilestone: milestone,
-    PSPMember: userPickerSelected.displayName || document.getElementById('f-member').value,
+    PSPMemberLookupId: lookupId,
     Contact: document.getElementById('f-contact').value,
     IntExt: document.getElementById('f-intext').value,
     ClientBAU: document.getElementById('f-clientbau').value,
@@ -8589,6 +8632,12 @@ async function baApplyPMChange() {
   if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
   if (!newMember) { showToast('Select a Pay Master from the search results', 'error'); return; }
 
+  const lookupId = resolveMemberLookupId(newMember);
+  if (!lookupId) {
+    showToast(`Can't reassign to ${newMember} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up. Ask them to be assigned to at least one activity directly in SharePoint first.`, 'error');
+    return;
+  }
+
   let targets = [];
   if (scope === 'forward') {
     targets = cache.calendar.filter(i =>
@@ -8613,9 +8662,9 @@ async function baApplyPMChange() {
   let done = 0;
   for (const item of targets) {
     try {
-      await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmber: newMember });
+      await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmberLookupId: lookupId });
       const ci = cache.calendar.findIndex(i => i.id === item.id);
-      if (ci >= 0) cache.calendar[ci].PSPMEmber = newMember;
+      if (ci >= 0) { cache.calendar[ci].PSPMEmber = newMember; cache.calendar[ci].PSPMEmberLookupId = String(lookupId); }
       done++;
     } catch(e) { console.warn('Failed:', item.id, e.message); }
   }
@@ -8625,9 +8674,9 @@ async function baApplyPMChange() {
     const tmplItems = cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg);
     for (const tmpl of tmplItems) {
       try {
-        await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMember: newMember });
+        await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMemberLookupId: lookupId });
         const ai = cache.activities.findIndex(a => a.id === tmpl.id);
-        if (ai >= 0) cache.activities[ai].PSPMember = newMember;
+        if (ai >= 0) { cache.activities[ai].PSPMember = newMember; cache.activities[ai].PSPMemberLookupId = String(lookupId); }
       } catch(e) { console.warn('Template update failed:', tmpl.id, e.message); }
     }
     showToast(`${done} activities and Activity Template updated to ${newMember}`, 'success');
