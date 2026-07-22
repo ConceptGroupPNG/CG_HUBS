@@ -2312,10 +2312,10 @@
               </div>
               <div class="form-group" style="margin:0;position:relative;">
                 <label>New Pay Master</label>
-                <input type="text" id="ba-pm-new-member" placeholder="Type name to search M365 users..."
+                <input type="text" id="ba-pm-new-member" class="user-picker-input" placeholder="Type name to search M365 users..."
                   autocomplete="off" style="width:100%;">
                 <div id="ba-pm-member-dropdown" class="user-picker-dropdown"></div>
-                <input type="hidden" id="ba-pm-member-id">
+                <div id="ba-pm-member-selected" class="user-picker-selected" style="display:none;"></div>
               </div>
               <div class="form-group" style="margin:0;">
                 <label>Scope</label>
@@ -8499,10 +8499,7 @@ async function loadBulkAdmin() {
   cache.holidays = await getItems('holidays');
 
   // Wire up user picker for New Pay Master field
-  renderUserPicker('ba-pm-new-member', 'ba-pm-member-dropdown', 'ba-pm-member-id', function(user) {
-    document.getElementById('ba-pm-new-member').value = user.displayName;
-    document.getElementById('ba-pm-member-id').value  = user.id;
-  });
+  renderUserPicker('ba-pm-new-member', 'ba-pm-member-dropdown', 'ba-pm-member-selected', null);
 
   // Populate all client dropdowns
   const clients = [...new Set([
