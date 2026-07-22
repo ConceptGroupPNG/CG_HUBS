@@ -7675,8 +7675,13 @@ async function loadFinanceDashboard() {
       };
     }
     const emp = i.EmployeesPayslips || 0;
-    if (emp > lastPeriodByClient[client].payslips) {
-      lastPeriodByClient[client].payslips = emp;
+    // Sum across every pay group sharing this client's latest PPE — the
+    // previous version took the max of any single pay group instead of the
+    // total, so a multi-pay-group client (e.g. G4S) showed only its largest
+    // single pay group's count rather than the client's real total.
+    lastPeriodByClient[client].payslips += emp;
+    if (emp > (lastPeriodByClient[client].maxSinglePayGroup || 0)) {
+      lastPeriodByClient[client].maxSinglePayGroup = emp;
       lastPeriodByClient[client].mainPayGroup = getPayGroup(i);
     }
     lastPeriodByClient[client].payGroups.push(getPayGroup(i));
@@ -7689,7 +7694,9 @@ async function loadFinanceDashboard() {
   if (lpWrap) lpWrap.style.height = Math.max(60, lpClients.length * 26) + 'px';
 
   mkChart('chart-last-payperiod', 'bar', {
-    labels: lpClients.map(([c, d]) => `${c}  (${d.mainPayGroup||''} • PPE: ${d.ppeStr})`),
+    labels: lpClients.map(([c, d]) => d.payGroups.length > 1
+      ? `${c}  (${d.payGroups.length} Pay Groups • PPE: ${d.ppeStr})`
+      : `${c}  (${d.mainPayGroup||''} • PPE: ${d.ppeStr})`),
     datasets: [{
       label: 'Payslips',
       data: lpClients.map(([,d]) => d.payslips),
