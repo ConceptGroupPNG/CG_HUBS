@@ -1356,6 +1356,16 @@
 
       <!-- GENERATE CALENDAR PAGE -->
       <div class="page" id="page-generate-calendar">
+        <div class="tabs" style="margin-bottom:16px;">
+          <div class="tab active" id="gctab-generate" onclick="switchGenCalTab('generate')">
+            <i class="ti ti-calendar-plus" style="font-size:14px;margin-right:4px;"></i> Generate Calendar
+          </div>
+          <div class="tab" id="gctab-overview" onclick="switchGenCalTab('overview')">
+            <i class="ti ti-list" style="font-size:14px;margin-right:4px;"></i> Client Overview
+          </div>
+        </div>
+
+        <div id="gctab-generate-content">
         <div class="grid-2">
           <div class="card">
             <div class="card-header"><h3>Generate Pay Run Calendar</h3></div>
@@ -1412,6 +1422,31 @@
             </div>
           </div>
         </div>
+        </div><!-- /gctab-generate-content -->
+
+        <div id="gctab-overview-content" style="display:none;">
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+              <h3>Client / Pay Group Overview</h3>
+              <button class="btn btn-sm btn-outline" onclick="exportGenCalOverviewCSV()"><i class="ti ti-download"></i> Export CSV</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="sort-th" data-table="gencal" data-key="client" onclick="setSort('gencal','client')" style="cursor:pointer;user-select:none;">Client <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="gencal" data-key="paygroup" onclick="setSort('gencal','paygroup')" style="cursor:pointer;user-select:none;">Pay Group <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="gencal" data-key="ppe" onclick="setSort('gencal','ppe')" style="cursor:pointer;user-select:none;">Last PPE <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                    <th class="sort-th" data-table="gencal" data-key="payno" onclick="setSort('gencal','payno')" style="cursor:pointer;user-select:none;">Last Pay No <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
+                  </tr>
+                </thead>
+                <tbody id="gencal-overview-tbody">
+                  <tr><td colspan="4"><div class="loading"><div class="spinner"></div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /gctab-overview-content -->
       </div>
 
       
@@ -3446,6 +3481,7 @@ const SORT_STATE = {
   clients:    { key: null, dir: 1 },
   quotes:     { key: null, dir: 1 },
   invoices:   { key: null, dir: 1 },
+  gencal:     { key: null, dir: 1 },
 };
 
 const SORT_EXTRACTORS = {
@@ -3465,6 +3501,12 @@ const SORT_EXTRACTORS = {
     currency:    c => c.Currency || 'PGK',
     taxtype:     c => c.TaxType || '',
     status:      c => c.ClientStatus || 'Active',
+  },
+  gencal: {
+    client:   r => r.client || '',
+    paygroup: r => r.paygroup || '',
+    ppe:      r => r.ppe || '',
+    payno:    r => r.payno || 0,
   },
   quotes: {
     quoteno:   i => i.Title || '',
@@ -3535,7 +3577,7 @@ function updateSortHeaderIcons(table) {
 
 // Maps each sortable table to the page it lives on, so navigate() can reset
 // a table's sort whenever the user leaves that page.
-const SORT_TABLE_PAGES = { activities: 'activities', clients: 'clients', quotes: 'quotes', invoices: 'invoices' };
+const SORT_TABLE_PAGES = { activities: 'activities', clients: 'clients', quotes: 'quotes', invoices: 'invoices', gencal: 'generate-calendar' };
 
 function resetSortState(table) {
   SORT_STATE[table].key = null;
@@ -4682,11 +4724,76 @@ async function loadGenerateCalendar() {
   if (!cache.activities.length) {
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   }
+  cache.billing = await getItems('billing'); // always fresh — powers the Client Overview tab's Last PPE/Pay No
   const clientSel = document.getElementById('gen-client');
   const clients = [...new Set(cache.activities.map(i => i.PSPClient))].sort();
   clientSel.innerHTML = '<option value="">Select Client...</option>' + clients.map(c => `<option>${c}</option>`).join('');
   document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
   document.getElementById('btn-generate').disabled = true;
+  switchGenCalTab('generate'); // always land on Generate, never wherever it was last left
+  renderGenCalOverview();
+}
+
+// ── Client Overview tab (Generate Calendar page) ──
+function switchGenCalTab(tab) {
+  const tabs = { generate: 'gctab-generate-content', overview: 'gctab-overview-content' };
+  Object.entries(tabs).forEach(([key, contentId]) => {
+    const tabBtn = document.getElementById('gctab-' + key);
+    const contentEl = document.getElementById(contentId);
+    if (tabBtn) tabBtn.classList.toggle('active', key === tab);
+    if (contentEl) contentEl.style.display = key === tab ? '' : 'none';
+  });
+}
+
+let lastGenCalOverviewItems = [];
+
+// One row per Client + Pay Group, showing the most recent processed pay run
+// (by Pay Period End date) from PSP_Billing — the authoritative one-row-per-
+// pay-run record, rather than deriving it from the many activity rows in
+// PSP_Act_Calendar.
+function renderGenCalOverview() {
+  const tbody = document.getElementById('gencal-overview-tbody');
+  if (!tbody) return;
+
+  const latest = {};
+  cache.billing.forEach(b => {
+    const client = b.PSPClient;
+    const pg = getPayGroup(b);
+    if (!client || !pg) return;
+    const ppe = spDateToDate(b.PayEnddate);
+    if (!ppe) return;
+    const key = client + '||' + pg;
+    if (!latest[key] || ppe > latest[key].ppeDate) {
+      latest[key] = { client, paygroup: pg, ppeDate: ppe, ppe: fmtDate(b.PayEnddate), payno: b.PayNo || '' };
+    }
+  });
+
+  let items = Object.values(latest);
+  if (SORT_STATE.gencal.key) {
+    items = sortItemsBy(items, 'gencal', SORT_STATE.gencal.key, SORT_STATE.gencal.dir);
+  } else {
+    items.sort((a,b) => a.client.localeCompare(b.client) || a.paygroup.localeCompare(b.paygroup));
+  }
+  lastGenCalOverviewItems = items;
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="ti ti-list"></i><p>No billing records found</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = items.map(r => `
+    <tr>
+      <td><strong style="color:var(--navy);">${r.client}</strong></td>
+      <td>${r.paygroup}</td>
+      <td>${r.ppe}</td>
+      <td>${r.payno}</td>
+    </tr>`).join('');
+}
+
+function exportGenCalOverviewCSV() {
+  const headers = ['Client','Pay Group','Last PPE','Last Pay No'];
+  const rows = lastGenCalOverviewItems.map(r => [r.client, r.paygroup, r.ppe, r.payno]);
+  downloadCSV(`Client_PayGroup_Overview_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
 }
 
 function onGenClientChange() {
