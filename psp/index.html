@@ -1026,6 +1026,9 @@
             <div class="tab" id="dash-tab-finance" onclick="switchDashTab('finance')">
               <i class="ti ti-chart-bar" style="font-size:14px;margin-right:4px;"></i> Finance
             </div>
+            <div class="tab" id="dash-tab-servicelevels" onclick="switchDashTab('servicelevels')">
+              <i class="ti ti-clock" style="font-size:14px;margin-right:4px;"></i> Service Levels
+            </div>
           </div>
           <div id="holiday-banner" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#fef3c7,#fde68a);border:1.5px solid #f59e0b;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;color:#92400e;white-space:nowrap;align-items:center;gap:6px;">
             <i class="ti ti-calendar-event"></i> <span id="holiday-banner-text"></span>
@@ -1038,6 +1041,13 @@
             <button onclick="printFinanceDashboard()" class="btn btn-sm btn-outline" style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
               <i class="ti ti-printer"></i> Print Report
             </button>
+          </div>
+          <div id="sl-window-filter" style="display:none;align-items:center;gap:10px;">
+            <select id="sl-window-sel" onchange="loadServiceLevels()" style="padding:6px 12px;border:1.5px solid var(--grey-200);border-radius:8px;font-size:13px;font-weight:600;color:var(--navy);background:var(--white);outline:none;">
+              <option value="30">Last 30 Days</option>
+              <option value="60">Last 60 Days</option>
+              <option value="90">Last 90 Days</option>
+            </select>
           </div>
           <div id="kanban-controls" style="display:flex;align-items:center;gap:10px;">
             <div style="display:flex;background:var(--grey-100);border-radius:8px;padding:2px;gap:2px;">
@@ -1224,6 +1234,41 @@
         <div id="dash-kanban-content" style="">
           <div id="kanban-board" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start;min-height:400px;">
             <!-- Columns injected by loadKanbanBoard() -->
+          </div>
+        </div>
+
+        <!-- SERVICE LEVELS TAB -->
+        <div id="dash-servicelevels-content" style="display:none;">
+          <div style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>On-Time Completion Rate — by Pay Master</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-sl-ontime-pm-wrap" style="position:relative;"><canvas id="chart-sl-ontime-pm"></canvas></div></div>
+            </div>
+          </div>
+          <div style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header"><h3>On-Time Completion Rate — by Client</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-sl-ontime-client-wrap" style="position:relative;"><canvas id="chart-sl-ontime-client"></canvas></div></div>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-bottom:20px;align-items:start;">
+            <div class="card">
+              <div class="card-header"><h3>Average Time to Complete — by Pay Master</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-sl-avgtime-pm-wrap" style="position:relative;"><canvas id="chart-sl-avgtime-pm"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>Average Time to Complete — by Pay Group</h3></div>
+              <div class="card-body" style="overflow-x:auto;"><div id="chart-sl-avgtime-pg-wrap" style="position:relative;"><canvas id="chart-sl-avgtime-pg"></canvas></div></div>
+            </div>
+          </div>
+          <div style="margin-bottom:20px;">
+            <div class="card">
+              <div class="card-header">
+                <h3>On-Time % Trend</h3>
+                <span style="font-size:11px;color:var(--grey-500);font-weight:400;">Team-wide, by week</span>
+              </div>
+              <div class="card-body" style="overflow-x:auto;"><div style="position:relative;height:280px;"><canvas id="chart-sl-trend"></canvas></div></div>
+            </div>
           </div>
         </div>
 
@@ -3630,6 +3675,8 @@ async function loadDashboard() {
   // Load the default tab content
   if (currentDashTab === 'finance') {
     await loadFinanceDashboard();
+  } else if (currentDashTab === 'servicelevels') {
+    await loadServiceLevels();
   } else {
     loadKanbanBoard();
     updateHolidayBanner();
@@ -7433,7 +7480,7 @@ let currentDashTab = 'kanban';
 
 function switchDashTab(tab) {
   currentDashTab = tab;
-  ['finance','kanban'].forEach(t => {
+  ['finance','kanban','servicelevels'].forEach(t => {
     const tabEl = document.getElementById('dash-tab-' + t);
     const contentEl = document.getElementById('dash-' + t + '-content');
     if (tabEl) tabEl.classList.toggle('active', t === tab);
@@ -7441,9 +7488,12 @@ function switchDashTab(tab) {
   });
   const yearFilter = document.getElementById('fin-year-filter');
   if (yearFilter) yearFilter.style.display = tab === 'finance' ? 'flex' : 'none';
+  const slFilter = document.getElementById('sl-window-filter');
+  if (slFilter) slFilter.style.display = tab === 'servicelevels' ? 'flex' : 'none';
   const kanbanControls = document.getElementById('kanban-controls');
   if (kanbanControls) kanbanControls.style.display = tab === 'kanban' ? 'flex' : 'none';
   if (tab === 'finance') { resetKanbanScope(); loadFinanceDashboard(); }
+  if (tab === 'servicelevels') { resetKanbanScope(); loadServiceLevels(); }
   if (tab === 'kanban') { loadKanbanBoard(); updateHolidayBanner(); }
   else { document.getElementById('holiday-banner').style.display = 'none'; }
 }
@@ -7854,6 +7904,140 @@ async function loadFinanceDashboard() {
       <td style="text-align:right;font-weight:700;">${(revenue/1000).toFixed(1)}K</td>
     </tr>`;
   }).join('');
+}
+
+// ─────────────────────────────────────────────
+// SERVICE LEVELS DASHBOARD
+// ─────────────────────────────────────────────
+// "On time" = FinishDateTime <= ActivityDateTime (scheduled due date) + 1hr
+// grace. Only Finished activities are considered — Not Started/Started items
+// haven't concluded yet so on-time/late doesn't apply to them. Window is a
+// rolling N days (30/60/90) based on FinishDateTime, not a calendar year,
+// since "how are we doing lately" is the operational question here.
+async function loadServiceLevels() {
+  destroyCharts();
+  if (!cache.calendar.length) cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
+
+  const windowDays = parseInt(document.getElementById('sl-window-sel')?.value || '30', 10);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  cutoff.setHours(0,0,0,0);
+
+  const finished = cache.calendar.filter(i => {
+    if (getActStatus(i) !== 'Finished') return false;
+    const fin = spDateToDate(i.FinishDateTime);
+    return fin && fin >= cutoff;
+  });
+
+  // Attach on-time flag + completion hours; records missing the timestamps
+  // needed for a given measure are excluded from that measure (null) rather
+  // than skewing it.
+  const enriched = finished.map(i => {
+    const due = spDateToDate(i.ActivityDateTime);
+    const fin = spDateToDate(i.FinishDateTime);
+    const start = spDateToDate(i.StartDateTime);
+    const onTime = (due && fin) ? (fin.getTime() <= due.getTime() + 60*60*1000) : null;
+    const hoursToComplete = (start && fin) ? (fin - start) / 3600000 : null;
+    return { ...i, _onTime: onTime, _hoursToComplete: hoursToComplete };
+  });
+
+  const colorForPct = pct => pct < 50 ? '#cc1f2d' : pct < 75 ? '#f59e0b' : pct < 90 ? '#eab308' : '#0e9f6e';
+
+  const onTimeRateChart = (canvasId, wrapId, groupFn, unknownLabel) => {
+    const groups = {};
+    enriched.forEach(i => {
+      if (i._onTime === null) return;
+      const key = groupFn(i) || unknownLabel;
+      if (!groups[key]) groups[key] = { total: 0, onTime: 0 };
+      groups[key].total++;
+      if (i._onTime) groups[key].onTime++;
+    });
+    const rows = Object.entries(groups)
+      .map(([label, d]) => ({ label, pct: Math.round((d.onTime/d.total)*1000)/10, n: d.total }))
+      .sort((a,b) => b.pct - a.pct);
+
+    const wrap = document.getElementById(wrapId);
+    if (wrap) wrap.style.height = Math.max(60, rows.length * 28) + 'px';
+    mkChart(canvasId, 'bar', {
+      labels: rows.map(r => `${r.label} (n=${r.n})`),
+      datasets: [{ data: rows.map(r => r.pct), backgroundColor: rows.map(r => colorForPct(r.pct)) }],
+    }, {
+      indexAxis: 'y',
+      scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.x + '% on time' } },
+      },
+    });
+    return rows;
+  };
+
+  const avgTimeChart = (canvasId, wrapId, groupFn, unknownLabel, color) => {
+    const groups = {};
+    enriched.forEach(i => {
+      if (i._hoursToComplete === null) return;
+      const key = groupFn(i) || unknownLabel;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(i._hoursToComplete);
+    });
+    const rows = Object.entries(groups)
+      .map(([label, arr]) => ({ label, avgHrs: Math.round((arr.reduce((s,v)=>s+v,0)/arr.length)*10)/10, n: arr.length }))
+      .sort((a,b) => a.avgHrs - b.avgHrs);
+
+    const wrap = document.getElementById(wrapId);
+    if (wrap) wrap.style.height = Math.max(60, rows.length * 28) + 'px';
+    mkChart(canvasId, 'bar', {
+      labels: rows.map(r => `${r.label} (n=${r.n})`),
+      datasets: [{ data: rows.map(r => r.avgHrs), backgroundColor: color }],
+    }, {
+      indexAxis: 'y',
+      scales: { x: { beginAtZero: true, ticks: { callback: v => v + 'h' } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.x + ' hours avg' } },
+      },
+    });
+  };
+
+  // Charts 1 & 2 — On-Time Completion Rate, by Pay Master and by Client
+  onTimeRateChart('chart-sl-ontime-pm', 'chart-sl-ontime-pm-wrap', i => getPSPMember(i), 'Unassigned');
+  onTimeRateChart('chart-sl-ontime-client', 'chart-sl-ontime-client-wrap', i => i.PSPClient, 'Unknown');
+
+  // Charts 3 & 4 — Average Time to Complete, by Pay Master and by Pay Group
+  avgTimeChart('chart-sl-avgtime-pm', 'chart-sl-avgtime-pm-wrap', i => getPSPMember(i), 'Unassigned', '#3b82f6');
+  avgTimeChart('chart-sl-avgtime-pg', 'chart-sl-avgtime-pg-wrap', i => getPayGroup(i), 'Unknown', '#8b5cf6');
+
+  // Chart 5 — Team-wide On-Time % trend, bucketed by week (so the line has
+  // several points regardless of whether the 30/60/90 day window is selected)
+  const weekBuckets = {};
+  enriched.forEach(i => {
+    if (i._onTime === null) return;
+    const fin = spDateToDate(i.FinishDateTime);
+    const weekStart = new Date(fin);
+    weekStart.setHours(0,0,0,0);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const key = weekStart.toISOString().slice(0,10);
+    if (!weekBuckets[key]) weekBuckets[key] = { total: 0, onTime: 0, date: weekStart };
+    weekBuckets[key].total++;
+    if (i._onTime) weekBuckets[key].onTime++;
+  });
+  const weekRows = Object.values(weekBuckets).sort((a,b) => a.date - b.date);
+
+  mkChart('chart-sl-trend', 'line', {
+    labels: weekRows.map(w => w.date.toLocaleDateString('en-GB', {day:'2-digit', month:'short'})),
+    datasets: [{
+      label: 'On-Time %',
+      data: weekRows.map(w => Math.round((w.onTime/w.total)*1000)/10),
+      borderColor: '#0e9f6e',
+      backgroundColor: 'rgba(14,159,110,0.12)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 3,
+    }],
+  }, {
+    scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
+    plugins: { legend: { display: false } },
+  });
 }
 
 async function initApp(token) {
