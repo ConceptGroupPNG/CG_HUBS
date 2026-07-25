@@ -2336,7 +2336,7 @@
               </div>
               <div id="ba-pm-preview" style="font-size:12px;color:var(--grey-600);min-height:20px;"></div>
               <div style="display:flex;justify-content:flex-end;">
-                <button class="btn btn-teal" onclick="baApplyPMChange()">
+                <button class="btn btn-teal" id="ba-pm-apply-btn" onclick="baApplyPMChange()">
                   <i class="ti ti-user-check"></i> Apply Reassignment
                 </button>
               </div>
@@ -2397,7 +2397,7 @@
                 <div id="ba-dt-allafter-preview" style="font-size:12px;color:var(--grey-600);"></div>
               </div>
               <div style="display:flex;justify-content:flex-end;">
-                <button class="btn btn-teal" onclick="baApplyDateChange()">
+                <button class="btn btn-teal" id="ba-dt-apply-btn" onclick="baApplyDateChange()">
                   <i class="ti ti-calendar-check"></i> Apply Date Change
                 </button>
               </div>
@@ -2431,7 +2431,7 @@
               </div>
               <div id="ba-del-preview" style="min-height:20px;"></div>
               <div style="display:flex;justify-content:flex-end;">
-                <button class="btn" style="background:var(--red);color:white;border:none;" onclick="baDeleteNotStarted()">
+                <button class="btn" id="ba-del-apply-btn" style="background:var(--red);color:white;border:none;" onclick="baDeleteNotStarted()">
                   <i class="ti ti-trash"></i> Delete Not Started
                 </button>
               </div>
@@ -8666,31 +8666,39 @@ async function baApplyPMChange() {
   );
   if (!confirmed) return;
 
-  let done = 0;
-  for (const item of targets) {
-    try {
-      await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmberLookupId: lookupId });
-      const ci = cache.calendar.findIndex(i => i.id === item.id);
-      if (ci >= 0) { cache.calendar[ci].PSPMEmber = newMember; cache.calendar[ci].PSPMEmberLookupId = String(lookupId); }
-      done++;
-    } catch(e) { console.warn('Failed:', item.id, e.message); }
-  }
+  const btn = document.getElementById('ba-pm-apply-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Applying...'; }
 
-  // Going Forward: also update the Activity Template
-  if (scope === 'forward') {
-    const tmplItems = cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg);
-    for (const tmpl of tmplItems) {
+  try {
+    let done = 0;
+    for (const item of targets) {
       try {
-        await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMemberLookupId: lookupId });
-        const ai = cache.activities.findIndex(a => a.id === tmpl.id);
-        if (ai >= 0) { cache.activities[ai].PSPMember = newMember; cache.activities[ai].PSPMemberLookupId = String(lookupId); }
-      } catch(e) { console.warn('Template update failed:', tmpl.id, e.message); }
+        await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmberLookupId: lookupId });
+        const ci = cache.calendar.findIndex(i => i.id === item.id);
+        if (ci >= 0) { cache.calendar[ci].PSPMEmber = newMember; cache.calendar[ci].PSPMEmberLookupId = String(lookupId); }
+        done++;
+      } catch(e) { console.warn('Failed:', item.id, e.message); }
     }
-    showToast(`${done} activities and Activity Template updated to ${newMember}`, 'success');
-  } else {
-    showToast(`${done} activit${done===1?'y':'ies'} reassigned to ${newMember}`, 'success');
+
+    // Going Forward: also update the Activity Template
+    if (scope === 'forward') {
+      const tmplItems = cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg);
+      for (const tmpl of tmplItems) {
+        try {
+          await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMemberLookupId: lookupId });
+          const ai = cache.activities.findIndex(a => a.id === tmpl.id);
+          if (ai >= 0) { cache.activities[ai].PSPMember = newMember; cache.activities[ai].PSPMemberLookupId = String(lookupId); }
+        } catch(e) { console.warn('Template update failed:', tmpl.id, e.message); }
+      }
+      showToast(`${done} activities and Activity Template updated to ${newMember}`, 'success');
+    } else {
+      showToast(`${done} activit${done===1?'y':'ies'} reassigned to ${newMember}`, 'success');
+    }
+    baResetPMForm();
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = btnOrigHTML; }
   }
-  baResetPMForm();
 }
 
 // Clears the Reassign Pay Master card back to its default state — used after
@@ -8798,6 +8806,11 @@ async function baApplyDateChange() {
 
   if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
 
+  const btn = document.getElementById('ba-dt-apply-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
+  const startSpinner = () => { if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Applying...'; } };
+  const stopSpinner  = () => { if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = btnOrigHTML; } };
+
   if (scope === 'once') {
     const id = document.getElementById('ba-dt-once-activity')?.value;
     const newDT = document.getElementById('ba-dt-new-datetime')?.value;
@@ -8805,13 +8818,16 @@ async function baApplyDateChange() {
     if (!newDT) { showToast('Enter a new date and time', 'error'); return; }
     const item = cache.calendar.find(i => String(i.id) === String(id));
     if (!item) return;
-    const newISO = new Date(newDT).toISOString();
-    const newDateNo = parseInt(newDT.slice(0,10).replace(/-/g,''), 10);
-    await saveWithFieldFallback(true, 'calendar', item.id, { ActivityDateTime: newISO, ActivityDateTimeNo: newDateNo });
-    const ci = cache.calendar.findIndex(i => i.id === item.id);
-    if (ci >= 0) { cache.calendar[ci].ActivityDateTime = newISO; cache.calendar[ci].ActivityDateTimeNo = newDateNo; }
-    showToast('Activity date updated', 'success');
-    baResetDateForm();
+    startSpinner();
+    try {
+      const newISO = new Date(newDT).toISOString();
+      const newDateNo = parseInt(newDT.slice(0,10).replace(/-/g,''), 10);
+      await saveWithFieldFallback(true, 'calendar', item.id, { ActivityDateTime: newISO, ActivityDateTimeNo: newDateNo });
+      const ci = cache.calendar.findIndex(i => i.id === item.id);
+      if (ci >= 0) { cache.calendar[ci].ActivityDateTime = newISO; cache.calendar[ci].ActivityDateTimeNo = newDateNo; }
+      showToast('Activity date updated', 'success');
+      baResetDateForm();
+    } finally { stopSpinner(); }
 
   } else {
     // All After — shift by N days
@@ -8829,47 +8845,50 @@ async function baApplyDateChange() {
     );
     if (!confirmed) return;
 
-    let done = 0;
-    for (const item of targets) {
-      try {
-        const oldDate = spDateToDate(item.ActivityDateTime);
-        if (!oldDate) continue;
-        const newDate = new Date(oldDate);
-        newDate.setDate(newDate.getDate() + shiftDays);
-        const newISO = newDate.toISOString();
-        const newDateNo = parseInt(newDate.toISOString().slice(0,10).replace(/-/g,''), 10);
+    startSpinner();
+    try {
+      let done = 0;
+      for (const item of targets) {
+        try {
+          const oldDate = spDateToDate(item.ActivityDateTime);
+          if (!oldDate) continue;
+          const newDate = new Date(oldDate);
+          newDate.setDate(newDate.getDate() + shiftDays);
+          const newISO = newDate.toISOString();
+          const newDateNo = parseInt(newDate.toISOString().slice(0,10).replace(/-/g,''), 10);
 
-        // Recalculate Offset relative to PPE (PayEnddate from billing)
-        const billingRec = cache.billing.find(b =>
-          b.PSPClient === item.PSPClient &&
-          getPayGroup(b) === pg &&
-          String(b.PayNo) === String(item.PayNo)
-        );
-        let newOffset = item.Offset || 0;
-        if (billingRec?.PayEnddate) {
-          const ppe = spDateToDate(billingRec.PayEnddate);
-          if (ppe) {
-            const diffMs = newDate - ppe;
-            newOffset = Math.round(diffMs / (1000 * 60 * 60 * 24));
+          // Recalculate Offset relative to PPE (PayEnddate from billing)
+          const billingRec = cache.billing.find(b =>
+            b.PSPClient === item.PSPClient &&
+            getPayGroup(b) === pg &&
+            String(b.PayNo) === String(item.PayNo)
+          );
+          let newOffset = item.Offset || 0;
+          if (billingRec?.PayEnddate) {
+            const ppe = spDateToDate(billingRec.PayEnddate);
+            if (ppe) {
+              const diffMs = newDate - ppe;
+              newOffset = Math.round(diffMs / (1000 * 60 * 60 * 24));
+            }
           }
-        }
 
-        await saveWithFieldFallback(true, 'calendar', item.id, {
-          ActivityDateTime: newISO,
-          ActivityDateTimeNo: newDateNo,
-          Offset: newOffset,
-        });
-        const ci = cache.calendar.findIndex(i => i.id === item.id);
-        if (ci >= 0) {
-          cache.calendar[ci].ActivityDateTime = newISO;
-          cache.calendar[ci].ActivityDateTimeNo = newDateNo;
-          cache.calendar[ci].Offset = newOffset;
-        }
-        done++;
-      } catch(e) { console.warn('Failed:', item.id, e.message); }
-    }
-    showToast(`${done} activities shifted by ${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays)===1?'':'s'}`, 'success');
-    baResetDateForm();
+          await saveWithFieldFallback(true, 'calendar', item.id, {
+            ActivityDateTime: newISO,
+            ActivityDateTimeNo: newDateNo,
+            Offset: newOffset,
+          });
+          const ci = cache.calendar.findIndex(i => i.id === item.id);
+          if (ci >= 0) {
+            cache.calendar[ci].ActivityDateTime = newISO;
+            cache.calendar[ci].ActivityDateTimeNo = newDateNo;
+            cache.calendar[ci].Offset = newOffset;
+          }
+          done++;
+        } catch(e) { console.warn('Failed:', item.id, e.message); }
+      }
+      showToast(`${done} activities shifted by ${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays)===1?'':'s'}`, 'success');
+      baResetDateForm();
+    } finally { stopSpinner(); }
   }
 }
 
@@ -8939,24 +8958,32 @@ async function baDeleteNotStarted() {
   );
   if (!second) return;
 
-  let calDone = 0, bilDone = 0;
-  for (const item of calItems) {
-    try {
-      await deleteItem('calendar', item.id);
-      cache.calendar = cache.calendar.filter(i => i.id !== item.id);
-      calDone++;
-    } catch(e) { console.warn('Calendar delete failed:', item.id, e.message); }
-  }
-  for (const item of bilItems) {
-    try {
-      await deleteItem('billing', item.id);
-      cache.billing = cache.billing.filter(i => i.id !== item.id);
-      bilDone++;
-    } catch(e) { console.warn('Billing delete failed:', item.id, e.message); }
-  }
+  const btn = document.getElementById('ba-del-apply-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Deleting...'; }
 
-  showToast(`Deleted ${calDone} activities and ${bilDone} billing records`, 'success');
-  baResetDeleteForm();
+  try {
+    let calDone = 0, bilDone = 0;
+    for (const item of calItems) {
+      try {
+        await deleteItem('calendar', item.id);
+        cache.calendar = cache.calendar.filter(i => i.id !== item.id);
+        calDone++;
+      } catch(e) { console.warn('Calendar delete failed:', item.id, e.message); }
+    }
+    for (const item of bilItems) {
+      try {
+        await deleteItem('billing', item.id);
+        cache.billing = cache.billing.filter(i => i.id !== item.id);
+        bilDone++;
+      } catch(e) { console.warn('Billing delete failed:', item.id, e.message); }
+    }
+
+    showToast(`Deleted ${calDone} activities and ${bilDone} billing records`, 'success');
+    baResetDeleteForm();
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = btnOrigHTML; }
+  }
 }
 
 // Clears the Delete Not Started card back to its default state — used after
