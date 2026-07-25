@@ -7963,6 +7963,7 @@ async function loadServiceLevels() {
       datasets: [{ data: rows.map(r => r.pct), backgroundColor: rows.map(r => colorForPct(r.pct)) }],
     }, {
       indexAxis: 'y',
+      maintainAspectRatio: false,
       scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
       plugins: {
         legend: { display: false },
@@ -7991,6 +7992,7 @@ async function loadServiceLevels() {
       datasets: [{ data: rows.map(r => r.avgHrs), backgroundColor: color }],
     }, {
       indexAxis: 'y',
+      maintainAspectRatio: false,
       scales: { x: { beginAtZero: true, ticks: { callback: v => v + 'h' } } },
       plugins: {
         legend: { display: false },
@@ -8035,6 +8037,7 @@ async function loadServiceLevels() {
       pointRadius: 3,
     }],
   }, {
+    maintainAspectRatio: false,
     scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
     plugins: { legend: { display: false } },
   });
