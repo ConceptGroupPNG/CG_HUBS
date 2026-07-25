@@ -8690,7 +8690,18 @@ async function baApplyPMChange() {
   } else {
     showToast(`${done} activit${done===1?'y':'ies'} reassigned to ${newMember}`, 'success');
   }
-  baPreviewPMActivities();
+  baResetPMForm();
+}
+
+// Clears the Reassign Pay Master card back to its default state — used after
+// a successful reassignment so the form doesn't sit there implying stale
+// selections are still active.
+function baResetPMForm() {
+  document.getElementById('ba-pm-client').value = '';
+  clearUserPicker('ba-pm-new-member', 'ba-pm-member-selected');
+  const forwardRadio = document.querySelector('input[name="ba-pm-scope"][value="forward"]');
+  if (forwardRadio) forwardRadio.checked = true;
+  baPopulatePayGroups('pm'); // resets Pay Group dropdown + clears preview/once-activity list
 }
 
 // ── Change Activity Date ──────────────────────
@@ -8800,7 +8811,7 @@ async function baApplyDateChange() {
     const ci = cache.calendar.findIndex(i => i.id === item.id);
     if (ci >= 0) { cache.calendar[ci].ActivityDateTime = newISO; cache.calendar[ci].ActivityDateTimeNo = newDateNo; }
     showToast('Activity date updated', 'success');
-    baLoadDateActivities();
+    baResetDateForm();
 
   } else {
     // All After — shift by N days
@@ -8858,8 +8869,23 @@ async function baApplyDateChange() {
       } catch(e) { console.warn('Failed:', item.id, e.message); }
     }
     showToast(`${done} activities shifted by ${shiftDays > 0 ? '+' : ''}${shiftDays} day${Math.abs(shiftDays)===1?'':'s'}`, 'success');
-    baLoadDateActivities();
+    baResetDateForm();
   }
+}
+
+// Clears the Change Activity Date card back to its default state (Once Only
+// scope, no client/pay group/activity selected) — used after a successful
+// update so the form doesn't sit there implying stale selections are active.
+function baResetDateForm() {
+  document.getElementById('ba-dt-client').value = '';
+  const onceRadio = document.querySelector('input[name="ba-dt-scope"][value="once"]');
+  if (onceRadio) onceRadio.checked = true;
+  document.getElementById('ba-dt-new-datetime').value = '';
+  document.getElementById('ba-dt-current-date').innerHTML = '';
+  document.getElementById('ba-dt-holiday-warning').style.display = 'none';
+  document.getElementById('ba-dt-shift-days').value = '';
+  document.getElementById('ba-dt-allafter-preview').innerHTML = '';
+  baPopulatePayGroups('dt'); // resets Pay Group dropdown + toggles once/allafter sections correctly
 }
 
 // ── Delete Not Started Activities ────────────
@@ -8930,7 +8956,16 @@ async function baDeleteNotStarted() {
   }
 
   showToast(`Deleted ${calDone} activities and ${bilDone} billing records`, 'success');
-  baPreviewDelete();
+  baResetDeleteForm();
+}
+
+// Clears the Delete Not Started card back to its default state — used after
+// a successful delete so the form doesn't sit there implying stale
+// selections are active (and to avoid an accidental repeat delete on the
+// same Pay Group without deliberately reselecting it).
+function baResetDeleteForm() {
+  document.getElementById('ba-del-client').value = '';
+  baPopulatePayGroups('del'); // resets Pay Group dropdown + clears the preview
 }
 
 // ── Public Holidays Admin (Add/Edit/Delete) ──
