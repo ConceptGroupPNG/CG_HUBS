@@ -7939,7 +7939,14 @@ async function loadServiceLevels() {
     const onTime = (due && fin) ? (fin.getTime() <= due.getTime() + 60*60*1000) : null;
     const hoursToComplete = (start && fin) ? (fin - start) / 3600000 : null;
     return { ...i, _onTime: onTime, _hoursToComplete: hoursToComplete };
-  });
+  })
+  // Data-quality guard: the underlying timestamp data has known issues right
+  // now, so exclude any activity whose Start→Finish duration comes out to
+  // more than 48 hours — almost always bad/incomplete data (e.g. a
+  // StartDateTime that was never actually recorded correctly) rather than a
+  // genuine two-day task, and left in would badly skew both the on-time
+  // rates and the average completion times across the whole dashboard.
+  .filter(i => i._hoursToComplete === null || i._hoursToComplete <= 48);
 
   const colorForPct = pct => pct < 50 ? '#cc1f2d' : pct < 75 ? '#f59e0b' : pct < 90 ? '#eab308' : '#0e9f6e';
 
