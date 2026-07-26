@@ -3176,12 +3176,12 @@ function statusBadge(s) {
 // Refresh the SharePoint-backed cache entries relevant to a given page.
 // Used both by the manual Refresh button and automatically on navigation.
 async function refreshCacheForPage(page) {
-  if (page === 'dashboard' || page === 'activities' ||
-      page === 'calendar' || page === 'generate-calendar') {
+  if (page === 'dashboard' || page === 'activities' || page === 'calendar') {
     cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
   }
   if (page === 'generate-calendar') {
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+    cache.billing = await getItems('billing');
   }
   if (page === 'billing-metrics') {
     cache.billing = await getItems('billing');
@@ -3248,6 +3248,7 @@ async function navigate(page) {
   document.getElementById(`page-${page}`)?.classList.add('active');
   document.querySelector(`[onclick="navigate('${page}')"]`)?.classList.add('active');
   currentPage = page;
+  if (page === 'generate-calendar') currentGenCalTab = 'generate'; // fresh entry always lands on Generate, not wherever Overview last left off
   const titles = {
     'dashboard': 'Dashboard',
     'activities': 'Activities',
@@ -4631,8 +4632,10 @@ function onGenPayGroupChange() {
   document.getElementById('gen-cycle').value = cycle;
   document.getElementById('btn-generate').disabled = false;
 
-  // Find last Pay No and PPE for this client+paygroup from calendar
-  const existing = cache.calendar
+  // Find last Pay No and PPE for this client+paygroup from PSP_Billing — one
+  // row per pay run, same source the Client Overview tab uses, rather than
+  // needing the much larger full activity calendar just for this lookup.
+  const existing = cache.billing
     .filter(i => i.PSPClient === client && getPayGroup(i) === pg)
     .sort((a, b) => (b.PayNo || 0) - (a.PayNo || 0));
 
@@ -4640,7 +4643,7 @@ function onGenPayGroupChange() {
   const nextPayNo = lastPayNo + 1;
 
   // Get last PPE and calculate next one based on cycle
-  const lastPPERaw = existing.length ? existing[0].PayEndDate : null;
+  const lastPPERaw = existing.length ? existing[0].PayEnddate : null;
   let nextPPE = null;
   if (lastPPERaw) {
     const lastPPE = spDateToDate(lastPPERaw);
@@ -4783,18 +4786,24 @@ async function loadGenerateCalendar() {
   if (!cache.activities.length) {
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
   }
-  cache.billing = await getItems('billing'); // always fresh — powers the Client Overview tab's Last PPE/Pay No
+  cache.billing = await getItems('billing'); // always fresh — powers the Client Overview tab's Last PPE/Pay No, and the form's own Pay No/PPE lookup above
   const clientSel = document.getElementById('gen-client');
   const clients = [...new Set(cache.activities.map(i => i.PSPClient))].sort();
   clientSel.innerHTML = '<option value="">Select Client...</option>' + clients.map(c => `<option>${c}</option>`).join('');
   document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
   document.getElementById('btn-generate').disabled = true;
-  switchGenCalTab('generate'); // always land on Generate, never wherever it was last left
-  renderGenCalOverview();
+  // Preserve whichever sub-tab is currently active (e.g. when the Refresh
+  // button re-runs this) rather than always snapping back to Generate —
+  // navigate() resets currentGenCalTab to 'generate' on a genuine fresh
+  // entry to this page, so that case still lands where it always has.
+  switchGenCalTab(currentGenCalTab);
 }
+
+let currentGenCalTab = 'generate';
 
 // ── Client Overview tab (Generate Calendar page) ──
 function switchGenCalTab(tab) {
+  currentGenCalTab = tab;
   const tabs = { generate: 'gctab-generate-content', overview: 'gctab-overview-content' };
   Object.entries(tabs).forEach(([key, contentId]) => {
     const tabBtn = document.getElementById('gctab-' + key);
@@ -4802,6 +4811,7 @@ function switchGenCalTab(tab) {
     if (tabBtn) tabBtn.classList.toggle('active', key === tab);
     if (contentEl) contentEl.style.display = key === tab ? '' : 'none';
   });
+  if (tab === 'overview') renderGenCalOverview();
 }
 
 let lastGenCalOverviewItems = [];
