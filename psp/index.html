@@ -486,6 +486,16 @@
     font-weight: 700;
   }
   .nav-item i { font-size: 18px; flex-shrink: 0; width: 20px; }
+  .nav-item-locked {
+    opacity: 0.35;
+    cursor: not-allowed !important;
+    pointer-events: none;
+  }
+  .tab-locked {
+    opacity: 0.35;
+    cursor: not-allowed !important;
+    pointer-events: none;
+  }
   .nav-badge {
     margin-left: auto;
     background: var(--red);
@@ -959,29 +969,29 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Admin</div>
-      <div class="nav-item" onclick="navigate('generate-calendar')">
+      <div class="nav-item" id="nav-generate-calendar" onclick="navigate('generate-calendar')">
         <i class="ti ti-calendar-plus"></i> Generate Calendar
       </div>
-      <div class="nav-item" onclick="navigate('billing-calc')">
+      <div class="nav-item" id="nav-billing-calc" onclick="navigate('billing-calc')">
         <i class="ti ti-calculator"></i> Billing Calculator
       </div>
-      <div class="nav-item" onclick="navigate('bulk-admin')">
+      <div class="nav-item" id="nav-bulk-admin" onclick="navigate('bulk-admin')">
         <i class="ti ti-adjustments"></i> Administration
       </div>
     </div>
 
     <div class="sidebar-section">
       <div class="sidebar-label">Finance</div>
-      <div class="nav-item" onclick="navigate('clients')">
+      <div class="nav-item" id="nav-clients" onclick="navigate('clients')">
         <i class="ti ti-building"></i> Clients
       </div>
-      <div class="nav-item" onclick="navigate('quotes')">
+      <div class="nav-item" id="nav-quotes" onclick="navigate('quotes')">
         <i class="ti ti-file-description"></i> Quotes
       </div>
       <div class="nav-item" onclick="navigate('billing-metrics')">
         <i class="ti ti-chart-bar"></i> Billing Metrics
       </div>
-      <div class="nav-item" onclick="navigate('invoices')">
+      <div class="nav-item" id="nav-invoices" onclick="navigate('invoices')">
         <i class="ti ti-receipt"></i> Invoices
       </div>
     </div>
@@ -2696,6 +2706,7 @@ const LISTS = {
   quotes:      'PSP_Quotes',
   lastquote:   'PSP_Last_Quote',
   lastsa:      'PSP_Last_SA',
+  administrators: 'PSP_Administrators',
   holidays:    'PSP_Public_Holidays',
 };
 
@@ -2761,6 +2772,7 @@ const cache = {
   quotes: [],
   lastquote: [],
   lastsa: [],
+  administrators: [],
   holidays: [],
   listsMap: {},
 };
@@ -8050,6 +8062,52 @@ async function loadServiceLevels() {
   });
 }
 
+// ─────────────────────────────────────────────
+// PSP_Administrators — GATES A FEW MENU ITEMS ONLY
+// ─────────────────────────────────────────────
+// Important: this is a UI convenience, not real security. Every signed-in
+// user already has full Sites.ReadWrite.All access to every SharePoint list
+// this app touches via its shared Azure AD registration, regardless of what
+// the menu shows. This just keeps most people from wandering into
+// Finance/Admin areas they don't need day-to-day — it does not, and cannot,
+// stop someone from reaching the same data another way. Checked once per
+// sign-in and cached for the session; removing someone from the list takes
+// effect the next time they sign in, not immediately.
+let isPSPAdmin = true; // fail-open default — a failed check should never lock people out
+
+async function checkAdminAccess() {
+  const normName = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  try {
+    const admins = await getItems('administrators', '', 200, ['AdminName']);
+    cache.administrators = admins;
+    const meName = normName(currentUser?.displayName);
+    const meMail = normName(currentUser?.mail || currentUser?.userPrincipalName);
+    isPSPAdmin = admins.some(a => {
+      const adminName = normName(a.AdminName);
+      return adminName && (adminName === meName || adminName === meMail);
+    });
+  } catch(e) {
+    console.warn('Could not verify PSP HUB Administrator access — defaulting to full access (fail-open):', e.message);
+    isPSPAdmin = true;
+  }
+  applyAdminGating();
+}
+
+function applyAdminGating() {
+  ['nav-generate-calendar','nav-billing-calc','nav-bulk-admin','nav-clients','nav-quotes','nav-invoices'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.classList.toggle('nav-item-locked', !isPSPAdmin);
+      el.title = isPSPAdmin ? '' : 'Requires PSP HUB Administrator access';
+    }
+  });
+  const financeTab = document.getElementById('dash-tab-finance');
+  if (financeTab) {
+    financeTab.classList.toggle('tab-locked', !isPSPAdmin);
+    financeTab.title = isPSPAdmin ? '' : 'Requires PSP HUB Administrator access';
+  }
+}
+
 async function initApp(token) {
   accessToken = token;
   const me = await graphFetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName');
@@ -8062,6 +8120,7 @@ async function initApp(token) {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   try { await refreshCache(); } catch(e) { showToast('Error loading data: ' + e.message, 'error'); }
+  await checkAdminAccess();
   await loadDashboard();
 }
 
