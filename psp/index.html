@@ -3879,8 +3879,118 @@ function renderAllActivities() {
       <td><span class="intext ${(i.IntExt||'').toLowerCase()}">${i.IntExt||'—'}</span></td>
       <td><span class="sla-dot ${i.SLA?'yes':'no'}"></span></td>
       <td>${statusBadge(getActStatus(i)||'Not Started')}</td>
-      <td><button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
+        <button class="btn btn-xs btn-outline" onclick="openActivityEditModal('${i.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
+      </td>
     </tr>`).join('');
+}
+
+// Lightweight single-activity editor — Milestone, Scheduled Date/Time, Pay
+// Master, Int/Ext, and SLA flag only. Client/Pay Group/Pay No/Order are shown
+// for context but not editable here — changing those reclassifies which pay
+// run the activity belongs to, which has its own dedicated tools
+// (Administration > Reassign Pay Master / Change Activity Date) rather than
+// being an ad hoc single-row edit.
+function openActivityEditModal(id) {
+  const item = cache.calendar.find(i => String(i.id) === String(id));
+  if (!item) return;
+  userPickerSelected = {}; // avoid inheriting a stale selection from an earlier, unrelated user-picker interaction
+
+  const dt = spDateToDate(item.ActivityDateTime);
+  const pad = n => String(n).padStart(2,'0');
+  const dtLocal = dt ? `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}` : '';
+
+  document.getElementById('modal-title').textContent = 'Edit Activity';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="background:var(--grey-100);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--grey-600);">
+      <strong style="color:var(--navy);">${item.PSPClient||'—'}</strong> · ${getPayGroup(item)||'—'} · Pay ${item.PayNo||'—'} · Order ${getOrder(item)||'—'}
+    </div>
+    <div class="form-group">
+      <label>Milestone</label>
+      <input type="text" id="edit-act-milestone" value="${(item.ActivityMilestone||'').replace(/"/g,'&quot;')}">
+    </div>
+    <div class="form-group">
+      <label>Scheduled Date &amp; Time</label>
+      <input type="datetime-local" id="edit-act-datetime" value="${dtLocal}">
+    </div>
+    <div class="form-group" style="position:relative;">
+      <label>Pay Master</label>
+      <input type="text" id="edit-act-member" class="user-picker-input" placeholder="Type name to search M365 users..."
+        autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+        value="${(getPSPMember(item)||'').replace(/"/g,'&quot;')}">
+      <div id="edit-act-member-dropdown" class="user-picker-dropdown"></div>
+      <div id="edit-act-member-selected" class="user-picker-selected" style="display:none;"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Int/Ext</label>
+        <select id="edit-act-intext">
+          <option value="Internal" ${item.IntExt==='Internal'?'selected':''}>Internal</option>
+          <option value="External" ${item.IntExt==='External'?'selected':''}>External</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:10px;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;margin:0;">
+          <input type="checkbox" id="edit-act-sla" ${item.SLA?'checked':''} style="width:16px;height:16px;"> SLA Milestone
+        </label>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-teal" onclick="saveActivityEdit('${id}')"><i class="ti ti-device-floppy"></i> Save Changes</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+  renderUserPicker('edit-act-member', 'edit-act-member-dropdown', 'edit-act-member-selected', null);
+}
+
+async function saveActivityEdit(id) {
+  const item = cache.calendar.find(i => String(i.id) === String(id));
+  if (!item) return;
+
+  const milestone = document.getElementById('edit-act-milestone').value.trim();
+  const dtVal = document.getElementById('edit-act-datetime').value;
+  const memberName = userPickerSelected.displayName || document.getElementById('edit-act-member').value.trim();
+  const intext = document.getElementById('edit-act-intext').value;
+  const sla = document.getElementById('edit-act-sla').checked;
+
+  if (!milestone) { showToast('Milestone is required', 'error'); return; }
+  if (!dtVal) { showToast('Scheduled date/time is required', 'error'); return; }
+
+  let lookupId = null;
+  if (memberName) {
+    lookupId = resolveMemberLookupId(memberName);
+    if (!lookupId) {
+      showToast(`Can't assign ${memberName} — they aren't currently assigned to any existing activity or template, so their SharePoint user ID can't be looked up.`, 'error');
+      return;
+    }
+  }
+
+  const newISO = new Date(dtVal).toISOString();
+  const newDateNo = parseInt(dtVal.slice(0,10).replace(/-/g,''), 10);
+
+  const fields = {
+    ActivityMilestone: milestone,
+    ActivityDateTime: newISO,
+    ActivityDateTimeNo: newDateNo,
+    IntExt: intext,
+    SLA: sla,
+  };
+  if (lookupId) fields.PSPMEmberLookupId = lookupId;
+
+  try {
+    await saveWithFieldFallback(true, 'calendar', id, fields);
+    const ci = cache.calendar.findIndex(i => i.id === id);
+    if (ci >= 0) {
+      Object.assign(cache.calendar[ci], fields);
+      if (lookupId) { cache.calendar[ci].PSPMEmber = memberName; cache.calendar[ci].PSPMEmberLookupId = String(lookupId); }
+    }
+    closeModal();
+    renderActivities();
+    showToast('Activity updated', 'success');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // Legacy aliases — keep dashboard badge working
