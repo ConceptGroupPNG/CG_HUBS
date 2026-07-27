@@ -8300,7 +8300,7 @@ async function initApp(token) {
 let wizClientId = null;       // null = new, int = edit
 let wizPayGroups = [];        // [{pg, cycle, calcMethod, fees:{}, isNew, templateCloneFrom}]
 
-const CYCLES = ['Weekly','Fortnightly','Monthly','4-Weekly','Bi-Monthly','Quarterly'];
+const CYCLES = ['FORTNIGHT','MONTH'];
 const CALC_METHODS = [
   { v:'A', label:'A — Flat Pay Run Fee' },
   { v:'B', label:'B — Per Payslip' },
@@ -8500,7 +8500,7 @@ function wizStep1Next() {
 }
 
 function wizAddPayGroup() {
-  wizPayGroups.push({ pg: '', cycle: 'Fortnightly', isNew: true, calcMethod: 'A', fees: {}, templateCloneFrom: null });
+  wizPayGroups.push({ pg: '', cycle: 'FORTNIGHT', isNew: true, calcMethod: 'A', fees: {}, templateCloneFrom: null });
   renderWizPayGroups();
 }
 
