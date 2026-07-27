@@ -2185,9 +2185,12 @@
               </div>
             </div>
 
-            <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <div style="display:flex;justify-content:space-between;gap:10px;">
               <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
-              <button class="btn btn-teal" onclick="wizStep1Next()">Next: Pay Groups <i class="ti ti-arrow-right"></i></button>
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-outline" onclick="wizSaveClient()"><i class="ti ti-device-floppy"></i> Save</button>
+                <button class="btn btn-teal" onclick="wizStep1Next()">Next: Pay Groups <i class="ti ti-arrow-right"></i></button>
+              </div>
             </div>
           </div>
 
@@ -2202,6 +2205,7 @@
               <button class="btn btn-outline" onclick="wizGoStep(1)"><i class="ti ti-arrow-left"></i> Back</button>
               <div style="display:flex;gap:10px;">
                 <button class="btn btn-outline" onclick="closeClientWizard()">Cancel</button>
+                <button class="btn btn-outline" onclick="wizSaveClient()"><i class="ti ti-device-floppy"></i> Save</button>
                 <button class="btn btn-teal" onclick="wizStep2Next()">Next: Templates <i class="ti ti-arrow-right"></i></button>
               </div>
             </div>
@@ -8946,7 +8950,8 @@ async function saveTemplateForm() {
 }
 
 async function wizSaveClient() {
-  const btn = document.getElementById('wiz-save-btn');
+  const btn = event?.target?.closest('button') || document.getElementById('wiz-save-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader-2 spin"></i> Saving...';
   try {
@@ -9041,8 +9046,7 @@ async function wizSaveClient() {
   } catch(e) {
     showToast('Error saving client: ' + e.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Client';
+    if (btn) { btn.disabled = false; btn.innerHTML = btnOrigHTML; }
   }
 }
 
