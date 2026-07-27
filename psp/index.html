@@ -1308,6 +1308,7 @@
           <select id="act-filter-date" onchange="renderActivities()" style="font-size:12px;">
             <option value="today">Today</option>
             <option value="week">This Week</option>
+            <option value="month">This Month</option>
             <option value="all">All Open</option>
           </select>
           <select id="act-filter-client" onchange="onActClientChange()" style="font-size:12px;">
@@ -3055,6 +3056,14 @@ function isThisWeek(val) {
   const weekEnd = new Date(t); weekEnd.setDate(t.getDate() + 6);
   return d >= t && d <= weekEnd;
 }
+function isThisMonth(val) {
+  const d = spDateToDate(val);
+  if (!d || isNaN(d)) return false;
+  const t = today();
+  const monthEnd = new Date(t.getFullYear(), t.getMonth() + 1, 0);
+  monthEnd.setHours(23,59,59,999);
+  return d >= t && d <= monthEnd;
+}
 
 // ─────────────────────────────────────────────
 // PUBLIC HOLIDAYS
@@ -3768,6 +3777,7 @@ function renderMyActivities() {
   });
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
+  else if (dateFilter === 'month') items = items.filter(i => isThisMonth(i.ActivityDateTime));
   if (client) items = items.filter(i => i.PSPClient === client);
   if (pg)     items = items.filter(i => getPayGroup(i) === pg);
   if (search) items = items.filter(i =>
@@ -3843,6 +3853,7 @@ function renderAllActivities() {
   let items = [...cache.calendar];
   if (dateFilter === 'today') items = items.filter(i => isToday(i.ActivityDateTime));
   else if (dateFilter === 'week') items = items.filter(i => isThisWeek(i.ActivityDateTime));
+  else if (dateFilter === 'month') items = items.filter(i => isThisMonth(i.ActivityDateTime));
   if (member) items = items.filter(i => getPSPMember(i) === member);
   if (pg)     items = items.filter(i => getPayGroup(i) === pg);
   if (client) items = items.filter(i => i.PSPClient === client);
