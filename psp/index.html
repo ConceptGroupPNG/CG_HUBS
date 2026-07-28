@@ -3262,6 +3262,7 @@ async function navigate(page) {
   document.querySelector(`[onclick="navigate('${page}')"]`)?.classList.add('active');
   currentPage = page;
   if (page === 'generate-calendar') currentGenCalTab = 'generate'; // fresh entry always lands on Generate, not wherever Overview last left off
+  if (page === 'clients') closeClientWizard(); // fresh entry always lands on the client list, not wherever the wizard was last left
   const titles = {
     'dashboard': 'Dashboard',
     'activities': 'Activities',
@@ -8366,9 +8367,19 @@ const CALC_METHODS = [
 async function loadClientsPage() {
   cache.clients = await getItems('clients'); // always fresh
   cache.fees    = await getItems('fees');
-  if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']); // always fresh — was only ever fetched once before, so Refresh never updated it
   populateClientFilter('cl-filter-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderClientsList();
+
+  // If the wizard is open (e.g. Refresh was clicked mid-edit), re-render
+  // whichever step is actually showing so it reflects the fresh data too,
+  // without closing the wizard or resetting where the user is — navigate()
+  // is what resets back to the list view, on a genuine fresh page entry.
+  const wizardOpen = document.getElementById('clients-wizard-view')?.style.display !== 'none';
+  if (wizardOpen) {
+    if (document.getElementById('wiz-panel-2')?.style.display !== 'none') renderWizPayGroups();
+    else if (document.getElementById('wiz-panel-3')?.style.display !== 'none') renderWizTemplates();
+  }
 }
 
 let lastClientsItems = [];
