@@ -4885,6 +4885,7 @@ async function generateCalendar() {
       if (hols.length) {
         holidayLandings.push({ milestone: t.ActivityMilestone, payNo: currentPayNo, date: actDate, holidays: hols });
       }
+      const memberLookupId = t.PSPMEmberLookupId ? parseInt(t.PSPMEmberLookupId, 10) : null;
       const fields = {
         PSPClient: t.PSPClient,
         PayGroup: t.PayGroup,
@@ -4895,7 +4896,6 @@ async function generateCalendar() {
         Offset: t.Offset,
         ActivityDateTime: actDate.toISOString(),
         ActivityDateTimeNo: parseInt(actDate.toISOString().slice(0,10).replace(/-/g,''), 10),
-        PSPMEmberLookupId: t.PSPMEmberLookupId ? parseInt(t.PSPMEmberLookupId, 10) : null,
         Act_Status: 'Not Started',
         ClientBAU: t.ClientBAU,
         IntExt: t.IntExt,
@@ -4906,8 +4906,20 @@ async function generateCalendar() {
         PayrollYear: currentPPE.getFullYear(),
       };
       try {
-        await createItem('calendar', fields);
+        const created = await createItem('calendar', fields);
         totalCreated++;
+        // Person/Lookup fields (Pay Master) are unreliable when set during
+        // item creation — Microsoft Graph accepts the request without error
+        // but silently drops the link. Setting it via a follow-up update on
+        // the now-existing item is the pattern already proven reliable
+        // everywhere else in the app (Reassign Pay Master, activity edits).
+        if (memberLookupId && created?.id) {
+          try {
+            await saveWithFieldFallback(true, 'calendar', created.id, { PSPMEmberLookupId: memberLookupId });
+          } catch(e2) {
+            console.warn(`Could not set Pay Master on newly-created activity ${created.id}:`, e2.message);
+          }
+        }
       } catch(e) {
         showToast(`Error on Pay ${currentPayNo} step ${getOrder(t)}: ${e.message}`, 'error');
       }
