@@ -4876,6 +4876,7 @@ async function generateCalendar() {
   let holidayLandings = [];
   let currentPPE = new Date(startPPEStr);
   let currentPayNo = startPayNo;
+  const pendingMemberUpdates = []; // { id, memberLookupId } — applied in a second pass, after everything's created
 
   for (let p = 0; p < periods; p++) {
     const payEndSerial = dateToExcelSerial(currentPPE);
@@ -4908,18 +4909,7 @@ async function generateCalendar() {
       try {
         const created = await createItem('calendar', fields);
         totalCreated++;
-        // Person/Lookup fields (Pay Master) are unreliable when set during
-        // item creation — Microsoft Graph accepts the request without error
-        // but silently drops the link. Setting it via a follow-up update on
-        // the now-existing item is the pattern already proven reliable
-        // everywhere else in the app (Reassign Pay Master, activity edits).
-        if (memberLookupId && created?.id) {
-          try {
-            await saveWithFieldFallback(true, 'calendar', created.id, { PSPMEmberLookupId: memberLookupId });
-          } catch(e2) {
-            console.warn(`Could not set Pay Master on newly-created activity ${created.id}:`, e2.message);
-          }
-        }
+        if (memberLookupId && created?.id) pendingMemberUpdates.push({ id: created.id, memberLookupId });
       } catch(e) {
         showToast(`Error on Pay ${currentPayNo} step ${getOrder(t)}: ${e.message}`, 'error');
       }
@@ -4956,6 +4946,33 @@ async function generateCalendar() {
     if (cycle.includes('FORT')) nextPPE.setDate(nextPPE.getDate() + 14);
     else if (cycle.includes('MONTH')) nextPPE.setMonth(nextPPE.getMonth() + 1);
     currentPPE = nextPPE;
+  }
+
+  // Person/Lookup fields (Pay Master) are unreliable when set during item
+  // creation, and — confirmed by direct testing — also unreliable when set
+  // via an *immediate* follow-up update: Graph can report success on both
+  // without the link actually persisting, apparently a SharePoint-side
+  // consistency delay rather than anything wrong with the write itself (the
+  // exact same update succeeds reliably when run a little while after the
+  // item was created). So Pay Master is applied here as a genuinely separate
+  // pass, after every activity/billing record for this batch already exists,
+  // rather than immediately after each individual creation.
+  if (pendingMemberUpdates.length) {
+    btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Setting Pay Masters...`;
+    await new Promise(r => setTimeout(r, 1500));
+    let memberSet = 0, memberFailed = 0;
+    for (const u of pendingMemberUpdates) {
+      try {
+        await saveWithFieldFallback(true, 'calendar', u.id, { PSPMEmberLookupId: u.memberLookupId });
+        memberSet++;
+      } catch(e2) {
+        memberFailed++;
+        console.warn(`Could not set Pay Master on newly-created activity ${u.id}:`, e2.message);
+      }
+    }
+    if (memberFailed) {
+      showToast(`${memberFailed} activit${memberFailed===1?'y':'ies'} generated without a Pay Master set — check the console for details`, 'error');
+    }
   }
 
   cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
