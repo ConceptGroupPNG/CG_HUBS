@@ -4895,7 +4895,7 @@ async function generateCalendar() {
         Offset: t.Offset,
         ActivityDateTime: actDate.toISOString(),
         ActivityDateTimeNo: parseInt(actDate.toISOString().slice(0,10).replace(/-/g,''), 10),
-        PSPMEmberLookupId: t.PSPMEmberLookupId || null,
+        PSPMEmberLookupId: t.PSPMEmberLookupId ? parseInt(t.PSPMEmberLookupId, 10) : null,
         Act_Status: 'Not Started',
         ClientBAU: t.ClientBAU,
         IntExt: t.IntExt,
