@@ -2435,6 +2435,17 @@
                   <i class="ti ti-user-check"></i> Apply Reassignment
                 </button>
               </div>
+
+              <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--grey-200);">
+                <div style="font-size:12px;color:var(--grey-600);margin-bottom:8px;">
+                  <strong>Apply from Template</strong> — sync Pay Master on every <strong>Not Started</strong> activity for the Client/Pay Group selected above to match the current Activity Template, matched by Order. Uses only Client + Pay Group above — New Pay Master and Scope don't apply here. Useful when Generate Calendar creates activities without a Pay Master set.
+                </div>
+                <div style="display:flex;justify-content:flex-end;">
+                  <button class="btn btn-outline" id="ba-pm-fromtemplate-btn" onclick="baApplyFromTemplate()">
+                    <i class="ti ti-template"></i> Apply from Template
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -9299,6 +9310,68 @@ function baResetPMForm() {
   const forwardRadio = document.querySelector('input[name="ba-pm-scope"][value="forward"]');
   if (forwardRadio) forwardRadio.checked = true;
   baPopulatePayGroups('pm'); // resets Pay Group dropdown + clears preview/once-activity list
+}
+
+// Workaround for Generate Calendar's known Pay Master persistence gap
+// (see baApplyPMChange comments elsewhere for background): rather than
+// setting a single chosen Pay Master on every Not Started activity, this
+// syncs each one individually from whatever the current Activity Template
+// says for that Order — so activities that should have different Pay
+// Masters keep their own correct assignment rather than being flattened to
+// one person. Only ever touches existing, already-settled calendar records,
+// never something created moments ago, which is exactly the class of write
+// that's been proven reliable throughout this investigation.
+async function baApplyFromTemplate() {
+  const client = document.getElementById('ba-pm-client')?.value;
+  const pg     = document.getElementById('ba-pm-pg')?.value;
+  if (!client || !pg) { showToast('Select a Client and Pay Group', 'error'); return; }
+
+  const targets = cache.calendar.filter(i =>
+    i.PSPClient === client && getPayGroup(i) === pg && getActStatus(i) === 'Not Started'
+  );
+  if (!targets.length) { showToast('No Not Started activities found', 'error'); return; }
+
+  // Build Order -> template Pay Master LookupId lookup
+  const tmplByOrder = {};
+  cache.activities
+    .filter(a => a.PSPClient === client && a.PayGroup === pg)
+    .forEach(a => { tmplByOrder[getOrder(a)] = a; });
+
+  const matched = targets.filter(i => tmplByOrder[getOrder(i)]?.PSPMemberLookupId);
+  if (!matched.length) { showToast('No matching template Pay Master found for these activities', 'error'); return; }
+
+  const skippedCount = targets.length - matched.length;
+  const confirmed = await pspConfirm(
+    `Apply the Activity Template's Pay Master to <strong>${matched.length} Not Started activit${matched.length===1?'y':'ies'}</strong> for ${client} / ${pg}, matched by Order?` +
+    (skippedCount ? `<br><br>${skippedCount} other Not Started activit${skippedCount===1?'y has':'ies have'} no matching template entry with a Pay Master and will be left as-is.` : ''),
+    'Confirm Apply from Template'
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById('ba-pm-fromtemplate-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Applying...'; }
+
+  try {
+    let done = 0, failed = 0;
+    for (const item of matched) {
+      const tmpl = tmplByOrder[getOrder(item)];
+      const lookupId = parseInt(tmpl.PSPMemberLookupId, 10);
+      try {
+        await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmberLookupId: lookupId });
+        const ci = cache.calendar.findIndex(i => i.id === item.id);
+        if (ci >= 0) { cache.calendar[ci].PSPMEmberLookupId = String(lookupId); cache.calendar[ci].PSPMEmber = getPSPMember(tmpl); }
+        done++;
+      } catch(e) {
+        failed++;
+        console.warn('Apply from Template failed:', item.id, e.message);
+      }
+    }
+    showToast(`${done} activit${done===1?'y':'ies'} updated from template` + (failed ? ` — ${failed} failed, check console` : ''), 'success');
+    baResetPMForm();
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = btnOrigHTML; }
+  }
 }
 
 // ── Change Activity Date ──────────────────────
