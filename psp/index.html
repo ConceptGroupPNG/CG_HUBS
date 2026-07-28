@@ -4673,6 +4673,32 @@ function openGenTemplateForm(id) {
   setTimeout(() => renderUserPicker('gtf-member', 'gtf-member-dropdown', 'gtf-member-selected', null), 50);
 }
 
+// When adding (or re-ordering) a template activity to Order N and something
+// in the same Client + Pay Group template already sits at Order N (or
+// higher), push every one of those up by 1 to make room, rather than ending
+// up with two activities sharing the same Order. excludeId lets an edit skip
+// shifting the very activity being edited (it's about to become Order N
+// itself). Returns how many activities were shifted, for the success toast.
+async function shiftTemplateOrdersForInsert(client, pg, fromOrder, excludeId) {
+  const toShift = cache.activities
+    .filter(a => a.PSPClient === client && a.PayGroup === pg &&
+                 String(a.id) !== String(excludeId||'') &&
+                 (getOrder(a)||0) >= fromOrder)
+    .sort((a,b) => (getOrder(b)||0) - (getOrder(a)||0)); // shift highest first
+
+  for (const item of toShift) {
+    const newOrder = (getOrder(item)||0) + 1;
+    try {
+      await saveWithFieldFallback(true, 'activities', item.id, { Order0: newOrder });
+      const idx = cache.activities.findIndex(a => String(a.id) === String(item.id));
+      if (idx >= 0) cache.activities[idx].Order0 = newOrder;
+    } catch(e) {
+      console.warn('Failed to shift order for', item.id, e.message);
+    }
+  }
+  return toShift.length;
+}
+
 async function saveGenTemplate(client, pg, cycle, id) {
   const orderVal = parseInt(document.getElementById('gtf-order').value);
   const milestone = document.getElementById('gtf-milestone').value.trim();
@@ -4701,6 +4727,7 @@ async function saveGenTemplate(client, pg, cycle, id) {
   };
 
   try {
+    const shifted = await shiftTemplateOrdersForInsert(client, pg, orderVal, id);
     await saveWithFieldFallback(!!id, 'activities', id || '', fields);
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
     closeModal();
@@ -4709,7 +4736,7 @@ async function saveGenTemplate(client, pg, cycle, id) {
       .filter(i => i.PSPClient === client && i.PayGroup === pg)
       .sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
     renderTemplatePreview(client, pg, tmpl);
-    showToast(id ? 'Activity updated' : 'Activity added', 'success');
+    showToast((id ? 'Activity updated' : 'Activity added') + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
@@ -8848,6 +8875,7 @@ function openTemplateFormForWiz(item) {
   // Store client/pg in hidden fields for saveTemplateForm to use
   document.getElementById('modal-save-btn').setAttribute('data-id', item?.id || '');
   document.getElementById('modal-save-btn').setAttribute('data-wiz-mode', 'true');
+  document.getElementById('modal-save-btn').onclick = saveTemplateForm;
   document.getElementById('modal-overlay').classList.add('open');
 
   userPickerSelected = item ? { displayName: getPSPMember(item) } : {};
@@ -8892,15 +8920,16 @@ async function saveTemplateForm() {
     };
 
     try {
+      const shifted = await shiftTemplateOrdersForInsert(wizTmplContext.client, wizTmplContext.pg, orderVal, id);
       if (id) {
         await saveWithFieldFallback(true, 'activities', id, fields);
         const ai = cache.activities.findIndex(a => String(a.id) === String(id));
         if (ai >= 0) Object.assign(cache.activities[ai], fields);
-        showToast('Activity updated', 'success');
+        showToast('Activity updated' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
       } else {
         const created = await createItem('activities', fields);
         if (created?.id) { fields.id = created.id; cache.activities.push(fields); }
-        showToast('Activity added', 'success');
+        showToast('Activity added' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
       }
       document.getElementById('modal-overlay').classList.remove('open');
       document.getElementById('modal-save-btn').removeAttribute('data-wiz-mode');
