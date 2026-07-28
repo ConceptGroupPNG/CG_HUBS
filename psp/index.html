@@ -4699,6 +4699,27 @@ async function shiftTemplateOrdersForInsert(client, pg, fromOrder, excludeId) {
   return toShift.length;
 }
 
+// Inverse of shiftTemplateOrdersForInsert — when an activity at Order N is
+// deleted, pull everything above N down by 1 to close the gap, e.g. deleting
+// Order 6 makes the old Order 7 become the new Order 6.
+async function shiftTemplateOrdersForDelete(client, pg, deletedOrder) {
+  const toShift = cache.activities
+    .filter(a => a.PSPClient === client && a.PayGroup === pg && (getOrder(a)||0) > deletedOrder)
+    .sort((a,b) => (getOrder(a)||0) - (getOrder(b)||0)); // close the gap from the top down
+
+  for (const item of toShift) {
+    const newOrder = (getOrder(item)||0) - 1;
+    try {
+      await saveWithFieldFallback(true, 'activities', item.id, { Order0: newOrder });
+      const idx = cache.activities.findIndex(a => String(a.id) === String(item.id));
+      if (idx >= 0) cache.activities[idx].Order0 = newOrder;
+    } catch(e) {
+      console.warn('Failed to shift order down for', item.id, e.message);
+    }
+  }
+  return toShift.length;
+}
+
 async function saveGenTemplate(client, pg, cycle, id) {
   const orderVal = parseInt(document.getElementById('gtf-order').value);
   const milestone = document.getElementById('gtf-milestone').value.trim();
@@ -4756,7 +4777,9 @@ async function deleteGenTemplate(id) {
   document.getElementById('modal-save-btn').className = 'btn btn-danger';
   document.getElementById('modal-save-btn').onclick = async () => {
     try {
+      const deletedOrder = getOrder(item);
       await deleteItem('activities', id);
+      const shifted = await shiftTemplateOrdersForDelete(client, pg, deletedOrder);
       cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
       closeModal();
       const tmpl = cache.activities
@@ -4766,7 +4789,7 @@ async function deleteGenTemplate(id) {
       document.getElementById('modal-save-btn').textContent = 'Save';
       document.getElementById('modal-save-btn').className = 'btn btn-teal';
       document.getElementById('modal-save-btn').onclick = saveModal;
-      showToast('Activity deleted', 'success');
+      showToast('Activity deleted' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
     } catch(e) { showToast('Error: ' + e.message, 'error'); }
   };
   document.getElementById('modal-overlay').classList.add('open');
@@ -8789,9 +8812,11 @@ async function wizDeleteActivity(id, pgName) {
   );
   if (!ok) return;
   try {
+    const client = item.PSPClient, pg = item.PayGroup, deletedOrder = getOrder(item);
     await deleteItem('activities', id);
     cache.activities = cache.activities.filter(a => String(a.id) !== String(id));
-    showToast('Activity deleted', 'success');
+    const shifted = await shiftTemplateOrdersForDelete(client, pg, deletedOrder);
+    showToast('Activity deleted' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
     renderWizTemplates();
   } catch(e) {
     showToast('Delete failed: ' + e.message, 'error');
@@ -8924,11 +8949,23 @@ async function saveTemplateForm() {
       if (id) {
         await saveWithFieldFallback(true, 'activities', id, fields);
         const ai = cache.activities.findIndex(a => String(a.id) === String(id));
-        if (ai >= 0) Object.assign(cache.activities[ai], fields);
+        if (ai >= 0) {
+          Object.assign(cache.activities[ai], fields);
+          // fields only carries the numeric PSPMemberLookupId (that's what
+          // actually gets written to SharePoint's Person field) — also patch
+          // the display-name text field locally, or the wizard's own
+          // template list would show blank/stale Pay Master until the next
+          // full refetch, even though the save itself succeeded correctly.
+          cache.activities[ai].PSPMember = memberName;
+        }
         showToast('Activity updated' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
       } else {
         const created = await createItem('activities', fields);
-        if (created?.id) { fields.id = created.id; cache.activities.push(fields); }
+        if (created?.id) {
+          fields.id = created.id;
+          fields.PSPMember = memberName; // same reasoning as above, for the newly-created local record
+          cache.activities.push(fields);
+        }
         showToast('Activity added' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
       }
       document.getElementById('modal-overlay').classList.remove('open');
