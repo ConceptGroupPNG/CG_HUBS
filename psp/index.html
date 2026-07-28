@@ -2430,21 +2430,13 @@
                 <select id="ba-pm-once-activity"><option value="">— Pick activity —</option></select>
               </div>
               <div id="ba-pm-preview" style="font-size:12px;color:var(--grey-600);min-height:20px;"></div>
-              <div style="display:flex;justify-content:flex-end;">
+              <div style="display:flex;justify-content:flex-end;gap:10px;">
+                <button class="btn btn-outline" id="ba-pm-fromtemplate-btn" onclick="baApplyFromTemplate()">
+                  <i class="ti ti-template"></i> Apply from Template
+                </button>
                 <button class="btn btn-teal" id="ba-pm-apply-btn" onclick="baApplyPMChange()">
                   <i class="ti ti-user-check"></i> Apply Reassignment
                 </button>
-              </div>
-
-              <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--grey-200);">
-                <div style="font-size:12px;color:var(--grey-600);margin-bottom:8px;">
-                  <strong>Apply from Template</strong> — sync Pay Master on every <strong>Not Started</strong> activity for the Client/Pay Group selected above to match the current Activity Template, matched by Order. Uses only Client + Pay Group above — New Pay Master and Scope don't apply here. Useful when Generate Calendar creates activities without a Pay Master set.
-                </div>
-                <div style="display:flex;justify-content:flex-end;">
-                  <button class="btn btn-outline" id="ba-pm-fromtemplate-btn" onclick="baApplyFromTemplate()">
-                    <i class="ti ti-template"></i> Apply from Template
-                  </button>
-                </div>
               </div>
             </div>
           </div>
