@@ -4853,6 +4853,23 @@ function onGenPayGroupChange() {
   renderTemplatePreview(client, pg, tmpl);
 }
 
+// Reads a single calendar item directly from SharePoint (not the local
+// cache) to confirm a Person field write actually persisted — Graph can
+// report success on a write that silently doesn't stick, so "no error" isn't
+// proof by itself; this checks the real, current server-side value.
+async function verifyCalendarMemberSet(id, expectedLookupId) {
+  try {
+    const siteId = await getSiteId();
+    const listId = await getListId(LISTS.calendar);
+    const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${id}?expand=fields($expand=PSPMEmber)`;
+    const data = await graphFetch(url);
+    return String(data?.fields?.PSPMEmberLookupId || '') === String(expectedLookupId);
+  } catch(e) {
+    console.warn('Verification read failed for', id, e.message);
+    return false;
+  }
+}
+
 async function generateCalendar() {
   const client = document.getElementById('gen-client').value;
   const pg = document.getElementById('gen-paygroup').value;
@@ -4950,25 +4967,34 @@ async function generateCalendar() {
 
   // Person/Lookup fields (Pay Master) are unreliable when set during item
   // creation, and — confirmed by direct testing — also unreliable when set
-  // via an *immediate* follow-up update: Graph can report success on both
+  // via an immediate follow-up update: Graph can report success on both
   // without the link actually persisting, apparently a SharePoint-side
   // consistency delay rather than anything wrong with the write itself (the
-  // exact same update succeeds reliably when run a little while after the
-  // item was created). So Pay Master is applied here as a genuinely separate
-  // pass, after every activity/billing record for this batch already exists,
-  // rather than immediately after each individual creation.
+  // exact same update succeeds reliably when run some time after the item
+  // was created). Since the exact settling time isn't predictable, this
+  // waits, writes, then genuinely re-reads the item from SharePoint to
+  // confirm it actually took — retrying with a longer wait if not, rather
+  // than trusting a successful-looking response at face value.
   if (pendingMemberUpdates.length) {
     btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Setting Pay Masters...`;
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 4000));
     let memberSet = 0, memberFailed = 0;
     for (const u of pendingMemberUpdates) {
-      try {
-        await saveWithFieldFallback(true, 'calendar', u.id, { PSPMEmberLookupId: u.memberLookupId });
-        memberSet++;
-      } catch(e2) {
-        memberFailed++;
-        console.warn(`Could not set Pay Master on newly-created activity ${u.id}:`, e2.message);
+      let verified = false;
+      for (let attempt = 1; attempt <= 3 && !verified; attempt++) {
+        try {
+          await saveWithFieldFallback(true, 'calendar', u.id, { PSPMEmberLookupId: u.memberLookupId });
+          verified = await verifyCalendarMemberSet(u.id, u.memberLookupId);
+        } catch(e2) {
+          console.warn(`Pay Master update attempt ${attempt} failed for ${u.id}:`, e2.message);
+        }
+        if (!verified && attempt < 3) {
+          btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Setting Pay Masters (retry ${attempt})...`;
+          await new Promise(r => setTimeout(r, 4000 * attempt));
+        }
       }
+      if (verified) memberSet++;
+      else { memberFailed++; console.warn(`Could not verify Pay Master on newly-created activity ${u.id} after 3 attempts.`); }
     }
     if (memberFailed) {
       showToast(`${memberFailed} activit${memberFailed===1?'y':'ies'} generated without a Pay Master set — check the console for details`, 'error');
