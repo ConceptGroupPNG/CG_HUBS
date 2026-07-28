@@ -2731,6 +2731,7 @@ const FLOWS = {
   statusChange:  'https://defaultea9e105c2df647efa8e3b4aa1d7884.23.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/25/workflows/03dc91f9804e46b7b9e18fe4f758da5a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HcAcEO20McF8Xv245z61Lfjtx5z0Fl2dIK6Fg7Q0Dco',
   invoiceExport: 'https://defaultea9e105c2df647efa8e3b4aa1d7884.23.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/20/workflows/d6c5113fdb9641488495a2f51c693a17/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=QrKyUQZuwoYOeXVdWPbNL3gcuKdebl0gYiWFW-bQS4Y',
   quotePrint:    'PASTE_FLOW3_QUOTE_PRINT_HTTP_URL_HERE',
+  processComplete: 'https://defaultea9e105c2df647efa8e3b4aa1d7884.23.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/06/workflows/31e6ab06cdee4cf6991e1d97b73455d0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=dAxf26jwJvgCP5XsqB2p0SKaqU-oXBX_sYIPyEKGcj8',
 };
 
 // Fire-and-forget POST to a Power Automate HTTP trigger. Never throws — a Flow
@@ -4433,6 +4434,14 @@ async function saveStatus() {
             const bIdx = cache.billing.findIndex(b => b.id === billingRec.id);
             if (bIdx >= 0) cache.billing[bIdx].Process = true;
             showToast('Pay run complete — Billing record marked for processing', 'success');
+            triggerFlow('processComplete', {
+              client: statusEditItem.PSPClient,
+              payGroup: getPayGroup(statusEditItem),
+              payNo: statusEditItem.PayNo,
+              ppeDate: fmtDate(billingRec.PayEnddate || statusEditItem.PayEndDate || ''),
+              finishedByName: getPSPMember(statusEditItem),
+              completedDate: new Date().toISOString(),
+            });
           } catch(e) {
             console.warn('Could not set Process flag:', e);
           }
@@ -4974,6 +4983,26 @@ async function generateCalendar() {
       'Public Holiday Notice'
     );
   }
+
+  resetGenerateCalendarForm();
+}
+
+// Clears the Generate Calendar form back to its default empty state — used
+// after a successful generation so the form doesn't sit there implying the
+// same client/pay group/dates are still queued up to generate again.
+function resetGenerateCalendarForm() {
+  document.getElementById('gen-client').value = '';
+  document.getElementById('gen-paygroup').innerHTML = '<option value="">Select Pay Group...</option>';
+  document.getElementById('gen-cycle').value = '';
+  document.getElementById('gen-payno').value = '';
+  const payNoHint = document.getElementById('gen-payno-hint');
+  if (payNoHint) payNoHint.textContent = '';
+  document.getElementById('gen-periods').value = '1';
+  document.getElementById('gen-payenddate').value = '';
+  const ppeHint = document.getElementById('gen-ppe-hint');
+  if (ppeHint) ppeHint.textContent = '';
+  document.getElementById('template-preview-container').innerHTML = '<div class="empty-state"><i class="ti ti-template"></i><p>Select a pay group to preview its activity template</p></div>';
+  document.getElementById('btn-generate').disabled = true;
 }
 
 
@@ -10752,6 +10781,14 @@ async function kbApplyMove(item, targetStatus, comment) {
           const bi = cache.billing.findIndex(b => b.id === billingRec.id);
           if (bi >= 0) cache.billing[bi].Process = true;
           showToast(`Pay run complete — billing record flagged ready`, 'success');
+          triggerFlow('processComplete', {
+            client: item.PSPClient,
+            payGroup: getPayGroup(item),
+            payNo: item.PayNo,
+            ppeDate: fmtDate(billingRec.PayEnddate || item.PayEndDate || ''),
+            finishedByName: getPSPMember(item),
+            completedDate: new Date().toISOString(),
+          });
         }
       }
     }
