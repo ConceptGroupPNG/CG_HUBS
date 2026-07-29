@@ -3154,10 +3154,10 @@ function isOverdue(val, status) {
 }
 
 // date offset calculation: PayEndDate (as Excel serial) + offset days
-function calcActivityDate(payEndDateSerial, offsetDays, timeOfDay = 9) {
+function calcActivityDate(payEndDateSerial, offsetDays, timeOfDay = 9, minuteOfDay = 0) {
   const base = new Date((payEndDateSerial - 25569) * 86400000);
   base.setDate(base.getDate() + offsetDays);
-  base.setHours(timeOfDay, 0, 0, 0);
+  base.setHours(timeOfDay, minuteOfDay, 0, 0);
   return base;
 }
 
@@ -4893,7 +4893,13 @@ async function generateCalendar() {
   for (let p = 0; p < periods; p++) {
     const payEndSerial = dateToExcelSerial(currentPPE);
     for (const t of tmpl) {
-      const actDate = calcActivityDate(payEndSerial, t.Offset || 0, 9);
+      // Use the time-of-day stored on the template itself (PSP_Activities_Templates.ActivityDateTime)
+      // rather than defaulting everyone to 9am — the template's own date portion is irrelevant here
+      // (that's recalculated from this pay period's PPE + Offset), only its time-of-day matters.
+      const tmplTime = spDateToDate(t.ActivityDateTime);
+      const tmplHour = tmplTime && !isNaN(tmplTime) ? tmplTime.getHours() : 9;
+      const tmplMinute = tmplTime && !isNaN(tmplTime) ? tmplTime.getMinutes() : 0;
+      const actDate = calcActivityDate(payEndSerial, t.Offset || 0, tmplHour, tmplMinute);
       const hols = getClientHolidaysOnDate(client, actDate);
       if (hols.length) {
         holidayLandings.push({ milestone: t.ActivityMilestone, payNo: currentPayNo, date: actDate, holidays: hols });
@@ -8888,6 +8894,19 @@ function openTemplateFormForWiz(item) {
   modalIsEdit = !!item;
   document.getElementById('modal-title').textContent = item ? 'Edit Template Activity' : 'Add Template Activity';
 
+  // Time field: for Edit, pre-fill from the existing ActivityDateTime's time
+  // portion. For Add, left blank — it's mandatory, no sensible default.
+  const tmplTime = item ? spDateToDate(item.ActivityDateTime) : null;
+  const timeVal = tmplTime && !isNaN(tmplTime)
+    ? `${String(tmplTime.getHours()).padStart(2,'0')}:${String(tmplTime.getMinutes()).padStart(2,'0')}`
+    : '';
+
+  // Only the very first activity ever added to a brand-new pay group has no
+  // sibling template row to pull a reference PayEndDate from — everything
+  // after that reuses whichever sibling's PayEndDate is already on file.
+  const siblingTmpl = cache.activities.find(a => a.PSPClient === ctx.client && a.PayGroup === ctx.pg && a.PayEndDate);
+  const needsRefPPE = !item && !siblingTmpl;
+
   // Reuse the compact modal body but with client/pg locked
   document.getElementById('modal-body').innerHTML = `
     <div style="background:var(--grey-50);border:1px solid var(--grey-200);border-radius:8px;padding:8px 12px;margin-bottom:12px;display:flex;gap:16px;">
@@ -8895,10 +8914,21 @@ function openTemplateFormForWiz(item) {
       <span style="font-size:12px;color:var(--grey-600);"><strong>Pay Group:</strong> ${ctx.pg}</span>
       <span style="font-size:12px;color:var(--grey-600);"><strong>Cycle:</strong> ${ctx.cycle}</span>
     </div>
-    <div class="form-group" style="margin-bottom:10px;">
-      <label>Milestone <span style="color:var(--red);">*</span></label>
-      <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}" placeholder="e.g. Process Payroll, Submit Reports">
+    <div style="display:grid;grid-template-columns:1fr 110px;gap:10px;margin-bottom:10px;">
+      <div class="form-group" style="margin:0;">
+        <label>Milestone <span style="color:var(--red);">*</span></label>
+        <input type="text" id="f-milestone" value="${item?.ActivityMilestone||''}" placeholder="e.g. Process Payroll, Submit Reports">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Time <span style="color:var(--red);">*</span></label>
+        <input type="time" id="f-time" value="${timeVal}" required>
+      </div>
     </div>
+    ${needsRefPPE ? `
+    <div class="form-group" style="margin-bottom:10px;">
+      <label>Reference PPE Date <span style="color:var(--red);">*</span> <span style="font-size:10px;color:var(--grey-400);font-weight:400;">(no existing activity for this Pay Group yet — needed once, to anchor future dates)</span></label>
+      <input type="date" id="f-refppe" required>
+    </div>` : ''}
     <div style="display:grid;grid-template-columns:80px 100px 140px 120px;gap:10px;margin-bottom:10px;">
       <div class="form-group" style="margin:0;">
         <label>Order <span style="color:var(--red);">*</span></label>
@@ -8973,7 +9003,39 @@ async function saveTemplateForm() {
     const id = document.getElementById('modal-save-btn').getAttribute('data-id');
     const milestone = document.getElementById('f-milestone')?.value.trim();
     const orderVal  = parseInt(document.getElementById('f-order')?.value || '0');
+    const timeVal   = document.getElementById('f-time')?.value || '';
     if (!milestone || !orderVal) { showToast('Order and Milestone are required', 'error'); return; }
+    if (!timeVal) { showToast('Time is required', 'error'); return; }
+    const [timeHour, timeMinute] = timeVal.split(':').map(n => parseInt(n, 10));
+
+    const offsetVal = parseInt(document.getElementById('f-offset')?.value || '0');
+    const existingItem = id ? cache.activities.find(a => String(a.id) === String(id)) : null;
+
+    let activityDateTime;
+    if (existingItem) {
+      // Edit: only the time portion changes — keep the existing date exactly as-is
+      const existingDate = spDateToDate(existingItem.ActivityDateTime) || new Date();
+      const newDate = new Date(existingDate);
+      newDate.setHours(timeHour, timeMinute, 0, 0);
+      activityDateTime = newDate;
+    } else {
+      // Add: base date = a sibling template row's PayEndDate, or (if this is
+      // the very first activity for this Pay Group) the Reference PPE Date
+      // the user was prompted for — plus Offset days, plus the entered Time.
+      const siblingTmpl = cache.activities.find(a => a.PSPClient === wizTmplContext.client && a.PayGroup === wizTmplContext.pg && a.PayEndDate);
+      let basePPE;
+      if (siblingTmpl) {
+        basePPE = spDateToDate(siblingTmpl.PayEndDate);
+      } else {
+        const refPPEVal = document.getElementById('f-refppe')?.value;
+        if (!refPPEVal) { showToast('Reference PPE Date is required for the first activity in a new Pay Group', 'error'); return; }
+        basePPE = new Date(refPPEVal);
+      }
+      const newDate = new Date(basePPE);
+      newDate.setDate(newDate.getDate() + offsetVal);
+      newDate.setHours(timeHour, timeMinute, 0, 0);
+      activityDateTime = newDate;
+    }
 
     const memberName = userPickerSelected?.displayName || document.getElementById('f-member')?.value || '';
     const lookupId = resolveMemberLookupId(memberName);
@@ -8987,7 +9049,7 @@ async function saveTemplateForm() {
       PayGroup: wizTmplContext.pg,
       Cycle: document.getElementById('f-cycle')?.value || wizTmplContext.cycle,
       Order0: orderVal,
-      Offset: parseInt(document.getElementById('f-offset')?.value || '0'),
+      Offset: offsetVal,
       ActivityMilestone: milestone,
       PSPMemberLookupId: lookupId,
       Contact: document.getElementById('f-contact')?.value || '',
@@ -8996,6 +9058,19 @@ async function saveTemplateForm() {
       SLA: document.getElementById('f-sla')?.checked || false,
       Template: true,
     };
+
+    if (existingItem) {
+      // Edit: write only the recalculated ActivityDateTime — PayEndDate is
+      // deliberately left untouched, per how this field only ever changes
+      // the time portion of an existing activity.
+      fields.ActivityDateTime = activityDateTime.toISOString();
+    } else {
+      // Add: write both, so this new row can itself act as the "sibling"
+      // PayEndDate source for the next activity added to this Pay Group.
+      fields.ActivityDateTime = activityDateTime.toISOString();
+      const siblingTmpl = cache.activities.find(a => a.PSPClient === wizTmplContext.client && a.PayGroup === wizTmplContext.pg && a.PayEndDate);
+      fields.PayEndDate = siblingTmpl ? siblingTmpl.PayEndDate : new Date(document.getElementById('f-refppe').value).toISOString();
+    }
 
     try {
       const shifted = await shiftTemplateOrdersForInsert(wizTmplContext.client, wizTmplContext.pg, orderVal, id);
