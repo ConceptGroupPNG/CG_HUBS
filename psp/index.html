@@ -3825,6 +3825,7 @@ function renderMyActivities() {
         <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
           ${statusBadge(getActStatus(i)||'Not Started')}
           <button class="btn btn-xs btn-outline" onclick="openStatusModalById('${i.id}')">Update</button>
+          <button class="btn btn-xs btn-outline" onclick="openActivityEditModal('${i.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
         </div>
       </div>`;
     }).join('');
