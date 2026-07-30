@@ -5499,6 +5499,13 @@ async function openFormModal(entity, data){
     }
   }
 
+  // Invoices carries a much denser line-items table (Course, Qty, Fee, GST
+  // Rate, Line Total, Attendees Matched To) than the simple forms this
+  // modal's default width was designed for - give it more room rather than
+  // squeezing the Course column down to make everything else fit.
+  const modalEl = document.querySelector('#entity-modal .modal');
+  if(modalEl) modalEl.style.maxWidth = (entity==='invoices') ? '900px' : '';
+
   document.getElementById('entity-modal').classList.add('open');
 }
 
