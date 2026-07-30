@@ -1912,20 +1912,40 @@ function renderRunsCalendar(items, jumpToResults){
 
   // Group runs by day - a multi-day run (different StartDate/EndDate) appears
   // on every day it spans, each labelled with its day number within the run.
+  // Where a run's span includes a Saturday/Sunday alongside real weekdays,
+  // that weekend is a pause between training days, not training itself - so
+  // it's skipped from display and from the day count entirely. A run that's
+  // ENTIRELY within a weekend (a deliberate Sat/Sun session) still displays
+  // normally rather than vanishing.
   const byDay = {};
   monthRuns.forEach(r=>{
     const start = parseLocalDate((r.StartDate||'').substring(0,10));
     const endRaw = (r.EndDate||r.StartDate||'').substring(0,10);
     const end = parseLocalDate(endRaw);
     if(isNaN(start)) return;
-    const totalDays = !isNaN(end) ? Math.max(1, Math.round((end-start)/86400000)+1) : 1;
-    for(let n=0; n<totalDays; n++){
+    const rawSpan = !isNaN(end) ? Math.max(1, Math.round((end-start)/86400000)+1) : 1;
+
+    let weekdaySpan = 0;
+    for(let n=0; n<rawSpan; n++){
+      const d = new Date(start); d.setDate(d.getDate()+n);
+      const dow = d.getDay();
+      if(dow!==0 && dow!==6) weekdaySpan++;
+    }
+    const hideWeekends = weekdaySpan>0 && weekdaySpan<rawSpan;
+    const totalDays = weekdaySpan>0 ? weekdaySpan : rawSpan;
+
+    let dayCounter = 0;
+    for(let n=0; n<rawSpan; n++){
       const cellDate = new Date(start);
       cellDate.setDate(cellDate.getDate()+n);
+      const dow = cellDate.getDay();
+      const isWeekend = (dow===0 || dow===6);
+      if(!isWeekend || !hideWeekends) dayCounter++;
       if(cellDate.getFullYear()!==calendarYear || cellDate.getMonth()!==calendarMonth) continue; // stays within the displayed month only
+      if(isWeekend && hideWeekends) continue; // this weekend is a pause, not a training day - don't show it
       const day = cellDate.getDate();
       if(!byDay[day]) byDay[day]=[];
-      byDay[day].push({ run: r, dayNumber: n+1, totalDays });
+      byDay[day].push({ run: r, dayNumber: dayCounter, totalDays });
     }
   });
 
