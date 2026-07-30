@@ -1314,8 +1314,11 @@
           <select id="act-filter-client" onchange="onActClientChange()" style="font-size:12px;">
             <option value="">All Clients</option>
           </select>
-          <select id="act-filter-pg" onchange="renderActivities()" style="font-size:12px;">
+          <select id="act-filter-pg" onchange="onActPayGroupChange()" style="font-size:12px;">
             <option value="">All Pay Groups</option>
+          </select>
+          <select id="act-filter-payno" onchange="renderActivities()" style="font-size:12px;">
+            <option value="">All Pay No</option>
           </select>
 
           <!-- All-scope only filters (hidden in My scope) -->
@@ -3324,6 +3327,7 @@ const PAGE_FILTER_FIELDS = {
     { id: 'act-filter-date', def: 'today' },
     { id: 'act-filter-client', def: '' },
     { id: 'act-filter-pg', def: '' },
+    { id: 'act-filter-payno', def: '' },
     { id: 'act-filter-member', def: '' },
     { id: 'act-filter-status', def: '' },
     { id: 'act-filter-search', def: '' },
@@ -3723,6 +3727,7 @@ async function loadActivities() {
   // Populate filters
   populateClientFilter('act-filter-client', cache.calendar);
   populatePayGroupFilter('act-filter-pg', cache.calendar);
+  populatePayNoFilter('act-filter-payno', cache.calendar);
   populateMemberFilter('act-filter-member', cache.calendar);
   renderActivities();
 }
@@ -3757,6 +3762,16 @@ function onActClientChange() {
   const client = document.getElementById('act-filter-client')?.value;
   const items = client ? cache.calendar.filter(i => i.PSPClient === client) : cache.calendar;
   populatePayGroupFilter('act-filter-pg', items);
+  populatePayNoFilter('act-filter-payno', items);
+  renderActivities();
+}
+
+function onActPayGroupChange() {
+  const client = document.getElementById('act-filter-client')?.value;
+  const pg = document.getElementById('act-filter-pg')?.value;
+  let items = client ? cache.calendar.filter(i => i.PSPClient === client) : cache.calendar;
+  if (pg) items = items.filter(i => getPayGroup(i) === pg);
+  populatePayNoFilter('act-filter-payno', items);
   renderActivities();
 }
 
@@ -3769,6 +3784,7 @@ function renderMyActivities() {
   const dateFilter = document.getElementById('act-filter-date')?.value || 'today';
   const client     = document.getElementById('act-filter-client')?.value || '';
   const pg         = document.getElementById('act-filter-pg')?.value || '';
+  const payNo      = document.getElementById('act-filter-payno')?.value || '';
   const search     = (document.getElementById('act-filter-search')?.value || '').toLowerCase();
 
   let items = cache.calendar.filter(i => {
@@ -3782,6 +3798,7 @@ function renderMyActivities() {
   else if (dateFilter === 'days30') items = items.filter(i => isWithinDays(i.ActivityDateTime, 30));
   if (client) items = items.filter(i => i.PSPClient === client);
   if (pg)     items = items.filter(i => getPayGroup(i) === pg);
+  if (payNo)  items = items.filter(i => String(i.PayNo) === payNo);
   if (search) items = items.filter(i =>
     (i.ActivityMilestone||'').toLowerCase().includes(search) ||
     (i.PSPClient||'').toLowerCase().includes(search) ||
@@ -3850,6 +3867,7 @@ function renderAllActivities() {
   const member     = document.getElementById('act-filter-member')?.value || '';
   const client     = document.getElementById('act-filter-client')?.value || '';
   const pg         = document.getElementById('act-filter-pg')?.value || '';
+  const payNo      = document.getElementById('act-filter-payno')?.value || '';
   const status     = document.getElementById('act-filter-status')?.value || '';
   const search     = (document.getElementById('act-filter-search')?.value || '').toLowerCase();
 
@@ -3859,6 +3877,7 @@ function renderAllActivities() {
   else if (dateFilter === 'days30') items = items.filter(i => isWithinDays(i.ActivityDateTime, 30));
   if (member) items = items.filter(i => getPSPMember(i) === member);
   if (pg)     items = items.filter(i => getPayGroup(i) === pg);
+  if (payNo)  items = items.filter(i => String(i.PayNo) === payNo);
   if (client) items = items.filter(i => i.PSPClient === client);
   if (status) items = items.filter(i => (getActStatus(i) || 'Not Started') === status);
   if (search) items = items.filter(i =>
@@ -7707,6 +7726,13 @@ function populatePayGroupFilter(elId, items) {
   const cur = el.value;
   const pgs = [...new Set(items.map(i => getPayGroup(i)).filter(Boolean))].sort();
   el.innerHTML = '<option value="">All Pay Groups</option>' + pgs.map(p => `<option ${p===cur?'selected':''}>${p}</option>`).join('');
+}
+function populatePayNoFilter(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cur = el.value;
+  const payNos = [...new Set(items.map(i => i.PayNo).filter(v => v !== undefined && v !== null && v !== ''))].sort((a,b) => a - b);
+  el.innerHTML = '<option value="">All Pay No</option>' + payNos.map(p => `<option ${String(p)===cur?'selected':''}>${p}</option>`).join('');
 }
 function populateMemberFilter(elId, items) {
   const el = document.getElementById(elId);
