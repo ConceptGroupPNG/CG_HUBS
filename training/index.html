@@ -1783,6 +1783,10 @@ async function loadCourses(){
     cache.courses = items;
     if(!cache.runs) cache.runs = runs;
     renderCourses(items);
+    // Silently backfill Duration for any course that doesn't have one stored
+    // yet - the page already displays correctly via the fallback logic, this
+    // just persists it for next time. Fire-and-forget, no need to block on it.
+    backfillCourseDurations();
     // populate runs filter
     const sel = document.getElementById('runs-course');
     sel.innerHTML = '<option value="">All courses</option>';
@@ -2952,7 +2956,49 @@ function courseRunCount(c){
   }).length;
 }
 
+// Auto-calculates a Course Run's End Date from Start Date + the selected
+// Course's Duration, whenever either field changes. End Date stays a normal
+// editable input - this just pre-fills it, since the calculated date
+// sometimes needs manual adjustment (e.g. to dodge a weekend).
+function recalcRunEndDate(){
+  const courseId = document.getElementById('mf-CourseRef')?.value;
+  const startVal = document.getElementById('mf-StartDate')?.value;
+  if(!courseId || !startVal) return;
+  const course = (cache.courses||[]).find(c=>String(c.id)===String(courseId));
+  if(!course) return;
+  const duration = courseDuration(course);
+  if(!duration || duration<1) return;
+
+  // Parse the "YYYY-MM-DD" string into explicit local components rather than
+  // handing it to `new Date(string)` or round-tripping through toISOString()
+  // - both have timezone-dependent gotchas that can shift the date by a day
+  // (the exact bug found earlier in the Audit Reconciliation tool).
+  const parts = startVal.split('-').map(Number);
+  if(parts.length!==3 || parts.some(isNaN)) return;
+  const start = new Date(parts[0], parts[1]-1, parts[2]);
+  if(isNaN(start)) return;
+  const end = new Date(start);
+  end.setDate(end.getDate() + duration - 1);
+  const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+
+  const endEl = document.getElementById('mf-EndDate');
+  if(endEl) endEl.value = endStr;
+  checkRunEndDateWeekend(end);
+}
+
+function checkRunEndDateWeekend(endDate){
+  const day = endDate.getDay(); // 0 = Sunday, 6 = Saturday
+  if(day===0 || day===6){
+    toast(`Heads up: the calculated End Date falls on a ${day===0?'Sunday':'Saturday'} - you may want to adjust it`, 'error');
+  }
+}
+
 function courseDuration(c){
+  // The stored Duration is now the authoritative source - no more guessing
+  // from whichever Run happens to be most recent.
+  if(+c.Duration > 0) return +c.Duration;
+  // Fallback for courses that predate this field: derive it the old way,
+  // from the most recently scheduled run, so nothing breaks retroactively.
   const cName=(c.CourseName||c.Title||'').toLowerCase().trim();
   if(!cName) return null;
   const matches = (cache.runs||[]).filter(r=>{
@@ -2968,6 +3014,25 @@ function courseDuration(c){
   if(isNaN(start)||isNaN(end)) return null;
   const days = Math.round((end-start)/86400000)+1; // inclusive of both start and end day
   return days>0 ? days : null;
+}
+
+// One-time, silent self-healing backfill: any course that doesn't have a
+// stored Duration yet gets one computed from its most recent run (matching
+// what it already displayed before this field existed) and written back to
+// SharePoint, so it becomes the new authoritative value going forward. Runs
+// quietly on Courses page load; once every course has a Duration this
+// naturally becomes a no-op.
+async function backfillCourseDurations(){
+  const toBackfill = (cache.courses||[]).filter(c=>!(+c.Duration>0));
+  for(const c of toBackfill){
+    const derived = courseDuration(c); // uses the fallback path since Duration is blank
+    if(derived && derived>0){
+      try{
+        await saveWithFieldFallback(true, 'courses', c.id, {Duration: derived});
+        c.Duration = derived; // keep in-memory cache in sync so this session already reflects it
+      }catch(e){ console.warn('Could not backfill Duration for course', c.CourseName||c.Title, e); }
+    }
+  }
 }
 
 function clearFilters(entity){
@@ -4306,19 +4371,20 @@ const FORM_DEFS = {
     fields: [
       {key:'CourseName',label:'Course Name',type:'text',full:true,required:true},
       {key:'Category',label:'Category',type:'select',opts:['Payroll','HR','Safety','Other'],required:true},
+      {key:'Duration',label:'Duration (Days)',type:'number'},
       {key:'FeeExGST',label:'Fee (PGK excl. GST)',type:'number'},
       {key:'GSTRate',label:'GST Rate (%)',type:'number'},
       {key:'CertPrefix',label:'Certificate Prefix',type:'text',sectionLabel:'Certificates',full:true},
       {key:'AttainmentEligible',label:'Offers Certificate of Attainment',type:'checkbox',full:true},
     ],
-    toFields: (f)=>({CourseName:f.CourseName,Category:f.Category,FeeExGST:+f.FeeExGST||0,GSTRate:+f.GSTRate||10,Title:f.CourseName,
+    toFields: (f)=>({CourseName:f.CourseName,Category:f.Category,Duration:+f.Duration||0,FeeExGST:+f.FeeExGST||0,GSTRate:+f.GSTRate||10,Title:f.CourseName,
       CertPrefix:(f.CertPrefix||'').trim().toUpperCase(),AttainmentEligible:f.AttainmentEligible==='true'||f.AttainmentEligible===true}),
   },
   runs: {
     title: (d)=> d?'Edit Course Run':'Add Course Run',
     fields: [
-      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true,matchKey:'CourseName'},
-      {key:'StartDate',label:'Start Date',type:'date',required:true,sectionLabel:'Schedule'},
+      {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',full:true,required:true,matchKey:'CourseName',onchange:'recalcRunEndDate()'},
+      {key:'StartDate',label:'Start Date',type:'date',required:true,sectionLabel:'Schedule',onchange:'recalcRunEndDate()'},
       {key:'EndDate',label:'End Date',type:'date',required:true},
       {key:'TrainerRef',label:'Trainer',type:'lookup',entity:'trainers',display:'TrainerName',matchKey:'TrainerName',sectionLabel:'Logistics'},
       {key:'VenueRef',label:'Venue',type:'lookup',entity:'venues',display:'VenueName',matchKey:'VenueName',onchange:'onVenueChange()'},
@@ -4603,7 +4669,7 @@ const FIELD_ICONS = {
   AmountPaid:'ti-currency-kina', DatePaid:'ti-calendar',
   Specialisation:'ti-star', Phone:'ti-phone', VenueName:'ti-map-pin', AttendeeRef:'ti-user',
   CertPrefix:'ti-hash', AttainmentEligible:'ti-certificate', CertificateType:'ti-certificate',
-  IsInternal:'ti-building-community', CourseRef:'ti-books',
+  IsInternal:'ti-building-community', CourseRef:'ti-books', Duration:'ti-hourglass',
 };
 function fieldIconFor(f){
   return FIELD_ICONS[f.key] || (f.type==='date' ? 'ti-calendar' : f.type==='lookup' ? 'ti-link' : 'ti-forms');
@@ -5256,7 +5322,7 @@ async function openFormModal(entity, data){
     } else {
       const v = f.type==='date' && val ? val.substring(0,10) : val;
       html += `<div class="${cls}" id="fg-${f.key}"><label>${fieldLabelHtml(f)}</label>
-        <input type="${f.type}" id="mf-${f.key}" value="${v||''}" ${f.required?'required':''}></div>`;
+        <input type="${f.type}" id="mf-${f.key}" value="${v||''}" ${f.required?'required':''} ${f.onchange?`onchange="${f.onchange}"`:''}></div>`;
     }
   });
   html += '</div>';
