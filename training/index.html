@@ -567,7 +567,7 @@ select:focus{border-color:var(--teal)}
                           <th style="width:35%">Course</th>
                           <th style="text-align:right;width:55px">Qty</th>
                           <th style="text-align:right;width:90px">Fee ea (PGK)</th>
-                          <th style="text-align:right;width:70px">GST</th>
+                          <th style="text-align:right;width:95px">GST Rate</th>
                           <th style="text-align:right;width:85px">Line Total</th>
                           <th style="width:32px"></th>
                         </tr></thead>
@@ -2368,7 +2368,7 @@ async function fetchNextQuoteNumber(){
 function gqAddLine(){
   gqLineSeq++;
   const courses = cache.courses || [];
-  gqLines.push({_id:'gql'+gqLineSeq, CourseName:'', Quantity:1, FeeExGST:0, GSTAmount:0, LineTotal:0});
+  gqLines.push({_id:'gql'+gqLineSeq, CourseName:'', Quantity:1, FeeExGST:0, GSTRate:0.10, GSTAmount:0, LineTotal:0});
   renderGqLines();
   renderQuotePreview();
 }
@@ -2384,17 +2384,29 @@ function gqUpdateLine(id, field, value){
   if(!line) return;
   if(field==='CourseName'){
     line.CourseName = value;
-    // Auto-fill fee from course catalogue
+    // Auto-fill fee from course catalogue, including that course's own default GST rate
     const course = (cache.courses||[]).find(c=>(c.CourseName||c.Title||'')=== value);
     if(course && course.FeeExGST){
       line.FeeExGST = +course.FeeExGST;
-      line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * (+(course.GSTRate||10)/100) * 100) / 100;
+      line.GSTRate = (+(course.GSTRate!==undefined && course.GSTRate!==null ? course.GSTRate : 10))/100;
+      line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * line.GSTRate * 100) / 100;
       line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
       renderGqLines();
     }
+  } else if(field==='GSTRate'){
+    line.GSTRate = +value;
+    line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * line.GSTRate * 100) / 100;
+    line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
+    const row = document.querySelector(`[data-gql-id="${id}"]`);
+    if(row){
+      const gstCell  = row.querySelector('.gql-gst');
+      const totCell  = row.querySelector('.gql-total');
+      if(gstCell)  gstCell.textContent  = 'K '+line.GSTAmount.toFixed(2);
+      if(totCell)  totCell.textContent  = 'K '+line.LineTotal.toFixed(2);
+    }
   } else {
     line[field] = +value || 0;
-    const gstRate = 0.10;
+    const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
     line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * gstRate * 100) / 100;
     line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
     // Update ONLY the computed cells — not the input being typed in
@@ -2440,7 +2452,14 @@ function renderGqLines(){
       <td><input type="number" min="0" step="0.01" value="${l.FeeExGST||''}"
             style="width:80px;padding:4px;border:1px solid var(--g200);border-radius:5px;font-size:12px;text-align:right"
             oninput="gqUpdateLine('${l._id}','FeeExGST',this.value)"></td>
-      <td class="gql-gst"  style="text-align:right">K ${(+l.GSTAmount||0).toFixed(2)}</td>
+      <td>
+        <select class="gql-gst-select" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:5px;font-size:11px"
+                onchange="gqUpdateLine('${l._id}','GSTRate',this.value)">
+          <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
+          <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
+        </select>
+        <div class="gql-gst" style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px">K ${(+l.GSTAmount||0).toFixed(2)}</div>
+      </td>
       <td class="gql-total" style="text-align:right">K ${(+l.LineTotal||0).toFixed(2)}</td>
       <td><button class="btn-icon danger" style="padding:3px" onclick="gqRemoveLine('${l._id}')"><i class="ti ti-trash" style="font-size:13px"></i></button></td>
     </tr>`).join('');
@@ -2529,7 +2548,7 @@ function renderQuotePreview(){
     <div style="display:flex;justify-content:flex-end">
       <table style="font-size:11px;min-width:220px">
         <tr><td style="padding:3px 12px 3px 0;color:var(--g500)">Subtotal (ex GST)</td><td style="text-align:right;padding:3px 0">${fmtK(t.fee)}</td></tr>
-        <tr><td style="padding:3px 12px 3px 0;color:var(--g500)">GST (10%)</td><td style="text-align:right;padding:3px 0">${fmtK(t.gst)}</td></tr>
+        <tr><td style="padding:3px 12px 3px 0;color:var(--g500)">GST</td><td style="text-align:right;padding:3px 0">${fmtK(t.gst)}</td></tr>
         <tr style="border-top:2px solid var(--navy)">
           <td style="padding:6px 12px 3px 0;font-weight:700;font-size:13px">TOTAL</td>
           <td style="text-align:right;padding:6px 0;font-weight:700;font-size:13px;color:var(--navy)">${fmtK(t.total)}</td>
@@ -2580,6 +2599,7 @@ async function gqSave(){
         CourseName: l.CourseName,
         Quantity: +l.Quantity||0,
         FeeExGST: +l.FeeExGST||0,
+        GSTRate: (l.GSTRate!==undefined && l.GSTRate!==null) ? +l.GSTRate : 0.10,
         GSTAmount: +l.GSTAmount||0,
         LineTotal: +l.LineTotal||0,
       });
@@ -2720,7 +2740,7 @@ function modalPrintQuote(){
   <div class="totals">
     <table>
       <tr><td>Subtotal (ex GST)</td><td>${fmtK(t.fee)}</td></tr>
-      <tr><td>GST (10%)</td><td>${fmtK(t.gst)}</td></tr>
+      <tr><td>GST</td><td>${fmtK(t.gst)}</td></tr>
       <tr class="grand"><td>TOTAL (PGK)</td><td>${fmtK(t.total)}</td></tr>
     </table>
   </div>
@@ -2857,7 +2877,7 @@ function gqPrint(){
   <div class="totals">
     <table>
       <tr><td>Subtotal (ex GST)</td><td>${fmtK(t.fee)}</td></tr>
-      <tr><td>GST (10%)</td><td>${fmtK(t.gst)}</td></tr>
+      <tr><td>GST</td><td>${fmtK(t.gst)}</td></tr>
       <tr class="grand"><td>TOTAL (PGK)</td><td>${fmtK(t.total)}</td></tr>
     </table>
   </div>
