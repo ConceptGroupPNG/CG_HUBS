@@ -1869,6 +1869,19 @@ function changeCalendarMonth(delta){
 }
 
 let calendarCurrentRuns = [];
+// Parses a "YYYY-MM-DD" string into a local-midnight Date object explicitly,
+// rather than new Date(string) (which JS parses as UTC midnight - fine on
+// its own, but comparing it against a new Date(y,m,d) built elsewhere in
+// this function, which is always local, silently breaks right at month
+// boundaries since the two would have different times-of-day for the "same"
+// calendar date).
+function parseLocalDate(dateStr){
+  if(!dateStr) return new Date(NaN);
+  const parts = dateStr.substring(0,10).split('-').map(Number);
+  if(parts.length!==3 || parts.some(isNaN)) return new Date(NaN);
+  return new Date(parts[0], parts[1]-1, parts[2]);
+}
+
 function renderRunsCalendar(items, jumpToResults){
   const el = document.getElementById('runs-calendar-view');
   if(!el) return;
@@ -1877,15 +1890,15 @@ function renderRunsCalendar(items, jumpToResults){
   calendarCurrentRuns = allRuns;
   // If filters produced results and caller requests it, jump to the month of the first result
   if(jumpToResults && allRuns.length){
-    const firstDate = new Date((allRuns[0].StartDate||'').substring(0,10));
+    const firstDate = parseLocalDate((allRuns[0].StartDate||'').substring(0,10));
     if(!isNaN(firstDate)){
       calendarYear = firstDate.getFullYear();
       calendarMonth = firstDate.getMonth();
     }
   }
   const monthRuns = allRuns.filter(r=>{
-    const start = new Date((r.StartDate||'').substring(0,10));
-    const end = new Date((r.EndDate||r.StartDate||'').substring(0,10));
+    const start = parseLocalDate((r.StartDate||'').substring(0,10));
+    const end = parseLocalDate((r.EndDate||r.StartDate||'').substring(0,10));
     if(isNaN(start)) return false;
     const monthStart = new Date(calendarYear, calendarMonth, 1);
     const monthEnd = new Date(calendarYear, calendarMonth+1, 0);
@@ -1901,9 +1914,9 @@ function renderRunsCalendar(items, jumpToResults){
   // on every day it spans, each labelled with its day number within the run.
   const byDay = {};
   monthRuns.forEach(r=>{
-    const start = new Date((r.StartDate||'').substring(0,10));
+    const start = parseLocalDate((r.StartDate||'').substring(0,10));
     const endRaw = (r.EndDate||r.StartDate||'').substring(0,10);
-    const end = new Date(endRaw);
+    const end = parseLocalDate(endRaw);
     if(isNaN(start)) return;
     const totalDays = !isNaN(end) ? Math.max(1, Math.round((end-start)/86400000)+1) : 1;
     for(let n=0; n<totalDays; n++){
