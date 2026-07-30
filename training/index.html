@@ -1611,6 +1611,40 @@ function buildRecentActivity(atts){
     </div>`).join('');
 }
 
+// Shows which actual scheduled Course Run(s) an invoice line's attendees
+// ended up matched to - replaces the old single free-text Run Date field,
+// which could hold a date that didn't correspond to any real run and which
+// couldn't represent a line whose attendees are split across multiple runs.
+// This is purely informational now; the authoritative date lives on each
+// attendee, chosen explicitly when they're added.
+function invoiceLineRunSummary(invoiceNumber, courseName){
+  const invNum = (invoiceNumber||'').trim().toLowerCase();
+  const cName = (courseName||'').trim().toLowerCase();
+  if(!invNum || !cName) return '';
+  const matched = (cache.attendees||[]).filter(a=>{
+    const aInv=(a.InvoiceRef||'').trim().toLowerCase();
+    if(aInv!==invNum) return false;
+    const aLineCourse=(a.InvoiceLineCourse||'').trim().toLowerCase();
+    if(aLineCourse===cName) return true;
+    if(!aLineCourse){
+      const aCourseTitle=(a.CourseTitle||'').trim().toLowerCase();
+      if(aCourseTitle===cName) return true;
+    }
+    return false;
+  });
+  if(!matched.length) return 'No attendees added yet';
+  const byDate = {};
+  matched.forEach(a=>{
+    const d = (a.RunStartDate||'').substring(0,10);
+    const key = d || '(no date)';
+    byDate[key] = (byDate[key]||0)+1;
+  });
+  return Object.entries(byDate)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([d,count])=> d==='(no date)' ? `${count} unmatched` : `${count} \u2192 ${fmtDate(d)}`)
+    .join(', ');
+}
+
 function invoiceLineSeatStatus(line){
   // line: a CG_InvoiceLines record. Returns {qty, filled, unfilled} counting
   // CG_Attendees rows whose InvoiceRef+InvoiceLineCourse match this exact line.
@@ -3768,7 +3802,7 @@ function renderInvoiceLines(){
             <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
             <th style="text-align:right;padding:6px 8px;width:100px">GST Rate</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
-            <th style="text-align:left;padding:6px 8px;width:110px">Run Date</th>
+            <th style="text-align:left;padding:6px 8px;width:160px">Attendees Matched To</th>
             <th style="width:36px"></th>
           </tr></thead>
           <tbody>
@@ -3789,7 +3823,7 @@ function renderInvoiceLines(){
                 <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</div>
               </td>
               <td style="padding:4px 8px;text-align:right;font-weight:700" id="il-total-${l._id}">${fmt(l.LineTotal)}</td>
-              <td style="padding:4px 8px"><input type="date" value="${l.RunStartDate||''}" onchange="updateInvoiceLine('${l._id}','RunStartDate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px"></td>
+              <td style="padding:4px 8px;font-size:11px;color:var(--g600)">${invoiceLineRunSummary(editingOriginalData?.InvoiceNumber||editingOriginalData?.Title, l.CourseName)}</td>
               <td style="padding:4px 8px;text-align:center">
                 <button type="button" onclick="removeInvoiceLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
               </td>
@@ -3887,7 +3921,7 @@ function initInvoiceAttendeeEditor(data){
 }
 
 function addInvoiceAttendeeRow(){
-  invoiceAttendeeRows.push({_id:'ia'+(++invoiceAttendeeSeq), FullName:'', Email:'', OrgName:'', CourseLine:''});
+  invoiceAttendeeRows.push({_id:'ia'+(++invoiceAttendeeSeq), FullName:'', Email:'', OrgName:'', CourseLine:'', CourseDate:''});
   renderInvoiceAttendeeEditor();
 }
 
@@ -3900,11 +3934,20 @@ function updateInvoiceAttendeeRow(rowId, field, value){
   const row = invoiceAttendeeRows.find(r=>r._id===rowId);
   if(!row) return;
   row[field] = value;
-  // Only CourseLine selection affects what other rows' dropdowns should show
-  // (seat capacity is shared across rows), so that's the only field that
-  // needs a full re-render. Re-rendering on every keystroke in Name/Email
-  // rebuilds the whole table and steals focus after a single character.
-  if(field==='CourseLine') renderInvoiceAttendeeEditor();
+  if(field==='CourseLine'){
+    // Available Course Date options depend entirely on which course line is
+    // selected - a date valid for the old selection may not exist for the
+    // new one, so don't carry it across.
+    row.CourseDate = '';
+    renderInvoiceAttendeeEditor();
+  } else if(field==='CourseDate'){
+    // A <select> change doesn't need focus preservation like a text input
+    // does, but also doesn't affect any OTHER row, so a full re-render here
+    // is just for consistency, not strictly required.
+    renderInvoiceAttendeeEditor();
+  }
+  // Name/Email changes update the underlying data silently without
+  // re-rendering, since rebuilding the table would steal focus mid-typing.
 }
 
 // "Attach Existing" — looks up an attendee already in the system by name and
@@ -3923,6 +3966,7 @@ function attachExistingAttendeeByName(){
     Email: match.Email||'',
     OrgName: match.OrgName||'', // reuse their own details, rather than defaulting to the invoice's org
     CourseLine: '',
+    CourseDate: '',
   });
   if(input) input.value = '';
   renderInvoiceAttendeeEditor();
@@ -3945,6 +3989,22 @@ function renderInvoiceAttendeeEditor(){
         : `${l.CourseName} (no quantity set)`;
       return `<option value="${l.CourseName.replace(/"/g,'&quot;')}" ${isSelected?'selected':''} ${isFull?'disabled':''}>${label}</option>`;
     }).join('');
+    // Course Date options are scoped to whichever course line this row has
+    // selected - each attendee picks their own actual scheduled run, since
+    // people on the same line can genuinely attend different dates.
+    const dateOptionsHtml = (()=>{
+      if(!row.CourseLine) return '';
+      const cName = row.CourseLine.trim().toLowerCase();
+      const runs = (cache.runs||[]).filter(r=>{
+        const rDate=(r.StartDate||'').substring(0,10);
+        const rName=(r.Title||'').replace(rDate,'').replace(/\s+/g,' ').trim().toLowerCase();
+        return rName===cName && runStatus(r)!=='Completed';
+      }).sort((a,b)=>(a.StartDate||'').localeCompare(b.StartDate||''));
+      return runs.map(r=>{
+        const d=(r.StartDate||'').substring(0,10);
+        return `<option value="${d}" ${d===row.CourseDate?'selected':''}>${fmtDateLong(r.StartDate)}</option>`;
+      }).join('');
+    })();
     return `<tr>
       <td style="padding:4px 8px">
         <input type="text" value="${(row.FullName||'').replace(/"/g,'&quot;')}" placeholder="Full name"
@@ -3955,6 +4015,12 @@ function renderInvoiceAttendeeEditor(){
         <select onchange="updateInvoiceAttendeeRow('${row._id}','CourseLine',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
           <option value="">— Select course line —</option>
           ${optionsHtml}
+        </select>
+      </td>
+      <td style="padding:4px 8px">
+        <select onchange="updateInvoiceAttendeeRow('${row._id}','CourseDate',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px" ${!row.CourseLine?'disabled':''}>
+          <option value="">— Select date —</option>
+          ${dateOptionsHtml}
         </select>
       </td>
       <td style="padding:4px 8px">
@@ -3983,6 +4049,7 @@ function renderInvoiceAttendeeEditor(){
             <thead><tr style="background:var(--g100)">
               <th style="text-align:left;padding:6px 8px">Name</th>
               <th style="text-align:left;padding:6px 8px">Course Line</th>
+              <th style="text-align:left;padding:6px 8px">Course Date</th>
               <th style="text-align:left;padding:6px 8px">Email</th>
               <th style="width:36px"></th>
             </tr></thead>
@@ -4000,21 +4067,21 @@ function renderInvoiceAttendeeEditor(){
     </div>`;
 }
 
-// Persists any complete pending rows (name + course line both set) as new
-// CG_Attendees records. Incomplete rows are silently skipped rather than
-// blocking the whole invoice save — the person can finish them later from
-// the Attendees page. Field shape mirrors FORM_DEFS.attendees.toFields()
-// exactly, so these records behave identically to ones added the long way.
+// Persists any complete pending rows (name + course line + course date all
+// set) as new CG_Attendees records. Incomplete rows are silently skipped
+// rather than blocking the whole invoice save — the person can finish them
+// later from the Attendees page. Field shape mirrors
+// FORM_DEFS.attendees.toFields() exactly, so these records behave
+// identically to ones added the long way.
 async function saveInvoiceAttendees(invoiceNumber, invoiceOrgName){
-  const rowsToSave = invoiceAttendeeRows.filter(r=>(r.FullName||'').trim() && r.CourseLine);
+  const rowsToSave = invoiceAttendeeRows.filter(r=>(r.FullName||'').trim() && r.CourseLine && r.CourseDate);
   const skipped = invoiceAttendeeRows.length - rowsToSave.length;
   if(!rowsToSave.length){
-    if(skipped) toast(`${skipped} attendee row${skipped>1?'s were':' was'} left incomplete and not saved (needs a name and a course line)`,'error');
+    if(skipped) toast(`${skipped} attendee row${skipped>1?'s were':' was'} left incomplete and not saved (needs a name, course line, and course date)`,'error');
     return;
   }
   let savedCount = 0;
   for(const row of rowsToSave){
-    const line = invoiceLines.find(l=>(l.CourseName||'')===row.CourseLine);
     const fields = {
       FullName: row.FullName.trim(),
       Title: row.FullName.trim(),
@@ -4023,7 +4090,7 @@ async function saveInvoiceAttendees(invoiceNumber, invoiceOrgName){
       InvoiceRef: invoiceNumber,
       InvoiceLineCourse: row.CourseLine,
       CourseTitle: row.CourseLine,
-      RunStartDate: line?.RunStartDate || null,
+      RunStartDate: row.CourseDate, // explicitly picked by the person adding this attendee, not inherited from the line
       AttendanceStatus: 'Registered',
     };
     try{
@@ -4497,7 +4564,7 @@ const FORM_DEFS = {
       {key:'InvoiceRef',label:'Invoice Reference',type:'lookup',entity:'invoices',display:'InvoiceNumber',matchKey:'InvoiceRef',searchable:true,onchange:'onAttendeeInvoiceChange()'},
       {key:'InvoiceLineCourse',label:'Invoice Course Line',type:'lookup',entity:'invoicelines',display:'CourseName',matchKey:'InvoiceLineCourse',searchable:true,onchange:'refreshCourseDateOptions();updateSeatBadge(\'RunRef\',\'InvoiceLineCourse\')'},
       {key:'CourseRef',label:'Course',type:'lookup',entity:'courses',display:'CourseName',matchKey:'AttendeeCourseTitle',searchable:true,onchange:'refreshCourseDateOptionsFromCourseRef()'},
-      {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse'},
+      {key:'RunRef',label:'Course Date',type:'lookup',entity:'runs',display:'DateOnly',valueKey:'CourseTitle',matchKey:'RunLabel',searchable:true,showSeatBadge:true,seatBadgeFrom:'InvoiceLineCourse',required:true},
       {key:'Section65A',label:'Section 65A (GST Exempt)',type:'checkbox',sectionLabel:'Status & Compliance'},
       {key:'CertificateNumber',label:'Certificate Number',type:'text'},
       {key:'AttendanceStatus',label:'Status',type:'select',opts:['Registered','Attended','Completed','No-show']},
@@ -4513,7 +4580,10 @@ const FORM_DEFS = {
         const org=(cache.organisations||[]).find(o=>String(o.id)===String(f.OrgRef));
         if(org) out.OrgName = org.OrgName||org.Title||'';
       }
-      // Resolve course run lookup to text fields (course name + start date)
+      // Resolve course run lookup to text fields (course name + start date).
+      // RunRef is now a required field, so this is the path that should
+      // always fire - no more silently borrowing a date from the invoice
+      // line, which could be wrong or represent a different attendee's run.
       if(f.RunRef){
         const run=(cache.runs||[]).find(r=>String(r.id)===String(f.RunRef));
         if(run){
@@ -4522,13 +4592,12 @@ const FORM_DEFS = {
           out.RunStartDate = rDate;
         }
       } else if(f.InvoiceLineCourse){
-        // No Course Run selected directly, but an Invoice Course Line was -
-        // use its course name so CourseTitle is still populated for display/reporting
+        // Defensive fallback only - required-field validation should prevent
+        // reaching here, but if it's ever bypassed, at least populate the
+        // course name for display rather than leaving it fully blank.
+        // Deliberately does NOT set RunStartDate here anymore.
         const il=(cache.invoicelines||[]).find(l=>String(l.id)===String(f.InvoiceLineCourse));
-        if(il){
-          out.CourseTitle = il.CourseName||'';
-          if(il.RunStartDate) out.RunStartDate = il.RunStartDate;
-        }
+        if(il) out.CourseTitle = il.CourseName||'';
       }
       // Resolve invoice lookup -> store invoice number text
       // (Internal attendees never carry an invoice, even if one was picked
@@ -4564,7 +4633,9 @@ const FORM_DEFS = {
         if(il){
           out.InvoiceLineCourse = il.CourseName||'';
           if(!out.CourseTitle) out.CourseTitle = il.CourseName||'';
-          if(!out.RunStartDate && il.RunStartDate) out.RunStartDate = il.RunStartDate;
+          // Deliberately no longer falling back to il.RunStartDate here -
+          // Course Date is a required field now, so RunStartDate should
+          // always have already been set from the actual Run lookup above.
         }
       } else {
         out.InvoiceLineCourse = '';
