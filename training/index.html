@@ -3266,6 +3266,10 @@ async function initQuoteLines(data){
         CourseName: l.CourseName||'',
         Quantity: l.Quantity||1,
         FeeExGST: l.FeeExGST||0,
+        // Existing lines that predate this feature have no stored rate -
+        // assume the standard 10% they were actually calculated at, so
+        // reopening an old quote doesn't silently change its numbers.
+        GSTRate: (l.GSTRate!==undefined && l.GSTRate!==null && l.GSTRate!=='') ? +l.GSTRate : 0.10,
         GSTAmount: l.GSTAmount||0,
         LineTotal: l.LineTotal||0,
       }));
@@ -3279,7 +3283,7 @@ async function initQuoteLines(data){
 }
 
 function addQuoteLine(){
-  quoteLines.push({_id:'l'+(++quoteLineSeq), spId:null, CourseName:'', Quantity:1, FeeExGST:0, GSTAmount:0, LineTotal:0});
+  quoteLines.push({_id:'l'+(++quoteLineSeq), spId:null, CourseName:'', Quantity:1, FeeExGST:0, GSTRate:0.10, GSTAmount:0, LineTotal:0});
   renderQuoteLines();
 }
 
@@ -3297,9 +3301,13 @@ function updateQuoteLine(lineId, field, value){
     renderQuoteLines(); // course change doesn't affect focus on a text input
     return;
   }
-  line[field] = +value || 0;
-  // Auto-calc GST and total whenever qty or fee changes
-  const gstRate = 0.10; // default 10% GST
+  if(field==='GSTRate'){
+    line.GSTRate = +value;
+  } else {
+    line[field] = +value || 0;
+  }
+  // Auto-calc GST and total using this line's own selected rate (Tax 10% or S65 0%)
+  const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
   line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
   line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
   // Update only the calculated cells for this row + footer totals, without
@@ -3342,7 +3350,7 @@ function renderQuoteLines(){
             <th style="text-align:left;padding:6px 8px">Course</th>
             <th style="text-align:right;padding:6px 8px;width:70px">Qty</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
-            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
+            <th style="text-align:right;padding:6px 8px;width:100px">GST Rate</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
             <th style="width:36px"></th>
           </tr></thead>
@@ -3359,7 +3367,13 @@ function renderQuoteLines(){
               </td>
               <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateQuoteLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
               <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateQuoteLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
-              <td style="padding:4px 8px;text-align:right" id="ql-gst-${l._id}">${fmt(l.GSTAmount)}</td>
+              <td style="padding:4px 8px">
+                <select onchange="updateQuoteLine('${l._id}','GSTRate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px">
+                  <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
+                  <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
+                </select>
+                <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px" id="ql-gst-${l._id}">${fmt(l.GSTAmount)}</div>
+              </td>
               <td style="padding:4px 8px;text-align:right;font-weight:700" id="ql-total-${l._id}">${fmt(l.LineTotal)}</td>
               <td style="padding:4px 8px;text-align:center">
                 <button type="button" onclick="removeQuoteLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
@@ -3452,6 +3466,7 @@ async function saveQuoteLines(quoteNumber, createdItem=null){
       CourseName: l.CourseName,
       Quantity: +l.Quantity||0,
       FeeExGST: +l.FeeExGST||0,
+      GSTRate: (l.GSTRate!==undefined && l.GSTRate!==null) ? +l.GSTRate : 0.10,
       GSTAmount: +l.GSTAmount||0,
       LineTotal: +l.LineTotal||0,
     };
@@ -3508,6 +3523,7 @@ async function initInvoiceLines(data){
         CourseName: l.CourseName||'',
         Quantity: l.Quantity||1,
         FeeExGST: l.FeeExGST||0,
+        GSTRate: (l.GSTRate!==undefined && l.GSTRate!==null && l.GSTRate!=='') ? +l.GSTRate : 0.10,
         GSTAmount: l.GSTAmount||0,
         LineTotal: l.LineTotal||0,
         RunStartDate: l.RunStartDate||'',
@@ -3534,6 +3550,9 @@ async function initInvoiceLines(data){
       CourseName: courseName,
       Quantity: 1,
       FeeExGST: +data.FeeExGST||0,
+      // Infer the rate from the stored figures since this legacy path has no
+      // explicit rate saved: a real fee with zero GST means it was S65 exempt.
+      GSTRate: (+data.FeeExGST>0 && !(+data.GSTAmount>0)) ? 0 : 0.10,
       GSTAmount: +data.GSTAmount||0,
       LineTotal: +data.TotalAmount||0,
       RunStartDate: runDate,
@@ -3544,7 +3563,7 @@ async function initInvoiceLines(data){
 }
 
 function addInvoiceLine(){
-  invoiceLines.push({_id:'il'+(++invoiceLineSeq),spId:null,CourseName:'',Quantity:1,FeeExGST:0,GSTAmount:0,LineTotal:0,RunStartDate:''});
+  invoiceLines.push({_id:'il'+(++invoiceLineSeq),spId:null,CourseName:'',Quantity:1,FeeExGST:0,GSTRate:0.10,GSTAmount:0,LineTotal:0,RunStartDate:''});
   renderInvoiceLines();
   renderInvoiceAttendeeEditor();
 }
@@ -3564,8 +3583,12 @@ function updateInvoiceLine(lineId, field, value){
     renderInvoiceAttendeeEditor();
     return;
   }
-  line[field] = +value||0;
-  const gstRate = 0.10;
+  if(field==='GSTRate'){
+    line.GSTRate = +value;
+  } else {
+    line[field] = +value||0;
+  }
+  const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
   line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
   line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
   // Targeted cell updates to preserve focus
@@ -3609,7 +3632,7 @@ function renderInvoiceLines(){
             <th style="text-align:left;padding:6px 8px">Course</th>
             <th style="text-align:right;padding:6px 8px;width:60px">Qty</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
-            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
+            <th style="text-align:right;padding:6px 8px;width:100px">GST Rate</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
             <th style="text-align:left;padding:6px 8px;width:110px">Run Date</th>
             <th style="width:36px"></th>
@@ -3624,7 +3647,13 @@ function renderInvoiceLines(){
               </td>
               <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateInvoiceLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
               <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateInvoiceLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
-              <td style="padding:4px 8px;text-align:right" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</td>
+              <td style="padding:4px 8px">
+                <select onchange="updateInvoiceLine('${l._id}','GSTRate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px">
+                  <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
+                  <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
+                </select>
+                <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</div>
+              </td>
               <td style="padding:4px 8px;text-align:right;font-weight:700" id="il-total-${l._id}">${fmt(l.LineTotal)}</td>
               <td style="padding:4px 8px"><input type="date" value="${l.RunStartDate||''}" onchange="updateInvoiceLine('${l._id}','RunStartDate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px"></td>
               <td style="padding:4px 8px;text-align:center">
@@ -3896,6 +3925,7 @@ async function saveInvoiceLines(invoiceNumber, createdItem=null){
       CourseName: l.CourseName,
       Quantity: +l.Quantity||0,
       FeeExGST: +l.FeeExGST||0,
+      GSTRate: (l.GSTRate!==undefined && l.GSTRate!==null) ? +l.GSTRate : 0.10,
       GSTAmount: +l.GSTAmount||0,
       LineTotal: +l.LineTotal||0,
       RunStartDate: l.RunStartDate||null,
@@ -5311,6 +5341,7 @@ async function createInvoiceFromQuotePrompt(){
         CourseName: ql.CourseName||'',
         Quantity: +ql.Quantity||0,
         FeeExGST: +ql.FeeExGST||0,
+        GSTRate: (ql.GSTRate!==undefined && ql.GSTRate!==null && ql.GSTRate!=='') ? +ql.GSTRate : 0.10,
         GSTAmount: +ql.GSTAmount||0,
         LineTotal: +ql.LineTotal||0,
         RunStartDate: null,
