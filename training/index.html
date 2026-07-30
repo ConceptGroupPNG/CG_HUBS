@@ -2983,13 +2983,29 @@ function recalcRunEndDate(){
 
   const endEl = document.getElementById('mf-EndDate');
   if(endEl) endEl.value = endStr;
-  checkRunEndDateWeekend(end);
+  checkRunDateRangeWeekend(start, end);
 }
 
-function checkRunEndDateWeekend(endDate){
-  const day = endDate.getDay(); // 0 = Sunday, 6 = Saturday
-  if(day===0 || day===6){
-    toast(`Heads up: the calculated End Date falls on a ${day===0?'Sunday':'Saturday'} - you may want to adjust it`, 'error');
+function checkRunDateRangeWeekend(startDate, endDate){
+  const weekendDates = [];
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const cursor = new Date(startDate);
+  // Cap the scan so a mistyped multi-year Duration can't hang the browser -
+  // no real course runs anywhere near this long.
+  let guard = 0;
+  while(cursor <= endDate && guard < 3660){
+    const dow = cursor.getDay(); // 0 = Sunday, 6 = Saturday
+    if(dow===0 || dow===6){
+      weekendDates.push(`${dayNames[dow]} ${cursor.getDate()} ${cursor.toLocaleString('en-US',{month:'long'})}`);
+    }
+    cursor.setDate(cursor.getDate()+1);
+    guard++;
+  }
+  if(weekendDates.length){
+    const list = weekendDates.length<=3
+      ? weekendDates.join(', ')
+      : `${weekendDates.slice(0,3).join(', ')} +${weekendDates.length-3} more`;
+    toast(`Heads up: this course's scheduled period includes a weekend - ${list}`, 'error');
   }
 }
 
