@@ -3166,6 +3166,16 @@ function dateToExcelSerial(date) {
 // Plain setMonth() overflows in this case — e.g. 31 Aug + 1 month naively
 // becomes 1 Oct (September has no 31st), not 30 Sep as a Monthly pay cycle
 // actually needs.
+// Formats a Date object as YYYY-MM-DD using its LOCAL calendar date — safe
+// for populating a <input type="date"> field. date.toISOString().slice(0,10)
+// is NOT safe for this: it converts to UTC first, which silently shifts the
+// date back a day in timezones ahead of UTC (like PNG, UTC+10) whenever the
+// local time is near midnight or the Date was constructed at local midnight.
+function formatDateInputLocal(date) {
+  const pad = n => String(n).padStart(2,'0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
+}
+
 function addOneMonthPreservingMonthEnd(date) {
   const isEndOfMonth = date.getDate() === new Date(date.getFullYear(), date.getMonth()+1, 0).getDate();
   if (isEndOfMonth) {
@@ -4881,7 +4891,7 @@ function onGenPayGroupChange() {
 
   // Populate fields
   document.getElementById('gen-payno').value = nextPayNo || '';
-  document.getElementById('gen-payenddate').value = nextPPE ? nextPPE.toISOString().slice(0,10) : '';
+  document.getElementById('gen-payenddate').value = nextPPE ? formatDateInputLocal(nextPPE) : '';
 
   // Update hints
   const paynoHint = lastPayNo ? `(last in system: Pay ${lastPayNo})` : '(no existing records found)';
@@ -5402,7 +5412,7 @@ function openBillingForm(item = null) {
         <input type="hidden" id="fb-client" value="${item.PSPClient||''}">
         <input type="hidden" id="fb-paygroup" value="${getPayGroup(item)}">
         <input type="hidden" id="fb-payno" value="${item.PayNo||''}">
-        <input type="hidden" id="fb-ppe" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toISOString().slice(0,10) : ''}">
+        <input type="hidden" id="fb-ppe" value="${item.PayEnddate ? formatDateInputLocal(spDateToDate(item.PayEnddate)) : ''}">
         <input type="hidden" id="fb-billmonth" value="${item.PayEnddate ? spDateToDate(item.PayEnddate)?.toLocaleDateString('en-GB',{month:'long'}) : (item.BillingMonth||'')}">
         <div class="form-group" style="margin:0 0 14px;">
           <label>Payrun Number</label>
@@ -6583,8 +6593,8 @@ async function loadGenerateQuote() {
 
   const today = new Date();
   const expiry = new Date(today); expiry.setDate(expiry.getDate() + 7);
-  document.getElementById('gq-date').value = today.toISOString().slice(0,10);
-  document.getElementById('gq-expiry').value = expiry.toISOString().slice(0,10);
+  document.getElementById('gq-date').value = formatDateInputLocal(today);
+  document.getElementById('gq-expiry').value = formatDateInputLocal(expiry);
 
   generateQuoteNumberPreview();
 
@@ -7179,8 +7189,8 @@ function editQuoteById(id) {
   setQuoteDocType(q.DocType || 'Quote'); // sets UI mode before populating fields/lines below
   document.getElementById('gq-client').value = q.ContactName || q.PSPClient || '';
   document.getElementById('gq-contact').value = q.ContactPerson || '';
-  document.getElementById('gq-date').value = q.QuoteDate ? spDateToDate(q.QuoteDate)?.toISOString().slice(0,10) : '';
-  document.getElementById('gq-expiry').value = q.ExpiryDate ? spDateToDate(q.ExpiryDate)?.toISOString().slice(0,10) : '';
+  document.getElementById('gq-date').value = q.QuoteDate ? formatDateInputLocal(spDateToDate(q.QuoteDate)) : '';
+  document.getElementById('gq-expiry').value = q.ExpiryDate ? formatDateInputLocal(spDateToDate(q.ExpiryDate)) : '';
   document.getElementById('gq-reference').value = q.Reference || '';
   document.getElementById('gq-quoteno').value = q.Title;
   document.getElementById('gq-appendix-title').value = q.AppendixTitle || '';
@@ -9857,7 +9867,7 @@ function openHolidayForm(id = null) {
     </div>
     <div class="form-group">
       <label>Date</label>
-      <input type="date" id="ph-date" value="${item && getHolidayDate(item) ? spDateToDate(getHolidayDate(item))?.toISOString().slice(0,10) : ''}" onchange="phAutofillYear()">
+      <input type="date" id="ph-date" value="${item && getHolidayDate(item) ? formatDateInputLocal(spDateToDate(getHolidayDate(item))) : ''}" onchange="phAutofillYear()">
     </div>
     <div class="form-group">
       <label>Year</label>
