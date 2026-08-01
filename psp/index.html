@@ -4951,14 +4951,13 @@ async function generateCalendar() {
         ActivityMilestone: t.ActivityMilestone,
         Offset: t.Offset,
         ActivityDateTime: actDate.toISOString(),
-        ActivityDateTimeNo: parseInt(actDate.toISOString().slice(0,10).replace(/-/g,''), 10),
+        ActivityDateTimeNo: parseInt(formatDateInputLocal(actDate).replace(/-/g,''), 10),
         Act_Status: 'Not Started',
         ClientBAU: t.ClientBAU,
         IntExt: t.IntExt,
         Contact: t.Contact,
         SLA: t.SLA,
         Cycle: t.Cycle,
-        ActivityDateTimeNo: parseInt(actDate.toISOString().replace(/[-T:]/g,'').slice(0,8)),
         PayrollYear: currentPPE.getFullYear(),
       };
       try {
@@ -9658,7 +9657,7 @@ async function baApplyDateChange() {
           const newDate = new Date(oldDate);
           newDate.setDate(newDate.getDate() + shiftDays);
           const newISO = newDate.toISOString();
-          const newDateNo = parseInt(newDate.toISOString().slice(0,10).replace(/-/g,''), 10);
+          const newDateNo = parseInt(formatDateInputLocal(newDate).replace(/-/g,''), 10);
 
           // Recalculate Offset relative to PPE (PayEnddate from billing)
           const billingRec = cache.billing.find(b =>
