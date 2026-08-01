@@ -3161,6 +3161,21 @@ function dateToExcelSerial(date) {
   return (date.getTime() / 86400000) + 25569;
 }
 
+// Adds one month to a date, correctly landing on the last day of the
+// following month if the input was itself the last day of its month.
+// Plain setMonth() overflows in this case — e.g. 31 Aug + 1 month naively
+// becomes 1 Oct (September has no 31st), not 30 Sep as a Monthly pay cycle
+// actually needs.
+function addOneMonthPreservingMonthEnd(date) {
+  const isEndOfMonth = date.getDate() === new Date(date.getFullYear(), date.getMonth()+1, 0).getDate();
+  if (isEndOfMonth) {
+    return new Date(date.getFullYear(), date.getMonth()+2, 0); // last day of the following month
+  }
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + 1);
+  return next;
+}
+
 // ─────────────────────────────────────────────
 // UI HELPERS
 // ─────────────────────────────────────────────
@@ -4860,7 +4875,7 @@ function onGenPayGroupChange() {
     if (cycle.toUpperCase().includes('FORT')) {
       nextPPE.setDate(nextPPE.getDate() + 14);
     } else if (cycle.toUpperCase().includes('MONTH')) {
-      nextPPE.setMonth(nextPPE.getMonth() + 1);
+      nextPPE = addOneMonthPreservingMonthEnd(nextPPE);
     }
   }
 
@@ -4980,9 +4995,9 @@ async function generateCalendar() {
 
     btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Generated Pay ${currentPayNo} (${p+1}/${periods})...`;
     currentPayNo++;
-    const nextPPE = new Date(currentPPE);
+    let nextPPE = new Date(currentPPE);
     if (cycle.includes('FORT')) nextPPE.setDate(nextPPE.getDate() + 14);
-    else if (cycle.includes('MONTH')) nextPPE.setMonth(nextPPE.getMonth() + 1);
+    else if (cycle.includes('MONTH')) nextPPE = addOneMonthPreservingMonthEnd(nextPPE);
     currentPPE = nextPPE;
   }
 
