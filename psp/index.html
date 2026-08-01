@@ -2502,6 +2502,12 @@
                   <i class="ti ti-calendar-check"></i> Apply Date Change
                 </button>
               </div>
+
+              <div style="margin-top:6px;padding-top:14px;border-top:1px dashed var(--grey-200);display:flex;justify-content:flex-end;">
+                <button class="btn btn-outline" id="ba-dt-fixno-btn" onclick="baFixActivityDateTimeNo()" title="Recalculates ActivityDateTimeNo from ActivityDateTime for every activity in PSP_Act_Calendar — used by the legacy Power App, and can drift out of sync from timezone-related bugs now fixed going forward.">
+                  <i class="ti ti-refresh"></i> Reset ActivityDateTimeNo (All Activities)
+                </button>
+              </div>
             </div>
           </div>
 
@@ -9707,6 +9713,66 @@ function baResetDateForm() {
   document.getElementById('ba-dt-shift-days').value = '';
   document.getElementById('ba-dt-allafter-preview').innerHTML = '';
   baPopulatePayGroups('dt'); // resets Pay Group dropdown + toggles once/allafter sections correctly
+}
+
+// One-time cleanup utility: ActivityDateTimeNo exists purely for a legacy
+// Power App to consume — nothing in PSP HUB itself reads it — and several
+// now-fixed timezone bugs left it out of sync with the real ActivityDateTime
+// on an unknown number of historical records. This recalculates it correctly
+// for every activity in PSP_Act_Calendar and only writes the ones that
+// actually differ, going forward staying in sync automatically since the
+// underlying bugs are fixed.
+async function baFixActivityDateTimeNo() {
+  const confirmed = await pspConfirm(
+    `This will check <strong>every activity in PSP_Act_Calendar</strong> and correct its ActivityDateTimeNo to match its actual ActivityDateTime, fixing any drift left over from timezone bugs that have since been fixed. Only activities that are actually wrong will be updated. This may take a while for a large dataset. Continue?`,
+    'Reset ActivityDateTimeNo'
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById('ba-dt-fixno-btn');
+  const btnOrigHTML = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.7'; }
+
+  try {
+    if (btn) btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Loading all activities...';
+    const allActivities = await getItems('calendar', '', 5000, ['PSPMEmber']);
+
+    const mismatched = [];
+    allActivities.forEach(i => {
+      const d = spDateToDate(i.ActivityDateTime);
+      if (!d || isNaN(d)) return;
+      const correct = parseInt(formatDateInputLocal(d).replace(/-/g,''), 10);
+      if (parseInt(i.ActivityDateTimeNo, 10) !== correct) {
+        mismatched.push({ id: i.id, correct });
+      }
+    });
+
+    if (!mismatched.length) {
+      showToast('Checked all activities — ActivityDateTimeNo is already correct everywhere', 'success');
+      return;
+    }
+
+    let done = 0, failed = 0;
+    for (const m of mismatched) {
+      try {
+        await saveWithFieldFallback(true, 'calendar', m.id, { ActivityDateTimeNo: m.correct });
+        const ci = cache.calendar.findIndex(i => String(i.id) === String(m.id));
+        if (ci >= 0) cache.calendar[ci].ActivityDateTimeNo = m.correct;
+        done++;
+      } catch(e) {
+        failed++;
+        console.warn('Failed to fix ActivityDateTimeNo for', m.id, e.message);
+      }
+      if (btn && (done + failed) % 10 === 0) {
+        btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Fixing... ${done + failed}/${mismatched.length}`;
+      }
+    }
+    showToast(`Checked ${allActivities.length} activities — corrected ${done}` + (failed ? `, ${failed} failed (check console)` : ''), 'success');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = btnOrigHTML; }
+  }
 }
 
 // ── Delete Not Started Activities ────────────
