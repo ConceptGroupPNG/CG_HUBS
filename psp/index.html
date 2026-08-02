@@ -1536,6 +1536,8 @@
           </select>
           <select id="filter-bm-billed" onchange="renderBillingMetrics()">
             <option value="">All Records</option>
+            <option value="processed">Processed</option>
+            <option value="metrics">Metrics Collected</option>
             <option value="false">Unbilled Only</option>
             <option value="true">Billed</option>
           </select>
@@ -5297,6 +5299,8 @@ function renderBillingMetrics() {
   if (year) items = items.filter(i => String(i.PayrollYear) === year);
   if (billed === 'true') items = items.filter(i => i.Billing);
   if (billed === 'false') items = items.filter(i => !i.Billing);
+  if (billed === 'processed') items = items.filter(i => i.Process && !i.Metrics && !i.Billing);
+  if (billed === 'metrics') items = items.filter(i => i.Metrics && !i.Billing);
   items.sort((a,b) => (a.PSPClient||'').localeCompare(b.PSPClient||'') || ((spDateToDate(a.PayEnddate)||0) - (spDateToDate(b.PayEnddate)||0)));
   lastBillingMetricsItems = items;
   const tbody = document.getElementById('billing-metrics-tbody');
