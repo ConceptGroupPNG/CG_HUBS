@@ -5654,6 +5654,16 @@ async function openFormModal(entity, data){
   if(entity==='attendees'){
     updateSeatBadge('RunRef','InvoiceLineCourse');
     onAttendeeInternalToggle(true);
+    // Lets a paying attendee (linked via Invoice Course Line) be sent to a
+    // course the invoice wasn't actually written for, without touching the
+    // invoice itself - reuses the same direct Course/Course Date picker
+    // already built for Internal attendees, just made reachable here too.
+    // Not shown for Internal attendees, who already have that picker visible.
+    const isInternalNow = data?.IsInternal===true||data?.IsInternal==='true';
+    const ilcWrap = document.getElementById('fg-InvoiceLineCourse');
+    if(ilcWrap && !isInternalNow && !ilcWrap.querySelector('.reallocate-change-link')){
+      ilcWrap.insertAdjacentHTML('beforeend', `<button type="button" class="reallocate-change-link" onclick="toggleAttendeeCourseReallocation()" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;padding:4px 0 0;text-decoration:underline">Change to a different course</button>`);
+    }
     updatePrintRegButtonVisibility();
     // Re-check the print button's visibility whenever any field in the form
     // changes, since its criteria depend on several fields together (name,
@@ -5956,6 +5966,26 @@ let _lastCourseDateFilterCourse = null;
 // form depending on whether "Internal Attendee (No Invoice)" is checked.
 // Called both on user toggle and once on initial form render, so editing an
 // existing record shows the right fields immediately.
+// Switches a paying attendee's course selection from "the invoice's own
+// line" to a direct Course/Course Date pick - for reallocating them to a
+// course the invoice wasn't written for, without touching the invoice.
+// Reuses the exact same fields and cascade already built for Internal
+// attendees (CourseRef -> refreshCourseDateOptionsFromCourseRef -> RunRef).
+function toggleAttendeeCourseReallocation(){
+  const invoiceLineFg = document.getElementById('fg-InvoiceLineCourse');
+  const courseFg = document.getElementById('fg-CourseRef');
+  if(invoiceLineFg) invoiceLineFg.style.display = 'none';
+  if(courseFg) courseFg.style.display = '';
+  // Clear any Invoice Course Line already picked before switching modes -
+  // otherwise a stale selection could linger in the hidden field and end up
+  // inconsistent with the actual reallocated course at save time.
+  const ilcHidden = document.getElementById('mf-InvoiceLineCourse');
+  const ilcSearch = document.getElementById('mf-InvoiceLineCourse-search');
+  if(ilcHidden) ilcHidden.value = '';
+  if(ilcSearch) ilcSearch.value = '';
+  refreshCourseDateOptionsFromCourseRef();
+}
+
 function onAttendeeInternalToggle(isInitialRender){
   const val = document.getElementById('mf-IsInternal')?.value;
   const isInternal = val==='true' || val===true;
