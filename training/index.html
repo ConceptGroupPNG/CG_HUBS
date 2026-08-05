@@ -3959,12 +3959,24 @@ function initInvoiceAttendeeEditor(data){
 }
 
 function addInvoiceAttendeeRow(){
-  invoiceAttendeeRows.push({_id:'ia'+(++invoiceAttendeeSeq), FullName:'', Email:'', OrgName:'', CourseLine:'', CourseDate:''});
+  invoiceAttendeeRows.push({_id:'ia'+(++invoiceAttendeeSeq), FullName:'', Email:'', OrgName:'', CourseLine:'', CourseDate:'', useAllCourses:false});
   renderInvoiceAttendeeEditor();
 }
 
 function removeInvoiceAttendeeRow(rowId){
   invoiceAttendeeRows = invoiceAttendeeRows.filter(r=>r._id!==rowId);
+  renderInvoiceAttendeeEditor();
+}
+
+// Switches one row's Course Line dropdown from "only this invoice's own
+// lines" to "every course in the catalogue" - for sending this specific
+// attendee to a course the invoice wasn't actually written for. Deliberately
+// per-row rather than a single switch for the whole table, since most
+// attendees on any given invoice still go to what was actually invoiced.
+function toggleInvoiceAttendeeRowAllCourses(rowId){
+  const row = invoiceAttendeeRows.find(r=>r._id===rowId);
+  if(!row) return;
+  row.useAllCourses = true;
   renderInvoiceAttendeeEditor();
 }
 
@@ -4005,6 +4017,7 @@ function attachExistingAttendeeByName(){
     OrgName: match.OrgName||'', // reuse their own details, rather than defaulting to the invoice's org
     CourseLine: '',
     CourseDate: '',
+    useAllCourses: false,
   });
   if(input) input.value = '';
   renderInvoiceAttendeeEditor();
@@ -4026,6 +4039,17 @@ function renderInvoiceAttendeeEditor(){
         ? `${l.CourseName} (${cap.filled+cap.pending}/${cap.qty}${isFull?' — Full':''})`
         : `${l.CourseName} (no quantity set)`;
       return `<option value="${l.CourseName.replace(/"/g,'&quot;')}" ${isSelected?'selected':''} ${isFull?'disabled':''}>${label}</option>`;
+    }).join('');
+    // Once "Change" is clicked for a row, its dropdown switches from "only
+    // this invoice's own lines" to every course in the catalogue - for
+    // sending this attendee somewhere the invoice wasn't actually written
+    // for. No quantity/capacity shown here since that constraint doesn't
+    // apply to a course this invoice didn't purchase seats for.
+    const allCoursesOptionsHtml = (cache.courses||[]).map(c=>{
+      const cname = c.CourseName||c.Title||'';
+      if(!cname) return '';
+      const isSelected = cname===row.CourseLine;
+      return `<option value="${cname.replace(/"/g,'&quot;')}" ${isSelected?'selected':''}>${cname}</option>`;
     }).join('');
     // Course Date options are scoped to whichever course line this row has
     // selected - each attendee picks their own actual scheduled run, since
@@ -4051,9 +4075,12 @@ function renderInvoiceAttendeeEditor(){
       </td>
       <td style="padding:4px 8px">
         <select onchange="updateInvoiceAttendeeRow('${row._id}','CourseLine',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
-          <option value="">— Select course line —</option>
-          ${optionsHtml}
+          <option value="">${row.useAllCourses ? '— Select any course —' : '— Select course line —'}</option>
+          ${row.useAllCourses ? allCoursesOptionsHtml : optionsHtml}
         </select>
+        ${row.useAllCourses
+          ? `<div style="font-size:10px;color:var(--g500);margin-top:3px">Showing all courses</div>`
+          : `<button type="button" onclick="toggleInvoiceAttendeeRowAllCourses('${row._id}')" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:10px;padding:3px 0 0;text-decoration:underline">Change</button>`}
       </td>
       <td style="padding:4px 8px">
         <select onchange="updateInvoiceAttendeeRow('${row._id}','CourseDate',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px" ${!row.CourseLine?'disabled':''}>
