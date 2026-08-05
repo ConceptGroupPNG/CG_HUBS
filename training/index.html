@@ -937,6 +937,7 @@ const LISTS = {
   certificates: 'CG_Certificates',
   lastcertificate: 'CG_Last_Certificate',
   venues:       'CG_Venue',
+  invoiceallocations: 'CG_InvoiceAllocations',
 };
 
 const SCOPES       = 'https://graph.microsoft.com/Sites.ReadWrite.All User.Read offline_access';
@@ -3331,6 +3332,16 @@ async function loadAttendees(){
     if(!cache.organisations) cache.organisations = orgs;
     if(!cache.runs) cache.runs = runs;
 
+    // Silently backfill allocation ledger entries for any attendee that
+    // predates this feature. Fire-and-forget - the page doesn't need to
+    // wait on this, and it's a no-op once everything's caught up.
+    if(!cache.invoiceallocations){
+      getItems('invoiceallocations','$top=999').then(items=>{
+        cache.invoiceallocations = items;
+        backfillAllocationLedger();
+      }).catch(e=>console.warn('Could not load allocation ledger', e));
+    }
+
     renderAttendees(items);
     // populate run filter
     const sel = document.getElementById('att-run');
@@ -4094,7 +4105,8 @@ async function saveInvoiceAttendees(invoiceNumber, invoiceOrgName){
       AttendanceStatus: 'Registered',
     };
     try{
-      await saveWithFieldFallback(false, 'attendees', null, fields);
+      const created = await saveWithFieldFallback(false, 'attendees', null, fields);
+      await writeAllocationLedgerEntry(invoiceNumber, created?.id, fields.FullName, row.CourseLine, row.CourseDate);
       savedCount++;
     }catch(e){
       console.warn('Failed to save attendee row', row, e);
@@ -4263,6 +4275,106 @@ async function loadInvoices(){
     cache.invoicelines = lines;
     renderInvoices(items);
   } catch(e){ toast('Error loading invoices: '+e.message,'error'); }
+}
+
+// ============================================================
+// ALLOCATION LEDGER (Step 1 of the invoice/credit-note redesign)
+// One entry per attendee-to-invoice-value assignment. This is the emerging
+// source of truth for "how much of this invoice's paid value has actually
+// been used, and on what" - separate from the original Invoice Line Items,
+// which stay as a permanent record of what was originally sold. Writing
+// these entries has NO visible effect yet; nothing reads from the ledger
+// until a later step. It exists purely to start capturing accurate data
+// from this point forward (plus a backfill for existing attendees), so
+// later steps have real history to build on rather than starting from zero.
+// ============================================================
+
+// Determines how much of an invoice's paid value one seat allocation
+// represents. If the attendee's actual course matches one of the invoice's
+// own line items, use that line's exact per-seat price (fee+GST/qty) - this
+// is the common case and stays perfectly faithful to what was invoiced. If
+// the course doesn't match any line on the invoice at all (a genuine
+// reallocation to something different), fall back to that other course's
+// own catalogue price, since there's no original line to draw an exact
+// figure from.
+function computeAllocationAmount(invoiceNumber, courseName){
+  const invNum = (invoiceNumber||'').trim().toLowerCase();
+  const cName = (courseName||'').trim().toLowerCase();
+  if(!invNum || !cName) return 0;
+
+  const matchingLine = (cache.invoicelines||[]).find(l=>
+    (l.Title||'').trim().toLowerCase()===invNum &&
+    (l.CourseName||'').trim().toLowerCase()===cName
+  );
+  if(matchingLine && +matchingLine.Quantity>0){
+    return Math.round(((+matchingLine.LineTotal||0) / (+matchingLine.Quantity)) * 100) / 100;
+  }
+
+  // No matching line on this invoice - this is a reallocation to a
+  // different course. Price it at that course's own current catalogue rate.
+  const course = (cache.courses||[]).find(c=>(c.CourseName||c.Title||'').trim().toLowerCase()===cName);
+  if(course){
+    const fee = +course.FeeExGST||0;
+    const gstRate = (+(course.GSTRate!==undefined && course.GSTRate!==null ? course.GSTRate : 10))/100;
+    return Math.round(fee * (1+gstRate) * 100) / 100;
+  }
+  return 0;
+}
+
+// Writes one ledger entry for a newly-created (or newly-linked) attendee.
+// Silently skipped for Internal attendees (no invoice, nothing to draw
+// down) and for attendees with no resolvable amount. Failures are logged
+// but never block the attendee save itself - this is bookkeeping alongside
+// the real operation, not a precondition for it.
+async function writeAllocationLedgerEntry(invoiceNumber, attendeeId, attendeeName, courseName, runStartDate){
+  if(!invoiceNumber || !attendeeId) return null;
+  const amount = computeAllocationAmount(invoiceNumber, courseName);
+  const fields = {
+    Title: invoiceNumber,
+    AttendeeId: String(attendeeId),
+    AttendeeName: attendeeName||'',
+    CourseName: courseName||'',
+    RunStartDate: runStartDate||'',
+    Amount: amount,
+  };
+  try{
+    const created = await saveWithFieldFallback(false, 'invoiceallocations', null, fields);
+    if(!cache.invoiceallocations) cache.invoiceallocations = [];
+    cache.invoiceallocations.push({id: created?.id, ...fields});
+    return created;
+  }catch(e){
+    console.warn('Could not write allocation ledger entry for', attendeeName, e);
+    return null;
+  }
+}
+
+// Removes the ledger entry for an attendee that's being deleted, so the
+// ledger doesn't silently drift out of sync with reality from day one.
+async function removeAllocationLedgerEntry(attendeeId){
+  if(!attendeeId) return;
+  const entry = (cache.invoiceallocations||[]).find(e=>String(e.AttendeeId)===String(attendeeId));
+  if(!entry) return;
+  try{
+    await deleteItem('invoiceallocations', entry.id);
+    cache.invoiceallocations = (cache.invoiceallocations||[]).filter(e=>e.id!==entry.id);
+  }catch(e){
+    console.warn('Could not remove allocation ledger entry for attendee', attendeeId, e);
+  }
+}
+
+// One-time, silent backfill: any existing Attendee with an Invoice Reference
+// but no matching ledger entry gets one created from their current data.
+// Runs quietly; once every linked attendee has an entry this naturally
+// becomes a no-op, same pattern as the Course Duration backfill.
+async function backfillAllocationLedger(){
+  if(!cache.attendees || !cache.invoiceallocations) return;
+  const existingIds = new Set((cache.invoiceallocations||[]).map(e=>String(e.AttendeeId)));
+  const toBackfill = (cache.attendees||[]).filter(a=>
+    (a.InvoiceRef||'').trim() && !existingIds.has(String(a.id))
+  );
+  for(const a of toBackfill){
+    await writeAllocationLedgerEntry(a.InvoiceRef, a.id, a.FullName||a.Title||'', a.CourseTitle||'', a.RunStartDate||'');
+  }
 }
 
 function invoiceLineTotals(invoiceNumber){
@@ -6157,6 +6269,11 @@ async function saveModal(){
     } else {
       createdItem = await saveWithFieldFallback(false, editingEntity, null, fields);
       toast('Record created successfully');
+      // Ledger entry for a brand-new Attendee linked to an invoice (skipped
+      // for Internal attendees, who have no invoice to draw value from).
+      if(editingEntity==='attendees' && fields.InvoiceRef){
+        await writeAllocationLedgerEntry(fields.InvoiceRef, createdItem?.id, fields.FullName, fields.CourseTitle, fields.RunStartDate);
+      }
     }
     // Quotes: sync line items to CG_QuoteLines after saving the header
     let promptInvoiceFor = null;
@@ -6264,6 +6381,9 @@ async function confirmDelete(entity, id, name){
         const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
         for(const l of lines){ try{ await deleteItem('invoicelines', l.id); }catch(e){ console.warn('Failed to delete invoice line',l.id,e); } }
         cache.invoicelines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()!==invNum);
+      }
+      if(entity==='attendees'){
+        await removeAllocationLedgerEntry(id);
       }
       await deleteItem(entity, id);
       toast(`"${name}" deleted`);
