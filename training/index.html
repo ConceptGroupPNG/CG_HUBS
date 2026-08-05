@@ -3674,6 +3674,7 @@ async function saveQuoteLines(quoteNumber, createdItem=null){
 // ============================================================
 let invoiceLines = [];
 let invoiceLinesOriginalIds = [];
+let invoiceLinesSnapshotAtLoad = '';
 let invoiceLineSeq = 0;
 
 // Pending (not-yet-saved) attendee rows being added inline from within the
@@ -3738,6 +3739,11 @@ async function initInvoiceLines(data){
     });
   }
   if(invoiceLines.length===0) addInvoiceLine();
+  // Snapshot exactly what was loaded, so saveModal() can verify nothing
+  // changed if this invoice turns out to be fully paid - a save-time check
+  // alongside the UI lock, not a replacement for it, matching how the
+  // existing payment-balance and seat-capacity hard stops both work.
+  invoiceLinesSnapshotAtLoad = JSON.stringify(invoiceLines.map(l=>({CourseName:l.CourseName,Quantity:l.Quantity,FeeExGST:l.FeeExGST,GSTRate:l.GSTRate})));
   renderInvoiceLines();
 }
 
@@ -3799,12 +3805,25 @@ function renderInvoiceLines(){
   if(!container) return;
   const courses = cache.courses||[];
   const totals = invoiceLinesTotals();
+  // Once an invoice is fully paid, its Line Items become a permanent record
+  // of what was actually sold - editing them after the fact would let the
+  // app's record silently drift from the real invoice the client paid
+  // against. Reallocating attendees to a different course still works fine
+  // via the Add/Attach Attendees section below (backed by the Allocation
+  // Ledger); it just no longer happens by rewriting the original line.
+  const isLocked = editingOriginalData && invoiceStatus(editingOriginalData)==='Paid';
+  const lockedBanner = isLocked ? `
+    <div style="display:flex;gap:8px;align-items:flex-start;background:#eff6ff;border-left:3px solid var(--blue);border-radius:6px;padding:10px 12px;margin-top:6px;font-size:12px;color:#1e40af">
+      <i class="ti ti-lock" style="font-size:14px;margin-top:1px"></i>
+      <div>This invoice is fully paid, so its Line Items are locked to preserve the original invoiced record. To send an attendee to a different course than what's shown here, add them below in Add / Attach Attendees and pick the actual course - no need to edit the line itself.</div>
+    </div>` : '';
   container.innerHTML = `
     <div style="margin-top:14px">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px">
         <i class="ti ti-list-details" style="color:var(--teal);font-size:15px" aria-hidden="true"></i>
         <span style="font-size:11px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">Line Items</span>
       </div>
+      ${lockedBanner}
       <div style="margin-top:6px;border:1px solid var(--g200);border-radius:var(--r);overflow:hidden">
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <thead><tr style="background:var(--g100)">
@@ -3817,7 +3836,15 @@ function renderInvoiceLines(){
             <th style="width:36px"></th>
           </tr></thead>
           <tbody>
-            ${invoiceLines.map(l=>`<tr>
+            ${invoiceLines.map(l=>isLocked ? `<tr>
+              <td style="padding:8px">${l.CourseName||'—'}</td>
+              <td style="padding:8px;text-align:right">${l.Quantity}</td>
+              <td style="padding:8px;text-align:right">${fmt(l.FeeExGST)}</td>
+              <td style="padding:8px;text-align:right;font-size:11px">${(+l.GSTRate)===0 ? 'S65: 0%' : 'Tax: 10%'}<div style="color:var(--g500);margin-top:2px">${fmt(l.GSTAmount)}</div></td>
+              <td style="padding:8px;text-align:right;font-weight:700">${fmt(l.LineTotal)}</td>
+              <td style="padding:8px;font-size:11px;color:var(--g600)">${invoiceLineRunSummary(editingOriginalData?.InvoiceNumber||editingOriginalData?.Title, l.CourseName)}</td>
+              <td style="padding:8px;text-align:center;color:var(--g400)" title="Locked - invoice is fully paid"><i class="ti ti-lock" style="font-size:13px"></i></td>
+            </tr>` : `<tr>
               <td style="padding:4px 8px">
                 <select onchange="updateInvoiceLine('${l._id}','CourseName',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
                   <option value="">— Select course —</option>
@@ -3851,7 +3878,7 @@ function renderInvoiceLines(){
           </tfoot>
         </table>
       </div>
-      <button type="button" class="btn btn-outline btn-sm" onclick="addInvoiceLine()" style="margin-top:8px"><i class="ti ti-plus"></i> Add Line</button>
+      ${isLocked ? '' : `<button type="button" class="btn btn-outline btn-sm" onclick="addInvoiceLine()" style="margin-top:8px"><i class="ti ti-plus"></i> Add Line</button>`}
     </div>
   `;
 }
@@ -6214,6 +6241,19 @@ async function saveModal(){
         toast(`Cannot add: all ${status.qty} seat(s) on this invoice course line are already filled`,'error');
         throw new Error('validation');
       }
+    }
+  }
+
+  // Invoices: block saving if Line Items were somehow changed on an invoice
+  // that's fully paid - the UI already hides the controls for this, but this
+  // is the same belt-and-suspenders check every other hard stop in the app
+  // gets (payment balance, seat capacity), not something relying on the UI
+  // lock alone.
+  if(editingEntity==='invoices' && editingOriginalData && invoiceStatus(editingOriginalData)==='Paid'){
+    const currentSnapshot = JSON.stringify(invoiceLines.map(l=>({CourseName:l.CourseName,Quantity:l.Quantity,FeeExGST:l.FeeExGST,GSTRate:l.GSTRate})));
+    if(currentSnapshot !== invoiceLinesSnapshotAtLoad){
+      toast('Cannot save: this invoice is fully paid, so its Line Items cannot be changed. Use Add / Attach Attendees to allocate against a different course instead.','error');
+      throw new Error('validation');
     }
   }
 
