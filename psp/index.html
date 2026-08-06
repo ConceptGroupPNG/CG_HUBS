@@ -3001,6 +3001,70 @@ async function saveWithFieldFallback(isUpdate, entity, id, fields) {
   }
 }
 
+// Attempts to update a SharePoint item, but ONLY if it hasn't changed since
+// etag was read (optimistic concurrency). Returns true on success, false if
+// the etag no longer matches — meaning someone else updated it first, in
+// which case the caller should re-read and retry rather than proceed as if
+// nothing happened. Throws only on a genuine, unexpected error.
+async function tryUpdateWithETag(entity, id, etag, fields) {
+  const siteId = await getSiteId();
+  const listId = await getListId(LISTS[entity]);
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${id}/fields`;
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'If-Match': etag,
+    },
+    body: JSON.stringify(fields),
+  });
+  if (r.status === 412) return false; // etag mismatch — someone else claimed it first
+  if (!r.ok) {
+    const errText = await r.text();
+    throw new Error(`Graph error ${r.status}: ${errText}`);
+  }
+  return true;
+}
+
+// Safely reserves the next number in a shared sequence (Quote/SA/Invoice
+// numbers all use this) using optimistic concurrency, so two people saving
+// at the same time can never end up with the same number — one transparently
+// retries with the next value instead of silently colliding. Always reads
+// fresh rather than trusting a cache that might be minutes old, since the
+// whole point is catching changes that happened after any earlier read.
+// Returns the new numeric value once safely claimed.
+async function reserveNextNumber(entity, numberField, fallbackStart = 0) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const rows = await getItems(entity);
+    const record = rows[0];
+
+    if (!record) {
+      // No tracker row exists yet — create one. This still has a small race
+      // window (two users both creating the very first row at once), but
+      // that's an exceedingly rare one-time edge case, not the ongoing risk
+      // this function exists to close.
+      const nextVal = fallbackStart + 1;
+      const created = await createItem(entity, { Title: 'Last' + entity, [numberField]: nextVal });
+      cache[entity] = [{ id: created?.id, [numberField]: nextVal }];
+      return nextVal;
+    }
+
+    const currentVal = parseInt(String(record[numberField] ?? fallbackStart).trim(), 10) || fallbackStart;
+    const nextVal = currentVal + 1;
+    const etag = record['@odata.etag'];
+
+    const claimed = etag ? await tryUpdateWithETag(entity, record.id, etag, { [numberField]: nextVal }) : false;
+    if (claimed) {
+      cache[entity] = [{ ...record, [numberField]: nextVal }];
+      return nextVal;
+    }
+    console.warn(`[reserveNextNumber] Collision reserving next ${numberField} (attempt ${attempt}/${maxAttempts}) — someone else claimed a number first, retrying with a fresh read...`);
+  }
+  throw new Error(`Could not reserve a new number after ${maxAttempts} attempts — please try again.`);
+}
+
 async function deleteItem(entity, id) {
   const siteId = await getSiteId();
   const listId = await getListId(LISTS[entity]);
@@ -5557,6 +5621,7 @@ async function onInvClientChange() {
   // Set invoice number
   const lastNo = (cache.lastinv[0]?.LastInvoiceNo || 5000);
   document.getElementById('inv-number').value = 'INV-' + (lastNo + 1);
+  invNumberManuallySet = false; // this is just the auto-preview, not a real reservation
 
   await loadEligiblePayRuns(client);
 }
@@ -5734,11 +5799,14 @@ function updateGenerateButton() {
   }
 }
 
+let invNumberManuallySet = false; // true only when confirmInvoiceNo() was explicitly used to override the auto-suggested number
+
 function confirmInvoiceNo() {
   const current = document.getElementById('inv-number').value;
   const newNo = prompt('Edit Invoice Number:', current);
   if (newNo && newNo.trim()) {
     document.getElementById('inv-number').value = newNo.trim();
+    invNumberManuallySet = true;
   }
 }
 
@@ -5823,7 +5891,27 @@ async function generateInvoice() {
   const invDate = document.getElementById('inv-date').value;
   const dueDate = document.getElementById('inv-due').value;
   if (!nominatedRecords.length) { showToast('Please nominate at least one pay run', 'error'); return; }
-  const invNo = document.getElementById('inv-number').value || ('INV-' + ((cache.lastinv[0]?.LastInvoiceNo || 5000) + 1));
+
+  const manualInvNo = invNumberManuallySet ? document.getElementById('inv-number').value : '';
+  let invNo;
+  if (manualInvNo) {
+    // Explicit manual override — use as-is, no reservation needed since this
+    // isn't the auto-increment collision scenario.
+    invNo = manualInvNo;
+  } else {
+    const genBtn = document.getElementById('btn-gen-inv');
+    const genBtnOrigHTML = genBtn ? genBtn.innerHTML : '';
+    if (genBtn) genBtn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Reserving number...';
+    try {
+      const nextVal = await reserveNextNumber('lastinv', 'LastInvoiceNo', 5000);
+      invNo = 'INV-' + nextVal;
+    } catch(e) {
+      if (genBtn) genBtn.innerHTML = genBtnOrigHTML;
+      showToast('Could not reserve an invoice number: ' + e.message, 'error');
+      return;
+    }
+    if (genBtn) genBtn.innerHTML = genBtnOrigHTML;
+  }
   const clientDetails = cache.clients.find(c => getClientName(c) === clientName);
   if (!clientDetails) { showToast('Client details not found', 'error'); return; }
   invoiceLines = [];
@@ -6037,14 +6125,18 @@ async function markAsBilled() {
     console.warn('Could not trigger invoiceExport Flow:', e.message);
   }
 
-  // Update last invoice number
-  const lastInvRecord = cache.lastinv[0];
-  if (lastInvRecord) {
+  // For a manually-typed invoice number, bump the tracker to match if it's
+  // higher than what's on file, so future auto-numbers don't collide with it.
+  // The auto-numbered path already claimed its number atomically above.
+  if (manualInvNo) {
+    const lastInvRecord = cache.lastinv[0];
     const newNo = parseInt(invNo.replace('INV-',''));
-    try {
-      await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, {LastInvoiceNo: newNo});
-      cache.lastinv[0].LastInvoiceNo = newNo;
-    } catch(e) { console.warn('Could not update last invoice no:', e); }
+    if (lastInvRecord && !isNaN(newNo) && newNo > (lastInvRecord.LastInvoiceNo || 0)) {
+      try {
+        await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, {LastInvoiceNo: newNo});
+        cache.lastinv[0].LastInvoiceNo = newNo;
+      } catch(e) { console.warn('Could not update last invoice no:', e); }
+    }
   }
 
   cache.billing = await getItems('billing');
@@ -7019,7 +7111,30 @@ async function saveQuote() {
   }
 
   const clientRecord = cache.clients.find(c => getClientName(c) === clientName);
-  const quoteNo = document.getElementById('gq-quoteno').value;
+
+  let quoteNo = document.getElementById('gq-quoteno').value; // for edits, this is the existing, unchanging number
+  if (!currentQuoteId) {
+    // New document — safely claim a number right now rather than trusting
+    // whatever was shown while the form was being filled out, which could
+    // already be stale if someone else saved one in the meantime.
+    const numBtn = document.getElementById('gq-save-btn');
+    const numBtnOrigHTML = numBtn ? numBtn.innerHTML : '';
+    if (numBtn) { numBtn.disabled = true; numBtn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Reserving number...'; }
+    try {
+      if (isSA) {
+        const nextVal = await reserveNextNumber('lastsa', 'LastSANumber', 0);
+        quoteNo = 'SA-' + String(nextVal).padStart(4, '0');
+      } else {
+        const nextVal = await reserveNextNumber('lastquote', 'LastQuoteNumber', 518);
+        quoteNo = 'QU-' + String(nextVal).padStart(4, '0');
+      }
+    } catch(e) {
+      if (numBtn) { numBtn.disabled = false; numBtn.innerHTML = numBtnOrigHTML; }
+      showToast('Could not reserve a document number: ' + e.message, 'error');
+      return;
+    }
+    if (numBtn) { numBtn.disabled = false; numBtn.innerHTML = numBtnOrigHTML; }
+  }
 
   let subtotal, tax, total;
   if (isSA) {
@@ -7074,50 +7189,6 @@ async function saveQuote() {
     }
     if (qId) {
       await saveWithFieldFallback(true, 'quotes', qId, { LineItems: JSON.stringify(lines) });
-    }
-    // Increment the correct sequence only for brand-new documents — QU- and
-    // SA- are tracked completely independently of each other.
-    if (!currentQuoteId) {
-      if (isSA) {
-        const newNo = quoteNo.replace('SA-','');
-        const lastRec = cache.lastsa[0];
-        if (lastRec) {
-          await saveWithFieldFallback(true, 'lastsa', lastRec.id, { LastSANumber: newNo });
-          cache.lastsa = await getItems('lastsa');
-          const verifyVal = cache.lastsa[0]?.LastSANumber;
-          if (String(verifyVal) !== String(newNo)) {
-            console.error(`[PSP_HUB] WARNING: PSP_Last_SA was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'.`);
-            showToast(`Warning: SA number tracking may not have saved correctly — please verify PSP_Last_SA`, 'error');
-          } else {
-            console.log('[PSP_HUB] PSP_Last_SA verified updated to', newNo);
-          }
-        } else {
-          await createItem('lastsa', { Title: 'LastSA', LastSANumber: newNo });
-          cache.lastsa = await getItems('lastsa');
-          console.log('[PSP_HUB] PSP_Last_SA row created with', newNo);
-        }
-      } else {
-        const newNo = quoteNo.replace('QU-','');
-        const lastRec = cache.lastquote[0];
-        if (lastRec) {
-          await saveWithFieldFallback(true, 'lastquote', lastRec.id, { LastQuoteNumber: newNo });
-          // Re-fetch to verify the write actually took effect (saveWithFieldFallback may have
-          // silently stripped LastQuoteNumber itself if the column's internal name doesn't match)
-          cache.lastquote = await getItems('lastquote');
-          const verifyVal = cache.lastquote[0]?.LastQuoteNumber;
-          if (String(verifyVal) !== String(newNo)) {
-            console.error(`[PSP_HUB] WARNING: PSP_Last_Quote was NOT updated correctly. Expected '${newNo}' but found '${verifyVal}'. The next quote number will be wrong. Check that the LastQuoteNumber column's internal name matches its display name in SharePoint.`);
-            showToast(`Warning: Quote number tracking may not have saved correctly — please verify PSP_Last_Quote`, 'error');
-          } else {
-            console.log('[PSP_HUB] PSP_Last_Quote verified updated to', newNo);
-          }
-        } else {
-          // No row exists yet in PSP_Last_Quote — create one
-          await createItem('lastquote', { Title: 'LastQuote', LastQuoteNumber: newNo });
-          cache.lastquote = await getItems('lastquote');
-          console.log('[PSP_HUB] PSP_Last_Quote row created with', newNo);
-        }
-      }
     }
     cache.quotes = await getItems('quotes');
     showToast(`${isSA ? 'Service Acknowledgement' : 'Quote'} ${quoteNo} saved`, 'success');
@@ -7297,9 +7368,14 @@ async function convertQuoteToInvoice(id) {
   let lines = [];
   try { lines = JSON.parse(q.LineItems || '[]'); } catch(e) {}
 
-  const lastInvRecord = cache.lastinv[0];
-  const lastNo = lastInvRecord?.LastInvoiceNo || 5000;
-  const invNo = `INV-${lastNo + 1}`;
+  let invNo;
+  try {
+    const nextVal = await reserveNextNumber('lastinv', 'LastInvoiceNo', 5000);
+    invNo = 'INV-' + nextVal;
+  } catch(e) {
+    showToast('Could not reserve an invoice number: ' + e.message, 'error');
+    return;
+  }
 
   const invLines = lines.map(l => ({
     PayGroup: '', PayNo: '', Category: 'Consulting',
@@ -7335,11 +7411,6 @@ async function convertQuoteToInvoice(id) {
       });
     }
     await saveWithFieldFallback(true, 'quotes', q.id, { Status: 'Invoiced', LinkedInvoiceNo: invNo });
-    const newInvNo = lastNo + 1;
-    if (lastInvRecord) {
-      await saveWithFieldFallback(true, 'lastinv', lastInvRecord.id, { LastInvoiceNo: newInvNo });
-      cache.lastinv[0].LastInvoiceNo = newInvNo;
-    }
     cache.quotes = await getItems('quotes');
     cache.invoices = await getItems('invoices');
     renderQuotes();
