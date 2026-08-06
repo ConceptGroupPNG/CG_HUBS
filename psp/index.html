@@ -1690,6 +1690,9 @@
                   <div id="gq-lines-heading" style="font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--grey-500);">Line Items</div>
                   <button class="btn btn-xs btn-teal" onclick="addQuoteLine()"><i class="ti ti-plus"></i> Add Line</button>
                 </div>
+                <div id="gq-lines-header-quote" style="display:grid;grid-template-columns:1fr 60px 90px 60px 90px 32px;gap:6px;padding:0 0 4px;font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;">
+                  <div>Description</div><div style="text-align:right;">Qty</div><div style="text-align:right;">Unit Price</div><div style="text-align:right;">Tax %</div><div style="text-align:right;">Total</div><div></div>
+                </div>
                 <div id="gq-lines-header" style="display:none;grid-template-columns:1fr 70px 90px 32px;gap:6px;padding:0 0 4px;font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;">
                   <div>Description</div><div style="text-align:right;">Hours</div><div style="text-align:right;">Cost</div><div></div>
                 </div>
@@ -6682,6 +6685,7 @@ function setQuoteDocType(type) {
   document.getElementById('gq-quoteno-label').innerHTML = (isSA ? 'SA No' : 'Quote No') + ' <span style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;">(auto)</span>';
   document.getElementById('gq-lines-heading').textContent = isSA ? 'Service Info and Service Fee (VAT Excluded)' : 'Line Items';
   document.getElementById('gq-lines-header').style.display = isSA ? 'grid' : 'none';
+  document.getElementById('gq-lines-header-quote').style.display = isSA ? 'none' : 'grid';
   document.getElementById('gq-totals-quote').style.display = isSA ? 'none' : '';
   document.getElementById('gq-totals-sa').style.display = isSA ? '' : 'none';
   document.getElementById('gq-appendix-section').style.display = isSA ? '' : 'none';
