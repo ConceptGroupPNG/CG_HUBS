@@ -1467,16 +1467,17 @@ function openAddModal(){ openFormModal(currentPage, null); }
 // ============================================================
 async function loadDashboard(){
   try {
-    const [runs, atts, invs, pays, courses, invLines] = await Promise.all([
+    const [runs, atts, invs, pays, courses, invLines, allocations] = await Promise.all([
       getItems('runs','$top=500'),
       getItems('attendees','$top=500'),
       getItems('invoices','$top=500'),
       getItems('payments','$top=500'),
       cache.courses ? Promise.resolve(cache.courses) : getItems('courses','$top=500'),
       getItems('invoicelines','$top=999'),
+      getItems('invoiceallocations','$top=999'),
     ]);
     cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
-    cache.courses=courses; cache.invoicelines=invLines;
+    cache.courses=courses; cache.invoicelines=invLines; cache.invoiceallocations=allocations;
 
     const totalInv = invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>{
       const lt=invoiceLineTotals(i.InvoiceNumber||i.Title);
@@ -1836,12 +1837,24 @@ function buildCombinedSeatAllocation(invs, invLines, atts){
     const lines = invLines.filter(l=>(l.Title||'').trim().toLowerCase()===invNum && l.CourseName);
     if(!lines.length) return; // nothing invoiced yet on this invoice - nothing to allocate
 
-    let allocated = 0;
+    // Allocated now comes from the Allocation Ledger, not from re-counting
+    // named attendees against each line's own seat quantity. That old
+    // approach missed two real cases entirely: an attendee reallocated to a
+    // course that isn't on this invoice at all (their value was never
+    // counted anywhere), and a balance already converted to a Credit Note
+    // (which the ledger also records, so a converted invoice correctly
+    // shows as fully accounted for here).
+    const allocated = invoiceAllocatedTotal(inv.InvoiceNumber||inv.Title);
+
+    // Per-line "unused" detail is kept as-is on purpose - it answers a
+    // different question ("did anyone actually attend THIS specific
+    // purchased course slot") than the invoice-level Balance does ("is
+    // there unaccounted-for money left"). A reallocated seat can correctly
+    // show here as unused even once its value is fully accounted for
+    // elsewhere - both things are true and both are worth seeing.
     const lineDetails = [];
     lines.forEach(l=>{
       const status = invoiceLineSeatStatus(l); // {qty, filled, unfilled}
-      const feePerSeat = (+l.FeeExGST||0) + (+l.Quantity ? (+l.GSTAmount||0)/(+l.Quantity) : 0);
-      allocated += status.filled * feePerSeat;
       if(status.unfilled > 0){
         lineDetails.push({course:l.CourseName, qty:status.qty, filled:status.filled, unfilled:status.unfilled});
       }
@@ -1850,7 +1863,7 @@ function buildCombinedSeatAllocation(invs, invLines, atts){
     const lt = invoiceLineTotals(inv.InvoiceNumber||inv.Title);
     const total = lt ? lt.total : (+inv.TotalAmount||0);
     const balance = Math.max(0, total-allocated);
-    if(balance<=0) return; // fully allocated - nothing outstanding to show
+    if(balance<=0) return; // fully allocated (or fully converted) - nothing outstanding to show
 
     invoiceRows.push({
       invNum: inv.InvoiceNumber||inv.Title||'', org: inv.OrgName||'—',
