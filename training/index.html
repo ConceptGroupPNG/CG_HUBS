@@ -1321,6 +1321,16 @@ function payStatus(fee,gst,paid){
   return 'Pending';
 }
 // Compute invoice status by summing matching payments via RemittanceRef
+// A Credit Note is a real Invoice record (CRE- prefix instead of INV-),
+// representing value that was already counted as revenue once, against the
+// original invoice it was converted from. It must still appear as a normal
+// row everywhere invoices are listed (so its two-way link to the original
+// stays visible), but must NEVER be added into revenue/Total-Invoiced sums -
+// that would double-count money that was already counted once.
+function isCreditNote(inv){
+  return /^CRE-/i.test((inv.InvoiceNumber||inv.Title||'').trim());
+}
+
 function invoiceTotalPaid(inv){
   const invNum=inv.InvoiceNumber||inv.Title||'';
   return (cache.payments||[]).filter(p=>(p.RemittanceRef||'')===invNum)
@@ -1468,7 +1478,7 @@ async function loadDashboard(){
     cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
     cache.courses=courses; cache.invoicelines=invLines;
 
-    const totalInv = invs.reduce((s,i)=>{
+    const totalInv = invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>{
       const lt=invoiceLineTotals(i.InvoiceNumber||i.Title);
       return s+(lt?lt.total:(+i.TotalAmount||0));
     },0);
@@ -1503,7 +1513,7 @@ function buildDashCharts(atts, invs, pays){
   // Group revenue by course category using invoice line items (preferred)
   // falling back to the old attendee→course lookup for invoices without lines
   const revCats = {};
-  invs.forEach(i=>{
+  invs.filter(i=>!isCreditNote(i)).forEach(i=>{
     const invNum = (i.InvoiceNumber||i.Title||'').trim().toLowerCase();
     const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
     if(lines.length){
@@ -1535,7 +1545,7 @@ function buildDashCharts(atts, invs, pays){
     type:'bar',
     data:{
       labels:catLabels.length?catLabels:['Total Invoiced'],
-      datasets:[{label:'PGK',data:catLabels.length?catData:[invs.reduce((s,i)=>s+(+i.TotalAmount||0),0)],backgroundColor:catLabels.length?bgColors:['#3b82f6'],borderRadius:6,borderSkipped:false}]
+      datasets:[{label:'PGK',data:catLabels.length?catData:[invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>s+(+i.TotalAmount||0),0)],backgroundColor:catLabels.length?bgColors:['#3b82f6'],borderRadius:6,borderSkipped:false}]
     },
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'K'+Math.round(v/1000)+'k'}}}}
   });
@@ -1618,6 +1628,147 @@ function buildRecentActivity(atts){
 // couldn't represent a line whose attendees are split across multiple runs.
 // This is purely informational now; the authoritative date lives on each
 // attendee, chosen explicitly when they're added.
+// Sums this invoice's Allocation Ledger entries - what's actually been used
+// (by real attendees, or already converted to a Credit Note), regardless of
+// which original line the value came from.
+function invoiceAllocatedTotal(invoiceNumber){
+  const invNum = (invoiceNumber||'').trim().toLowerCase();
+  return (cache.invoiceallocations||[]).filter(e=>(e.Title||'').trim().toLowerCase()===invNum)
+    .reduce((s,e)=>s+(+e.Amount||0),0);
+}
+
+// Shows one of three states in the invoice editor: this invoice IS a Credit
+// Note (traces back to where it came from); this invoice's leftover balance
+// WAS already converted (traces forward to where it went); or - if fully
+// paid with real balance left - the button to start a new conversion.
+function renderInvoiceCreditNoteSection(data){
+  const el = document.getElementById('invoice-creditnote-container');
+  if(!el) return;
+  if(!data){ el.innerHTML=''; return; }
+
+  if(isCreditNote(data)){
+    el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start;background:var(--purple-light,#ede9fe);border-left:3px solid #8b5cf6;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:12px;color:#5b21b6">
+      <i class="ti ti-receipt-refund" style="font-size:14px;margin-top:1px"></i>
+      <div>This is a Credit Note, converted from <strong>${data.ConvertedFromInvoice||'—'}</strong>.</div>
+    </div>`;
+    return;
+  }
+
+  if(data.ConvertedToCreditNote){
+    el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start;background:var(--purple-light,#ede9fe);border-left:3px solid #8b5cf6;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:12px;color:#5b21b6">
+      <i class="ti ti-receipt-refund" style="font-size:14px;margin-top:1px"></i>
+      <div>This invoice's remaining balance was converted to Credit Note <strong>${data.ConvertedToCreditNote}</strong>.</div>
+    </div>`;
+    return;
+  }
+
+  if(invoiceStatus(data)!=='Paid'){ el.innerHTML=''; return; }
+
+  const invNum = data.InvoiceNumber||data.Title||'';
+  const total = +data.TotalAmount||0;
+  const remaining = Math.round((total - invoiceAllocatedTotal(invNum))*100)/100;
+  if(remaining<=0){ el.innerHTML=''; return; }
+
+  el.innerHTML = `<div style="margin-top:14px">
+    <button type="button" class="btn btn-outline btn-sm" onclick="promptConvertInvoiceToCreditNote('${data.id}')"><i class="ti ti-receipt-refund"></i> Convert Remaining Balance (${fmt(remaining)}) to Credit Note</button>
+  </div>`;
+}
+
+// Opens the shared confirm dialog with Credit Note-specific details, rather
+// than converting immediately - this is a real financial action worth a
+// deliberate confirmation, same as any other irreversible step in the app.
+async function promptConvertInvoiceToCreditNote(invoiceId){
+  const inv = (cache.invoices||[]).find(i=>String(i.id)===String(invoiceId));
+  if(!inv){ toast('Invoice not found - try refreshing the page','error'); return; }
+  const invNum = inv.InvoiceNumber||inv.Title||'';
+
+  if(isCreditNote(inv)){ toast('This is already a Credit Note','error'); return; }
+  if(invoiceStatus(inv)!=='Paid'){ toast('Only a fully paid invoice can be converted to a Credit Note','error'); return; }
+  if(inv.ConvertedToCreditNote){ toast('This invoice was already converted to '+inv.ConvertedToCreditNote,'error'); return; }
+
+  const total = +inv.TotalAmount||0;
+  const remaining = Math.round((total - invoiceAllocatedTotal(invNum))*100)/100;
+  if(remaining<=0){ toast('No remaining unallocated balance to convert','error'); return; }
+
+  const creNumber = invNum.replace(/^inv-?/i, 'CRE-');
+
+  document.getElementById('confirm-title').textContent = 'Convert remaining balance to Credit Note?';
+  document.getElementById('confirm-msg').innerHTML =
+    `This will create <strong>${creNumber}</strong> for <strong>${fmt(remaining)}</strong>, carrying forward the unallocated balance from ${invNum}. ` +
+    `${invNum} will then show as fully accounted for. This is a full conversion of everything currently unallocated, and cannot be undone.`;
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.style.display = '';
+  btn.className = 'btn btn-primary';
+  btn.innerHTML = '<i class="ti ti-receipt-refund"></i>Convert';
+  btn.onclick = async()=>{
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>';
+    try{
+      await executeConvertInvoiceToCreditNote(inv, invNum, creNumber, remaining);
+      toast(`Created ${creNumber} for ${fmt(remaining)}`);
+      document.getElementById('confirm-modal').classList.remove('open');
+      closeModal();
+      if(currentPage==='invoices') loadPage('invoices');
+    }catch(e){
+      toast('Could not convert to Credit Note: '+e.message,'error');
+    } finally {
+      btn.disabled = false;
+      btn.className = 'btn btn-danger';
+      btn.innerHTML = '<i class="ti ti-trash"></i>Delete';
+    }
+  };
+  document.getElementById('confirm-modal').classList.add('open');
+}
+
+// The actual conversion. Deliberately does NOT touch the original invoice's
+// Line Items (which stay locked and permanent per Step 2) - it just writes
+// one ledger entry marking the remainder as "converted" rather than
+// "allocated to an attendee", which is enough on its own to bring the
+// original's balance to zero. The new Credit Note is priced off whichever
+// course/GST rate the original's first line used, at Quantity 1, with its
+// own Line Total forced to match the converted amount exactly.
+async function executeConvertInvoiceToCreditNote(inv, invNum, creNumber, remaining){
+  const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum.trim().toLowerCase());
+  const primaryLine = lines[0];
+  const courseName = primaryLine?.CourseName || 'Training Credit';
+  const gstRate = primaryLine && (+primaryLine.GSTRate===0) ? 0 : 0.10;
+  const feeExGst = Math.round((remaining/(1+gstRate))*100)/100;
+  const gstAmount = Math.round((remaining-feeExGst)*100)/100;
+
+  const creFields = {
+    InvoiceNumber: creNumber, Title: creNumber,
+    OrgName: inv.OrgName||'',
+    InvoiceDate: new Date().toISOString().substring(0,10),
+    TotalAmount: remaining,
+    Status: 'Paid',
+    ConvertedFromInvoice: invNum,
+  };
+  const createdCre = await saveWithFieldFallback(false, 'invoices', null, creFields);
+  if(!cache.invoices) cache.invoices=[];
+  cache.invoices.push({id:createdCre?.id, ...creFields});
+
+  await saveWithFieldFallback(false, 'invoicelines', null, {
+    Title: creNumber, CourseName: courseName, Quantity: 1,
+    FeeExGST: feeExGst, GSTRate: gstRate, GSTAmount: gstAmount, LineTotal: remaining,
+  });
+  if(!cache.invoicelines) cache.invoicelines=[];
+  cache.invoicelines.push({Title:creNumber, CourseName:courseName, Quantity:1, FeeExGST:feeExGst, GSTRate:gstRate, GSTAmount:gstAmount, LineTotal:remaining});
+
+  // Mark the remainder as converted on the ORIGINAL invoice's own ledger -
+  // no real attendee behind this entry, so it's never touched by attendee
+  // deletion sync, and it's what brings the original's own balance to zero.
+  const ledgerFields = {
+    Title: invNum, AttendeeId: '', AttendeeName: `Converted to Credit Note ${creNumber}`,
+    CourseName: '', RunStartDate: '', Amount: remaining,
+  };
+  await saveWithFieldFallback(false, 'invoiceallocations', null, ledgerFields);
+  if(!cache.invoiceallocations) cache.invoiceallocations=[];
+  cache.invoiceallocations.push(ledgerFields);
+
+  await saveWithFieldFallback(true, 'invoices', inv.id, {ConvertedToCreditNote: creNumber});
+  inv.ConvertedToCreditNote = creNumber;
+}
+
 function invoiceLineRunSummary(invoiceNumber, courseName){
   const invNum = (invoiceNumber||'').trim().toLowerCase();
   const cName = (courseName||'').trim().toLowerCase();
@@ -4445,12 +4596,15 @@ function invoiceLineTotals(invoiceNumber){
 }
 
 function renderInvoices(items){
-  // Update summary metrics based on current (filtered) items
-  const totalInv = items.reduce((s,i)=>{
+  // Update summary metrics based on current (filtered) items - Credit Notes
+  // excluded here since they're not new revenue, but the table below still
+  // lists them as normal rows so their link back to the original stays visible.
+  const revenueItems = items.filter(i=>!isCreditNote(i));
+  const totalInv = revenueItems.reduce((s,i)=>{
     const lt = invoiceLineTotals(i.InvoiceNumber||i.Title);
     return s + (lt ? lt.total : (+i.TotalAmount||0));
   },0);
-  const totalPaid = items.reduce((s,i)=>s+invoiceTotalPaid(i),0);
+  const totalPaid = revenueItems.reduce((s,i)=>s+invoiceTotalPaid(i),0);
   const m1=document.getElementById('inv-m1'), m2=document.getElementById('inv-m2'),
         m3=document.getElementById('inv-m3'), m4=document.getElementById('inv-m4');
   if(m1) m1.textContent = fmt(totalInv);
@@ -5631,6 +5785,7 @@ async function openFormModal(entity, data){
     html += '<div id="invoice-lines-container"></div>';
     html += '<div id="invoice-attendees-container"></div>';
     html += '<div id="invoice-attendee-editor-container"></div>';
+    html += '<div id="invoice-creditnote-container"></div>';
   }
 
   document.getElementById('modal-body').innerHTML = html;
@@ -5647,6 +5802,8 @@ async function openFormModal(entity, data){
     await initInvoiceLines(data);
     renderInvoiceAttendees(data);
     initInvoiceAttendeeEditor(data);
+    if(!cache.invoiceallocations){ try{ cache.invoiceallocations = await getItems('invoiceallocations','$top=999'); }catch(e){} }
+    renderInvoiceCreditNoteSection(data);
   }
 
   // Attendees: show the seat fulfillment badge if an Invoice Course Line is already selected,
@@ -7834,12 +7991,14 @@ function renderStatusAnomalyReport(flagged){
 function buildSalesFunnel(atts, invs, pays){
   const el = document.getElementById('dash-funnel');
   if(!el) return;
+  const realInvs = invs.filter(i=>!isCreditNote(i));
+  const realPays = pays.filter(p=>!isCreditNote({InvoiceNumber:p.RemittanceRef}));
   const registered = atts.length;
-  const invoiced = invs.length;
-  const totalInv = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
-  const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
-  const paidInvs = invs.filter(i=>{
-    const paid = pays.filter(p=>(p.RemittanceRef||'')===(i.InvoiceNumber||i.Title||'')).reduce((s,p)=>s+(+p.AmountPaid||0),0);
+  const invoiced = realInvs.length;
+  const totalInv = realInvs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  const totalPaid = realPays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+  const paidInvs = realInvs.filter(i=>{
+    const paid = realPays.filter(p=>(p.RemittanceRef||'')===(i.InvoiceNumber||i.Title||'')).reduce((s,p)=>s+(+p.AmountPaid||0),0);
     return paid>=(+i.TotalAmount||0)&&(+i.TotalAmount||0)>0;
   }).length;
   const convRate = invoiced>0?Math.round((paidInvs/invoiced)*100):0;
