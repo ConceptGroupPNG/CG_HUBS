@@ -245,10 +245,10 @@
 
   /* ── PRINT STYLES ── */
   @media print {
-    body * { visibility: hidden; }
-    #print-area, #print-area * { visibility: visible; }
+    body *:not(#print-area):not(#print-area *) { display: none !important; }
     #print-area {
-      position: fixed; top: 0; left: 0; width: 100%;
+      display: block !important;
+      position: static; width: 100%;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
     .cal-event { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
