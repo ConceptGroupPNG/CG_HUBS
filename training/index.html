@@ -2998,12 +2998,17 @@ function modalEmailQuote(){
     gst: acc.gst+(+l.GSTAmount||0),
     total: acc.total+(+l.LineTotal||0),
   }), {fee:0,gst:0,total:0});
-  const subject = encodeURIComponent(`Quote ${quoteNum} — Concept Group Training`);
+  const subject = encodeURIComponent(`Training Quotation \u2013 ${quoteNum}`);
   const body = encodeURIComponent(
+    `Concept Group Training\n`+
+    `P. O. Box 190, Waigani, Port Moresby, NCD\n`+
+    `training@concept.com.pg\n`+
+    `Tele.: +675 323 1920 / +675 73734286\n\n`+
     `Dear ${contact||orgName},\n\n`+
     `Please find attached Quote ${quoteNum} from Concept Group.\n\n`+
     `Total: PGK ${t.total.toFixed(2)} (incl. GST)\n\n`+
-    `Please don't hesitate to contact us if you have any questions.\n\n`+
+    `Please note that this quotation should not be used as a tax invoice for payment. Once the quotation is accepted, kindly request the official Tax Invoice, which will include our bank account details.\n\n`+
+    `If you have any questions, please don't hesitate to contact us.\n\n`+
     `Kind regards,\nConcept Group Training`
   );
   window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
@@ -3136,13 +3141,17 @@ function gqEmail(){
   const orgSel  = document.getElementById('gq-org');
   const orgName = orgSel?.options[orgSel.selectedIndex]?.textContent || '';
   const t = gqLinesTotals();
-  const subject = encodeURIComponent(`Quote ${quoteNum} — Concept Group Training`);
+  const subject = encodeURIComponent(`Training Quotation \u2013 ${quoteNum}`);
   const body = encodeURIComponent(
+    `Concept Group Training\n`+
+    `P. O. Box 190, Waigani, Port Moresby, NCD\n`+
+    `training@concept.com.pg\n`+
+    `Tele.: +675 323 1920 / +675 73734286\n\n`+
     `Dear ${document.getElementById('gq-contact')?.value||orgName},\n\n`+
     `Please find attached Quote ${quoteNum} from Concept Group.\n\n`+
     `Total: PGK ${t.total.toFixed(2)} (incl. GST)\n\n`+
-    `This quote is valid until ${document.getElementById('gq-expiry')?.value||''}.\n\n`+
-    `Please don't hesitate to contact us if you have any questions.\n\n`+
+    `Please note that this quotation should not be used as a tax invoice for payment. Once the quotation is accepted, kindly request the official Tax Invoice, which will include our bank account details.\n\n`+
+    `If you have any questions, please don't hesitate to contact us.\n\n`+
     `Kind regards,\nConcept Group Training`
   );
   window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
