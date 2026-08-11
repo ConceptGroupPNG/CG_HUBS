@@ -1189,7 +1189,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
     const resource = resourceMap[resourceId];
     const csa = agreementMap[csaId];
     await graphCreateItem("CSA_TimeEntries", {
-      Title: `${csa.fields.Title} ${date}`,
+      Title: csa.fields.Title,
       CSA: csa.fields.Title,
       WorkDate: date,
       Hours: hours,
