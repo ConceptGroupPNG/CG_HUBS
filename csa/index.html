@@ -232,6 +232,7 @@
         <div class="nav-item" data-view="agreements"><span class="nav-icon">&#9776;</span>Agreements</div>
         <div class="nav-item" data-view="clients"><span class="nav-icon">&#9679;</span>Clients</div>
         <div class="nav-item" data-view="resources"><span class="nav-icon">&#9733;</span>Resources</div>
+        <div class="nav-item" data-view="timesheets"><span class="nav-icon">&#128337;</span>Timesheets</div>
       </div>
       <div class="sidebar-footer">
         <div class="user-chip" id="userChip">—</div>
@@ -350,6 +351,91 @@
           </thead>
           <tbody id="resourcesTableBody">
             <tr><td colspan="6"><div class="loader">Loading resources…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- TIMESHEETS -->
+      <div class="view" id="view-timesheets">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Timesheets</div>
+            <div class="page-sub">Log and review time against CSAs</div>
+          </div>
+          <button class="btn-primary" id="logTimeBtn">+ Log Time</button>
+        </div>
+
+        <div class="section-card card-details" id="logTimeFormCard" style="display:none;">
+          <h3>Log Time Entry</h3>
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label>Resource</label>
+              <select id="logTimeResource"><option value="">— Select resource —</option></select>
+            </div>
+            <div class="form-field">
+              <label>CSA</label>
+              <select id="logTimeCSA"><option value="">— Select CSA —</option></select>
+            </div>
+            <div class="form-field">
+              <label>Date</label>
+              <input type="date" id="logTimeDate">
+            </div>
+            <div class="form-field">
+              <label>Hours</label>
+              <input type="number" step="0.25" id="logTimeHours" placeholder="e.g. 3.5">
+            </div>
+            <div class="form-field">
+              <label>Billable</label>
+              <select id="logTimeBillable">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-secondary" id="cancelLogTimeBtn">Cancel</button>
+            <button class="btn-primary" id="saveLogTimeBtn">Save Entry</button>
+          </div>
+        </div>
+
+        <div class="section-card card-milestones">
+          <h3>Generate Timesheet</h3>
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label>Resource</label>
+              <select id="genTimesheetResource"><option value="">— Select resource —</option></select>
+            </div>
+            <div class="form-field"></div>
+            <div class="form-field">
+              <label>Start Date</label>
+              <input type="date" id="genTimesheetStart">
+            </div>
+            <div class="form-field">
+              <label>End Date</label>
+              <input type="date" id="genTimesheetEnd">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-secondary" id="quickTodayBtn">Today</button>
+            <button class="btn-secondary" id="quickWeekBtn">This Week</button>
+            <button class="btn-primary" id="generateTimesheetBtn">Generate Timesheet</button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Resource / User</th>
+              <th>CSA</th>
+              <th style="text-align:right">Hours</th>
+              <th>Billable</th>
+              <th>Method</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="timesheetsTableBody">
+            <tr><td colspan="7"><div class="loader">Loading time entries…</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -505,6 +591,7 @@ let allRateOverrides = [];
 let clientMap = {};   // id -> client fields
 let agreementCounts = {}; // clientId -> count
 let agreementMap = {}; // itemId -> agreement item
+let agreementByTitle = {}; // "CSA-0001" -> agreement item
 let resourceMap = {}; // itemId -> resource item
 
 /* ============================================================
@@ -524,6 +611,8 @@ async function startApp(){
     renderAgreementsTable();
     renderClientsTable();
     renderResourcesTable();
+    populateTimesheetDropdowns();
+    renderTimesheetsTable();
   }catch(err){
     console.error(err);
     document.getElementById("metricsRow").innerHTML =
@@ -556,6 +645,9 @@ async function loadAllData(){
 
   agreementMap = {};
   allAgreements.forEach(a => { agreementMap[a.id] = a; });
+
+  agreementByTitle = {};
+  allAgreements.forEach(a => { agreementByTitle[(a.fields.Title||"").trim()] = a; });
 
   resourceMap = {};
   allResources.forEach(r => { resourceMap[r.id] = r; });
@@ -774,6 +866,315 @@ document.getElementById("backToResources").addEventListener("click", () => {
 document.getElementById("newResourceBtn").addEventListener("click", () => {
   enterResourceEditMode(null);
 });
+
+/* ============================================================
+   TIMESHEETS
+   ============================================================ */
+function activeResourceOptions(selected){
+  return allResources
+    .filter(r => r.fields.IsActive !== false)
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${r.id}" ${String(selected)===String(r.id)?"selected":""}>${esc(r.fields.Title)}</option>`)
+    .join("");
+}
+
+function populateTimesheetDropdowns(){
+  const resOpts = activeResourceOptions();
+  const csaOpts = csaSelectOptions();
+  document.getElementById("logTimeResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
+  document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA —</option>${csaOpts}`;
+  document.getElementById("genTimesheetResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
+}
+
+function findResourceForEntry(entry){
+  if(entry.fields.ResourceRefLookupId && resourceMap[entry.fields.ResourceRefLookupId]){
+    return resourceMap[entry.fields.ResourceRefLookupId];
+  }
+  const eu = (entry.fields.EntryUser || "").toLowerCase().trim();
+  if(!eu) return null;
+  return allResources.find(r => {
+    const email = (r.fields.MatchEmail || "").toLowerCase().trim();
+    const name = (r.fields.Title || "").toLowerCase().trim();
+    return (email && eu === email) || (name && eu === name);
+  }) || null;
+}
+
+function renderTimesheetsTable(){
+  if(allTimeEntries.length === 0){
+    document.getElementById("timesheetsTableBody").innerHTML =
+      `<tr><td colspan="7"><div class="empty-state">No time entries yet.</div></td></tr>`;
+    return;
+  }
+  const rows = allTimeEntries.slice().sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||"")).slice(0, 150);
+  document.getElementById("timesheetsTableBody").innerHTML = rows.map(t => {
+    const f = t.fields;
+    const csa = agreementByTitle[(f.CSA||"").trim()] || null;
+    const csaLabel = csa ? csa.fields.Title : (f.CSA || "—");
+    const resource = findResourceForEntry(t);
+    const resourceLabel = resource ? resource.fields.Title : (f.EntryUser || "—");
+    return `
+      <tr>
+        <td>${esc(f.WorkDate) || "—"}</td>
+        <td>${esc(resourceLabel)}</td>
+        <td>${esc(csaLabel)}</td>
+        <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
+        <td>${f.Billable ? "Yes" : "No"}</td>
+        <td>${esc(f.EntryMethod) || "—"}</td>
+        <td><button class="btn-danger-text" onclick="deleteTimeEntry('${t.id}')">Delete</button></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+document.getElementById("logTimeBtn").addEventListener("click", () => {
+  populateTimesheetDropdowns();
+  document.getElementById("logTimeDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("logTimeFormCard").style.display = "block";
+});
+document.getElementById("cancelLogTimeBtn").addEventListener("click", () => {
+  document.getElementById("logTimeFormCard").style.display = "none";
+});
+
+document.getElementById("saveLogTimeBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("saveLogTimeBtn");
+  const resourceId = document.getElementById("logTimeResource").value;
+  const csaId = document.getElementById("logTimeCSA").value;
+  const date = document.getElementById("logTimeDate").value;
+  const hours = parseFloat(document.getElementById("logTimeHours").value) || 0;
+  const billable = document.getElementById("logTimeBillable").value === "true";
+
+  if(!resourceId || !csaId || !date || hours <= 0){
+    alert("Please select a resource, a CSA, a date, and enter hours greater than 0.");
+    return;
+  }
+
+  const originalText = btn.textContent;
+  btn.textContent = "Saving…";
+  btn.disabled = true;
+
+  try{
+    const resource = resourceMap[resourceId];
+    const csa = agreementMap[csaId];
+    await graphCreateItem("CSA_TimeEntries", {
+      Title: `${csa.fields.Title} ${date}`,
+      CSA: csa.fields.Title,
+      WorkDate: date,
+      Hours: hours,
+      EntryMethod: "Manual",
+      EntryUser: resource.fields.Title,
+      Billable: billable,
+      ResourceRefLookupId: resourceId
+    });
+    await loadAllData();
+    renderTimesheetsTable();
+    document.getElementById("logTimeFormCard").style.display = "none";
+    document.getElementById("logTimeHours").value = "";
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save entry: " + err.message);
+  }finally{
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+async function deleteTimeEntry(itemId){
+  if(!confirm("Delete this time entry? This can't be undone.")) return;
+  try{
+    await graphDeleteItem("CSA_TimeEntries", itemId);
+    await loadAllData();
+    renderTimesheetsTable();
+  }catch(err){
+    console.error(err);
+    alert("Couldn't delete entry: " + err.message);
+  }
+}
+
+document.getElementById("quickTodayBtn").addEventListener("click", () => {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById("genTimesheetStart").value = today;
+  document.getElementById("genTimesheetEnd").value = today;
+});
+document.getElementById("quickWeekBtn").addEventListener("click", () => {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun..6=Sat
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  document.getElementById("genTimesheetStart").value = monday.toISOString().slice(0,10);
+  document.getElementById("genTimesheetEnd").value = sunday.toISOString().slice(0,10);
+});
+
+document.getElementById("generateTimesheetBtn").addEventListener("click", () => {
+  const resourceId = document.getElementById("genTimesheetResource").value;
+  const start = document.getElementById("genTimesheetStart").value;
+  const end = document.getElementById("genTimesheetEnd").value;
+  if(!resourceId || !start || !end){
+    alert("Please select a resource, start date, and end date.");
+    return;
+  }
+  generateTimesheetDocument(resourceId, start, end);
+});
+
+function dateRangeArray(start, end){
+  const dates = [];
+  let cur = new Date(start + "T00:00:00");
+  const endD = new Date(end + "T00:00:00");
+  while(cur <= endD){
+    dates.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+function generateTimesheetDocument(resourceId, start, end){
+  const resource = resourceMap[resourceId];
+  if(!resource) return;
+
+  const entries = allTimeEntries.filter(t => {
+    const wd = t.fields.WorkDate;
+    if(!wd || wd < start || wd > end) return false;
+    if(t.fields.ResourceRefLookupId === resourceId) return true;
+    const eu = (t.fields.EntryUser || "").toLowerCase().trim();
+    const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
+    const name = (resource.fields.Title || "").toLowerCase().trim();
+    return (email && eu === email) || (name && eu === name);
+  });
+
+  const dates = dateRangeArray(start, end);
+
+  // Build CSA rows (CSA is a plain text field on CSA_TimeEntries, matched against CSA_List.Title)
+  const csaLabels = [...new Set(entries.map(t => (t.fields.CSA||"").trim()).filter(Boolean))];
+  const csaRows = csaLabels.map(label => {
+    const cells = dates.map(d => {
+      return entries
+        .filter(t => (t.fields.CSA||"").trim() === label && t.fields.WorkDate === d)
+        .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+    });
+    const rowTotal = cells.reduce((a,b)=>a+b,0);
+    return { label, cells, rowTotal };
+  });
+
+  const columnTotals = dates.map((d,i) => csaRows.reduce((sum,r)=> sum + r.cells[i], 0));
+  const grandTotal = columnTotals.reduce((a,b)=>a+b,0);
+  const billableTotal = entries.filter(t=>t.fields.Billable).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+
+  const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+
+  const periodLabel = start === end ? dayLabel(start) : `${dayLabel(start)} — ${dayLabel(end)}`;
+
+  const gridHtml = csaRows.length ? `
+    <table class="ts-table">
+      <thead>
+        <tr>
+          <th>CSA</th>
+          ${dates.map(d => `<th style="text-align:right">${dayLabel(d)}</th>`).join("")}
+          <th style="text-align:right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${csaRows.map(r => `
+          <tr>
+            <td>${esc(r.label)}</td>
+            ${r.cells.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
+            <td style="text-align:right"><strong>${r.rowTotal.toFixed(2)}</strong></td>
+          </tr>
+        `).join("")}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          ${columnTotals.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
+          <td style="text-align:right">${grandTotal.toFixed(2)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  ` : `<p style="font-size:12px;color:#666;">No time entries recorded for this period.</p>`;
+
+  const docHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Timesheet — ${esc(resource.fields.Title)} — ${esc(periodLabel)}</title>
+<style>
+  @page{ size:A4 landscape; margin:16mm 16mm; }
+  body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:1000px; margin:0 auto; padding:20px 30px; }
+  .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
+  .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
+  .meta-row{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;}
+  .meta-row b{display:inline-block;width:90px;}
+  table.ts-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:16px;}
+  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:6px 7px;text-align:left;font-size:9.5px;text-transform:uppercase;}
+  table.ts-table td{border:1px solid #999;padding:6px 7px;}
+  table.ts-table tfoot td{font-weight:700;background:#fafafa;}
+  .summary-row{display:flex;gap:40px;margin-bottom:26px;font-size:12px;}
+  .sig-row{display:flex;justify-content:space-between;gap:60px;font-size:11.5px;margin-top:30px;}
+  .sig-col{flex:1;}
+  .sig-line{border-bottom:1px solid #1a1a1a;height:26px;margin-bottom:4px;}
+  .sig-field{margin-top:14px;}
+  .sig-field b{display:inline-block;width:60px;}
+  .no-print{position:fixed;top:16px;right:16px;}
+  .no-print button{background:#0e9f6e;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;}
+  @media print{ .no-print{display:none;} }
+</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Timesheet</div>
+<div class="doc-sub">${esc(resource.fields.Title)} &middot; ${esc(periodLabel)}</div>
+
+<div class="meta-row">
+  <span><b>Resource:</b> ${esc(resource.fields.Title)}</span>
+  <span><b>Business Unit:</b> ${esc(resource.fields.BusinessUnit || "—")}</span>
+  <span><b>Period:</b> ${esc(start)} to ${esc(end)}</span>
+</div>
+
+${gridHtml}
+
+<div class="summary-row">
+  <span><b>Total Hours:</b> ${grandTotal.toFixed(2)}</span>
+  <span><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</span>
+  <span><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</span>
+</div>
+
+<div class="sig-row">
+  <div class="sig-col">
+    <div style="font-size:11.5px;"><b>Employee Sign-Off</b></div>
+    <div class="sig-field"><b>Signed:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Name:</b></div>
+    <div class="sig-line">${esc(resource.fields.Title)}</div>
+    <div class="sig-field"><b>Date:</b></div>
+    <div class="sig-line"></div>
+  </div>
+  <div class="sig-col">
+    <div style="font-size:11.5px;"><b>Approved By</b></div>
+    <div class="sig-field"><b>Signed:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Name:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Date:</b></div>
+    <div class="sig-line"></div>
+  </div>
+</div>
+
+</body>
+</html>
+`;
+
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow pop-ups for this site to generate the timesheet.");
+    return;
+  }
+  win.document.open();
+  win.document.write(docHtml);
+  win.document.close();
+}
 
 /* ============================================================
    RENDER: RESOURCE DETAIL (READ-ONLY)
