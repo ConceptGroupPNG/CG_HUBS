@@ -420,6 +420,41 @@
             <button class="btn-secondary" id="quickWeekBtn">This Week</button>
             <button class="btn-primary" id="generateTimesheetBtn">Generate Timesheet</button>
           </div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Best for a single day or single week — a signed, formal timesheet.</div>
+        </div>
+
+        <div class="section-card card-fees">
+          <h3>Time Entries Report</h3>
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label>Resource</label>
+              <select id="reportResource"><option value="">— Select resource —</option></select>
+            </div>
+            <div class="form-field">
+              <label>CSA <span style="text-transform:none;font-weight:400;">— optional</span></label>
+              <select id="reportCSA"><option value="">All CSAs</option></select>
+            </div>
+            <div class="form-field">
+              <label>Start Date <span style="text-transform:none;font-weight:400;">— optional, blank = earliest</span></label>
+              <input type="date" id="reportStart">
+            </div>
+            <div class="form-field">
+              <label>End Date <span style="text-transform:none;font-weight:400;">— optional, blank = latest</span></label>
+              <input type="date" id="reportEnd">
+            </div>
+            <div class="form-field">
+              <label>Billable</label>
+              <select id="reportBillable">
+                <option value="">All entries</option>
+                <option value="true">Billable only</option>
+                <option value="false">Non-billable only</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-primary" id="generateReportBtn">Generate Report</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">For reviewing all or some of a resource's entries — any date range, not limited to a day or a week.</div>
         </div>
 
         <table>
@@ -884,6 +919,8 @@ function populateTimesheetDropdowns(){
   document.getElementById("logTimeResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
   document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA —</option>${csaOpts}`;
   document.getElementById("genTimesheetResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
+  document.getElementById("reportResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
+  document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs</option>${csaOpts}`;
 }
 
 function findResourceForEntry(entry){
@@ -1045,54 +1082,69 @@ function generateTimesheetDocument(resourceId, start, end){
 
   const dates = dateRangeArray(start, end);
 
-  // Build CSA columns (CSA is a plain text field on CSA_TimeEntries, matched against CSA_List.Title)
+  // Build CSA rows (CSA is a plain text field on CSA_TimeEntries, matched against CSA_List.Title)
+  // Rows scale to any number of CSAs; columns are capped by the date range (typically <=7 for a week)
   const csaLabels = [...new Set(entries.map(t => (t.fields.CSA||"").trim()).filter(Boolean))];
 
-  const dateRows = dates.map(d => {
-    const cells = csaLabels.map(label => {
+  const csaRows = csaLabels.map(label => {
+    const cells = dates.map(d => {
       return entries
         .filter(t => (t.fields.CSA||"").trim() === label && t.fields.WorkDate === d)
         .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
     });
     const rowTotal = cells.reduce((a,b)=>a+b,0);
-    return { date: d, cells, rowTotal };
+    return { label, cells, rowTotal };
   });
 
-  const columnTotals = csaLabels.map((label,i) => dateRows.reduce((sum,r)=> sum + r.cells[i], 0));
+  const columnTotals = dates.map((d,i) => csaRows.reduce((sum,r)=> sum + r.cells[i], 0));
   const grandTotal = columnTotals.reduce((a,b)=>a+b,0);
   const billableTotal = entries.filter(t=>t.fields.Billable).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
 
-  const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+  const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric"});
+  const dayLabelFull = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
 
-  const periodLabel = start === end ? dayLabel(start) : `${dayLabel(start)} — ${dayLabel(end)}`;
+  const periodLabel = start === end ? dayLabelFull(start) : `${dayLabelFull(start)} — ${dayLabelFull(end)}`;
 
-  const gridHtml = csaLabels.length ? `
+  // Beyond ~9 columns a single portrait table gets cramped, so long ranges wrap onto additional
+  // stacked week-tables instead of widening the page.
+  const MAX_COLS = 9;
+  const dateChunks = [];
+  for(let i=0; i<dates.length; i+=MAX_COLS) dateChunks.push(dates.slice(i, i+MAX_COLS));
+
+  const gridHtml = csaRows.length ? dateChunks.map(chunk => {
+    const startIdx = dates.indexOf(chunk[0]);
+    return `
     <table class="ts-table">
       <thead>
         <tr>
-          <th>Date</th>
-          ${csaLabels.map(l => `<th style="text-align:right">${esc(l)}</th>`).join("")}
+          <th>CSA</th>
+          ${chunk.map(d => `<th style="text-align:right">${dayLabel(d)}</th>`).join("")}
           <th style="text-align:right">Total</th>
         </tr>
       </thead>
       <tbody>
-        ${dateRows.map(r => `
+        ${csaRows.map(r => {
+          const chunkCells = r.cells.slice(startIdx, startIdx+chunk.length);
+          const chunkTotal = dateChunks.length > 1 ? chunkCells.reduce((a,b)=>a+b,0) : r.rowTotal;
+          return `
           <tr>
-            <td>${dayLabel(r.date)}</td>
-            ${r.cells.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
-            <td style="text-align:right"><strong>${r.rowTotal ? r.rowTotal.toFixed(2) : ""}</strong></td>
+            <td>${esc(r.label)}</td>
+            ${chunkCells.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
+            <td style="text-align:right"><strong>${chunkTotal ? chunkTotal.toFixed(2) : ""}</strong></td>
           </tr>
-        `).join("")}
+        `;
+        }).join("")}
       </tbody>
       <tfoot>
         <tr>
           <td>Total</td>
-          ${columnTotals.map(c => `<td style="text-align:right">${c.toFixed(2)}</td>`).join("")}
-          <td style="text-align:right">${grandTotal.toFixed(2)}</td>
+          ${chunk.map((d,i) => `<td style="text-align:right">${columnTotals[startIdx+i] ? columnTotals[startIdx+i].toFixed(2) : ""}</td>`).join("")}
+          <td style="text-align:right">${chunk.map((d,i)=>columnTotals[startIdx+i]).reduce((a,b)=>a+b,0).toFixed(2)}</td>
         </tr>
       </tfoot>
     </table>
-  ` : `<p style="font-size:12px;color:#666;">No time entries recorded for this period.</p>`;
+  `;
+  }).join("") : `<p style="font-size:12px;color:#666;">No time entries recorded for this period.</p>`;
 
   const docHtml = `
 <!DOCTYPE html>
@@ -1101,18 +1153,19 @@ function generateTimesheetDocument(resourceId, start, end){
 <meta charset="UTF-8">
 <title>Timesheet — ${esc(resource.fields.Title)} — ${esc(periodLabel)}</title>
 <style>
-  @page{ size:A4; margin:22mm 18mm; }
+  @page{ size:A4; margin:20mm 16mm; }
   body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:800px; margin:0 auto; padding:30px 40px; }
   .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
   .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
   .meta-row{margin-bottom:16px;font-size:12px;}
   .meta-row div{margin-bottom:4px;}
   .meta-row b{display:inline-block;width:110px;}
-  table.ts-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px;}
-  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:7px 8px;text-align:left;font-size:10px;text-transform:uppercase;}
-  table.ts-table td{border:1px solid #999;padding:7px 8px;}
+  table.ts-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;table-layout:fixed;}
+  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:6px 5px;text-align:left;font-size:9px;text-transform:uppercase;overflow:hidden;}
+  table.ts-table td{border:1px solid #999;padding:6px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.ts-table th:first-child, table.ts-table td:first-child{width:26%;}
   table.ts-table tfoot td{font-weight:700;background:#fafafa;}
-  .summary-row{margin-bottom:26px;font-size:12px;}
+  .summary-row{margin-bottom:26px;font-size:12px;margin-top:16px;}
   .summary-row div{margin-bottom:4px;}
   .sig-row{display:flex;justify-content:space-between;gap:60px;font-size:11.5px;margin-top:30px;}
   .sig-col{flex:1;}
@@ -1172,6 +1225,161 @@ ${gridHtml}
   const win = window.open("", "_blank");
   if(!win){
     alert("Please allow pop-ups for this site to generate the timesheet.");
+    return;
+  }
+  win.document.open();
+  win.document.write(docHtml);
+  win.document.close();
+}
+
+/* ============================================================
+   TIME ENTRIES REPORT (flexible, any date range)
+   ============================================================ */
+document.getElementById("generateReportBtn").addEventListener("click", () => {
+  const resourceId = document.getElementById("reportResource").value;
+  const csaFilter = document.getElementById("reportCSA").value;
+  const start = document.getElementById("reportStart").value;
+  const end = document.getElementById("reportEnd").value;
+  const billableFilter = document.getElementById("reportBillable").value;
+  if(!resourceId){
+    alert("Please select a resource.");
+    return;
+  }
+  generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter);
+});
+
+function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter){
+  const resource = resourceMap[resourceId];
+  if(!resource) return;
+
+  let entries = allTimeEntries.filter(t => {
+    if(t.fields.ResourceRefLookupId === resourceId) return true;
+    const eu = (t.fields.EntryUser || "").toLowerCase().trim();
+    const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
+    const name = (resource.fields.Title || "").toLowerCase().trim();
+    return (email && eu === email) || (name && eu === name);
+  });
+
+  if(csaFilter){
+    const csa = agreementMap[csaFilter];
+    const csaTitle = csa ? csa.fields.Title : "";
+    entries = entries.filter(t => (t.fields.CSA||"").trim() === csaTitle);
+  }
+  if(start) entries = entries.filter(t => t.fields.WorkDate && t.fields.WorkDate >= start);
+  if(end) entries = entries.filter(t => t.fields.WorkDate && t.fields.WorkDate <= end);
+  if(billableFilter === "true") entries = entries.filter(t => !!t.fields.Billable);
+  if(billableFilter === "false") entries = entries.filter(t => !t.fields.Billable);
+
+  entries = entries.slice().sort((a,b)=> (a.fields.WorkDate||"").localeCompare(b.fields.WorkDate||""));
+
+  const actualStart = entries.length ? entries[0].fields.WorkDate : (start || "—");
+  const actualEnd = entries.length ? entries[entries.length-1].fields.WorkDate : (end || "—");
+  const grandTotal = entries.reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+  const billableTotal = entries.filter(t=>t.fields.Billable).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+
+  // Subtotals per CSA
+  const byCSA = {};
+  entries.forEach(t => {
+    const label = t.fields.CSA || "Unspecified";
+    byCSA[label] = (byCSA[label] || 0) + (parseFloat(t.fields.Hours)||0);
+  });
+  const csaLabels = Object.keys(byCSA).sort();
+
+  const filterDescParts = [];
+  if(csaFilter && agreementMap[csaFilter]) filterDescParts.push(agreementMap[csaFilter].fields.Title);
+  if(billableFilter === "true") filterDescParts.push("Billable only");
+  if(billableFilter === "false") filterDescParts.push("Non-billable only");
+  const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
+
+  const rowsHtml = entries.length ? entries.map(t => `
+    <tr>
+      <td>${esc(t.fields.WorkDate) || "—"}</td>
+      <td>${esc(t.fields.CSA) || "—"}</td>
+      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
+      <td>${t.fields.Billable ? "Yes" : "No"}</td>
+      <td>${esc(t.fields.EntryMethod) || "—"}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+
+  const subtotalsHtml = csaLabels.map(label => `
+    <tr><td>${esc(label)}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
+  `).join("");
+
+  const docHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Time Entries Report — ${esc(resource.fields.Title)}</title>
+<style>
+  @page{ size:A4; margin:20mm 16mm; }
+  body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:800px; margin:0 auto; padding:30px 40px; }
+  .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
+  .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
+  .meta-row{margin-bottom:16px;font-size:12px;}
+  .meta-row div{margin-bottom:4px;}
+  .meta-row b{display:inline-block;width:110px;}
+  table.rpt-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:20px;}
+  table.rpt-table thead{display:table-header-group;}
+  table.rpt-table tr{page-break-inside:avoid;}
+  table.rpt-table th{background:#f2f2f2;border:1px solid #999;padding:6px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;}
+  table.rpt-table td{border:1px solid #999;padding:6px 8px;}
+  table.subtotal-table{width:60%;border-collapse:collapse;font-size:11px;margin-bottom:20px;}
+  table.subtotal-table td{border:1px solid #999;padding:6px 8px;}
+  table.subtotal-table tr:last-child td{font-weight:700;background:#fafafa;}
+  .summary-row{margin-bottom:20px;font-size:12px;}
+  .summary-row div{margin-bottom:4px;}
+  .footer-stamp{margin-top:30px;font-size:10px;color:#888;border-top:1px solid #ccc;padding-top:8px;}
+  .no-print{position:fixed;top:16px;right:16px;}
+  .no-print button{background:#0e9f6e;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;}
+  @media print{ .no-print{display:none;} }
+</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Time Entries Report</div>
+<div class="doc-sub">${esc(resource.fields.Title)}</div>
+
+<div class="meta-row">
+  <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
+  <div><b>Filter:</b> ${esc(filterDesc)}</div>
+  <div><b>Period:</b> ${esc(actualStart)} to ${esc(actualEnd)}</div>
+  <div><b>Entries:</b> ${entries.length}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Date</th><th>CSA</th><th style="text-align:right">Hours</th><th>Billable</th><th>Method</th></tr>
+  </thead>
+  <tbody>
+    ${rowsHtml}
+  </tbody>
+</table>
+
+${csaLabels.length > 1 ? `
+<div style="font-size:12px;font-weight:700;margin-bottom:8px;">Subtotals by CSA</div>
+<table class="subtotal-table">
+  ${subtotalsHtml}
+  <tr><td>Grand Total</td><td style="text-align:right">${grandTotal.toFixed(2)}</td></tr>
+</table>
+` : ""}
+
+<div class="summary-row">
+  <div><b>Total Hours:</b> ${grandTotal.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(new Date().toISOString().slice(0,10))} &middot; CSA Hub</div>
+
+</body>
+</html>
+`;
+
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow pop-ups for this site to generate the report.");
     return;
   }
   win.document.open();
