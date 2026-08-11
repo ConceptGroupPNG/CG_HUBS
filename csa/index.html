@@ -1,1 +1,558 @@
-<!-- CSA Hub coming soon -->
+<!-- CSA Hub — Brian Hart Consulting Limited / Concept Group -->
+<!-- (c) Concept Group -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSA Hub — Concept Group</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+  :root{
+    --navy:#1a2744;
+    --navy-light:#243458;
+    --teal:#0e9f6e;
+    --teal-light:#12b880;
+    --bg:#f4f6f9;
+    --card:#ffffff;
+    --border:#e2e6ed;
+    --text:#1a2744;
+    --text-muted:#6b7280;
+    --danger:#dc2626;
+    --warn:#d97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- Login screen ---------- */
+  #loginScreen{
+    height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--navy) 0%,#0f1a30 100%);
+  }
+  .login-card{
+    background:var(--card);border-radius:12px;padding:48px 40px;width:360px;
+    text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35);
+  }
+  .login-card h1{font-size:22px;color:var(--navy);margin-bottom:4px;}
+  .login-card p{color:var(--text-muted);font-size:13px;margin-bottom:28px;}
+  .login-btn{
+    background:var(--teal);color:#fff;border:none;border-radius:8px;
+    padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;
+    transition:background .15s;
+  }
+  .login-btn:hover{background:var(--teal-light);}
+  /* ---------- App shell ---------- */
+  #app{display:none;min-height:100vh;}
+  .shell{display:flex;min-height:100vh;}
+  .sidebar{
+    width:230px;background:var(--navy);color:#fff;flex-shrink:0;
+    display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;
+  }
+  .sidebar-header{padding:22px 20px 18px;border-bottom:1px solid rgba(255,255,255,.08);}
+  .sidebar-header .app-name{font-size:17px;font-weight:700;letter-spacing:.3px;}
+  .sidebar-header .app-sub{font-size:11px;color:rgba(255,255,255,.55);margin-top:2px;}
+  .nav{flex:1;padding:14px 10px;}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+    color:rgba(255,255,255,.75);font-size:13.5px;cursor:pointer;margin-bottom:2px;
+    transition:background .12s,color .12s;user-select:none;
+  }
+  .nav-item:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .nav-item.active{background:var(--teal);color:#fff;font-weight:600;}
+  .nav-icon{width:16px;text-align:center;font-size:14px;}
+  .sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);}
+  .user-chip{font-size:12.5px;color:rgba(255,255,255,.8);margin-bottom:6px;}
+  .signout-link{font-size:11.5px;color:rgba(255,255,255,.5);cursor:pointer;}
+  .signout-link:hover{color:#fff;}
+  .copyright{font-size:10px;color:rgba(255,255,255,.3);margin-top:10px;}
+  /* ---------- Main content ---------- */
+  .main{margin-left:230px;flex:1;padding:28px 34px;max-width:1400px;}
+  .page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;}
+  .page-title{font-size:22px;font-weight:700;color:var(--navy);}
+  .page-sub{font-size:12.5px;color:var(--text-muted);margin-top:3px;}
+  .view{display:none;}
+  .view.active{display:block;}
+  /* ---------- Cards / metrics ---------- */
+  .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;}
+  .metric-card{
+    background:var(--card);border:1px solid var(--border);border-radius:10px;
+    padding:18px 20px;
+  }
+  .metric-label{font-size:11.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;}
+  .metric-value{font-size:26px;font-weight:700;color:var(--navy);margin-top:6px;}
+  .metric-sub{font-size:11.5px;color:var(--text-muted);margin-top:4px;}
+  .panel-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:24px;}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;}
+  .panel h3{font-size:14px;color:var(--navy);margin-bottom:14px;}
+  .bu-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .bu-row:last-child{border-bottom:none;}
+  .bu-bar-track{background:var(--bg);border-radius:4px;height:6px;flex:1;margin:0 12px;overflow:hidden;}
+  .bu-bar-fill{background:var(--teal);height:100%;border-radius:4px;}
+  /* ---------- Table ---------- */
+  .table-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;}
+  .search-box{
+    border:1px solid var(--border);border-radius:8px;padding:9px 14px;font-size:13px;
+    width:280px;background:var(--card);
+  }
+  .search-box:focus{outline:none;border-color:var(--teal);}
+  .filter-select{
+    border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;
+    background:var(--card);color:var(--text);
+  }
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;border:1px solid var(--border);}
+  thead th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.3px;
+    color:var(--text-muted);padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);font-weight:600;
+  }
+  tbody td{padding:13px 16px;font-size:13px;border-bottom:1px solid var(--border);color:var(--text);}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#fafbfd;cursor:pointer;}
+  .badge{
+    display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
+  }
+  .badge-draft{background:#e5e7eb;color:#374151;}
+  .badge-sent{background:#fef3c7;color:#92400e;}
+  .badge-signed{background:#dbeafe;color:#1e40af;}
+  .badge-active{background:#d1fae5;color:#065f46;}
+  .badge-completed{background:#e0e7ff;color:#3730a3;}
+  .badge-cancelled{background:#fee2e2;color:#991b1b;}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted);}
+  .loader{text-align:center;padding:60px;color:var(--text-muted);font-size:13px;}
+  .amount{font-variant-numeric:tabular-nums;font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>CSA Hub</h1>
+    <p>Brian Hart Consulting Limited · Concept Group</p>
+    <button class="login-btn" id="loginBtn">Sign in with Microsoft</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="shell">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="app-name">CSA Hub</div>
+        <div class="app-sub">Brian Hart Consulting</div>
+      </div>
+      <div class="nav">
+        <div class="nav-item active" data-view="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
+        <div class="nav-item" data-view="agreements"><span class="nav-icon">&#9776;</span>Agreements</div>
+        <div class="nav-item" data-view="clients"><span class="nav-icon">&#9679;</span>Clients</div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="user-chip" id="userChip">—</div>
+        <div class="signout-link" id="signoutBtn">Sign out</div>
+        <div class="copyright">&copy; Concept Group</div>
+      </div>
+    </div>
+
+    <div class="main">
+
+      <!-- DASHBOARD -->
+      <div class="view active" id="view-dashboard">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Dashboard</div>
+            <div class="page-sub">Overview of Client Service Agreements</div>
+          </div>
+        </div>
+        <div class="metrics-row" id="metricsRow">
+          <div class="loader">Loading metrics…</div>
+        </div>
+        <div class="panel-grid">
+          <div class="panel">
+            <h3>Agreements by Status</h3>
+            <div id="statusBreakdown"><div class="loader">Loading…</div></div>
+          </div>
+          <div class="panel">
+            <h3>Agreements by Business Unit</h3>
+            <div id="buBreakdown"><div class="loader">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AGREEMENTS -->
+      <div class="view" id="view-agreements">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Agreements</div>
+            <div class="page-sub">All Client Service Agreements</div>
+          </div>
+        </div>
+        <div class="table-toolbar">
+          <input type="text" class="search-box" id="agreementSearch" placeholder="Search by CSA number, client, or project…">
+          <select class="filter-select" id="statusFilter">
+            <option value="">All statuses</option>
+            <option>Draft</option>
+            <option>Sent for Signature</option>
+            <option>Signed</option>
+            <option>Active</option>
+            <option>Completed</option>
+            <option>Cancelled</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>CSA Number</th>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Business Unit</th>
+              <th>Status</th>
+              <th style="text-align:right">Total (incl. GST)</th>
+            </tr>
+          </thead>
+          <tbody id="agreementsTableBody">
+            <tr><td colspan="6"><div class="loader">Loading agreements…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- CLIENTS -->
+      <div class="view" id="view-clients">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Clients</div>
+            <div class="page-sub">Client organisations</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Contact</th>
+              <th>Address</th>
+              <th style="text-align:right">Agreements</th>
+            </tr>
+          </thead>
+          <tbody id="clientsTableBody">
+            <tr><td colspan="4"><div class="loader">Loading clients…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const msalConfig = {
+  auth: {
+    clientId: "d5aef866-584f-4226-ab11-c941888fb519",
+    authority: "https://login.microsoftonline.com/ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
+    redirectUri: "https://marcusappdev.github.io/CG_Training/csa-hub/"
+  },
+  cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
+};
+const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
+const SITE_HOST = "conceptcompg.sharepoint.com";
+const SITE_PATH = "/sites/Concept_CSA";
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+let accessToken = null;
+let siteId = null;
+
+/* ============================================================
+   AUTH
+   ============================================================ */
+async function initAuth(){
+  await msalInstance.handleRedirectPromise().catch(err=>console.error(err));
+  const accounts = msalInstance.getAllAccounts();
+  if(accounts.length > 0){
+    msalInstance.setActiveAccount(accounts[0]);
+    await acquireToken();
+    startApp();
+  } else {
+    document.getElementById("loginScreen").style.display = "flex";
+  }
+}
+
+document.getElementById("loginBtn").addEventListener("click", ()=>{
+  msalInstance.loginRedirect({ scopes: graphScopes });
+});
+
+document.getElementById("signoutBtn").addEventListener("click", ()=>{
+  msalInstance.logoutRedirect();
+});
+
+async function acquireToken(){
+  const account = msalInstance.getActiveAccount();
+  const request = { scopes: graphScopes, account };
+  try{
+    const result = await msalInstance.acquireTokenSilent(request);
+    accessToken = result.accessToken;
+  }catch(e){
+    const result = await msalInstance.acquireTokenPopup(request);
+    accessToken = result.accessToken;
+  }
+}
+
+/* ============================================================
+   GRAPH HELPERS
+   ============================================================ */
+async function graphGet(url){
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if(!res.ok){
+    const body = await res.text();
+    throw new Error(`Graph error ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+// Paginated fetch of all items (with $expand=fields) from a SharePoint list
+async function fetchAllListItems(listName, extraQuery=""){
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?expand=fields${extraQuery}`;
+  let items = [];
+  while(url){
+    const page = await graphGet(url);
+    items = items.concat(page.value || []);
+    url = page["@odata.nextLink"] || null;
+  }
+  return items;
+}
+
+async function resolveSiteId(){
+  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${SITE_HOST}:${SITE_PATH}`);
+  siteId = data.id;
+}
+
+/* ============================================================
+   APP STATE
+   ============================================================ */
+let allAgreements = [];
+let allClients = [];
+let allBusinessUnits = [];
+let clientMap = {};   // id -> client fields
+let agreementCounts = {}; // clientId -> count
+
+/* ============================================================
+   STARTUP
+   ============================================================ */
+async function startApp(){
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("app").style.display = "block";
+
+  const account = msalInstance.getActiveAccount();
+  document.getElementById("userChip").textContent = account ? (account.name || account.username) : "Signed in";
+
+  try{
+    await resolveSiteId();
+    await loadAllData();
+    renderDashboard();
+    renderAgreementsTable();
+    renderClientsTable();
+  }catch(err){
+    console.error(err);
+    document.getElementById("metricsRow").innerHTML =
+      `<div class="empty-state">Couldn't load data. ${err.message}</div>`;
+  }
+}
+
+async function loadAllData(){
+  const [agreements, clients, bus] = await Promise.all([
+    fetchAllListItems("CSA_List"),
+    fetchAllListItems("CSA_Clients"),
+    fetchAllListItems("CSA_BusinessUnits")
+  ]);
+  allAgreements = agreements;
+  allClients = clients;
+  allBusinessUnits = bus;
+
+  clientMap = {};
+  allClients.forEach(c => { clientMap[c.id] = c.fields; });
+
+  agreementCounts = {};
+  allAgreements.forEach(a => {
+    const cid = a.fields.ClientOrgLookupId;
+    if(cid) agreementCounts[cid] = (agreementCounts[cid] || 0) + 1;
+  });
+}
+
+/* ============================================================
+   RENDER: DASHBOARD
+   ============================================================ */
+function statusBadgeClass(status){
+  const map = {
+    "Draft":"badge-draft",
+    "Sent for Signature":"badge-sent",
+    "Signed":"badge-signed",
+    "Active":"badge-active",
+    "Completed":"badge-completed",
+    "Cancelled":"badge-cancelled"
+  };
+  return map[status] || "badge-draft";
+}
+
+function fmtCurrency(n){
+  const num = parseFloat(n) || 0;
+  return "K" + num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderDashboard(){
+  const total = allAgreements.length;
+  const activeStatuses = ["Signed","Active"];
+  const activeCount = allAgreements.filter(a => activeStatuses.includes(a.fields.Status)).length;
+  const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalInclGST)||0), 0);
+  const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
+
+  document.getElementById("metricsRow").innerHTML = `
+    <div class="metric-card">
+      <div class="metric-label">Total Agreements</div>
+      <div class="metric-value">${total}</div>
+      <div class="metric-sub">${allClients.length} client${allClients.length===1?"":"s"}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Active / Signed</div>
+      <div class="metric-value">${activeCount}</div>
+      <div class="metric-sub">of ${total} total</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Awaiting Signature</div>
+      <div class="metric-value">${pendingSignature}</div>
+      <div class="metric-sub">client countersignature pending</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Total Contract Value</div>
+      <div class="metric-value">${fmtCurrency(totalValue)}</div>
+      <div class="metric-sub">incl. GST, all agreements</div>
+    </div>
+  `;
+
+  // Status breakdown
+  const statusOrder = ["Draft","Sent for Signature","Signed","Active","Completed","Cancelled"];
+  const statusCounts = {};
+  statusOrder.forEach(s => statusCounts[s] = 0);
+  allAgreements.forEach(a => {
+    const s = a.fields.Status || "Draft";
+    statusCounts[s] = (statusCounts[s]||0) + 1;
+  });
+  const maxStatus = Math.max(1, ...Object.values(statusCounts));
+  document.getElementById("statusBreakdown").innerHTML = statusOrder
+    .filter(s => statusCounts[s] > 0)
+    .map(s => `
+      <div class="bu-row">
+        <span>${s}</span>
+        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(statusCounts[s]/maxStatus*100)}%"></div></div>
+        <span>${statusCounts[s]}</span>
+      </div>
+    `).join("") || `<div class="empty-state">No agreements yet</div>`;
+
+  // Business unit breakdown
+  const buCounts = {};
+  allAgreements.forEach(a => {
+    const bu = a.fields.BusinessUnit || "Unassigned";
+    buCounts[bu] = (buCounts[bu]||0) + 1;
+  });
+  const maxBu = Math.max(1, ...Object.values(buCounts));
+  document.getElementById("buBreakdown").innerHTML = Object.keys(buCounts).map(bu => `
+      <div class="bu-row">
+        <span>${bu}</span>
+        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(buCounts[bu]/maxBu*100)}%"></div></div>
+        <span>${buCounts[bu]}</span>
+      </div>
+    `).join("") || `<div class="empty-state">No agreements yet</div>`;
+}
+
+/* ============================================================
+   RENDER: AGREEMENTS TABLE
+   ============================================================ */
+function renderAgreementsTable(){
+  const searchTerm = (document.getElementById("agreementSearch").value || "").toLowerCase();
+  const statusFilter = document.getElementById("statusFilter").value;
+
+  let rows = allAgreements.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+
+  rows = rows.filter(a => {
+    const f = a.fields;
+    const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "";
+    const matchesSearch = !searchTerm ||
+      (f.Title||"").toLowerCase().includes(searchTerm) ||
+      clientName.toLowerCase().includes(searchTerm) ||
+      (f.ProjectName||"").toLowerCase().includes(searchTerm);
+    const matchesStatus = !statusFilter || f.Status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  if(rows.length === 0){
+    document.getElementById("agreementsTableBody").innerHTML =
+      `<tr><td colspan="6"><div class="empty-state">No agreements match your search.</div></td></tr>`;
+    return;
+  }
+
+  document.getElementById("agreementsTableBody").innerHTML = rows.map(a => {
+    const f = a.fields;
+    const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "—";
+    const badgeClass = statusBadgeClass(f.Status);
+    return `
+      <tr data-id="${a.id}">
+        <td><strong>${f.Title || "—"}</strong></td>
+        <td>${clientName}</td>
+        <td>${f.ProjectName || "—"}</td>
+        <td>${f.BusinessUnit || "—"}</td>
+        <td><span class="badge ${badgeClass}">${f.Status || "Draft"}</span></td>
+        <td style="text-align:right" class="amount">${fmtCurrency(f.TotalInclGST)}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+document.getElementById("agreementSearch").addEventListener("input", renderAgreementsTable);
+document.getElementById("statusFilter").addEventListener("change", renderAgreementsTable);
+
+/* ============================================================
+   RENDER: CLIENTS TABLE
+   ============================================================ */
+function renderClientsTable(){
+  if(allClients.length === 0){
+    document.getElementById("clientsTableBody").innerHTML =
+      `<tr><td colspan="4"><div class="empty-state">No clients yet.</div></td></tr>`;
+    return;
+  }
+  const rows = allClients.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+  document.getElementById("clientsTableBody").innerHTML = rows.map(c => {
+    const f = c.fields;
+    const count = agreementCounts[c.id] || 0;
+    return `
+      <tr>
+        <td><strong>${f.Title || "—"}</strong></td>
+        <td>${f.ContactName || "—"}</td>
+        <td>${f.Address || "—"}</td>
+        <td style="text-align:right">${count}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    item.classList.add("active");
+    const viewName = item.getAttribute("data-view");
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById(`view-${viewName}`).classList.add("active");
+  });
+});
+
+/* ============================================================
+   INIT
+   ============================================================ */
+initAuth();
+</script>
+</body>
+</html>
