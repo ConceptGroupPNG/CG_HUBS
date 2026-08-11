@@ -187,9 +187,12 @@
   /* ---------- Edit form ---------- */
   .form-field{margin-bottom:14px;}
   .form-field label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;margin-bottom:5px;}
-  .form-field input[type=text], .form-field input[type=number], .form-field select, .form-field textarea{
+  .form-field input[type=text], .form-field input[type=number], .form-field input[type=date], .form-field select, .form-field textarea{
     width:100%;border:1px solid var(--border);border-radius:7px;padding:9px 11px;font-size:13px;
     font-family:inherit;color:var(--text);background:var(--card);
+  }
+  .form-field input[readonly]{
+    background:var(--bg);color:var(--text-muted);cursor:default;
   }
   .form-field input:focus, .form-field select:focus, .form-field textarea:focus{outline:none;border-color:var(--teal);}
   .form-field textarea{resize:vertical;min-height:90px;line-height:1.6;}
@@ -407,12 +410,12 @@
             </div>
             <div class="form-field"></div>
             <div class="form-field">
-              <label>Start Date</label>
-              <input type="date" id="genTimesheetStart">
+              <label>Start Date <span style="text-transform:none;font-weight:400;">— set by Today / This Week</span></label>
+              <input type="date" id="genTimesheetStart" readonly>
             </div>
             <div class="form-field">
-              <label>End Date</label>
-              <input type="date" id="genTimesheetEnd">
+              <label>End Date <span style="text-transform:none;font-weight:400;">— set by Today / This Week</span></label>
+              <input type="date" id="genTimesheetEnd" readonly>
             </div>
           </div>
           <div class="btn-row">
@@ -420,7 +423,7 @@
             <button class="btn-secondary" id="quickWeekBtn">This Week</button>
             <button class="btn-primary" id="generateTimesheetBtn">Generate Timesheet</button>
           </div>
-          <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Best for a single day or single week — a signed, formal timesheet.</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">For a single day or single week only — a signed, formal timesheet. For any other date range, use the Time Entries Report below.</div>
         </div>
 
         <div class="section-card card-fees">
