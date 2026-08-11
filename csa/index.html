@@ -162,6 +162,42 @@
   .hours-summary{display:flex;gap:20px;margin-bottom:14px;}
   .hours-stat{flex:1;}
   .hours-stat .metric-value{font-size:20px;}
+  /* ---------- Buttons ---------- */
+  .btn-primary{
+    background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px 16px;
+    font-size:13px;font-weight:600;cursor:pointer;transition:background .12s;
+  }
+  .btn-primary:hover{background:var(--teal-light);}
+  .btn-secondary{
+    background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;
+    padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s;
+  }
+  .btn-secondary:hover{background:var(--bg);}
+  .btn-danger-text{
+    background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:600;
+  }
+  .btn-row{display:flex;gap:10px;}
+  /* ---------- Edit form ---------- */
+  .form-field{margin-bottom:14px;}
+  .form-field label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;margin-bottom:5px;}
+  .form-field input[type=text], .form-field input[type=number], .form-field select, .form-field textarea{
+    width:100%;border:1px solid var(--border);border-radius:7px;padding:9px 11px;font-size:13px;
+    font-family:inherit;color:var(--text);background:var(--card);
+  }
+  .form-field input:focus, .form-field select:focus, .form-field textarea:focus{outline:none;border-color:var(--teal);}
+  .form-field textarea{resize:vertical;min-height:90px;line-height:1.6;}
+  .form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;}
+  .edit-line-row{display:grid;grid-template-columns:1fr 140px 32px;gap:8px;align-items:center;margin-bottom:8px;}
+  .edit-milestone-row{display:grid;grid-template-columns:1.6fr 70px 110px 90px 1fr 120px 32px;gap:8px;align-items:center;margin-bottom:8px;}
+  .edit-line-row input, .edit-milestone-row input, .edit-milestone-row select{
+    border:1px solid var(--border);border-radius:6px;padding:7px 8px;font-size:12.5px;font-family:inherit;
+  }
+  .row-remove-btn{
+    background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;padding:4px;
+  }
+  .add-row-link{color:var(--teal);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-block;margin-top:4px;}
+  .mini-table-head-row{display:grid;grid-template-columns:1fr 140px 32px;gap:8px;font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px;}
+  .mini-table-head-milestone{display:grid;grid-template-columns:1.6fr 70px 110px 90px 1fr 120px 32px;gap:8px;font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px;}
 </style>
 </head>
 <body>
@@ -231,15 +267,18 @@
         </div>
         <div class="table-toolbar">
           <input type="text" class="search-box" id="agreementSearch" placeholder="Search by CSA number, client, or project…">
-          <select class="filter-select" id="statusFilter">
-            <option value="">All statuses</option>
-            <option>Draft</option>
-            <option>Sent for Signature</option>
-            <option>Signed</option>
-            <option>Active</option>
-            <option>Completed</option>
-            <option>Cancelled</option>
-          </select>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <select class="filter-select" id="statusFilter">
+              <option value="">All statuses</option>
+              <option>Draft</option>
+              <option>Sent for Signature</option>
+              <option>Signed</option>
+              <option>Active</option>
+              <option>Completed</option>
+              <option>Cancelled</option>
+            </select>
+            <button class="btn-primary" id="newAgreementBtn">+ New Agreement</button>
+          </div>
         </div>
         <table>
           <thead>
@@ -356,6 +395,43 @@ async function graphGet(url){
     throw new Error(`Graph error ${res.status}: ${body}`);
   }
   return res.json();
+}
+
+async function graphWrite(method, url, body){
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const errBody = await res.text();
+    throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
+  }
+  if(res.status === 204) return null;
+  return res.json().catch(()=>null);
+}
+
+function listItemsUrl(listName){
+  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items`;
+}
+function listItemFieldsUrl(listName, itemId){
+  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${itemId}/fields`;
+}
+function listItemUrl(listName, itemId){
+  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${itemId}`;
+}
+
+async function graphCreateItem(listName, fields){
+  return graphWrite("POST", listItemsUrl(listName), { fields });
+}
+async function graphUpdateItem(listName, itemId, fields){
+  return graphWrite("PATCH", listItemFieldsUrl(listName, itemId), fields);
+}
+async function graphDeleteItem(listName, itemId){
+  return graphWrite("DELETE", listItemUrl(listName, itemId));
 }
 
 // Paginated fetch of all items (with $expand=fields) from a SharePoint list
@@ -674,6 +750,7 @@ function showAgreementDetail(itemId){
       <div class="detail-total">
         <div class="metric-label">Total (incl. GST)</div>
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
+        <div style="margin-top:10px;"><button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button></div>
       </div>
     </div>
 
@@ -768,6 +845,356 @@ function showAgreementDetail(itemId){
     </div>
   `;
 }
+
+/* ============================================================
+   EDIT MODE: AGREEMENT CREATE / EDIT
+   ============================================================ */
+let editAgreementId = null;   // null = creating a new agreement
+let editFeeLines = [];        // [{description, amount}]
+let editMilestones = [];      // [{description, percentage, fee, gst, deliveryDate, status}]
+
+async function getNextCsaNumber(){
+  const items = await fetchAllListItems("CSA_Counter");
+  const counterItem = items[0];
+  const next = (parseInt(counterItem.fields.LastNumber) || 0) + 1;
+  await graphUpdateItem("CSA_Counter", counterItem.id, { LastNumber: next });
+  return "CSA-" + String(next).padStart(4, "0");
+}
+
+function enterEditMode(itemId){
+  editAgreementId = itemId || null;
+
+  if(editAgreementId){
+    const a = agreementMap[editAgreementId];
+    editFeeLines = allFeeLineItems
+      .filter(x => x.fields.ParentCSALookupId === editAgreementId)
+      .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0))
+      .map(x => ({ description: x.fields.LineDescription || "", amount: x.fields.Amount || 0 }));
+    editMilestones = allMilestones
+      .filter(x => x.fields.ParentCSALookupId === editAgreementId)
+      .map(x => ({
+        description: x.fields.MilestoneDescription || "",
+        percentage: x.fields.Percentage || 0,
+        fee: x.fields.ApplicableFee || 0,
+        gst: x.fields.GST || 0,
+        deliveryDate: x.fields.EstimatedDeliveryDate || "",
+        status: x.fields.Status || "Pending"
+      }));
+  } else {
+    editFeeLines = [];
+    editMilestones = [];
+  }
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-agreement-detail").classList.add("active");
+  renderEditForm();
+}
+
+function clientOptions(selectedId){
+  return allClients
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(c => `<option value="${c.id}" ${String(selectedId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`)
+    .join("");
+}
+function buOptions(selected){
+  return allBusinessUnits
+    .filter(b => b.fields.IsActive !== false)
+    .map(b => `<option value="${esc(b.fields.Title)}" ${selected===b.fields.Title?"selected":""}>${esc(b.fields.Title)} — ${esc(b.fields.FullName)}</option>`)
+    .join("");
+}
+function choiceOptions(list, selected){
+  return list.map(v => `<option value="${esc(v)}" ${selected===v?"selected":""}>${esc(v)}</option>`).join("");
+}
+
+function renderEditForm(){
+  const isNew = !editAgreementId;
+  const a = isNew ? null : agreementMap[editAgreementId];
+  const f = isNew ? {} : a.fields;
+
+  document.getElementById("agreementDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${isNew ? "New Agreement" : esc(f.Title)}</div>
+        </div>
+        <div class="detail-sub">${isNew ? "CSA number will be assigned automatically on save" : "Editing " + esc(f.Title)}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="cancelEdit()">Cancel</button>
+        <button class="btn-primary" onclick="saveAgreement()">${isNew ? "Create Agreement" : "Save Changes"}</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card">
+          <h3>Agreement Details</h3>
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label>Client</label>
+              <select id="editClientOrg">
+                <option value="">— Select client —</option>
+                ${clientOptions(f.ClientOrgLookupId)}
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Business Unit</label>
+              <select id="editBusinessUnit">${buOptions(f.BusinessUnit)}</select>
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Project Name</label>
+              <input type="text" id="editProjectName" value="${esc(f.ProjectName)}">
+            </div>
+            <div class="form-field">
+              <label>Status</label>
+              <select id="editStatus">${choiceOptions(["Draft","Sent for Signature","Signed","Active","Completed","Cancelled"], f.Status || "Draft")}</select>
+            </div>
+            <div class="form-field">
+              <label>Fee Basis</label>
+              <select id="editFeeBasis">${choiceOptions(["Fixed Price","Time & Materials"], f.FeeBasis || "Fixed Price")}</select>
+            </div>
+            <div class="form-field">
+              <label>GST Rate</label>
+              <select id="editGSTRate" onchange="recalcTotals()">${choiceOptions(["10%","0% (S65)"], f.GSTRate || "10%")}</select>
+            </div>
+            <div class="form-field">
+              <label>Commencement Basis</label>
+              <select id="editCommencementBasis">${choiceOptions(["On Payment of Invoice","Fixed Date"], f.CommencementBasis || "On Payment of Invoice")}</select>
+            </div>
+            <div class="form-field">
+              <label>Commencement Date</label>
+              <input type="text" id="editCommencementDate" placeholder="YYYY-MM-DD or free text" value="${esc(f.CommencementDate)}">
+            </div>
+            <div class="form-field">
+              <label>Termination Date</label>
+              <input type="text" id="editTerminationDate" placeholder="e.g. Not Required" value="${esc(f.TerminationDate || "Not Required")}">
+            </div>
+            <div class="form-field">
+              <label>Fee (excl. GST)</label>
+              <input type="number" step="0.01" id="editTotalFeeExclGST" value="${f.TotalFeeExclGST || 0}" oninput="recalcTotals()">
+            </div>
+            <div class="form-field">
+              <label>GST Amount</label>
+              <input type="number" step="0.01" id="editGSTAmount" value="${f.GSTAmount || 0}">
+            </div>
+            <div class="form-field">
+              <label>Total (incl. GST)</label>
+              <input type="number" step="0.01" id="editTotalInclGST" value="${f.TotalInclGST || 0}">
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h3>Scope of Works</h3>
+          <div class="form-field">
+            <textarea id="editScopeOfWorks">${esc(f.ScopeOfWorks)}</textarea>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h3>Deliverables</h3>
+          <div class="form-field">
+            <textarea id="editDeliverables">${esc(f.Deliverables)}</textarea>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h3>Fee Line Items</h3>
+          <div class="mini-table-head-row"><span>Description</span><span>Amount</span><span></span></div>
+          <div id="editFeeLinesContainer">${renderFeeLineRows()}</div>
+          <div class="add-row-link" onclick="addFeeLineRow()">+ Add line item</div>
+        </div>
+
+        <div class="section-card">
+          <h3>Payment Milestones</h3>
+          <div class="mini-table-head-milestone"><span>Description</span><span>%</span><span>Fee</span><span>GST</span><span>Est. Delivery</span><span>Status</span><span></span></div>
+          <div id="editMilestonesContainer">${renderMilestoneRows()}</div>
+          <div class="add-row-link" onclick="addMilestoneRow()">+ Add milestone</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-card">
+          <h3>Signatories</h3>
+          <div class="form-field"><label>Client Signatory Name</label><input type="text" id="editClientSigName" value="${esc(f.ClientSignatoryName)}"></div>
+          <div class="form-field"><label>Client Signatory Title</label><input type="text" id="editClientSigTitle" value="${esc(f.ClientSignatoryTitle)}"></div>
+          <div class="form-field"><label>Client Signed Date</label><input type="text" id="editClientSigDate" placeholder="YYYY-MM-DD" value="${esc(f.ClientSignedDate)}"></div>
+          <div class="form-field"><label>BHC Signatory Name</label><input type="text" id="editBHCSigName" value="${esc(f.BHCSignatoryName || "Brendan Coombs")}"></div>
+          <div class="form-field"><label>BHC Signatory Title</label><input type="text" id="editBHCSigTitle" value="${esc(f.BHCSignatoryTitle || "Managing Director, BHC")}"></div>
+          <div class="form-field"><label>BHC Signed Date</label><input type="text" id="editBHCSigDate" placeholder="YYYY-MM-DD" value="${esc(f.BHCSignedDate)}"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFeeLineRows(){
+  if(editFeeLines.length === 0) return `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No line items yet.</div>`;
+  return editFeeLines.map((line, idx) => `
+    <div class="edit-line-row">
+      <input type="text" value="${esc(line.description)}" oninput="updateFeeLine(${idx},'description',this.value)">
+      <input type="number" step="0.01" value="${line.amount}" oninput="updateFeeLine(${idx},'amount',this.value)">
+      <button class="row-remove-btn" onclick="removeFeeLineRow(${idx})" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+function renderMilestoneRows(){
+  if(editMilestones.length === 0) return `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No milestones yet.</div>`;
+  return editMilestones.map((m, idx) => `
+    <div class="edit-milestone-row">
+      <input type="text" value="${esc(m.description)}" oninput="updateMilestone(${idx},'description',this.value)">
+      <input type="number" value="${m.percentage}" oninput="updateMilestone(${idx},'percentage',this.value)">
+      <input type="number" step="0.01" value="${m.fee}" oninput="updateMilestone(${idx},'fee',this.value)">
+      <input type="number" step="0.01" value="${m.gst}" oninput="updateMilestone(${idx},'gst',this.value)">
+      <input type="text" value="${esc(m.deliveryDate)}" oninput="updateMilestone(${idx},'deliveryDate',this.value)">
+      <select onchange="updateMilestone(${idx},'status',this.value)">${choiceOptions(["Pending","Invoiced","Paid"], m.status)}</select>
+      <button class="row-remove-btn" onclick="removeMilestoneRow(${idx})" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+
+function updateFeeLine(idx, field, value){
+  editFeeLines[idx][field] = field === "amount" ? parseFloat(value)||0 : value;
+}
+function addFeeLineRow(){
+  editFeeLines.push({ description:"", amount:0 });
+  document.getElementById("editFeeLinesContainer").innerHTML = renderFeeLineRows();
+}
+function removeFeeLineRow(idx){
+  editFeeLines.splice(idx,1);
+  document.getElementById("editFeeLinesContainer").innerHTML = renderFeeLineRows();
+}
+
+function updateMilestone(idx, field, value){
+  const numeric = ["percentage","fee","gst"].includes(field);
+  editMilestones[idx][field] = numeric ? (parseFloat(value)||0) : value;
+}
+function addMilestoneRow(){
+  editMilestones.push({ description:"", percentage:0, fee:0, gst:0, deliveryDate:"", status:"Pending" });
+  document.getElementById("editMilestonesContainer").innerHTML = renderMilestoneRows();
+}
+function removeMilestoneRow(idx){
+  editMilestones.splice(idx,1);
+  document.getElementById("editMilestonesContainer").innerHTML = renderMilestoneRows();
+}
+
+function recalcTotals(){
+  const feeEl = document.getElementById("editTotalFeeExclGST");
+  const rateEl = document.getElementById("editGSTRate");
+  if(!feeEl || !rateEl) return;
+  const fee = parseFloat(feeEl.value) || 0;
+  const rate = rateEl.value === "10%" ? 0.10 : 0;
+  const gst = Math.round(fee * rate * 100) / 100;
+  document.getElementById("editGSTAmount").value = gst.toFixed(2);
+  document.getElementById("editTotalInclGST").value = (fee + gst).toFixed(2);
+}
+
+function cancelEdit(){
+  if(editAgreementId){
+    showAgreementDetail(editAgreementId);
+  } else {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById("view-agreements").classList.add("active");
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    document.querySelector('.nav-item[data-view="agreements"]').classList.add("active");
+  }
+}
+
+async function saveAgreement(){
+  const saveBtn = event.target;
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = "Saving…";
+  saveBtn.disabled = true;
+
+  try{
+    const clientOrgId = document.getElementById("editClientOrg").value;
+    const fields = {
+      ClientOrgLookupId: clientOrgId || null,
+      BusinessUnit: document.getElementById("editBusinessUnit").value,
+      ProjectName: document.getElementById("editProjectName").value,
+      Status: document.getElementById("editStatus").value,
+      FeeBasis: document.getElementById("editFeeBasis").value,
+      GSTRate: document.getElementById("editGSTRate").value,
+      CommencementBasis: document.getElementById("editCommencementBasis").value,
+      CommencementDate: document.getElementById("editCommencementDate").value,
+      TerminationDate: document.getElementById("editTerminationDate").value,
+      TotalFeeExclGST: parseFloat(document.getElementById("editTotalFeeExclGST").value) || 0,
+      GSTAmount: parseFloat(document.getElementById("editGSTAmount").value) || 0,
+      TotalInclGST: parseFloat(document.getElementById("editTotalInclGST").value) || 0,
+      ScopeOfWorks: document.getElementById("editScopeOfWorks").value,
+      Deliverables: document.getElementById("editDeliverables").value,
+      ClientSignatoryName: document.getElementById("editClientSigName").value,
+      ClientSignatoryTitle: document.getElementById("editClientSigTitle").value,
+      ClientSignedDate: document.getElementById("editClientSigDate").value,
+      BHCSignatoryName: document.getElementById("editBHCSigName").value,
+      BHCSignatoryTitle: document.getElementById("editBHCSigTitle").value,
+      BHCSignedDate: document.getElementById("editBHCSigDate").value
+    };
+
+    let targetId = editAgreementId;
+
+    if(!targetId){
+      // Creating a new agreement
+      const newNumber = await getNextCsaNumber();
+      fields.Title = newNumber;
+      const created = await graphCreateItem("CSA_List", fields);
+      targetId = created.id;
+    } else {
+      await graphUpdateItem("CSA_List", targetId, fields);
+      // Remove existing fee lines & milestones, then recreate from current edit arrays
+      const existingLines = allFeeLineItems.filter(x => x.fields.ParentCSALookupId === targetId);
+      const existingMilestones = allMilestones.filter(x => x.fields.ParentCSALookupId === targetId);
+      for(const line of existingLines) await graphDeleteItem("CSA_FeeLineItems", line.id);
+      for(const m of existingMilestones) await graphDeleteItem("CSA_PaymentMilestones", m.id);
+    }
+
+    // Create fee line items
+    for(let i=0; i<editFeeLines.length; i++){
+      const line = editFeeLines[i];
+      if(!line.description && !line.amount) continue;
+      await graphCreateItem("CSA_FeeLineItems", {
+        Title: `${fields.Title || agreementMap[targetId]?.fields.Title || ""} Line ${i+1}`,
+        ParentCSALookupId: targetId,
+        LineDescription: line.description,
+        Amount: line.amount,
+        SortOrder: i+1
+      });
+    }
+
+    // Create milestone items
+    for(let i=0; i<editMilestones.length; i++){
+      const m = editMilestones[i];
+      if(!m.description && !m.fee) continue;
+      await graphCreateItem("CSA_PaymentMilestones", {
+        Title: `${fields.Title || agreementMap[targetId]?.fields.Title || ""} Milestone ${i+1}`,
+        ParentCSALookupId: targetId,
+        MilestoneDescription: m.description,
+        Percentage: m.percentage,
+        ApplicableFee: m.fee,
+        GST: m.gst,
+        EstimatedDeliveryDate: m.deliveryDate,
+        Status: m.status
+      });
+    }
+
+    await loadAllData();
+    renderDashboard();
+    renderAgreementsTable();
+    renderClientsTable();
+    showAgreementDetail(targetId);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save: " + err.message);
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+document.getElementById("newAgreementBtn").addEventListener("click", () => {
+  enterEditMode(null);
+});
 
 document.getElementById("backToAgreements").addEventListener("click", () => {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
