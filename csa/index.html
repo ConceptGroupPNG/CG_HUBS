@@ -747,6 +747,25 @@ function fmtDateDMY(str){
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+// Only entries created via the Hub's Log Time form set ResourceRef at creation —
+// the CSA Time widget doesn't write Billable at all, so an entry without ResourceRef
+// showing Billable=false is really "never set", not a deliberate "No".
+function billableDisplay(t){
+  const hasExplicitChoice = !!t.fields.ResourceRefLookupId;
+  if(!hasExplicitChoice){
+    return `<span class="badge badge-sent" title="Logged via CSA Time widget — billable status not yet tracked there">Not Set</span>`;
+  }
+  return t.fields.Billable
+    ? `<span class="badge badge-active">Yes</span>`
+    : `<span class="badge badge-draft">No</span>`;
+}
+
+function billableTextDisplay(t){
+  const hasExplicitChoice = !!t.fields.ResourceRefLookupId;
+  if(!hasExplicitChoice) return "Not Set";
+  return t.fields.Billable ? "Yes" : "No";
+}
+
 function fmtCurrency(n){
   const num = parseFloat(n) || 0;
   return "K" + num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -995,7 +1014,7 @@ function renderTimesheetsTable(){
         <td>${esc(resourceLabel)}</td>
         <td>${esc(csaLabel)}</td>
         <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
-        <td>${f.Billable ? "Yes" : "No"}</td>
+        <td>${billableDisplay(t)}</td>
         <td>${esc(f.EntryMethod) || "—"}</td>
         <td><button class="btn-danger-text" onclick="deleteTimeEntry('${t.id}')">Delete</button></td>
       </tr>
@@ -1336,7 +1355,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
       <td>${fmtDateDMY(t.fields.WorkDate) || "—"}</td>
       <td>${esc(t.fields.CSA) || "—"}</td>
       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
-      <td>${t.fields.Billable ? "Yes" : "No"}</td>
+      <td>${billableTextDisplay(t)}</td>
       <td>${esc(t.fields.EntryMethod) || "—"}</td>
     </tr>
   `).join("") : `<tr><td colspan="5" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
@@ -1879,7 +1898,7 @@ function showAgreementDetail(itemId){
                     <tr>
                       <td>${fmtDateDMY(t.fields.WorkDate)}</td>
                       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(1)}</td>
-                      <td>${t.fields.Billable ? "Yes" : "No"}</td>
+                      <td>${billableDisplay(t)}</td>
                     </tr>
                   `).join("")}
               </tbody>
