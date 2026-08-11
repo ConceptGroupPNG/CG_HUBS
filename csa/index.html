@@ -863,7 +863,8 @@ function showAgreementDetail(itemId){
 const BHC_ENTITY = {
   name: "BRIAN HART CONSULTING LIMITED",
   shortName: "BHC",
-  address: "PO Box 190, Waigani, NCD."
+  address: "PO Box 190, Waigani, NCD.",
+  logoUrl: "https://marcusappdev.github.io/CG_Training/csa-hub/assets/Brian_Hart_Logo_Large.png"
 };
 
 function getClientAbbreviation(title){
@@ -955,6 +956,11 @@ function generateCsaDocument(itemId){
   const scopeHtml = esc(f.ScopeOfWorks || "").replace(/\n/g, "<br>");
   const deliverablesHtml = esc(f.Deliverables || "").replace(/\n/g, "<br>");
 
+  const showBhcLogo = (f.BusinessUnit || "").trim() === "BHC";
+  const logoHtml = showBhcLogo
+    ? `<div class="doc-logo"><img src="${esc(BHC_ENTITY.logoUrl)}" alt="Brian Hart Consulting" onerror="this.style.display='none'"></div>`
+    : "";
+
   const termsHtml = CSA_TERMS_TEMPLATE.split("{{CLIENT}}").join(esc(clientAbbr));
 
   const docHtml = `
@@ -970,6 +976,8 @@ function generateCsaDocument(itemId){
     max-width:800px; margin:0 auto; padding:30px 40px;
   }
   .doc-header{text-align:center;font-size:16px;font-weight:700;letter-spacing:.3px;margin-bottom:18px;}
+  .doc-logo{text-align:center;margin-bottom:14px;}
+  .doc-logo img{max-height:60px;max-width:220px;}
   .agreement-no{font-size:12px;margin-bottom:14px;}
   .agreement-no b{display:inline-block;width:130px;}
   .party-row{margin-bottom:10px;font-size:12px;}
@@ -1011,6 +1019,7 @@ function generateCsaDocument(itemId){
 
 <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
 
+${logoHtml}
 <div class="doc-header">Consulting Services Agreement</div>
 
 <div class="agreement-no"><b>AGREEMENT No:</b> ${esc(f.Title)} &mdash; ${esc(clientAbbr)}: ${esc(f.ProjectName || "")}</div>
