@@ -694,6 +694,22 @@ async function loadAllData(){
   });
 }
 
+// Re-pulls everything from SharePoint and re-renders all list/dashboard views.
+// Called on every navigation action so the app never shows stale data.
+async function refreshAllData(){
+  try{
+    await loadAllData();
+    renderDashboard();
+    renderAgreementsTable();
+    renderClientsTable();
+    renderResourcesTable();
+    populateTimesheetDropdowns();
+    renderTimesheetsTable();
+  }catch(err){
+    console.error("Refresh failed:", err);
+  }
+}
+
 /* ============================================================
    RENDER: DASHBOARD
    ============================================================ */
@@ -810,7 +826,7 @@ function renderAgreementsTable(){
     const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "—";
     const badgeClass = statusBadgeClass(f.Status);
     return `
-      <tr data-id="${a.id}" onclick="showAgreementDetail('${a.id}')">
+      <tr data-id="${a.id}" onclick="openAgreementDetail('${a.id}')">
         <td><strong>${f.Title || "—"}</strong></td>
         <td>${clientName}</td>
         <td>${f.ProjectName || "—"}</td>
@@ -879,7 +895,7 @@ function renderResourcesTable(){
     const f = r.fields;
     const active = f.IsActive !== false;
     return `
-      <tr onclick="showResourceDetail('${r.id}')">
+      <tr onclick="openResourceDetail('${r.id}')">
         <td><strong>${esc(f.Title)}</strong></td>
         <td>${esc(f.ResourceType || "—")}</td>
         <td>${esc(f.BusinessUnit || "—")}</td>
@@ -891,14 +907,16 @@ function renderResourcesTable(){
   }).join("");
 }
 
-document.getElementById("backToResources").addEventListener("click", () => {
+document.getElementById("backToResources").addEventListener("click", async () => {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view-resources").classList.add("active");
   document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
   document.querySelector('.nav-item[data-view="resources"]').classList.add("active");
+  await refreshAllData();
 });
 
-document.getElementById("newResourceBtn").addEventListener("click", () => {
+document.getElementById("newResourceBtn").addEventListener("click", async () => {
+  await refreshAllData();
   enterResourceEditMode(null);
 });
 
@@ -1390,6 +1408,11 @@ ${csaLabels.length > 1 ? `
 /* ============================================================
    RENDER: RESOURCE DETAIL (READ-ONLY)
    ============================================================ */
+async function openResourceDetail(itemId){
+  await refreshAllData();
+  showResourceDetail(itemId);
+}
+
 function showResourceDetail(itemId){
   const r = resourceMap[itemId];
   if(!r) return;
@@ -1669,6 +1692,11 @@ async function saveResource(){
 function esc(s){
   if(s === null || s === undefined) return "";
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function openAgreementDetail(itemId){
+  await refreshAllData();
+  showAgreementDetail(itemId);
 }
 
 function showAgreementDetail(itemId){
@@ -2461,27 +2489,30 @@ async function saveAgreement(){
   }
 }
 
-document.getElementById("newAgreementBtn").addEventListener("click", () => {
+document.getElementById("newAgreementBtn").addEventListener("click", async () => {
+  await refreshAllData();
   enterEditMode(null);
 });
 
-document.getElementById("backToAgreements").addEventListener("click", () => {
+document.getElementById("backToAgreements").addEventListener("click", async () => {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view-agreements").classList.add("active");
   document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
   document.querySelector('.nav-item[data-view="agreements"]').classList.add("active");
+  await refreshAllData();
 });
 
 /* ============================================================
    NAVIGATION
    ============================================================ */
 document.querySelectorAll(".nav-item").forEach(item => {
-  item.addEventListener("click", () => {
+  item.addEventListener("click", async () => {
     document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
     item.classList.add("active");
     const viewName = item.getAttribute("data-view");
     document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
     document.getElementById(`view-${viewName}`).classList.add("active");
+    await refreshAllData();
   });
 });
 
