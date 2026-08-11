@@ -79,6 +79,7 @@
   .view.active{display:block;}
   /* ---------- Cards / metrics ---------- */
   .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;}
+  .dashboard-subheading{font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin:-8px 0 12px;}
   .metric-card{
     background:var(--card);border:1px solid var(--border);border-radius:10px;
     padding:18px 20px;
@@ -262,14 +263,27 @@
         <div class="metrics-row" id="metricsRow">
           <div class="loader">Loading metrics…</div>
         </div>
+
+        <div class="dashboard-subheading">Time &amp; Resources</div>
+        <div class="metrics-row" id="timeMetricsRow">
+          <div class="loader">Loading metrics…</div>
+        </div>
+
         <div class="panel-grid">
           <div class="panel">
             <h3>Agreements by Status</h3>
             <div id="statusBreakdown"><div class="loader">Loading…</div></div>
           </div>
           <div class="panel">
-            <h3>Agreements by Business Unit</h3>
+            <h3>Contract Value by Business Unit</h3>
             <div id="buBreakdown"><div class="loader">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="panel-grid">
+          <div class="panel" style="grid-column:1 / -1;">
+            <h3>Top Resources by Hours Logged <span style="font-weight:400;color:var(--text-muted);text-transform:none;font-size:11px;">— this month</span></h3>
+            <div id="topResourcesPanel"><div class="loader">Loading…</div></div>
           </div>
         </div>
       </div>
@@ -844,6 +858,54 @@ function renderDashboard(){
     </div>
   `;
 
+  // ---------- Time & Resources metrics ----------
+  const today = new Date();
+  const todayStr = localDateStr(today);
+  const day = today.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diffToMonday);
+  const weekStartStr = localDateStr(monday);
+  const monthStartStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-01`;
+
+  const hoursInRange = (start,end) => allTimeEntries
+    .filter(t => t.fields.WorkDate && t.fields.WorkDate >= start && t.fields.WorkDate <= end)
+    .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+
+  const hoursThisWeek = hoursInRange(weekStartStr, todayStr);
+  const hoursThisMonth = hoursInRange(monthStartStr, todayStr);
+
+  const entriesWithChoice = allTimeEntries.filter(hasBillableChoice);
+  const billableHoursDecided = entriesWithChoice.filter(t=>t.fields.Billable).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const totalHoursDecided = entriesWithChoice.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const utilizationPct = totalHoursDecided > 0 ? (billableHoursDecided / totalHoursDecided * 100) : 0;
+
+  const notSetHours = allTimeEntries.filter(t => !hasBillableChoice(t)).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const notSetCount = allTimeEntries.filter(t => !hasBillableChoice(t)).length;
+
+  document.getElementById("timeMetricsRow").innerHTML = `
+    <div class="metric-card">
+      <div class="metric-label">Hours This Week</div>
+      <div class="metric-value">${hoursThisWeek.toFixed(1)}</div>
+      <div class="metric-sub">Mon to today</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Hours This Month</div>
+      <div class="metric-value">${hoursThisMonth.toFixed(1)}</div>
+      <div class="metric-sub">${today.toLocaleDateString("en-GB",{month:"long"})}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Billable Utilization</div>
+      <div class="metric-value">${utilizationPct.toFixed(0)}%</div>
+      <div class="metric-sub">of hours with a billable status set</div>
+    </div>
+    <div class="metric-card" style="${notSetCount > 0 ? "cursor:pointer;" : ""}" ${notSetCount > 0 ? `onclick="document.querySelector('.nav-item[data-view=\\'timesheets\\']').click()"` : ""}>
+      <div class="metric-label">Not Set Hours</div>
+      <div class="metric-value" style="${notSetCount > 0 ? "color:#92400e;" : ""}">${notSetHours.toFixed(1)}</div>
+      <div class="metric-sub">${notSetCount} entr${notSetCount===1?"y":"ies"} need${notSetCount===1?"s":""} a billable flag${notSetCount > 0 ? " — click to review" : ""}</div>
+    </div>
+  `;
+
   // Status breakdown
   const statusOrder = ["Draft","Sent for Signature","Signed","Active","Completed","Cancelled"];
   const statusCounts = {};
@@ -863,20 +925,42 @@ function renderDashboard(){
       </div>
     `).join("") || `<div class="empty-state">No agreements yet</div>`;
 
-  // Business unit breakdown
+  // Business unit breakdown — now by contract value, with agreement count as a sub-label
+  const buValues = {};
   const buCounts = {};
   allAgreements.forEach(a => {
     const bu = a.fields.BusinessUnit || "Unassigned";
+    buValues[bu] = (buValues[bu]||0) + (parseFloat(a.fields.TotalInclGST)||0);
     buCounts[bu] = (buCounts[bu]||0) + 1;
   });
-  const maxBu = Math.max(1, ...Object.values(buCounts));
-  document.getElementById("buBreakdown").innerHTML = Object.keys(buCounts).map(bu => `
+  const maxBuValue = Math.max(1, ...Object.values(buValues));
+  document.getElementById("buBreakdown").innerHTML = Object.keys(buValues)
+    .sort((a,b)=> buValues[b] - buValues[a])
+    .map(bu => `
       <div class="bu-row">
-        <span>${bu}</span>
-        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(buCounts[bu]/maxBu*100)}%"></div></div>
-        <span>${buCounts[bu]}</span>
+        <span>${bu} <span style="color:var(--text-muted);font-size:11px;">(${buCounts[bu]})</span></span>
+        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(buValues[bu]/maxBuValue*100)}%"></div></div>
+        <span>${fmtCurrency(buValues[bu])}</span>
       </div>
     `).join("") || `<div class="empty-state">No agreements yet</div>`;
+
+  // Top resources by hours logged this month
+  const monthEntries = allTimeEntries.filter(t => t.fields.WorkDate && t.fields.WorkDate >= monthStartStr && t.fields.WorkDate <= todayStr);
+  const hoursByResourceLabel = {};
+  monthEntries.forEach(t => {
+    const r = findResourceForEntry(t);
+    const label = r ? r.fields.Title : (t.fields.EntryUser || "Unmatched");
+    hoursByResourceLabel[label] = (hoursByResourceLabel[label]||0) + (parseFloat(t.fields.Hours)||0);
+  });
+  const topResources = Object.entries(hoursByResourceLabel).sort((a,b)=> b[1]-a[1]).slice(0,5);
+  const maxResourceHours = Math.max(1, ...topResources.map(r=>r[1]));
+  document.getElementById("topResourcesPanel").innerHTML = topResources.length ? topResources.map(([label,hours]) => `
+      <div class="bu-row">
+        <span>${esc(label)}</span>
+        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(hours/maxResourceHours*100)}%"></div></div>
+        <span>${hours.toFixed(1)}</span>
+      </div>
+    `).join("") : `<div class="empty-state">No time logged this month yet</div>`;
 }
 
 /* ============================================================
