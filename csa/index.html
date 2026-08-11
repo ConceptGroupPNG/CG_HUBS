@@ -184,6 +184,11 @@
     background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:600;
   }
   .btn-row{display:flex;gap:10px;}
+  .billable-select{
+    border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;
+    font-family:inherit;background:var(--card);color:var(--text);cursor:pointer;
+  }
+  .billable-select.is-unset{border-color:#f4c860;background:#fffaf0;color:#92400e;}
   /* ---------- Edit form ---------- */
   .form-field{margin-bottom:14px;}
   .form-field label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;margin-bottom:5px;}
@@ -747,12 +752,15 @@ function fmtDateDMY(str){
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-// Only entries created via the Hub's Log Time form set ResourceRef at creation —
-// the CSA Time widget doesn't write Billable at all, so an entry without ResourceRef
-// showing Billable=false is really "never set", not a deliberate "No".
+// The CSA Time widget never writes Billable, so an entry it created simply has
+// no value for that field. Checking definedness directly (rather than inferring
+// from ResourceRef) stays correct even if ResourceRef can't be resolved to a match.
+function hasBillableChoice(t){
+  return t.fields.Billable !== undefined && t.fields.Billable !== null;
+}
+
 function billableDisplay(t){
-  const hasExplicitChoice = !!t.fields.ResourceRefLookupId;
-  if(!hasExplicitChoice){
+  if(!hasBillableChoice(t)){
     return `<span class="badge badge-sent" title="Logged via CSA Time widget — billable status not yet tracked there">Not Set</span>`;
   }
   return t.fields.Billable
@@ -761,9 +769,44 @@ function billableDisplay(t){
 }
 
 function billableTextDisplay(t){
-  const hasExplicitChoice = !!t.fields.ResourceRefLookupId;
-  if(!hasExplicitChoice) return "Not Set";
+  if(!hasBillableChoice(t)) return "Not Set";
   return t.fields.Billable ? "Yes" : "No";
+}
+
+// Interactive version used in the Timesheets table — lets you set or change
+// the flag directly from the row, without a separate edit screen.
+function billableSelectHtml(t){
+  const defined = hasBillableChoice(t);
+  const current = defined ? (t.fields.Billable ? "true" : "false") : "";
+  return `
+    <select class="billable-select ${current===""?"is-unset":""}" onchange="updateEntryBillable('${t.id}', this.value)">
+      <option value="" ${current===""?"selected":""} disabled>Not Set</option>
+      <option value="true" ${current==="true"?"selected":""}>Billable</option>
+      <option value="false" ${current==="false"?"selected":""}>Non-billable</option>
+    </select>
+  `;
+}
+
+async function updateEntryBillable(entryId, value){
+  if(value !== "true" && value !== "false") return;
+  const entry = allTimeEntries.find(t => t.id === entryId);
+  if(!entry) return;
+
+  const fields = { Billable: value === "true" };
+  // Opportunistically backfill ResourceRef too, if we can resolve one — useful for
+  // resource cost tracking, but not required for the billable flag itself to stick.
+  if(!entry.fields.ResourceRefLookupId){
+    const resource = findResourceForEntry(entry);
+    if(resource) fields.ResourceRefLookupId = resource.id;
+  }
+
+  try{
+    await graphUpdateItem("CSA_TimeEntries", entryId, fields);
+    await refreshAllData();
+  }catch(err){
+    console.error(err);
+    alert("Couldn't update billable status: " + err.message);
+  }
 }
 
 function fmtCurrency(n){
@@ -1014,7 +1057,7 @@ function renderTimesheetsTable(){
         <td>${esc(resourceLabel)}</td>
         <td>${esc(csaLabel)}</td>
         <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
-        <td>${billableDisplay(t)}</td>
+        <td>${billableSelectHtml(t)}</td>
         <td>${esc(f.EntryMethod) || "—"}</td>
         <td><button class="btn-danger-text" onclick="deleteTimeEntry('${t.id}')">Delete</button></td>
       </tr>
