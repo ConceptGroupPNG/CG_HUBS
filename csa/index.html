@@ -82,14 +82,24 @@
   .dashboard-subheading{font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin:-8px 0 12px;}
   .metric-card{
     background:var(--card);border:1px solid var(--border);border-radius:10px;
-    padding:18px 20px;
+    padding:18px 20px;border-left:4px solid var(--border);
   }
+  .metric-accent-blue{border-left-color:#a8c8f0;}
+  .metric-accent-green{border-left-color:#a8e0bc;}
+  .metric-accent-amber{border-left-color:#f7cd85;}
+  .metric-accent-teal{border-left-color:#8fdccb;}
+  .metric-accent-purple{border-left-color:#cbb0ea;}
+  .metric-accent-pink{border-left-color:#f4aecb;}
+  .metric-accent-sky{border-left-color:#a9d4f5;}
   .metric-label{font-size:11.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;}
   .metric-value{font-size:26px;font-weight:700;color:var(--navy);margin-top:6px;}
   .metric-sub{font-size:11.5px;color:var(--text-muted);margin-top:4px;}
   .panel-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:24px;}
-  .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;}
+  .panel{background:var(--card);border:1.5px solid var(--border);border-radius:10px;padding:20px;}
   .panel h3{font-size:14px;color:var(--navy);margin-bottom:14px;}
+  .bu-bar-fill-blue{background:#a8c8f0;}
+  .bu-bar-fill-amber{background:#f7cd85;}
+  .bu-bar-fill-teal{background:#8fdccb;}
   .bu-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
   .bu-row:last-child{border-bottom:none;}
   .bu-bar-track{background:var(--bg);border-radius:4px;height:6px;flex:1;margin:0 12px;overflow:hidden;}
@@ -270,18 +280,18 @@
         </div>
 
         <div class="panel-grid">
-          <div class="panel">
+          <div class="panel card-details">
             <h3>Agreements by Status</h3>
             <div id="statusBreakdown"><div class="loader">Loading…</div></div>
           </div>
-          <div class="panel">
+          <div class="panel card-fees">
             <h3>Contract Value by Business Unit</h3>
             <div id="buBreakdown"><div class="loader">Loading…</div></div>
           </div>
         </div>
 
         <div class="panel-grid">
-          <div class="panel" style="grid-column:1 / -1;">
+          <div class="panel card-milestones" style="grid-column:1 / -1;">
             <h3>Top Resources by Hours Logged <span style="font-weight:400;color:var(--text-muted);text-transform:none;font-size:11px;">— this month</span></h3>
             <div id="topResourcesPanel"><div class="loader">Loading…</div></div>
           </div>
@@ -836,22 +846,22 @@ function renderDashboard(){
   const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
 
   document.getElementById("metricsRow").innerHTML = `
-    <div class="metric-card">
+    <div class="metric-card metric-accent-blue">
       <div class="metric-label">Total Agreements</div>
       <div class="metric-value">${total}</div>
       <div class="metric-sub">${allClients.length} client${allClients.length===1?"":"s"}</div>
     </div>
-    <div class="metric-card">
+    <div class="metric-card metric-accent-teal">
       <div class="metric-label">Active / Signed</div>
       <div class="metric-value">${activeCount}</div>
       <div class="metric-sub">of ${total} total</div>
     </div>
-    <div class="metric-card">
+    <div class="metric-card metric-accent-amber">
       <div class="metric-label">Awaiting Signature</div>
       <div class="metric-value">${pendingSignature}</div>
       <div class="metric-sub">client countersignature pending</div>
     </div>
-    <div class="metric-card">
+    <div class="metric-card metric-accent-purple">
       <div class="metric-label">Total Contract Value</div>
       <div class="metric-value">${fmtCurrency(totalValue)}</div>
       <div class="metric-sub">incl. GST, all agreements</div>
@@ -884,22 +894,22 @@ function renderDashboard(){
   const notSetCount = allTimeEntries.filter(t => !hasBillableChoice(t)).length;
 
   document.getElementById("timeMetricsRow").innerHTML = `
-    <div class="metric-card">
+    <div class="metric-card metric-accent-sky">
       <div class="metric-label">Hours This Week</div>
       <div class="metric-value">${hoursThisWeek.toFixed(1)}</div>
       <div class="metric-sub">Mon to today</div>
     </div>
-    <div class="metric-card">
+    <div class="metric-card metric-accent-blue">
       <div class="metric-label">Hours This Month</div>
       <div class="metric-value">${hoursThisMonth.toFixed(1)}</div>
       <div class="metric-sub">${today.toLocaleDateString("en-GB",{month:"long"})}</div>
     </div>
-    <div class="metric-card">
+    <div class="metric-card metric-accent-teal">
       <div class="metric-label">Billable Utilization</div>
       <div class="metric-value">${utilizationPct.toFixed(0)}%</div>
       <div class="metric-sub">of hours with a billable status set</div>
     </div>
-    <div class="metric-card" style="${notSetCount > 0 ? "cursor:pointer;" : ""}" ${notSetCount > 0 ? `onclick="document.querySelector('.nav-item[data-view=\\'timesheets\\']').click()"` : ""}>
+    <div class="metric-card metric-accent-amber" style="${notSetCount > 0 ? "cursor:pointer;" : ""}" ${notSetCount > 0 ? `onclick="document.querySelector('.nav-item[data-view=\\'timesheets\\']').click()"` : ""}>
       <div class="metric-label">Not Set Hours</div>
       <div class="metric-value" style="${notSetCount > 0 ? "color:#92400e;" : ""}">${notSetHours.toFixed(1)}</div>
       <div class="metric-sub">${notSetCount} entr${notSetCount===1?"y":"ies"} need${notSetCount===1?"s":""} a billable flag${notSetCount > 0 ? " — click to review" : ""}</div>
@@ -920,7 +930,7 @@ function renderDashboard(){
     .map(s => `
       <div class="bu-row">
         <span>${s}</span>
-        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(statusCounts[s]/maxStatus*100)}%"></div></div>
+        <div class="bu-bar-track"><div class="bu-bar-fill bu-bar-fill-blue" style="width:${(statusCounts[s]/maxStatus*100)}%"></div></div>
         <span>${statusCounts[s]}</span>
       </div>
     `).join("") || `<div class="empty-state">No agreements yet</div>`;
@@ -939,7 +949,7 @@ function renderDashboard(){
     .map(bu => `
       <div class="bu-row">
         <span>${bu} <span style="color:var(--text-muted);font-size:11px;">(${buCounts[bu]})</span></span>
-        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(buValues[bu]/maxBuValue*100)}%"></div></div>
+        <div class="bu-bar-track"><div class="bu-bar-fill bu-bar-fill-amber" style="width:${(buValues[bu]/maxBuValue*100)}%"></div></div>
         <span>${fmtCurrency(buValues[bu])}</span>
       </div>
     `).join("") || `<div class="empty-state">No agreements yet</div>`;
@@ -957,7 +967,7 @@ function renderDashboard(){
   document.getElementById("topResourcesPanel").innerHTML = topResources.length ? topResources.map(([label,hours]) => `
       <div class="bu-row">
         <span>${esc(label)}</span>
-        <div class="bu-bar-track"><div class="bu-bar-fill" style="width:${(hours/maxResourceHours*100)}%"></div></div>
+        <div class="bu-bar-track"><div class="bu-bar-fill bu-bar-fill-teal" style="width:${(hours/maxResourceHours*100)}%"></div></div>
         <span>${hours.toFixed(1)}</span>
       </div>
     `).join("") : `<div class="empty-state">No time logged this month yet</div>`;
