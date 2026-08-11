@@ -757,7 +757,10 @@ function showAgreementDetail(itemId){
       <div class="detail-total">
         <div class="metric-label">Total (incl. GST)</div>
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
-        <div style="margin-top:10px;"><button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button></div>
+        <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
+          <button class="btn-secondary" onclick="generateCsaDocument('${a.id}')">Generate Document</button>
+          <button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button>
+        </div>
       </div>
     </div>
 
@@ -852,6 +855,265 @@ function showAgreementDetail(itemId){
       </div>
     </div>
   `;
+}
+
+/* ============================================================
+   CSA DOCUMENT GENERATION
+   ============================================================ */
+const BHC_ENTITY = {
+  name: "BRIAN HART CONSULTING LIMITED",
+  shortName: "BHC",
+  address: "PO Box 190, Waigani, NCD."
+};
+
+function getClientAbbreviation(title){
+  if(!title) return "the Client";
+  const parenMatch = title.match(/\(([^)]+)\)\s*$/);
+  if(parenMatch) return parenMatch[1];
+  return title;
+}
+
+function getClientAddress(client){
+  return client.Address || "Address on file";
+}
+
+const CSA_TERMS_TEMPLATE = `
+<h2>TERMS AND CONDITIONS</h2>
+
+<div class="term-clause">
+  <div class="term-num">1.</div>
+  <div class="term-body">
+    <div class="term-title">Consulting Services</div>
+    <p>${esc(BHC_ENTITY.shortName)} Consulting Services (&ldquo;${esc(BHC_ENTITY.shortName)}&rdquo;), will provide services ordered by {{CLIENT}} as specified in the Order Form under the terms and conditions of this Agreement. Unless agreed otherwise in writing any additional services acquired by {{CLIENT}} outside the dates specified overleaf shall be provided on the terms and conditions stated in this Agreement.</p>
+  </div>
+</div>
+
+<div class="term-clause">
+  <div class="term-num">2.</div>
+  <div class="term-body">
+    <div class="term-title">Travel and Expenses</div>
+    <p>For any onsite service requested by {{CLIENT}}, {{CLIENT}} shall book and directly pay for air travel and accommodation charges. In addition, {{CLIENT}} agrees to reimburse ${esc(BHC_ENTITY.shortName)} for actual reasonable local travel and the consultant per diem. The consultant per diem covers all meals and incidentals. If {{CLIENT}} is unable to book and directly pay for air travel and accommodation, {{CLIENT}} agrees to reimburse ${esc(BHC_ENTITY.shortName)} for the actual expense plus twenty (20%) percent.</p>
+  </div>
+</div>
+
+<div class="term-clause">
+  <div class="term-num">3.</div>
+  <div class="term-body">
+    <div class="term-title">Invoicing and Payment</div>
+    <p>Unless otherwise stated in the Order Form all fees, charges or other amounts payable under this Agreement shall be payable within seven (7) days of date of invoice. The T&amp;M consulting fee daily rates specified in the Order Form are for Services provided averaging over the invoice period, an eight (8) hour professional day. A professional day is a normal business day, Monday to Friday during which ${esc(BHC_ENTITY.shortName)} staff average eight (8) work hours over the invoice period, and {{CLIENT}} agrees to pay for Services extending beyond the eight (8) hour average, invoiced at the pro rata hourly rate for the consultant.</p>
+    <p>{{CLIENT}} shall reimburse ${esc(BHC_ENTITY.shortName)} for any statutory charges such as taxes or levies, other than income tax, that are imposed on ${esc(BHC_ENTITY.shortName)} pursuant to this Agreement.</p>
+  </div>
+</div>
+
+<div class="term-clause">
+  <div class="term-num">4.</div>
+  <div class="term-body">
+    <div class="term-title">Limitation of Liability</div>
+    <p>In no event shall either party be liable for any indirect, incidental, special or consequential damages, or loss of profits, revenue, data, or use, incurred by either party or any third party, whether in an action in contract or tort, even if the other party or any other person has been advised of the possibility of such damages. ${esc(BHC_ENTITY.shortName)}&rsquo;s liability for damages hereunder shall in no event exceed the amount of fees paid by {{CLIENT}} under this Agreement.</p>
+  </div>
+</div>
+
+<div class="term-clause">
+  <div class="term-num">5.</div>
+  <div class="term-body">
+    <div class="term-title">General</div>
+    <p><strong>a)</strong> This Agreement constitutes the complete agreement between the parties and supersedes all previous agreements or representations, written or oral, with respect to the Services and Developments. It is expressly agreed that any terms and conditions of {{CLIENT}}&rsquo;s purchase order shall be superseded by and/or be subject to the terms and conditions of this Agreement.</p>
+    <p><strong>b)</strong> The parties may have access to information that is confidential to one another (&ldquo;Confidential Information&rdquo;). Confidential Information shall be limited to ${esc(BHC_ENTITY.shortName)}&rsquo;s software programs and documentation, Developments, and all information clearly marked as confidential or information, which is confidential by operation of law.</p>
+    <p><strong>c)</strong> {{CLIENT}} agrees not to employ any employee or former employee of ${esc(BHC_ENTITY.shortName)} who performed any services under this Agreement within a period of twelve (12) months or less of the provision of those services. In the event of breach of this condition, {{CLIENT}} will pay to ${esc(BHC_ENTITY.shortName)} as liquidated damages and not as a penalty, an amount equal to 30% of the annual earnings for the relevant employee.</p>
+  </div>
+</div>
+`;
+
+function generateCsaDocument(itemId){
+  const a = agreementMap[itemId];
+  if(!a) return;
+  const f = a.fields;
+  const client = clientMap[f.ClientOrgLookupId] || {};
+  const clientName = client.Title || "Client";
+  const clientAbbr = getClientAbbreviation(clientName);
+  const clientAddress = getClientAddress(client);
+
+  const feeLines = allFeeLineItems
+    .filter(x => x.fields.ParentCSALookupId === a.id)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0));
+  const milestones = allMilestones.filter(x => x.fields.ParentCSALookupId === a.id);
+
+  const feeLinesHtml = feeLines.map((x,i) =>
+    `<li>${esc(x.fields.LineDescription)}. Our Fee: ${fmtCurrency(x.fields.Amount)} plus GST</li>`
+  ).join("");
+  const totalFeeLine = `<li>The total fee would be ${fmtCurrency(f.TotalFeeExclGST)} plus GST.</li>`;
+
+  const milestoneRowsHtml = milestones.map(m => `
+    <tr>
+      <td>${esc(m.fields.MilestoneDescription)}</td>
+      <td style="text-align:right">PNGK ${fmtNumber(m.fields.ApplicableFee)}</td>
+      <td style="text-align:right">K ${fmtNumber(m.fields.GST)}</td>
+      <td>${esc(m.fields.EstimatedDeliveryDate || "")}</td>
+    </tr>
+  `).join("");
+
+  const scopeHtml = esc(f.ScopeOfWorks || "").replace(/\n/g, "<br>");
+  const deliverablesHtml = esc(f.Deliverables || "").replace(/\n/g, "<br>");
+
+  const termsHtml = CSA_TERMS_TEMPLATE.split("{{CLIENT}}").join(esc(clientAbbr));
+
+  const docHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${esc(f.Title)} — ${esc(clientName)}</title>
+<style>
+  @page{ size:A4; margin:22mm 18mm; }
+  body{
+    font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.55;
+    max-width:800px; margin:0 auto; padding:30px 40px;
+  }
+  .doc-header{text-align:center;font-size:16px;font-weight:700;letter-spacing:.3px;margin-bottom:18px;}
+  .agreement-no{font-size:12px;margin-bottom:14px;}
+  .agreement-no b{display:inline-block;width:130px;}
+  .party-row{margin-bottom:10px;font-size:12px;}
+  .party-row b{display:inline-block;width:130px;vertical-align:top;}
+  .agreement-para{font-size:11.5px;margin:16px 0;text-align:justify;}
+  h2{font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 14px;border-bottom:1.5px solid #1a1a1a;padding-bottom:6px;}
+  .field-row{margin-bottom:10px;font-size:12px;}
+  .field-row b{display:inline-block;width:150px;vertical-align:top;}
+  ol{margin:8px 0 8px 20px;padding:0;}
+  ol li{margin-bottom:6px;}
+  .fees-list{margin:10px 0 10px 20px;}
+  .fees-list li{margin-bottom:5px;}
+  table.terms-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:11px;}
+  table.terms-table th{background:#f2f2f2;border:1px solid #999;padding:7px 9px;text-align:left;font-size:10px;text-transform:uppercase;}
+  table.terms-table td{border:1px solid #999;padding:7px 9px;}
+  table.terms-table tfoot td{font-weight:700;}
+  .commence-row{display:flex;justify-content:space-between;margin:14px 0;font-size:12px;}
+  .sig-section{margin-top:36px;}
+  .sig-row{display:flex;justify-content:space-between;gap:40px;font-size:11.5px;margin-top:26px;}
+  .sig-col{flex:1;}
+  .sig-line{border-bottom:1px solid #1a1a1a;height:26px;margin-bottom:4px;}
+  .sig-field{margin-top:14px;}
+  .sig-field b{display:inline-block;width:60px;}
+  .page-break{page-break-before:always;}
+  .term-clause{display:flex;gap:10px;margin-bottom:16px;}
+  .term-num{font-weight:700;width:18px;flex-shrink:0;}
+  .term-title{font-weight:700;margin-bottom:4px;}
+  .term-body p{text-align:justify;margin-bottom:8px;}
+  .footer{margin-top:30px;font-size:9.5px;color:#666;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:8px;}
+  .no-print{position:fixed;top:16px;right:16px;}
+  .no-print button{
+    background:#0e9f6e;color:#fff;border:none;border-radius:6px;padding:10px 18px;
+    font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;
+  }
+  @media print{ .no-print{display:none;} }
+</style>
+</head>
+<body>
+
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Consulting Services Agreement</div>
+
+<div class="agreement-no"><b>AGREEMENT No:</b> ${esc(f.Title)} &mdash; ${esc(clientAbbr)}: ${esc(f.ProjectName || "")}</div>
+
+<div class="party-row"><b>BETWEEN:</b> ${esc(BHC_ENTITY.name)} (&ldquo;${esc(BHC_ENTITY.shortName)}&rdquo;)<br><span style="margin-left:130px;">${esc(BHC_ENTITY.address)}</span></div>
+<div class="party-row"><b>AND:</b> ${esc(clientName.replace(/\s*\([^)]+\)\s*$/, ""))} (&ldquo;${esc(clientAbbr)}&rdquo;)<br><span style="margin-left:130px;">${esc(clientAddress)}</span></div>
+
+<div class="agreement-para">
+  <b>AGREEMENT:</b> In consideration of payment by ${esc(clientAbbr)} of the fees indicated, ${esc(BHC_ENTITY.shortName)} agrees to provide ${esc(clientAbbr)} with services necessary to perform the Works identified in the Services Schedule. Unless expressly stated otherwise, times to perform works are estimates only. The parties acknowledge and agree that this Agreement shall be subject to the Terms and Conditions set out on the reverse of this page.
+</div>
+
+<h2>Services Schedule</h2>
+
+<div class="field-row"><b>PROJECT NAME:</b> ${esc(f.ProjectName || "")}</div>
+
+<div style="margin-bottom:16px;">
+  <b>SCOPE OF WORKS</b> — ${esc(BHC_ENTITY.name.split(" ").slice(0,3).join(" "))}, will:
+  <div style="margin-top:8px;">${scopeHtml}</div>
+</div>
+
+<div style="margin-bottom:16px;">
+  <b>DELIVERABLES:</b>
+  <div style="margin-top:8px;">${deliverablesHtml}</div>
+</div>
+
+<div style="margin-bottom:16px;">
+  <b>OUR PROFESSIONAL FEES:</b>
+  <ol class="fees-list">
+    ${feeLinesHtml}
+    ${totalFeeLine}
+  </ol>
+</div>
+
+<div class="commence-row">
+  <span><b>Commencement Date</b> ${esc(f.CommencementBasis || "")}${f.CommencementDate ? " (" + esc(f.CommencementDate) + ")" : ""}</span>
+  <span><b>Termination Date</b> ${esc(f.TerminationDate || "Not Required")}</span>
+</div>
+
+<div class="field-row"><b>FEE BASIS:</b> ${esc(f.FeeBasis || "")}</div>
+
+<table class="terms-table">
+  <thead>
+    <tr><th>${esc(f.FeeBasis || "Fixed Price")} Quote and Payment Schedule</th><th style="text-align:right">Applicable Fee</th><th style="text-align:right">GST</th><th>Delivery Date (Estimate)</th></tr>
+  </thead>
+  <tbody>
+    ${milestoneRowsHtml}
+  </tbody>
+  <tfoot>
+    <tr><td>Total ${esc(f.FeeBasis || "Fixed Price")}</td><td style="text-align:right">PNGK ${fmtNumber(f.TotalFeeExclGST)}</td><td style="text-align:right">K ${fmtNumber(f.GSTAmount)}</td><td></td></tr>
+  </tfoot>
+</table>
+
+<div class="sig-section">
+  <div style="font-size:11.5px;"><b>Executed by ${esc(clientAbbr)}:</b> (Authorised Signature) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Executed by ${esc(BHC_ENTITY.shortName)}:</b> (Authorised Signature)</div>
+  <div class="sig-row">
+    <div class="sig-col">
+      <div class="sig-field"><b>Signed:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Name:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Title:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Date:</b></div>
+      <div class="sig-line"></div>
+    </div>
+    <div class="sig-col">
+      <div class="sig-field"><b>Signed:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Name:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Title:</b></div>
+      <div class="sig-line"></div>
+      <div class="sig-field"><b>Date:</b></div>
+      <div class="sig-line"></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer"><span>&copy; ${esc(BHC_ENTITY.shortName)}</span><span>${esc(f.Title)}</span></div>
+
+<div class="page-break"></div>
+
+${termsHtml}
+
+<div class="footer"><span>&copy; ${esc(BHC_ENTITY.shortName)}</span><span>${esc(f.Title)}</span></div>
+
+</body>
+</html>
+`;
+
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow pop-ups for this site to generate the document.");
+    return;
+  }
+  win.document.open();
+  win.document.write(docHtml);
+  win.document.close();
+}
+
+function fmtNumber(n){
+  const num = parseFloat(n) || 0;
+  return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /* ============================================================
