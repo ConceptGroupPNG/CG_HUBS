@@ -231,6 +231,7 @@
         <div class="nav-item active" data-view="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
         <div class="nav-item" data-view="agreements"><span class="nav-icon">&#9776;</span>Agreements</div>
         <div class="nav-item" data-view="clients"><span class="nav-icon">&#9679;</span>Clients</div>
+        <div class="nav-item" data-view="resources"><span class="nav-icon">&#9733;</span>Resources</div>
       </div>
       <div class="sidebar-footer">
         <div class="user-chip" id="userChip">—</div>
@@ -325,6 +326,38 @@
             <tr><td colspan="4"><div class="loader">Loading clients…</div></td></tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- RESOURCES -->
+      <div class="view" id="view-resources">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Resources</div>
+            <div class="page-sub">People and charge-out categories</div>
+          </div>
+          <button class="btn-primary" id="newResourceBtn">+ New Resource</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Business Unit</th>
+              <th style="text-align:right">Daily Rate</th>
+              <th style="text-align:right">Hourly Rate</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="resourcesTableBody">
+            <tr><td colspan="6"><div class="loader">Loading resources…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RESOURCE DETAIL -->
+      <div class="view" id="view-resource-detail">
+        <div class="back-link" id="backToResources">&#8592; Back to Resources</div>
+        <div id="resourceDetailContent"><div class="loader">Loading…</div></div>
       </div>
 
       <!-- AGREEMENT DETAIL -->
@@ -467,9 +500,12 @@ let allBusinessUnits = [];
 let allFeeLineItems = [];
 let allMilestones = [];
 let allTimeEntries = [];
+let allResources = [];
+let allRateOverrides = [];
 let clientMap = {};   // id -> client fields
 let agreementCounts = {}; // clientId -> count
 let agreementMap = {}; // itemId -> agreement item
+let resourceMap = {}; // itemId -> resource item
 
 /* ============================================================
    STARTUP
@@ -487,6 +523,7 @@ async function startApp(){
     renderDashboard();
     renderAgreementsTable();
     renderClientsTable();
+    renderResourcesTable();
   }catch(err){
     console.error(err);
     document.getElementById("metricsRow").innerHTML =
@@ -495,13 +532,15 @@ async function startApp(){
 }
 
 async function loadAllData(){
-  const [agreements, clients, bus, feeLines, milestones, timeEntries] = await Promise.all([
+  const [agreements, clients, bus, feeLines, milestones, timeEntries, resources, rateOverrides] = await Promise.all([
     fetchAllListItems("CSA_List"),
     fetchAllListItems("CSA_Clients"),
     fetchAllListItems("CSA_BusinessUnits"),
     fetchAllListItems("CSA_FeeLineItems"),
     fetchAllListItems("CSA_PaymentMilestones"),
-    fetchAllListItems("CSA_TimeEntries")
+    fetchAllListItems("CSA_TimeEntries"),
+    fetchAllListItems("CSA_Resources"),
+    fetchAllListItems("CSA_ResourceRateOverrides")
   ]);
   allAgreements = agreements;
   allClients = clients;
@@ -509,12 +548,17 @@ async function loadAllData(){
   allFeeLineItems = feeLines;
   allMilestones = milestones;
   allTimeEntries = timeEntries;
+  allResources = resources;
+  allRateOverrides = rateOverrides;
 
   clientMap = {};
   allClients.forEach(c => { clientMap[c.id] = c.fields; });
 
   agreementMap = {};
   allAgreements.forEach(a => { agreementMap[a.id] = a; });
+
+  resourceMap = {};
+  allResources.forEach(r => { resourceMap[r.id] = r; });
 
   agreementCounts = {};
   allAgreements.forEach(a => {
@@ -679,6 +723,335 @@ function renderClientsTable(){
 }
 
 /* ============================================================
+   RENDER: RESOURCES TABLE
+   ============================================================ */
+function computeResourceHours(resourceId){
+  // Matches on ResourceRef where set, else falls back to email/name match against EntryUser
+  const r = resourceMap[resourceId];
+  if(!r) return 0;
+  const email = (r.fields.MatchEmail || "").toLowerCase().trim();
+  const name = (r.fields.Title || "").toLowerCase().trim();
+  return allTimeEntries
+    .filter(t => {
+      if(t.fields.ResourceRefLookupId === resourceId) return true;
+      const eu = (t.fields.EntryUser || "").toLowerCase().trim();
+      if(!eu) return false;
+      return (email && eu === email) || (name && eu === name);
+    })
+    .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+}
+
+function renderResourcesTable(){
+  if(allResources.length === 0){
+    document.getElementById("resourcesTableBody").innerHTML =
+      `<tr><td colspan="6"><div class="empty-state">No resources yet. Click "+ New Resource" to add one.</div></td></tr>`;
+    return;
+  }
+  const rows = allResources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+  document.getElementById("resourcesTableBody").innerHTML = rows.map(r => {
+    const f = r.fields;
+    const active = f.IsActive !== false;
+    return `
+      <tr onclick="showResourceDetail('${r.id}')">
+        <td><strong>${esc(f.Title)}</strong></td>
+        <td>${esc(f.ResourceType || "—")}</td>
+        <td>${esc(f.BusinessUnit || "—")}</td>
+        <td style="text-align:right" class="amount">${fmtCurrency(f.DailyRate)}</td>
+        <td style="text-align:right" class="amount">${fmtCurrency(f.HourlyRate)}</td>
+        <td><span class="badge ${active ? "badge-active" : "badge-draft"}">${active ? "Active" : "Inactive"}</span></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+document.getElementById("backToResources").addEventListener("click", () => {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-resources").classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelector('.nav-item[data-view="resources"]').classList.add("active");
+});
+
+document.getElementById("newResourceBtn").addEventListener("click", () => {
+  enterResourceEditMode(null);
+});
+
+/* ============================================================
+   RENDER: RESOURCE DETAIL (READ-ONLY)
+   ============================================================ */
+function showResourceDetail(itemId){
+  const r = resourceMap[itemId];
+  if(!r) return;
+  const f = r.fields;
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-resource-detail").classList.add("active");
+
+  const overrides = allRateOverrides.filter(o => o.fields.ResourceRefLookupId === itemId);
+  const totalHours = computeResourceHours(itemId);
+  const active = f.IsActive !== false;
+
+  const overridesHtml = overrides.length ? `
+    <table class="mini-table">
+      <thead><tr><th>CSA</th><th style="text-align:right">Daily Rate</th><th style="text-align:right">Hourly Rate</th></tr></thead>
+      <tbody>
+        ${overrides.map(o => {
+          const csa = agreementMap[o.fields.ParentCSALookupId];
+          return `<tr><td>${csa ? esc(csa.fields.Title) : "—"}</td><td style="text-align:right">${fmtCurrency(o.fields.DailyRate)}</td><td style="text-align:right">${fmtCurrency(o.fields.HourlyRate)}</td></tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  ` : `<div class="empty-state">No CSA-specific rate overrides — base rate applies everywhere.</div>`;
+
+  document.getElementById("resourceDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${esc(f.Title)}</div>
+          <span class="badge ${active ? "badge-active" : "badge-draft"}">${active ? "Active" : "Inactive"}</span>
+        </div>
+        <div class="detail-sub">${esc(f.ResourceType || "—")} · ${esc(f.BusinessUnit || "—")}</div>
+      </div>
+      <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
+        <button class="btn-secondary" onclick="enterResourceEditMode('${r.id}')">Edit</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Base Rates</h3>
+          <div class="field-grid">
+            <div class="field-item"><div class="field-label">Daily Rate</div><div class="field-value">${fmtCurrency(f.DailyRate)}</div></div>
+            <div class="field-item"><div class="field-label">Hourly Rate</div><div class="field-value">${fmtCurrency(f.HourlyRate)}</div></div>
+            <div class="field-item"><div class="field-label">Match Email</div><div class="field-value">${esc(f.MatchEmail) || "—"}</div></div>
+            <div class="field-item"><div class="field-label">Business Unit</div><div class="field-value">${esc(f.BusinessUnit) || "—"}</div></div>
+          </div>
+        </div>
+
+        <div class="section-card card-milestones">
+          <h3>CSA-Specific Rate Overrides</h3>
+          ${overridesHtml}
+        </div>
+      </div>
+
+      <div>
+        <div class="section-card card-time">
+          <h3>Hours Logged</h3>
+          <div class="hours-summary">
+            <div class="hours-stat">
+              <div class="metric-label">Total Hours</div>
+              <div class="metric-value">${totalHours.toFixed(1)}</div>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-muted);">Matched by ResourceRef where set, otherwise by name/email against Time Tracker entries.</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   RESOURCE EDIT MODE
+   ============================================================ */
+let editResourceId = null;
+let editRateOverrides = []; // [{csaId, csaLabel, dailyRate, hourlyRate}]
+
+function enterResourceEditMode(itemId){
+  editResourceId = itemId || null;
+
+  if(editResourceId){
+    editRateOverrides = allRateOverrides
+      .filter(o => o.fields.ResourceRefLookupId === editResourceId)
+      .map(o => {
+        const csa = agreementMap[o.fields.ParentCSALookupId];
+        return {
+          csaId: o.fields.ParentCSALookupId,
+          csaLabel: csa ? csa.fields.Title : "(unknown CSA)",
+          dailyRate: o.fields.DailyRate || 0,
+          hourlyRate: o.fields.HourlyRate || 0
+        };
+      });
+  } else {
+    editRateOverrides = [];
+  }
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-resource-detail").classList.add("active");
+  renderResourceEditForm();
+}
+
+function csaSelectOptions(selectedId){
+  return allAgreements
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(a => `<option value="${a.id}" ${String(selectedId)===String(a.id)?"selected":""}>${esc(a.fields.Title)} — ${esc(a.fields.ProjectName||"")}</option>`)
+    .join("");
+}
+
+function renderResourceEditForm(){
+  const isNew = !editResourceId;
+  const r = isNew ? null : resourceMap[editResourceId];
+  const f = isNew ? {} : r.fields;
+
+  document.getElementById("resourceDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${isNew ? "New Resource" : esc(f.Title)}</div>
+        </div>
+        <div class="detail-sub">${isNew ? "Add a person or a charge-out category" : "Editing " + esc(f.Title)}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="cancelResourceEdit()">Cancel</button>
+        <button class="btn-primary" onclick="saveResource()">${isNew ? "Create Resource" : "Save Changes"}</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Base Rates</h3>
+          <div class="form-grid-2">
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Name</label>
+              <input type="text" id="editResourceTitle" placeholder="e.g. Marcus Scully, or Senior Solutions Architect" value="${esc(f.Title)}">
+            </div>
+            <div class="form-field">
+              <label>Type</label>
+              <select id="editResourceType">${choiceOptions(["Person","Category"], f.ResourceType || "Person")}</select>
+            </div>
+            <div class="form-field">
+              <label>Business Unit</label>
+              <select id="editResourceBU">${buOptions(f.BusinessUnit)}</select>
+            </div>
+            <div class="form-field">
+              <label>Daily Rate</label>
+              <input type="number" step="0.01" id="editResourceDailyRate" value="${f.DailyRate || 0}">
+            </div>
+            <div class="form-field">
+              <label>Hourly Rate</label>
+              <input type="number" step="0.01" id="editResourceHourlyRate" value="${f.HourlyRate || 0}">
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Match Email <span style="text-transform:none;font-weight:400;">— used to auto-match Time Tracker entries for this person</span></label>
+              <input type="text" id="editResourceEmail" placeholder="marcus@concept.com.pg" value="${esc(f.MatchEmail)}">
+            </div>
+            <div class="form-field">
+              <label>Status</label>
+              <select id="editResourceActive">
+                <option value="true" ${f.IsActive !== false ? "selected" : ""}>Active</option>
+                <option value="false" ${f.IsActive === false ? "selected" : ""}>Inactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card card-milestones">
+          <h3>CSA-Specific Rate Overrides</h3>
+          <div class="mini-table-head-milestone" style="grid-template-columns:1.8fr 100px 100px 32px;">
+            <span>CSA</span><span>Daily</span><span>Hourly</span><span></span>
+          </div>
+          <div id="editOverridesContainer">${renderRateOverrideRows()}</div>
+          <div class="add-row-link" onclick="addRateOverrideRow()">+ Add override</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRateOverrideRows(){
+  if(editRateOverrides.length === 0) return `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No overrides yet.</div>`;
+  return editRateOverrides.map((o, idx) => `
+    <div class="edit-milestone-row" style="grid-template-columns:1.8fr 100px 100px 32px;">
+      <select onchange="updateRateOverride(${idx},'csaId',this.value)">
+        <option value="">— Select CSA —</option>
+        ${csaSelectOptions(o.csaId)}
+      </select>
+      <input type="number" step="0.01" value="${o.dailyRate}" oninput="updateRateOverride(${idx},'dailyRate',this.value)">
+      <input type="number" step="0.01" value="${o.hourlyRate}" oninput="updateRateOverride(${idx},'hourlyRate',this.value)">
+      <button class="row-remove-btn" onclick="removeRateOverrideRow(${idx})" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+
+function updateRateOverride(idx, field, value){
+  const numeric = field === "dailyRate" || field === "hourlyRate";
+  editRateOverrides[idx][field] = numeric ? (parseFloat(value)||0) : value;
+}
+function addRateOverrideRow(){
+  editRateOverrides.push({ csaId:"", dailyRate:0, hourlyRate:0 });
+  document.getElementById("editOverridesContainer").innerHTML = renderRateOverrideRows();
+}
+function removeRateOverrideRow(idx){
+  editRateOverrides.splice(idx,1);
+  document.getElementById("editOverridesContainer").innerHTML = renderRateOverrideRows();
+}
+
+function cancelResourceEdit(){
+  if(editResourceId){
+    showResourceDetail(editResourceId);
+  } else {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById("view-resources").classList.add("active");
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    document.querySelector('.nav-item[data-view="resources"]').classList.add("active");
+  }
+}
+
+async function saveResource(){
+  const saveBtn = event.target;
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = "Saving…";
+  saveBtn.disabled = true;
+
+  try{
+    const fields = {
+      Title: document.getElementById("editResourceTitle").value,
+      ResourceType: document.getElementById("editResourceType").value,
+      BusinessUnit: document.getElementById("editResourceBU").value,
+      DailyRate: parseFloat(document.getElementById("editResourceDailyRate").value) || 0,
+      HourlyRate: parseFloat(document.getElementById("editResourceHourlyRate").value) || 0,
+      MatchEmail: document.getElementById("editResourceEmail").value,
+      IsActive: document.getElementById("editResourceActive").value === "true"
+    };
+
+    let targetId = editResourceId;
+
+    if(!targetId){
+      const created = await graphCreateItem("CSA_Resources", fields);
+      targetId = created.id;
+    } else {
+      await graphUpdateItem("CSA_Resources", targetId, fields);
+      const existingOverrides = allRateOverrides.filter(o => o.fields.ResourceRefLookupId === targetId);
+      for(const o of existingOverrides) await graphDeleteItem("CSA_ResourceRateOverrides", o.id);
+    }
+
+    for(const o of editRateOverrides){
+      if(!o.csaId) continue;
+      const csa = agreementMap[o.csaId];
+      await graphCreateItem("CSA_ResourceRateOverrides", {
+        Title: `${fields.Title} — ${csa ? csa.fields.Title : ""}`,
+        ParentCSALookupId: o.csaId,
+        ResourceRefLookupId: targetId,
+        DailyRate: o.dailyRate,
+        HourlyRate: o.hourlyRate
+      });
+    }
+
+    await loadAllData();
+    renderResourcesTable();
+    showResourceDetail(targetId);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save: " + err.message);
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+/* ============================================================
    RENDER: AGREEMENT DETAIL
    ============================================================ */
 function esc(s){
@@ -838,11 +1211,11 @@ function showAgreementDetail(itemId){
               <thead><tr><th>Date</th><th style="text-align:right">Hours</th><th>Billable</th></tr></thead>
               <tbody>
                 ${timeEntries
-                  .sort((x,y) => (y.fields.EntryDate||"").localeCompare(x.fields.EntryDate||""))
+                  .sort((x,y) => (y.fields.WorkDate||"").localeCompare(x.fields.WorkDate||""))
                   .slice(0,10)
                   .map(t => `
                     <tr>
-                      <td>${esc(t.fields.EntryDate)}</td>
+                      <td>${esc(t.fields.WorkDate)}</td>
                       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(1)}</td>
                       <td>${t.fields.Billable ? "Yes" : "No"}</td>
                     </tr>
