@@ -140,6 +140,13 @@
   .detail-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;}
   .section-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
   .section-card h3{font-size:13px;color:var(--navy);margin-bottom:12px;text-transform:uppercase;letter-spacing:.3px;}
+  .card-details{border-color:#cfe0fa;}
+  .card-scope{border-color:#d3f0dc;}
+  .card-deliverables{border-color:#e6d9f7;}
+  .card-fees{border-color:#fde8c9;}
+  .card-milestones{border-color:#c9f0e8;}
+  .card-signatories{border-color:#fbd9e6;}
+  .card-time{border-color:#d6ecfa;}
   .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;}
   .field-item{font-size:13px;}
   .field-label{color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px;}
@@ -756,9 +763,10 @@ function showAgreementDetail(itemId){
 
     <div class="detail-grid">
       <div>
-        <div class="section-card">
+        <div class="section-card card-details">
           <h3>Agreement Details</h3>
           <div class="field-grid">
+            <div class="field-item" style="grid-column:1 / -1;"><div class="field-label">Short Description (Time Tracker)</div><div class="field-value">${esc(f.Description) || "—"}</div></div>
             <div class="field-item"><div class="field-label">Client</div><div class="field-value">${esc(client.Title || "—")}</div></div>
             <div class="field-item"><div class="field-label">Business Unit</div><div class="field-value">${esc(f.BusinessUnit || "—")}</div></div>
             <div class="field-item"><div class="field-label">Fee Basis</div><div class="field-value">${esc(f.FeeBasis || "—")}</div></div>
@@ -770,29 +778,29 @@ function showAgreementDetail(itemId){
           </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-scope">
           <h3>Scope of Works</h3>
           <div class="prose-block">${esc(f.ScopeOfWorks || "Not recorded.")}</div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-deliverables">
           <h3>Deliverables</h3>
           <div class="prose-block">${esc(f.Deliverables || "Not recorded.")}</div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-fees">
           <h3>Fee Line Items</h3>
           ${feeLinesHtml}
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-milestones">
           <h3>Payment Milestones</h3>
           ${milestonesHtml}
         </div>
       </div>
 
       <div>
-        <div class="section-card">
+        <div class="section-card card-signatories">
           <h3>Signatories</h3>
           <div class="signatory-block">
             <div class="signatory-col">
@@ -810,7 +818,7 @@ function showAgreementDetail(itemId){
           </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-time">
           <h3>Time Logged</h3>
           <div class="hours-summary">
             <div class="hours-stat">
@@ -928,7 +936,7 @@ function renderEditForm(){
 
     <div class="detail-grid">
       <div>
-        <div class="section-card">
+        <div class="section-card card-details">
           <h3>Agreement Details</h3>
           <div class="form-grid-2">
             <div class="form-field">
@@ -945,6 +953,10 @@ function renderEditForm(){
             <div class="form-field" style="grid-column:1 / -1;">
               <label>Project Name</label>
               <input type="text" id="editProjectName" value="${esc(f.ProjectName)}">
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Short Description <span style="text-transform:none;font-weight:400;">— shown in the CSA Time Tracker dropdown, keep it brief</span></label>
+              <input type="text" id="editDescription" maxlength="60" placeholder="e.g. BPNG Remuneration Review" value="${esc(f.Description)}">
             </div>
             <div class="form-field">
               <label>Status</label>
@@ -985,28 +997,28 @@ function renderEditForm(){
           </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-scope">
           <h3>Scope of Works</h3>
           <div class="form-field">
             <textarea id="editScopeOfWorks">${esc(f.ScopeOfWorks)}</textarea>
           </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-deliverables">
           <h3>Deliverables</h3>
           <div class="form-field">
             <textarea id="editDeliverables">${esc(f.Deliverables)}</textarea>
           </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-fees">
           <h3>Fee Line Items</h3>
           <div class="mini-table-head-row"><span>Description</span><span>Amount</span><span></span></div>
           <div id="editFeeLinesContainer">${renderFeeLineRows()}</div>
           <div class="add-row-link" onclick="addFeeLineRow()">+ Add line item</div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card card-milestones">
           <h3>Payment Milestones</h3>
           <div class="mini-table-head-milestone"><span>Description</span><span>%</span><span>Fee</span><span>GST</span><span>Est. Delivery</span><span>Status</span><span></span></div>
           <div id="editMilestonesContainer">${renderMilestoneRows()}</div>
@@ -1015,7 +1027,7 @@ function renderEditForm(){
       </div>
 
       <div>
-        <div class="section-card">
+        <div class="section-card card-signatories">
           <h3>Signatories</h3>
           <div class="form-field"><label>Client Signatory Name</label><input type="text" id="editClientSigName" value="${esc(f.ClientSignatoryName)}"></div>
           <div class="form-field"><label>Client Signatory Title</label><input type="text" id="editClientSigTitle" value="${esc(f.ClientSignatoryTitle)}"></div>
@@ -1113,6 +1125,7 @@ async function saveAgreement(){
       ClientOrgLookupId: clientOrgId || null,
       BusinessUnit: document.getElementById("editBusinessUnit").value,
       ProjectName: document.getElementById("editProjectName").value,
+      Description: document.getElementById("editDescription").value,
       Status: document.getElementById("editStatus").value,
       FeeBasis: document.getElementById("editFeeBasis").value,
       GSTRate: document.getElementById("editGSTRate").value,
