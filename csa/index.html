@@ -725,6 +725,25 @@ function statusBadgeClass(status){
   return map[status] || "badge-draft";
 }
 
+// Builds a YYYY-MM-DD string from a Date object's LOCAL calendar components —
+// never use .toISOString() for this, since it converts to UTC first and can
+// shift the date by a day for anyone outside UTC (e.g. UTC+10 before ~10am local).
+function localDateStr(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+// Displays a YYYY-MM-DD string as DD/MM/YYYY. Non-matching strings (blank,
+// "Not Required", free text) pass through unchanged.
+function fmtDateDMY(str){
+  if(!str) return "";
+  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return str;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 function fmtCurrency(n){
   const num = parseFloat(n) || 0;
   return "K" + num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -969,7 +988,7 @@ function renderTimesheetsTable(){
     const resourceLabel = resource ? resource.fields.Title : (f.EntryUser || "—");
     return `
       <tr>
-        <td>${esc(f.WorkDate) || "—"}</td>
+        <td>${fmtDateDMY(f.WorkDate) || "—"}</td>
         <td>${esc(resourceLabel)}</td>
         <td>${esc(csaLabel)}</td>
         <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
@@ -983,7 +1002,7 @@ function renderTimesheetsTable(){
 
 document.getElementById("logTimeBtn").addEventListener("click", () => {
   populateTimesheetDropdowns();
-  document.getElementById("logTimeDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("logTimeDate").value = localDateStr(new Date());
   document.getElementById("logTimeFormCard").style.display = "block";
 });
 document.getElementById("cancelLogTimeBtn").addEventListener("click", () => {
@@ -1046,7 +1065,7 @@ async function deleteTimeEntry(itemId){
 }
 
 document.getElementById("quickTodayBtn").addEventListener("click", () => {
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateStr(new Date());
   document.getElementById("genTimesheetStart").value = today;
   document.getElementById("genTimesheetEnd").value = today;
 });
@@ -1058,8 +1077,8 @@ document.getElementById("quickWeekBtn").addEventListener("click", () => {
   monday.setDate(now.getDate() + diffToMonday);
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  document.getElementById("genTimesheetStart").value = monday.toISOString().slice(0,10);
-  document.getElementById("genTimesheetEnd").value = sunday.toISOString().slice(0,10);
+  document.getElementById("genTimesheetStart").value = localDateStr(monday);
+  document.getElementById("genTimesheetEnd").value = localDateStr(sunday);
 });
 
 document.getElementById("generateTimesheetBtn").addEventListener("click", () => {
@@ -1078,7 +1097,7 @@ function dateRangeArray(start, end){
   let cur = new Date(start + "T00:00:00");
   const endD = new Date(end + "T00:00:00");
   while(cur <= endD){
-    dates.push(cur.toISOString().slice(0,10));
+    dates.push(localDateStr(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
@@ -1204,7 +1223,7 @@ function generateTimesheetDocument(resourceId, start, end){
 <div class="meta-row">
   <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
   <div><b>Business Unit:</b> ${esc(resource.fields.BusinessUnit || "—")}</div>
-  <div><b>Period:</b> ${esc(start)} to ${esc(end)}</div>
+  <div><b>Period:</b> ${esc(fmtDateDMY(start))} to ${esc(fmtDateDMY(end))}</div>
 </div>
 
 ${gridHtml}
@@ -1311,7 +1330,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
 
   const rowsHtml = entries.length ? entries.map(t => `
     <tr>
-      <td>${esc(t.fields.WorkDate) || "—"}</td>
+      <td>${fmtDateDMY(t.fields.WorkDate) || "—"}</td>
       <td>${esc(t.fields.CSA) || "—"}</td>
       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
       <td>${t.fields.Billable ? "Yes" : "No"}</td>
@@ -1362,7 +1381,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
 <div class="meta-row">
   <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
   <div><b>Filter:</b> ${esc(filterDesc)}</div>
-  <div><b>Period:</b> ${esc(actualStart)} to ${esc(actualEnd)}</div>
+  <div><b>Period:</b> ${esc(fmtDateDMY(actualStart))} to ${esc(fmtDateDMY(actualEnd))}</div>
   <div><b>Entries:</b> ${entries.length}</div>
 </div>
 
@@ -1389,7 +1408,7 @@ ${csaLabels.length > 1 ? `
   <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
 </div>
 
-<div class="footer-stamp">Generated ${esc(new Date().toISOString().slice(0,10))} &middot; CSA Hub</div>
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(localDateStr(new Date())))} &middot; CSA Hub</div>
 
 </body>
 </html>
@@ -1787,7 +1806,7 @@ function showAgreementDetail(itemId){
             <div class="field-item"><div class="field-label">Business Unit</div><div class="field-value">${esc(f.BusinessUnit || "—")}</div></div>
             <div class="field-item"><div class="field-label">Fee Basis</div><div class="field-value">${esc(f.FeeBasis || "—")}</div></div>
             <div class="field-item"><div class="field-label">GST Rate</div><div class="field-value">${esc(f.GSTRate || "—")}</div></div>
-            <div class="field-item"><div class="field-label">Commencement</div><div class="field-value">${esc(f.CommencementBasis || "—")}${f.CommencementDate ? " — " + esc(f.CommencementDate) : ""}</div></div>
+            <div class="field-item"><div class="field-label">Commencement</div><div class="field-value">${esc(f.CommencementBasis || "—")}${f.CommencementDate ? " — " + fmtDateDMY(f.CommencementDate) : ""}</div></div>
             <div class="field-item"><div class="field-label">Termination</div><div class="field-value">${esc(f.TerminationDate || "—")}</div></div>
             <div class="field-item"><div class="field-label">Fee (excl. GST)</div><div class="field-value">${fmtCurrency(f.TotalFeeExclGST)}</div></div>
             <div class="field-item"><div class="field-label">GST Amount</div><div class="field-value">${fmtCurrency(f.GSTAmount)}</div></div>
@@ -1823,13 +1842,13 @@ function showAgreementDetail(itemId){
               <div class="field-label">Client</div>
               <div class="signatory-name">${esc(f.ClientSignatoryName || "Not yet signed")}</div>
               ${f.ClientSignatoryTitle ? `<div class="signatory-title">${esc(f.ClientSignatoryTitle)}</div>` : ""}
-              ${f.ClientSignedDate ? `<div class="signatory-date">${esc(f.ClientSignedDate)}</div>` : ""}
+              ${f.ClientSignedDate ? `<div class="signatory-date">${fmtDateDMY(f.ClientSignedDate)}</div>` : ""}
             </div>
             <div class="signatory-col">
               <div class="field-label">Brian Hart Consulting</div>
               <div class="signatory-name">${esc(f.BHCSignatoryName || "—")}</div>
               ${f.BHCSignatoryTitle ? `<div class="signatory-title">${esc(f.BHCSignatoryTitle)}</div>` : ""}
-              ${f.BHCSignedDate ? `<div class="signatory-date">${esc(f.BHCSignedDate)}</div>` : ""}
+              ${f.BHCSignedDate ? `<div class="signatory-date">${fmtDateDMY(f.BHCSignedDate)}</div>` : ""}
             </div>
           </div>
         </div>
@@ -1855,7 +1874,7 @@ function showAgreementDetail(itemId){
                   .slice(0,10)
                   .map(t => `
                     <tr>
-                      <td>${esc(t.fields.WorkDate)}</td>
+                      <td>${fmtDateDMY(t.fields.WorkDate)}</td>
                       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(1)}</td>
                       <td>${t.fields.Billable ? "Yes" : "No"}</td>
                     </tr>
@@ -2067,8 +2086,8 @@ ${logoHtml}
 </div>
 
 <div class="commence-row">
-  <span><b>Commencement Date</b> ${esc(f.CommencementBasis || "")}${f.CommencementDate ? " (" + esc(f.CommencementDate) + ")" : ""}</span>
-  <span><b>Termination Date</b> ${esc(f.TerminationDate || "Not Required")}</span>
+  <span><b>Commencement Date</b> ${esc(f.CommencementBasis || "")}${f.CommencementDate ? " (" + esc(fmtDateDMY(f.CommencementDate)) + ")" : ""}</span>
+  <span><b>Termination Date</b> ${esc(fmtDateDMY(f.TerminationDate) || "Not Required")}</span>
 </div>
 
 <div class="field-row"><b>FEE BASIS:</b> ${esc(f.FeeBasis || "")}</div>
