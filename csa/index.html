@@ -1045,19 +1045,20 @@ function generateTimesheetDocument(resourceId, start, end){
 
   const dates = dateRangeArray(start, end);
 
-  // Build CSA rows (CSA is a plain text field on CSA_TimeEntries, matched against CSA_List.Title)
+  // Build CSA columns (CSA is a plain text field on CSA_TimeEntries, matched against CSA_List.Title)
   const csaLabels = [...new Set(entries.map(t => (t.fields.CSA||"").trim()).filter(Boolean))];
-  const csaRows = csaLabels.map(label => {
-    const cells = dates.map(d => {
+
+  const dateRows = dates.map(d => {
+    const cells = csaLabels.map(label => {
       return entries
         .filter(t => (t.fields.CSA||"").trim() === label && t.fields.WorkDate === d)
         .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
     });
     const rowTotal = cells.reduce((a,b)=>a+b,0);
-    return { label, cells, rowTotal };
+    return { date: d, cells, rowTotal };
   });
 
-  const columnTotals = dates.map((d,i) => csaRows.reduce((sum,r)=> sum + r.cells[i], 0));
+  const columnTotals = csaLabels.map((label,i) => dateRows.reduce((sum,r)=> sum + r.cells[i], 0));
   const grandTotal = columnTotals.reduce((a,b)=>a+b,0);
   const billableTotal = entries.filter(t=>t.fields.Billable).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
 
@@ -1065,28 +1066,28 @@ function generateTimesheetDocument(resourceId, start, end){
 
   const periodLabel = start === end ? dayLabel(start) : `${dayLabel(start)} — ${dayLabel(end)}`;
 
-  const gridHtml = csaRows.length ? `
+  const gridHtml = csaLabels.length ? `
     <table class="ts-table">
       <thead>
         <tr>
-          <th>CSA</th>
-          ${dates.map(d => `<th style="text-align:right">${dayLabel(d)}</th>`).join("")}
+          <th>Date</th>
+          ${csaLabels.map(l => `<th style="text-align:right">${esc(l)}</th>`).join("")}
           <th style="text-align:right">Total</th>
         </tr>
       </thead>
       <tbody>
-        ${csaRows.map(r => `
+        ${dateRows.map(r => `
           <tr>
-            <td>${esc(r.label)}</td>
+            <td>${dayLabel(r.date)}</td>
             ${r.cells.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
-            <td style="text-align:right"><strong>${r.rowTotal.toFixed(2)}</strong></td>
+            <td style="text-align:right"><strong>${r.rowTotal ? r.rowTotal.toFixed(2) : ""}</strong></td>
           </tr>
         `).join("")}
       </tbody>
       <tfoot>
         <tr>
           <td>Total</td>
-          ${columnTotals.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
+          ${columnTotals.map(c => `<td style="text-align:right">${c.toFixed(2)}</td>`).join("")}
           <td style="text-align:right">${grandTotal.toFixed(2)}</td>
         </tr>
       </tfoot>
@@ -1100,17 +1101,19 @@ function generateTimesheetDocument(resourceId, start, end){
 <meta charset="UTF-8">
 <title>Timesheet — ${esc(resource.fields.Title)} — ${esc(periodLabel)}</title>
 <style>
-  @page{ size:A4 landscape; margin:16mm 16mm; }
-  body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:1000px; margin:0 auto; padding:20px 30px; }
+  @page{ size:A4; margin:22mm 18mm; }
+  body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:800px; margin:0 auto; padding:30px 40px; }
   .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
   .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
-  .meta-row{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;}
-  .meta-row b{display:inline-block;width:90px;}
-  table.ts-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:16px;}
-  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:6px 7px;text-align:left;font-size:9.5px;text-transform:uppercase;}
-  table.ts-table td{border:1px solid #999;padding:6px 7px;}
+  .meta-row{margin-bottom:16px;font-size:12px;}
+  .meta-row div{margin-bottom:4px;}
+  .meta-row b{display:inline-block;width:110px;}
+  table.ts-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px;}
+  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:7px 8px;text-align:left;font-size:10px;text-transform:uppercase;}
+  table.ts-table td{border:1px solid #999;padding:7px 8px;}
   table.ts-table tfoot td{font-weight:700;background:#fafafa;}
-  .summary-row{display:flex;gap:40px;margin-bottom:26px;font-size:12px;}
+  .summary-row{margin-bottom:26px;font-size:12px;}
+  .summary-row div{margin-bottom:4px;}
   .sig-row{display:flex;justify-content:space-between;gap:60px;font-size:11.5px;margin-top:30px;}
   .sig-col{flex:1;}
   .sig-line{border-bottom:1px solid #1a1a1a;height:26px;margin-bottom:4px;}
@@ -1128,17 +1131,17 @@ function generateTimesheetDocument(resourceId, start, end){
 <div class="doc-sub">${esc(resource.fields.Title)} &middot; ${esc(periodLabel)}</div>
 
 <div class="meta-row">
-  <span><b>Resource:</b> ${esc(resource.fields.Title)}</span>
-  <span><b>Business Unit:</b> ${esc(resource.fields.BusinessUnit || "—")}</span>
-  <span><b>Period:</b> ${esc(start)} to ${esc(end)}</span>
+  <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
+  <div><b>Business Unit:</b> ${esc(resource.fields.BusinessUnit || "—")}</div>
+  <div><b>Period:</b> ${esc(start)} to ${esc(end)}</div>
 </div>
 
 ${gridHtml}
 
 <div class="summary-row">
-  <span><b>Total Hours:</b> ${grandTotal.toFixed(2)}</span>
-  <span><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</span>
-  <span><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</span>
+  <div><b>Total Hours:</b> ${grandTotal.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
 </div>
 
 <div class="sig-row">
