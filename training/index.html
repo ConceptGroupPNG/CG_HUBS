@@ -291,8 +291,8 @@ select:focus{border-color:var(--teal)}
         <div class="metrics-grid" id="dash-metrics">
           <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-b"><i class="ti ti-books"></i></span>Course Runs</div><div class="mc-value" id="dm-runs">—</div><div class="mc-delta" id="dm-runs-sub">Loading...</div></div>
           <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-users"></i></span>Attendees</div><div class="mc-value" id="dm-att">—</div><div class="mc-delta">Registered this year</div></div>
-          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-currency-kina"></i></span>Revenue (PGK)</div><div class="mc-value" id="dm-rev">—</div><div class="mc-delta">Total invoiced</div></div>
-          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-a"><i class="ti ti-clock"></i></span>Outstanding</div><div class="mc-value" id="dm-out" style="color:var(--amber)">—</div><div class="mc-delta">Awaiting payment</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-t"><i class="ti ti-currency-kina"></i></span>Revenue (PGK, Ex GST)</div><div class="mc-value" id="dm-rev">—</div><div class="mc-delta">Total invoiced</div></div>
+          <div class="metric-card"><div class="mc-label"><span class="mc-icon ic-a"><i class="ti ti-clock"></i></span>Outstanding (Ex GST)</div><div class="mc-value" id="dm-out" style="color:var(--amber)">—</div><div class="mc-delta">Awaiting payment</div></div>
         </div>
         <div class="chart-row">
           <div class="card" style="margin:0">
@@ -565,7 +565,7 @@ select:focus{border-color:var(--teal)}
                           <th style="width:35%">Course</th>
                           <th style="text-align:right;width:55px">Qty</th>
                           <th style="text-align:right;width:90px">Fee ea (PGK)</th>
-                          <th style="text-align:right;width:95px">GST Rate</th>
+                          <th style="text-align:right;width:70px">GST</th>
                           <th style="text-align:right;width:85px">Line Total</th>
                           <th style="width:32px"></th>
                         </tr></thead>
@@ -617,9 +617,9 @@ select:focus{border-color:var(--teal)}
           <button class="btn btn-outline" onclick="clearFilters('invoices')" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
         </div>
         <div class="metrics-grid" style="margin-bottom:16px">
-          <div class="metric-card"><div class="mc-label">Total Invoiced</div><div class="mc-value" id="inv-m1" style="font-size:18px">—</div></div>
-          <div class="metric-card"><div class="mc-label">Total Paid</div><div class="mc-value" style="color:var(--teal);font-size:18px" id="inv-m2">—</div></div>
-          <div class="metric-card"><div class="mc-label">Outstanding</div><div class="mc-value" style="color:var(--red);font-size:18px" id="inv-m3">—</div></div>
+          <div class="metric-card"><div class="mc-label">Total Invoiced (Ex GST)</div><div class="mc-value" id="inv-m1" style="font-size:18px">—</div></div>
+          <div class="metric-card"><div class="mc-label">Total Paid (Ex GST)</div><div class="mc-value" style="color:var(--teal);font-size:18px" id="inv-m2">—</div></div>
+          <div class="metric-card"><div class="mc-label">Outstanding (Ex GST)</div><div class="mc-value" style="color:var(--red);font-size:18px" id="inv-m3">—</div></div>
           <div class="metric-card"><div class="mc-label">Invoice Count</div><div class="mc-value" style="font-size:18px" id="inv-m4">—</div></div>
         </div>
         <div class="card">
@@ -1334,11 +1334,32 @@ function invoiceTotalPaid(inv){
   return (cache.payments||[]).filter(p=>(p.RemittanceRef||'')===invNum)
     .reduce((s,p)=>s+(+p.AmountPaid||0),0);
 }
+// An invoice is treated as GST-exempt for payment-reconciliation purposes if
+// ANY payment recorded against it was flagged GST Exempt (S65) - this is a
+// fact about the client, recorded at the point someone actually takes their
+// payment, not something pre-configured on the Organisation or Invoice.
+function isInvoiceGSTExempt(invoiceNumber){
+  const invNum = (invoiceNumber||'').trim().toLowerCase();
+  return (cache.payments||[]).some(p=>
+    (p.RemittanceRef||'').trim().toLowerCase()===invNum && (p.GSTExempt===true||p.GSTExempt==='true')
+  );
+}
+// What this invoice actually needs to reach to count as "fully paid". For a
+// normal invoice this is the full GST-inclusive Total, same as always. For
+// one a GST-exempt payment has been recorded against, it's the ex-GST fee
+// only - the GST component is never expected to be collected.
+function invoiceExpectedTotal(inv){
+  const invNum = inv.InvoiceNumber||inv.Title||'';
+  const total = +(inv.TotalAmount||0);
+  if(!isInvoiceGSTExempt(invNum)) return total;
+  const lt = invoiceLineTotals(invNum);
+  return lt ? lt.fee : total;
+}
 function invoiceStatus(inv){
-  const total=+(inv.TotalAmount||0);
+  const expected = invoiceExpectedTotal(inv);
   const paid=invoiceTotalPaid(inv);
-  if(!total) return 'N/A';
-  if(paid>=total) return 'Paid';
+  if(!expected) return 'N/A';
+  if(paid>=expected) return 'Paid';
   if(paid>0) return 'Partial';
   return 'Pending';
 }
@@ -1477,11 +1498,9 @@ async function loadDashboard(){
     cache.runs=runs; cache.attendees=atts; cache.invoices=invs; cache.payments=pays;
     cache.courses=courses; cache.invoicelines=invLines; cache.invoiceallocations=allocations;
 
-    const totalInv = invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>{
-      const lt=invoiceLineTotals(i.InvoiceNumber||i.Title);
-      return s+(lt?lt.total:(+i.TotalAmount||0));
-    },0);
-    const totalPaid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
+    const revenueInvs = invs.filter(i=>!isCreditNote(i));
+    const totalInv = revenueInvs.reduce((s,i)=>s+invoiceExGSTTotal(i),0);
+    const totalPaid = revenueInvs.reduce((s,i)=>s+invoicePaidExGST(i),0);
 
     const completedRuns = runs.filter(r=>runStatus(r)==='Completed').length;
     const upcomingRuns = runs.filter(r=>{const s=runStatus(r);return s==='Scheduled'||s==='Active';}).length;
@@ -1510,17 +1529,18 @@ function buildDashCharts(atts, invs, pays){
   });
 
   // Group revenue by course category using invoice line items (preferred)
-  // falling back to the old attendee→course lookup for invoices without lines
+  // falling back to the old attendee→course lookup for invoices without lines.
+  // Always Ex-GST - GST is a collected tax, not revenue.
   const revCats = {};
   invs.filter(i=>!isCreditNote(i)).forEach(i=>{
     const invNum = (i.InvoiceNumber||i.Title||'').trim().toLowerCase();
     const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum);
     if(lines.length){
-      // Use line items — each line contributes its LineTotal to the matching category
+      // Use line items — each line contributes its Ex-GST fee to the matching category
       lines.forEach(l=>{
         const cname=(l.CourseName||'').toLowerCase().trim();
         const cat = (cname && courseCatMap[cname]) || 'Uncategorised';
-        revCats[cat]=(revCats[cat]||0)+(+l.LineTotal||0);
+        revCats[cat]=(revCats[cat]||0)+((+l.FeeExGST||0)*(+l.Quantity||0));
       });
     } else {
       // Legacy fallback: derive from attendee's course
@@ -1528,7 +1548,7 @@ function buildDashCharts(atts, invs, pays){
       const att = iName ? atts.find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===iName) : null;
       const cname=(att?.CourseTitle||'').toLowerCase().trim();
       const cat = (cname && courseCatMap[cname]) || 'Uncategorised';
-      const amt = +i.TotalAmount||0;
+      const amt = invoiceExGSTTotal(i);
       if(amt>0) revCats[cat]=(revCats[cat]||0)+amt; // skip zero-amount invoices to avoid phantom categories
     }
   });
@@ -1544,13 +1564,16 @@ function buildDashCharts(atts, invs, pays){
     type:'bar',
     data:{
       labels:catLabels.length?catLabels:['Total Invoiced'],
-      datasets:[{label:'PGK',data:catLabels.length?catData:[invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>s+(+i.TotalAmount||0),0)],backgroundColor:catLabels.length?bgColors:['#3b82f6'],borderRadius:6,borderSkipped:false}]
+      datasets:[{label:'PGK (Ex GST)',data:catLabels.length?catData:[invs.filter(i=>!isCreditNote(i)).reduce((s,i)=>s+invoiceExGSTTotal(i),0)],backgroundColor:catLabels.length?bgColors:['#3b82f6'],borderRadius:6,borderSkipped:false}]
     },
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'K'+Math.round(v/1000)+'k'}}}}
   });
 
-  const paid = pays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
-  const totalDue = invs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
+  // Ex-GST throughout, and excluding Credit Notes - consistent with every
+  // other revenue figure on this dashboard.
+  const realInvsForChart = invs.filter(i=>!isCreditNote(i));
+  const paid = realInvsForChart.reduce((s,i)=>s+invoicePaidExGST(i),0);
+  const totalDue = realInvsForChart.reduce((s,i)=>s+invoiceExGSTTotal(i),0);
   const outstanding = Math.max(0, totalDue - paid);
   if(statusChart) statusChart.destroy();
   const sc = document.getElementById('statusChart');
@@ -1664,7 +1687,7 @@ function renderInvoiceCreditNoteSection(data){
   if(invoiceStatus(data)!=='Paid'){ el.innerHTML=''; return; }
 
   const invNum = data.InvoiceNumber||data.Title||'';
-  const total = +data.TotalAmount||0;
+  const total = invoiceExpectedTotal(data);
   const remaining = Math.round((total - invoiceAllocatedTotal(invNum))*100)/100;
   if(remaining<=0){ el.innerHTML=''; return; }
 
@@ -1685,7 +1708,7 @@ async function promptConvertInvoiceToCreditNote(invoiceId){
   if(invoiceStatus(inv)!=='Paid'){ toast('Only a fully paid invoice can be converted to a Credit Note','error'); return; }
   if(inv.ConvertedToCreditNote){ toast('This invoice was already converted to '+inv.ConvertedToCreditNote,'error'); return; }
 
-  const total = +inv.TotalAmount||0;
+  const total = invoiceExpectedTotal(inv);
   const remaining = Math.round((total - invoiceAllocatedTotal(invNum))*100)/100;
   if(remaining<=0){ toast('No remaining unallocated balance to convert','error'); return; }
 
@@ -1730,8 +1753,14 @@ async function executeConvertInvoiceToCreditNote(inv, invNum, creNumber, remaini
   const lines = (cache.invoicelines||[]).filter(l=>(l.Title||'').trim().toLowerCase()===invNum.trim().toLowerCase());
   const primaryLine = lines[0];
   const courseName = primaryLine?.CourseName || 'Training Credit';
-  const gstRate = primaryLine && (+primaryLine.GSTRate===0) ? 0 : 0.10;
-  const feeExGst = Math.round((remaining/(1+gstRate))*100)/100;
+  // If the original invoice was GST-exempt, "remaining" is already an
+  // ex-GST figure (invoiceExpectedTotal already stripped GST out of it) -
+  // treating it as GST-inclusive here would manufacture a GST component
+  // that was never actually owed. A non-exempt invoice's remaining balance
+  // is still GST-inclusive as normal, so back out the usual 10%.
+  const wasExempt = isInvoiceGSTExempt(invNum);
+  const gstRate = wasExempt ? 0 : 0.10;
+  const feeExGst = wasExempt ? remaining : Math.round((remaining/(1+gstRate))*100)/100;
   const gstAmount = Math.round((remaining-feeExGst)*100)/100;
 
   const creFields = {
@@ -2448,8 +2477,8 @@ function sortItemsFor(entity, items){
         items.sort((a,b)=>{
           const inv_a=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(a.RemittanceRef||''));
           const inv_b=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(b.RemittanceRef||''));
-          const bal_a=Math.max(0,(+inv_a?.TotalAmount||0)-invoiceTotalPaid(inv_a||{}));
-          const bal_b=Math.max(0,(+inv_b?.TotalAmount||0)-invoiceTotalPaid(inv_b||{}));
+          const bal_a=Math.max(0,(inv_a?invoiceExpectedTotal(inv_a):0)-invoiceTotalPaid(inv_a||{}));
+          const bal_b=Math.max(0,(inv_b?invoiceExpectedTotal(inv_b):0)-invoiceTotalPaid(inv_b||{}));
           return (bal_a-bal_b)*dir;
         });
       } else if(key==='Status'){
@@ -2618,29 +2647,20 @@ function gqUpdateLine(id, field, value){
   if(!line) return;
   if(field==='CourseName'){
     line.CourseName = value;
-    // Auto-fill fee from course catalogue, including that course's own default GST rate
+    // Auto-fill fee from course catalogue - GST is always 10%, regardless of
+    // whatever rate the course's own catalogue entry might have configured
     const course = (cache.courses||[]).find(c=>(c.CourseName||c.Title||'')=== value);
     if(course && course.FeeExGST){
       line.FeeExGST = +course.FeeExGST;
-      line.GSTRate = (+(course.GSTRate!==undefined && course.GSTRate!==null ? course.GSTRate : 10))/100;
+      line.GSTRate = 0.10;
       line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * line.GSTRate * 100) / 100;
       line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
       renderGqLines();
     }
-  } else if(field==='GSTRate'){
-    line.GSTRate = +value;
-    line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * line.GSTRate * 100) / 100;
-    line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
-    const row = document.querySelector(`[data-gql-id="${id}"]`);
-    if(row){
-      const gstCell  = row.querySelector('.gql-gst');
-      const totCell  = row.querySelector('.gql-total');
-      if(gstCell)  gstCell.textContent  = 'K '+line.GSTAmount.toFixed(2);
-      if(totCell)  totCell.textContent  = 'K '+line.LineTotal.toFixed(2);
-    }
   } else {
     line[field] = +value || 0;
-    const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
+    line.GSTRate = 0.10;
+    const gstRate = 0.10;
     line.GSTAmount = Math.round(line.Quantity * line.FeeExGST * gstRate * 100) / 100;
     line.LineTotal = Math.round((line.Quantity * line.FeeExGST + line.GSTAmount) * 100) / 100;
     // Update ONLY the computed cells — not the input being typed in
@@ -2686,14 +2706,7 @@ function renderGqLines(){
       <td><input type="number" min="0" step="0.01" value="${l.FeeExGST||''}"
             style="width:80px;padding:4px;border:1px solid var(--g200);border-radius:5px;font-size:12px;text-align:right"
             oninput="gqUpdateLine('${l._id}','FeeExGST',this.value)"></td>
-      <td>
-        <select class="gql-gst-select" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:5px;font-size:11px"
-                onchange="gqUpdateLine('${l._id}','GSTRate',this.value)">
-          <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
-          <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
-        </select>
-        <div class="gql-gst" style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px">K ${(+l.GSTAmount||0).toFixed(2)}</div>
-      </td>
+      <td class="gql-gst" style="text-align:right">K ${(+l.GSTAmount||0).toFixed(2)}</td>
       <td class="gql-total" style="text-align:right">K ${(+l.LineTotal||0).toFixed(2)}</td>
       <td><button class="btn-icon danger" style="padding:3px" onclick="gqRemoveLine('${l._id}')"><i class="ti ti-trash" style="font-size:13px"></i></button></td>
     </tr>`).join('');
@@ -3652,13 +3665,10 @@ function updateQuoteLine(lineId, field, value){
     renderQuoteLines(); // course change doesn't affect focus on a text input
     return;
   }
-  if(field==='GSTRate'){
-    line.GSTRate = +value;
-  } else {
-    line[field] = +value || 0;
-  }
-  // Auto-calc GST and total using this line's own selected rate (Tax 10% or S65 0%)
-  const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
+  line[field] = +value || 0;
+  // GST is always 10% - no more per-line rate choice
+  line.GSTRate = 0.10;
+  const gstRate = 0.10;
   line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
   line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
   // Update only the calculated cells for this row + footer totals, without
@@ -3701,7 +3711,7 @@ function renderQuoteLines(){
             <th style="text-align:left;padding:6px 8px">Course</th>
             <th style="text-align:right;padding:6px 8px;width:70px">Qty</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
-            <th style="text-align:right;padding:6px 8px;width:100px">GST Rate</th>
+            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
             <th style="width:36px"></th>
           </tr></thead>
@@ -3718,13 +3728,7 @@ function renderQuoteLines(){
               </td>
               <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateQuoteLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
               <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateQuoteLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
-              <td style="padding:4px 8px">
-                <select onchange="updateQuoteLine('${l._id}','GSTRate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px">
-                  <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
-                  <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
-                </select>
-                <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px" id="ql-gst-${l._id}">${fmt(l.GSTAmount)}</div>
-              </td>
+              <td style="padding:4px 8px;text-align:right" id="ql-gst-${l._id}">${fmt(l.GSTAmount)}</td>
               <td style="padding:4px 8px;text-align:right;font-weight:700" id="ql-total-${l._id}">${fmt(l.LineTotal)}</td>
               <td style="padding:4px 8px;text-align:center">
                 <button type="button" onclick="removeQuoteLine('${l._id}')" title="Remove line" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px"><i class="ti ti-trash"></i></button>
@@ -3940,12 +3944,10 @@ function updateInvoiceLine(lineId, field, value){
     renderInvoiceAttendeeEditor();
     return;
   }
-  if(field==='GSTRate'){
-    line.GSTRate = +value;
-  } else {
-    line[field] = +value||0;
-  }
-  const gstRate = (line.GSTRate!==undefined && line.GSTRate!==null) ? line.GSTRate : 0.10;
+  line[field] = +value||0;
+  // GST is always 10% - no more per-line rate choice
+  line.GSTRate = 0.10;
+  const gstRate = 0.10;
   line.GSTAmount = Math.round(line.Quantity*line.FeeExGST*gstRate*100)/100;
   line.LineTotal = Math.round((line.Quantity*line.FeeExGST + line.GSTAmount)*100)/100;
   // Targeted cell updates to preserve focus
@@ -4002,7 +4004,7 @@ function renderInvoiceLines(){
             <th style="text-align:left;padding:6px 8px">Course</th>
             <th style="text-align:right;padding:6px 8px;width:60px">Qty</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Fee ea (PGK)</th>
-            <th style="text-align:right;padding:6px 8px;width:100px">GST Rate</th>
+            <th style="text-align:right;padding:6px 8px;width:80px">GST</th>
             <th style="text-align:right;padding:6px 8px;width:90px">Line Total</th>
             <th style="text-align:left;padding:6px 8px;width:160px">Attendees Matched To</th>
             <th style="width:36px"></th>
@@ -4012,7 +4014,7 @@ function renderInvoiceLines(){
               <td style="padding:8px">${l.CourseName||'—'}</td>
               <td style="padding:8px;text-align:right">${l.Quantity}</td>
               <td style="padding:8px;text-align:right">${fmt(l.FeeExGST)}</td>
-              <td style="padding:8px;text-align:right;font-size:11px">${(+l.GSTRate)===0 ? 'S65: 0%' : 'Tax: 10%'}<div style="color:var(--g500);margin-top:2px">${fmt(l.GSTAmount)}</div></td>
+              <td style="padding:8px;text-align:right">${fmt(l.GSTAmount)}</td>
               <td style="padding:8px;text-align:right;font-weight:700">${fmt(l.LineTotal)}</td>
               <td style="padding:8px;font-size:11px;color:var(--g600)">${invoiceLineRunSummary(editingOriginalData?.InvoiceNumber||editingOriginalData?.Title, l.CourseName)}</td>
               <td style="padding:8px;text-align:center;color:var(--g400)" title="Locked - invoice is fully paid"><i class="ti ti-lock" style="font-size:13px"></i></td>
@@ -4025,13 +4027,7 @@ function renderInvoiceLines(){
               </td>
               <td style="padding:4px 8px"><input type="number" min="0" value="${l.Quantity}" oninput="updateInvoiceLine('${l._id}','Quantity',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
               <td style="padding:4px 8px"><input type="number" min="0" step="0.01" value="${l.FeeExGST}" oninput="updateInvoiceLine('${l._id}','FeeExGST',this.value)" style="width:100%;padding:5px;border:1px solid var(--g200);border-radius:6px;font-size:12px;text-align:right"></td>
-              <td style="padding:4px 8px">
-                <select onchange="updateInvoiceLine('${l._id}','GSTRate',this.value)" style="width:100%;padding:4px;border:1px solid var(--g200);border-radius:6px;font-size:11px">
-                  <option value="0.10" ${(+l.GSTRate)===0.10?'selected':''}>Tax: 10%</option>
-                  <option value="0" ${(+l.GSTRate)===0?'selected':''}>S65: 0%</option>
-                </select>
-                <div style="text-align:right;font-size:11px;color:var(--g500);margin-top:2px" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</div>
-              </td>
+              <td style="padding:4px 8px;text-align:right" id="il-gst-${l._id}">${fmt(l.GSTAmount)}</td>
               <td style="padding:4px 8px;text-align:right;font-weight:700" id="il-total-${l._id}">${fmt(l.LineTotal)}</td>
               <td style="padding:4px 8px;font-size:11px;color:var(--g600)">${invoiceLineRunSummary(editingOriginalData?.InvoiceNumber||editingOriginalData?.Title, l.CourseName)}</td>
               <td style="padding:4px 8px;text-align:center">
@@ -4537,12 +4533,12 @@ function computeAllocationAmount(invoiceNumber, courseName){
   }
 
   // No matching line on this invoice - this is a reallocation to a
-  // different course. Price it at that course's own current catalogue rate.
+  // different course. Price it at that course's own current catalogue fee,
+  // always at the standard 10% GST.
   const course = (cache.courses||[]).find(c=>(c.CourseName||c.Title||'').trim().toLowerCase()===cName);
   if(course){
     const fee = +course.FeeExGST||0;
-    const gstRate = (+(course.GSTRate!==undefined && course.GSTRate!==null ? course.GSTRate : 10))/100;
-    return Math.round(fee * (1+gstRate) * 100) / 100;
+    return Math.round(fee * 1.10 * 100) / 100;
   }
   return 0;
 }
@@ -4616,16 +4612,42 @@ function invoiceLineTotals(invoiceNumber){
   }), {fee:0, gst:0, total:0, seats:0, courses:[]});
 }
 
+// GST is a tax collected on the government's behalf, not revenue - every
+// aggregate "how much business have we done" figure (Total Invoiced,
+// Revenue by Category, Sales Funnel) should reflect the Ex-GST fee only.
+// This applies uniformly to every invoice, exempt or not - unlike
+// invoiceExpectedTotal(), which is specifically about payment reconciliation.
+function invoiceExGSTTotal(inv){
+  const invNum = inv.InvoiceNumber||inv.Title||'';
+  const lt = invoiceLineTotals(invNum);
+  if(lt) return lt.fee;
+  // No line items on record (older flat-field invoices) - approximate by
+  // backing the standard 10% out of the stored Total.
+  return Math.round(((+inv.TotalAmount||0)/1.10)*100)/100;
+}
+
+// The Ex-GST portion of what's actually been paid against one invoice. A
+// GST-exempt invoice's payments are already entirely Ex-GST by definition
+// (no GST component was ever collected), so they count in full. A normal
+// invoice's payments get prorated by that invoice's own fee-to-total ratio,
+// since a single payment doesn't separately track its own GST split.
+function invoicePaidExGST(inv){
+  const invNum = inv.InvoiceNumber||inv.Title||'';
+  const paid = invoiceTotalPaid(inv);
+  if(isInvoiceGSTExempt(invNum)) return paid;
+  const lt = invoiceLineTotals(invNum);
+  if(!lt || !lt.total) return Math.round((paid/1.10)*100)/100; // same flat-field fallback
+  const ratio = lt.fee / lt.total;
+  return Math.round(paid * ratio * 100) / 100;
+}
+
 function renderInvoices(items){
   // Update summary metrics based on current (filtered) items - Credit Notes
   // excluded here since they're not new revenue, but the table below still
   // lists them as normal rows so their link back to the original stays visible.
   const revenueItems = items.filter(i=>!isCreditNote(i));
-  const totalInv = revenueItems.reduce((s,i)=>{
-    const lt = invoiceLineTotals(i.InvoiceNumber||i.Title);
-    return s + (lt ? lt.total : (+i.TotalAmount||0));
-  },0);
-  const totalPaid = revenueItems.reduce((s,i)=>s+invoiceTotalPaid(i),0);
+  const totalInv = revenueItems.reduce((s,i)=>s+invoiceExGSTTotal(i),0);
+  const totalPaid = revenueItems.reduce((s,i)=>s+invoicePaidExGST(i),0);
   const m1=document.getElementById('inv-m1'), m2=document.getElementById('inv-m2'),
         m3=document.getElementById('inv-m3'), m4=document.getElementById('inv-m4');
   if(m1) m1.textContent = fmt(totalInv);
@@ -4693,9 +4715,10 @@ function renderPayments(items){
     const inv = (cache.invoices||[]).find(i=>
       (i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
     const total = +(inv?.TotalAmount||0);
+    const expected = inv ? invoiceExpectedTotal(inv) : total; // ex-GST if this invoice has a GST-exempt payment
     const paid = +(p.AmountPaid||0); // this payment's own amount, shown in the Amount Paid column
     const totalPaidOnInvoice = inv ? invoiceTotalPaid(inv) : paid; // all payments against the invoice
-    const bal = Math.max(0,total-totalPaidOnInvoice); // invoice-wide balance, not just this payment
+    const bal = Math.max(0,expected-totalPaidOnInvoice); // invoice-wide balance, not just this payment
     const st = paymentStatus(p);
     const invNum = (inv?.InvoiceNumber||inv?.Title||p.RemittanceRef||'').trim().toLowerCase();
     // Attendee: look up from CG_Attendees by InvoiceRef, fall back to legacy AttendeeName field
@@ -5039,9 +5062,10 @@ const FORM_DEFS = {
       {key:'InvoiceRef',label:'Invoice',type:'lookup',entity:'invoices',display:'InvoiceNumber',full:true,required:true,matchKey:'InvoiceNumber',searchable:true},
       {key:'AmountPaid',label:'Amount Paid (PGK)',type:'number',required:true},
       {key:'DatePaid',label:'Date Paid',type:'date'},
+      {key:'GSTExempt',label:'GST Exempt (S65) - this payment excludes GST',type:'checkbox',full:true},
     ],
     toFields: (f)=>{
-      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null};
+      const out = {AmountPaid:+f.AmountPaid||0,DatePaid:f.DatePaid||null,GSTExempt:f.GSTExempt==='true'||f.GSTExempt===true};
       if(f.InvoiceRef){
         const inv=(cache.invoices||[]).find(i=>String(i.id)===String(f.InvoiceRef));
         if(inv){
@@ -6513,7 +6537,7 @@ async function saveModal(){
   if(editingEntity==='payments' && rawFields.InvoiceRef){
     const inv = (cache.invoices||[]).find(i=>String(i.id)===String(rawFields.InvoiceRef));
     if(inv){
-      const total = +(inv.TotalAmount||0);
+      const expected = invoiceExpectedTotal(inv); // ex-GST if this invoice has a GST-exempt payment recorded
       let paidSoFar = invoiceTotalPaid(inv);
       // If editing an existing payment against this same invoice, exclude its own
       // current amount from the running total so we're checking the balance as it
@@ -6524,8 +6548,8 @@ async function saveModal(){
           paidSoFar -= (+existing.AmountPaid||0);
         }
       }
-      const balanceDue = Math.max(0, total-paidSoFar);
-      if(total>0 && balanceDue<=0){
+      const balanceDue = Math.max(0, expected-paidSoFar);
+      if(expected>0 && balanceDue<=0){
         toast(`Cannot add payment: Invoice "${inv.InvoiceNumber||inv.Title}" already has a zero balance due`,'error');
         throw new Error('validation');
       }
@@ -7166,8 +7190,8 @@ function printDashboard(){
   <div class="metrics">
     <div class="metric"><div class="val">${runs}</div><div class="lbl">Course Runs</div><div class="sub2">${runsSub}</div></div>
     <div class="metric"><div class="val">${att}</div><div class="lbl">Attendees</div><div class="sub2">Registered this year</div></div>
-    <div class="metric"><div class="val">${rev}</div><div class="lbl">Revenue (PGK)</div><div class="sub2">Total invoiced</div></div>
-    <div class="metric"><div class="val">${out}</div><div class="lbl">Outstanding (PGK)</div><div class="sub2">Awaiting payment</div></div>
+    <div class="metric"><div class="val">${rev}</div><div class="lbl">Revenue (PGK, Ex GST)</div><div class="sub2">Total invoiced</div></div>
+    <div class="metric"><div class="val">${out}</div><div class="lbl">Outstanding (PGK, Ex GST)</div><div class="sub2">Awaiting payment</div></div>
   </div>
 
   <div class="row">
@@ -8013,15 +8037,11 @@ function buildSalesFunnel(atts, invs, pays){
   const el = document.getElementById('dash-funnel');
   if(!el) return;
   const realInvs = invs.filter(i=>!isCreditNote(i));
-  const realPays = pays.filter(p=>!isCreditNote({InvoiceNumber:p.RemittanceRef}));
   const registered = atts.length;
   const invoiced = realInvs.length;
-  const totalInv = realInvs.reduce((s,i)=>s+(+i.TotalAmount||0),0);
-  const totalPaid = realPays.reduce((s,p)=>s+(+p.AmountPaid||0),0);
-  const paidInvs = realInvs.filter(i=>{
-    const paid = realPays.filter(p=>(p.RemittanceRef||'')===(i.InvoiceNumber||i.Title||'')).reduce((s,p)=>s+(+p.AmountPaid||0),0);
-    return paid>=(+i.TotalAmount||0)&&(+i.TotalAmount||0)>0;
-  }).length;
+  const totalInv = realInvs.reduce((s,i)=>s+invoiceExGSTTotal(i),0);
+  const totalPaid = realInvs.reduce((s,i)=>s+invoicePaidExGST(i),0);
+  const paidInvs = realInvs.filter(i=>invoiceStatus(i)==='Paid').length;
   const convRate = invoiced>0?Math.round((paidInvs/invoiced)*100):0;
   const fmt = v=>'K '+v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
   el.innerHTML = `
@@ -8034,12 +8054,12 @@ function buildSalesFunnel(atts, invs, pays){
       <div style="text-align:center;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
         <div style="font-size:28px;font-weight:700;color:#1e40af">${invoiced}</div>
         <div style="font-size:12px;color:#2563eb;margin-top:4px;font-weight:600">Invoiced</div>
-        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv)}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv)} (Ex GST)</div>
       </div>
       <div style="text-align:center;padding:16px;background:#fefce8;border-radius:8px;border:1px solid #fde68a">
         <div style="font-size:28px;font-weight:700;color:#92400e">${invoiced-paidInvs}</div>
         <div style="font-size:12px;color:#d97706;margin-top:4px;font-weight:600">Outstanding</div>
-        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv-totalPaid)}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${fmt(totalInv-totalPaid)} (Ex GST)</div>
       </div>
       <div style="text-align:center;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
         <div style="font-size:28px;font-weight:700;color:#065f46">${paidInvs}</div>
