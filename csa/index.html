@@ -906,7 +906,7 @@ function fmtCurrency(n){
 
 function renderDashboard(){
   const total = allAgreements.length;
-  const activeStatuses = ["Signed","Active"];
+  const activeStatuses = ["Signed","Active","Completed"];
   const activeCount = allAgreements.filter(a => activeStatuses.includes(a.fields.Status)).length;
   const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalFeeExclGST)||0), 0);
   const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
@@ -918,7 +918,7 @@ function renderDashboard(){
       <div class="metric-sub">${allClients.length} client${allClients.length===1?"":"s"}</div>
     </div>
     <div class="metric-card metric-accent-teal">
-      <div class="metric-label">Active / Signed</div>
+      <div class="metric-label">Signed / Completed</div>
       <div class="metric-value">${activeCount}</div>
       <div class="metric-sub">of ${total} total</div>
     </div>
