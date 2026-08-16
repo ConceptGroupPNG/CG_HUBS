@@ -1644,6 +1644,38 @@ ${csaLabels.length > 1 ? `
 }
 
 /* ============================================================
+   ACTIVE ENTITIES SYNC — keeps CSA_ActiveEntities up to date so the
+   CSA Time widget's dropdown reflects active CSAs and Proposals alike.
+   ============================================================ */
+async function syncActiveEntity(sourceType, title, description, isActive){
+  if(!title) return;
+  try{
+    const existing = await fetchAllListItems("CSA_ActiveEntities");
+    const match = existing.find(x => (x.fields.Title||"").trim() === title.trim());
+
+    if(match){
+      await graphUpdateItem("CSA_ActiveEntities", match.id, {
+        Description: description || title,
+        SourceType: sourceType,
+        IsActive: !!isActive
+      });
+    } else if(isActive){
+      // Only create a new row if it needs to actually appear in the dropdown —
+      // no point creating inactive rows for records that were never active.
+      await graphCreateItem("CSA_ActiveEntities", {
+        Title: title,
+        Description: description || title,
+        SourceType: sourceType,
+        IsActive: true
+      });
+    }
+  }catch(err){
+    // Don't let a sync failure block the actual CSA/Proposal save — just log it.
+    console.error("Active entity sync failed:", err);
+  }
+}
+
+/* ============================================================
    PROPOSALS
    ============================================================ */
 function proposalStatusBadgeClass(status){
@@ -1953,6 +1985,17 @@ function renderProposalEditForm(){
               <label>Project Name</label>
               <input type="text" id="editProposalProjectName" value="${esc(f.ProjectName)}">
             </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Short Description <span style="text-transform:none;font-weight:400;">— shown in the CSA Time Tracker dropdown when this proposal is Active, keep it brief</span></label>
+              <input type="text" id="editProposalDescription" maxlength="60" placeholder="e.g. NiuPower Rem Review" value="${esc(f.Description || f.ProjectName)}">
+            </div>
+            <div class="form-field">
+              <label>Active for Time Tracker <span style="text-transform:none;font-weight:400;">— shows in the widget dropdown when on</span></label>
+              <select id="editProposalIsActive">
+                <option value="true" ${f.IsActive === true ? "selected" : ""}>Active</option>
+                <option value="false" ${f.IsActive !== true ? "selected" : ""}>Inactive</option>
+              </select>
+            </div>
             <div class="form-field">
               <label>Document Type</label>
               <select id="editProposalDocType">${choiceOptions(["BHC Proposal","Client Engagement Letter","Client Sales Contract","Other"], f.DocumentType || "BHC Proposal")}</select>
@@ -2105,6 +2148,8 @@ async function saveProposal(){
       ClientOrgLookupId: clientOrgId || null,
       BusinessUnit: document.getElementById("editProposalBU").value,
       ProjectName: document.getElementById("editProposalProjectName").value,
+      Description: document.getElementById("editProposalDescription").value,
+      IsActive: document.getElementById("editProposalIsActive").value === "true",
       DocumentType: document.getElementById("editProposalDocType").value,
       Status: document.getElementById("editProposalStatus").value,
       RecipientName: document.getElementById("editProposalRecipientName").value,
@@ -2123,7 +2168,6 @@ async function saveProposal(){
     if(!targetId){
       const newNumber = await getNextProposalNumber();
       fields.Title = newNumber;
-      fields.Description = fields.ProjectName;
       const created = await graphCreateItem("CSA_Proposals", fields);
       targetId = created.id;
     } else {
@@ -2159,6 +2203,8 @@ async function saveProposal(){
         EstimatedDeliveryDate: t.deliveryDate
       });
     }
+
+    await syncActiveEntity("Proposal", fields.Title || proposalMap[targetId]?.fields.Title, fields.Description, fields.IsActive);
 
     await loadAllData();
     renderProposalsTable();
@@ -3309,6 +3355,13 @@ function renderEditForm(){
               <input type="text" id="editDescription" maxlength="60" placeholder="e.g. BPNG Remuneration Review" value="${esc(f.Description)}">
             </div>
             <div class="form-field">
+              <label>Active for Time Tracker <span style="text-transform:none;font-weight:400;">— shows in the widget dropdown when on</span></label>
+              <select id="editIsActive">
+                <option value="true" ${f.IsActive !== false ? "selected" : ""}>Active</option>
+                <option value="false" ${f.IsActive === false ? "selected" : ""}>Inactive</option>
+              </select>
+            </div>
+            <div class="form-field">
               <label>Status</label>
               <select id="editStatus">${choiceOptions(["Draft","Sent for Signature","Signed","Active","Completed","Cancelled"], f.Status || "Draft")}</select>
             </div>
@@ -3476,6 +3529,7 @@ async function saveAgreement(){
       BusinessUnit: document.getElementById("editBusinessUnit").value,
       ProjectName: document.getElementById("editProjectName").value,
       Description: document.getElementById("editDescription").value,
+      IsActive: document.getElementById("editIsActive").value === "true",
       Status: document.getElementById("editStatus").value,
       FeeBasis: document.getElementById("editFeeBasis").value,
       GSTRate: document.getElementById("editGSTRate").value,
@@ -3540,6 +3594,8 @@ async function saveAgreement(){
         Status: m.status
       });
     }
+
+    await syncActiveEntity("CSA", fields.Title || agreementMap[targetId]?.fields.Title, fields.Description, fields.IsActive);
 
     await loadAllData();
     renderDashboard();
