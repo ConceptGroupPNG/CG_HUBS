@@ -406,8 +406,8 @@
               <select id="logTimeResource"><option value="">— Select resource —</option></select>
             </div>
             <div class="form-field">
-              <label>CSA</label>
-              <select id="logTimeCSA"><option value="">— Select CSA —</option></select>
+              <label>CSA / Proposal</label>
+              <select id="logTimeCSA"><option value="">— Select CSA or Proposal —</option></select>
             </div>
             <div class="form-field">
               <label>Date</label>
@@ -464,7 +464,7 @@
               <select id="reportResource"><option value="">— Select resource —</option></select>
             </div>
             <div class="form-field">
-              <label>CSA <span style="text-transform:none;font-weight:400;">— optional</span></label>
+              <label>CSA / Proposal <span style="text-transform:none;font-weight:400;">— optional</span></label>
               <select id="reportCSA"><option value="">All CSAs</option></select>
             </div>
             <div class="form-field">
@@ -707,6 +707,7 @@ let clientMap = {};   // id -> client fields
 let agreementCounts = {}; // clientId -> count
 let agreementMap = {}; // itemId -> agreement item
 let agreementByTitle = {}; // "CSA-0001" -> agreement item
+let proposalByTitle = {}; // "PROP-0001" -> proposal item
 let resourceMap = {}; // itemId -> resource item
 let proposalMap = {}; // itemId -> proposal item
 
@@ -771,6 +772,9 @@ async function loadAllData(){
 
   agreementByTitle = {};
   allAgreements.forEach(a => { agreementByTitle[(a.fields.Title||"").trim()] = a; });
+
+  proposalByTitle = {};
+  allProposals.forEach(p => { proposalByTitle[(p.fields.Title||"").trim()] = p; });
 
   resourceMap = {};
   allResources.forEach(r => { resourceMap[r.id] = r; });
@@ -1169,14 +1173,32 @@ function activeResourceOptions(selected){
     .join("");
 }
 
+// Combined selector for pickers where time could be logged against either a CSA
+// or a Proposal (e.g. work starting before a CSA is formally executed). Values are
+// prefixed "csa:" / "prop:" since item IDs aren't unique across the two lists.
+function csaAndProposalSelectOptions(selectedValue){
+  const csaOpts = allAgreements
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(a => `<option value="csa:${a.id}" ${selectedValue===`csa:${a.id}`?"selected":""}>${esc(a.fields.Title)} — ${esc(a.fields.ProjectName||"")}</option>`)
+    .join("");
+  const propOpts = allProposals
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(p => `<option value="prop:${p.id}" ${selectedValue===`prop:${p.id}`?"selected":""}>${esc(p.fields.Title)} — ${esc(p.fields.ProjectName||"")}</option>`)
+    .join("");
+  let html = "";
+  if(csaOpts) html += `<optgroup label="Agreements">${csaOpts}</optgroup>`;
+  if(propOpts) html += `<optgroup label="Proposals">${propOpts}</optgroup>`;
+  return html;
+}
+
 function populateTimesheetDropdowns(){
   const resOpts = activeResourceOptions();
-  const csaOpts = csaSelectOptions();
+  const combinedOpts = csaAndProposalSelectOptions();
   document.getElementById("logTimeResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
-  document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA —</option>${csaOpts}`;
+  document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA or Proposal —</option>${combinedOpts}`;
   document.getElementById("genTimesheetResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
   document.getElementById("reportResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
-  document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs</option>${csaOpts}`;
+  document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs/Proposals</option>${combinedOpts}`;
 }
 
 function findResourceForEntry(entry){
@@ -1201,8 +1223,10 @@ function renderTimesheetsTable(){
   const rows = allTimeEntries.slice().sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||"")).slice(0, 150);
   document.getElementById("timesheetsTableBody").innerHTML = rows.map(t => {
     const f = t.fields;
-    const csa = agreementByTitle[(f.CSA||"").trim()] || null;
-    const csaLabel = csa ? csa.fields.Title : (f.CSA || "—");
+    const csaText = (f.CSA||"").trim();
+    const csa = agreementByTitle[csaText] || null;
+    const proposal = !csa ? (proposalByTitle[csaText] || null) : null;
+    const csaLabel = csa ? csa.fields.Title : (proposal ? `${proposal.fields.Title} (Proposal)` : (f.CSA || "—"));
     const resource = findResourceForEntry(t);
     const resourceLabel = resource ? resource.fields.Title : (f.EntryUser || "—");
     return `
@@ -1231,13 +1255,23 @@ document.getElementById("cancelLogTimeBtn").addEventListener("click", () => {
 document.getElementById("saveLogTimeBtn").addEventListener("click", async () => {
   const btn = document.getElementById("saveLogTimeBtn");
   const resourceId = document.getElementById("logTimeResource").value;
-  const csaId = document.getElementById("logTimeCSA").value;
+  const csaValue = document.getElementById("logTimeCSA").value;
   const date = document.getElementById("logTimeDate").value;
   const hours = parseFloat(document.getElementById("logTimeHours").value) || 0;
   const billable = document.getElementById("logTimeBillable").value === "true";
 
-  if(!resourceId || !csaId || !date || hours <= 0){
-    alert("Please select a resource, a CSA, a date, and enter hours greater than 0.");
+  if(!resourceId || !csaValue || !date || hours <= 0){
+    alert("Please select a resource, a CSA or Proposal, a date, and enter hours greater than 0.");
+    return;
+  }
+
+  const [kind, rawId] = csaValue.split(":");
+  const entryTitle = kind === "prop"
+    ? (proposalMap[rawId] ? proposalMap[rawId].fields.Title : null)
+    : (agreementMap[rawId] ? agreementMap[rawId].fields.Title : null);
+
+  if(!entryTitle){
+    alert("Couldn't resolve the selected CSA or Proposal — please try again.");
     return;
   }
 
@@ -1247,10 +1281,9 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
 
   try{
     const resource = resourceMap[resourceId];
-    const csa = agreementMap[csaId];
     await graphCreateItem("CSA_TimeEntries", {
-      Title: csa.fields.Title,
-      CSA: csa.fields.Title,
+      Title: entryTitle,
+      CSA: entryTitle,
       WorkDate: date,
       Hours: hours,
       EntryMethod: "Manual",
@@ -1517,8 +1550,10 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
   });
 
   if(csaFilter){
-    const csa = agreementMap[csaFilter];
-    const csaTitle = csa ? csa.fields.Title : "";
+    const [kind, rawId] = csaFilter.split(":");
+    const csaTitle = kind === "prop"
+      ? (proposalMap[rawId] ? proposalMap[rawId].fields.Title : "")
+      : (agreementMap[rawId] ? agreementMap[rawId].fields.Title : "");
     entries = entries.filter(t => (t.fields.CSA||"").trim() === csaTitle);
   }
   if(start) entries = entries.filter(t => t.fields.WorkDate && t.fields.WorkDate >= start);
@@ -1542,7 +1577,13 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
   const csaLabels = Object.keys(byCSA).sort();
 
   const filterDescParts = [];
-  if(csaFilter && agreementMap[csaFilter]) filterDescParts.push(agreementMap[csaFilter].fields.Title);
+  if(csaFilter){
+    const [fkind, frawId] = csaFilter.split(":");
+    const filterTitle = fkind === "prop"
+      ? (proposalMap[frawId] ? proposalMap[frawId].fields.Title : "")
+      : (agreementMap[frawId] ? agreementMap[frawId].fields.Title : "");
+    if(filterTitle) filterDescParts.push(filterTitle);
+  }
   if(billableFilter === "true") filterDescParts.push("Billable only");
   if(billableFilter === "false") filterDescParts.push("Non-billable only");
   const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
