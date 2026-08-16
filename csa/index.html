@@ -906,8 +906,9 @@ function fmtCurrency(n){
 
 function renderDashboard(){
   const total = allAgreements.length;
-  const activeStatuses = ["Signed","Active","Completed"];
-  const activeCount = allAgreements.filter(a => activeStatuses.includes(a.fields.Status)).length;
+  const activeCsaCount = allAgreements.filter(a => a.fields.IsActive === true).length;
+  const activeProposalCount = allProposals.filter(p => p.fields.IsActive === true).length;
+  const activeProjectsCount = activeCsaCount + activeProposalCount;
   const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalFeeExclGST)||0), 0);
   const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
 
@@ -918,9 +919,9 @@ function renderDashboard(){
       <div class="metric-sub">${allClients.length} client${allClients.length===1?"":"s"}</div>
     </div>
     <div class="metric-card metric-accent-teal">
-      <div class="metric-label">Signed / Completed</div>
-      <div class="metric-value">${activeCount}</div>
-      <div class="metric-sub">of ${total} total</div>
+      <div class="metric-label">Active Projects</div>
+      <div class="metric-value">${activeProjectsCount}</div>
+      <div class="metric-sub">${activeCsaCount} CSA${activeCsaCount===1?"":"s"}, ${activeProposalCount} Proposal${activeProposalCount===1?"":"s"}</div>
     </div>
     <div class="metric-card metric-accent-amber">
       <div class="metric-label">Awaiting Signature</div>
@@ -951,10 +952,9 @@ function renderDashboard(){
   const hoursThisWeek = hoursInRange(weekStartStr, todayStr);
   const hoursThisMonth = hoursInRange(monthStartStr, todayStr);
 
-  const entriesWithChoice = allTimeEntries.filter(hasBillableChoice);
-  const billableHoursDecided = entriesWithChoice.filter(t=>t.fields.Billable).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const totalHoursDecided = entriesWithChoice.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const utilizationPct = totalHoursDecided > 0 ? (billableHoursDecided / totalHoursDecided * 100) : 0;
+  const billableHours = allTimeEntries.filter(t=>t.fields.Billable===true).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const totalAllHours = allTimeEntries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const utilizationPct = totalAllHours > 0 ? (billableHours / totalAllHours * 100) : 0;
 
   const notSetHours = allTimeEntries.filter(t => !hasBillableChoice(t)).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
   const notSetCount = allTimeEntries.filter(t => !hasBillableChoice(t)).length;
@@ -973,7 +973,7 @@ function renderDashboard(){
     <div class="metric-card metric-accent-teal">
       <div class="metric-label">Billable Utilization</div>
       <div class="metric-value">${utilizationPct.toFixed(0)}%</div>
-      <div class="metric-sub">of hours with a billable status set</div>
+      <div class="metric-sub">of all hours logged (unset counts against it)</div>
     </div>
     <div class="metric-card metric-accent-amber" style="${notSetCount > 0 ? "cursor:pointer;" : ""}" ${notSetCount > 0 ? `onclick="document.querySelector('.nav-item[data-view=\\'timesheets\\']').click()"` : ""}>
       <div class="metric-label">Not Set Hours</div>
