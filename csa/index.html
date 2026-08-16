@@ -252,6 +252,7 @@
         <div class="nav-item" data-view="clients"><span class="nav-icon">&#9679;</span>Clients</div>
         <div class="nav-item" data-view="resources"><span class="nav-icon">&#9733;</span>Resources</div>
         <div class="nav-item" data-view="timesheets"><span class="nav-icon">&#128337;</span>Timesheets</div>
+        <div class="nav-item" data-view="proposals"><span class="nav-icon">&#128196;</span>Proposals</div>
       </div>
       <div class="sidebar-footer">
         <div class="user-chip" id="userChip">—</div>
@@ -507,6 +508,50 @@
         </table>
       </div>
 
+      <!-- PROPOSALS -->
+      <div class="view" id="view-proposals">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Proposals</div>
+            <div class="page-sub">Pre-agreement proposals, engagement letters, and client contracts</div>
+          </div>
+          <button class="btn-primary" id="newProposalBtn">+ New Proposal</button>
+        </div>
+        <div class="table-toolbar">
+          <input type="text" class="search-box" id="proposalSearch" placeholder="Search by proposal number, client, or project…">
+          <select class="filter-select" id="proposalStatusFilter">
+            <option value="">All statuses</option>
+            <option>Draft</option>
+            <option>Sent</option>
+            <option>Accepted</option>
+            <option>Declined</option>
+            <option>Converted to CSA</option>
+            <option>Signed Proposal (Final)</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Proposal No.</th>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th style="text-align:right">Total (incl. GST)</th>
+            </tr>
+          </thead>
+          <tbody id="proposalsTableBody">
+            <tr><td colspan="6"><div class="loader">Loading proposals…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- PROPOSAL DETAIL -->
+      <div class="view" id="view-proposal-detail">
+        <div class="back-link" id="backToProposals">&#8592; Back to Proposals</div>
+        <div id="proposalDetailContent"><div class="loader">Loading…</div></div>
+      </div>
+
       <!-- RESOURCE DETAIL -->
       <div class="view" id="view-resource-detail">
         <div class="back-link" id="backToResources">&#8592; Back to Resources</div>
@@ -655,11 +700,15 @@ let allMilestones = [];
 let allTimeEntries = [];
 let allResources = [];
 let allRateOverrides = [];
+let allProposals = [];
+let allProposalFeeLineItems = [];
+let allProposalPaymentTerms = [];
 let clientMap = {};   // id -> client fields
 let agreementCounts = {}; // clientId -> count
 let agreementMap = {}; // itemId -> agreement item
 let agreementByTitle = {}; // "CSA-0001" -> agreement item
 let resourceMap = {}; // itemId -> resource item
+let proposalMap = {}; // itemId -> proposal item
 
 /* ============================================================
    STARTUP
@@ -680,6 +729,7 @@ async function startApp(){
     renderResourcesTable();
     populateTimesheetDropdowns();
     renderTimesheetsTable();
+    renderProposalsTable();
   }catch(err){
     console.error(err);
     document.getElementById("metricsRow").innerHTML =
@@ -688,7 +738,7 @@ async function startApp(){
 }
 
 async function loadAllData(){
-  const [agreements, clients, bus, feeLines, milestones, timeEntries, resources, rateOverrides] = await Promise.all([
+  const [agreements, clients, bus, feeLines, milestones, timeEntries, resources, rateOverrides, proposals, proposalFeeLines, proposalPaymentTerms] = await Promise.all([
     fetchAllListItems("CSA_List"),
     fetchAllListItems("CSA_Clients"),
     fetchAllListItems("CSA_BusinessUnits"),
@@ -696,7 +746,10 @@ async function loadAllData(){
     fetchAllListItems("CSA_PaymentMilestones"),
     fetchAllListItems("CSA_TimeEntries"),
     fetchAllListItems("CSA_Resources"),
-    fetchAllListItems("CSA_ResourceRateOverrides")
+    fetchAllListItems("CSA_ResourceRateOverrides"),
+    fetchAllListItems("CSA_Proposals"),
+    fetchAllListItems("CSA_ProposalFeeLineItems"),
+    fetchAllListItems("CSA_ProposalPaymentTerms")
   ]);
   allAgreements = agreements;
   allClients = clients;
@@ -706,6 +759,9 @@ async function loadAllData(){
   allTimeEntries = timeEntries;
   allResources = resources;
   allRateOverrides = rateOverrides;
+  allProposals = proposals;
+  allProposalFeeLineItems = proposalFeeLines;
+  allProposalPaymentTerms = proposalPaymentTerms;
 
   clientMap = {};
   allClients.forEach(c => { clientMap[c.id] = c.fields; });
@@ -718,6 +774,9 @@ async function loadAllData(){
 
   resourceMap = {};
   allResources.forEach(r => { resourceMap[r.id] = r; });
+
+  proposalMap = {};
+  allProposals.forEach(p => { proposalMap[p.id] = p; });
 
   agreementCounts = {};
   allAgreements.forEach(a => {
@@ -737,6 +796,7 @@ async function refreshAllData(){
     renderResourcesTable();
     populateTimesheetDropdowns();
     renderTimesheetsTable();
+    renderProposalsTable();
   }catch(err){
     console.error("Refresh failed:", err);
   }
@@ -1576,6 +1636,834 @@ ${csaLabels.length > 1 ? `
   const win = window.open("", "_blank");
   if(!win){
     alert("Please allow pop-ups for this site to generate the report.");
+    return;
+  }
+  win.document.open();
+  win.document.write(docHtml);
+  win.document.close();
+}
+
+/* ============================================================
+   PROPOSALS
+   ============================================================ */
+function proposalStatusBadgeClass(status){
+  const map = {
+    "Draft":"badge-draft",
+    "Sent":"badge-sent",
+    "Accepted":"badge-signed",
+    "Declined":"badge-cancelled",
+    "Converted to CSA":"badge-completed",
+    "Signed Proposal (Final)":"badge-active"
+  };
+  return map[status] || "badge-draft";
+}
+
+function getNextProposalNumber(){
+  return fetchAllListItems("CSA_ProposalCounter").then(items => {
+    const counterItem = items[0];
+    const next = (parseInt(counterItem.fields.LastNumber) || 0) + 1;
+    return graphUpdateItem("CSA_ProposalCounter", counterItem.id, { LastNumber: next })
+      .then(() => "PROP-" + String(next).padStart(4, "0"));
+  });
+}
+
+function renderProposalsTable(){
+  const searchTerm = (document.getElementById("proposalSearch").value || "").toLowerCase();
+  const statusFilter = document.getElementById("proposalStatusFilter").value;
+
+  let rows = allProposals.slice().sort((a,b)=> (b.fields.Title||"").localeCompare(a.fields.Title||""));
+
+  rows = rows.filter(p => {
+    const f = p.fields;
+    const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "";
+    const matchesSearch = !searchTerm ||
+      (f.Title||"").toLowerCase().includes(searchTerm) ||
+      clientName.toLowerCase().includes(searchTerm) ||
+      (f.ProjectName||"").toLowerCase().includes(searchTerm);
+    const matchesStatus = !statusFilter || f.Status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  if(rows.length === 0){
+    document.getElementById("proposalsTableBody").innerHTML =
+      `<tr><td colspan="6"><div class="empty-state">No proposals match your search.</div></td></tr>`;
+    return;
+  }
+
+  document.getElementById("proposalsTableBody").innerHTML = rows.map(p => {
+    const f = p.fields;
+    const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "—";
+    const badgeClass = proposalStatusBadgeClass(f.Status);
+    return `
+      <tr onclick="openProposalDetail('${p.id}')">
+        <td><strong>${esc(f.Title) || "—"}</strong></td>
+        <td>${esc(clientName)}</td>
+        <td>${esc(f.ProjectName) || "—"}</td>
+        <td>${esc(f.DocumentType) || "—"}</td>
+        <td><span class="badge ${badgeClass}">${esc(f.Status) || "Draft"}</span></td>
+        <td style="text-align:right" class="amount">${fmtCurrency(f.TotalInclGST)}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+document.getElementById("proposalSearch").addEventListener("input", renderProposalsTable);
+document.getElementById("proposalStatusFilter").addEventListener("change", renderProposalsTable);
+
+document.getElementById("backToProposals").addEventListener("click", async () => {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-proposals").classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelector('.nav-item[data-view="proposals"]').classList.add("active");
+  await refreshAllData();
+});
+
+document.getElementById("newProposalBtn").addEventListener("click", async () => {
+  await refreshAllData();
+  enterProposalEditMode(null);
+});
+
+async function openProposalDetail(itemId){
+  await refreshAllData();
+  showProposalDetail(itemId);
+}
+
+/* ---------- Proposal Detail (read-only) ---------- */
+function showProposalDetail(itemId){
+  const p = proposalMap[itemId];
+  if(!p) return;
+  const f = p.fields;
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-proposal-detail").classList.add("active");
+
+  const client = clientMap[f.ClientOrgLookupId] || {};
+  const badgeClass = proposalStatusBadgeClass(f.Status);
+
+  const feeLines = allProposalFeeLineItems
+    .filter(x => x.fields.ParentProposalLookupId === p.id)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0));
+  const paymentTerms = allProposalPaymentTerms.filter(x => x.fields.ParentProposalLookupId === p.id);
+
+  const feeLinesTotal = feeLines.reduce((sum,x)=> sum + (parseFloat(x.fields.Amount)||0), 0);
+
+  const feeLinesHtml = feeLines.length ? `
+    <table class="mini-table">
+      <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${feeLines.map(x => `<tr><td>${esc(x.fields.LineDescription)}</td><td style="text-align:right">${fmtCurrency(x.fields.Amount)}</td></tr>`).join("")}
+      </tbody>
+      <tfoot><tr><td>Total (excl. GST)</td><td style="text-align:right">${fmtCurrency(feeLinesTotal)}</td></tr></tfoot>
+    </table>
+  ` : `<div class="empty-state">No fee line items recorded.</div>`;
+
+  const paymentTermsHtml = paymentTerms.length ? `
+    <table class="mini-table">
+      <thead><tr><th>Term</th><th style="text-align:right">%</th><th style="text-align:right">Fee</th><th style="text-align:right">GST</th></tr></thead>
+      <tbody>
+        ${paymentTerms.map(x => `
+          <tr>
+            <td>${esc(x.fields.MilestoneDescription)}${x.fields.EstimatedDeliveryDate ? `<br><span style="color:var(--text-muted);font-size:11px">${esc(x.fields.EstimatedDeliveryDate)}</span>` : ""}</td>
+            <td style="text-align:right">${x.fields.Percentage || 0}%</td>
+            <td style="text-align:right">${fmtCurrency(x.fields.ApplicableFee)}</td>
+            <td style="text-align:right">${fmtCurrency(x.fields.GST)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  ` : `<div class="empty-state">No payment terms recorded.</div>`;
+
+  const isBhcProposal = f.DocumentType === "BHC Proposal";
+  const canConvert = f.Status === "Accepted" || f.Status === "Signed Proposal (Final)";
+
+  const documentSectionHtml = f.SignedDocumentUrl ? `
+    <div style="margin-bottom:12px;">
+      <a href="${esc(f.SignedDocumentUrl)}" target="_blank" class="btn-secondary" style="text-decoration:none;display:inline-block;">
+        &#128196; ${esc(f.SignedDocumentName) || "View Document"}
+      </a>
+    </div>
+  ` : `<div class="empty-state" style="padding:20px;">No document uploaded yet.</div>`;
+
+  document.getElementById("proposalDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${esc(f.Title)}</div>
+          <span class="badge ${badgeClass}">${esc(f.Status || "Draft")}</span>
+        </div>
+        <div class="detail-sub">${esc(client.Title || "—")} · ${esc(f.ProjectName || "—")} · ${esc(f.DocumentType || "—")}</div>
+      </div>
+      <div class="detail-total">
+        <div class="metric-label">Total (incl. GST)</div>
+        <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
+        <div class="btn-row" style="margin-top:10px;justify-content:flex-end;flex-wrap:wrap;">
+          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalDocument('${p.id}')">Generate Document</button>` : ""}
+          <button class="btn-secondary" onclick="cloneProposal('${p.id}')">Clone</button>
+          ${canConvert && !f.ConvertedToCSA ? `<button class="btn-primary" onclick="convertProposalToCSA('${p.id}')">Convert to CSA</button>` : ""}
+          <button class="btn-secondary" onclick="enterProposalEditMode('${p.id}')">Edit</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Proposal Details</h3>
+          <div class="field-grid">
+            <div class="field-item"><div class="field-label">Client</div><div class="field-value">${esc(client.Title || "—")}</div></div>
+            <div class="field-item"><div class="field-label">Business Unit</div><div class="field-value">${esc(f.BusinessUnit || "—")}</div></div>
+            <div class="field-item"><div class="field-label">Document Type</div><div class="field-value">${esc(f.DocumentType || "—")}</div></div>
+            <div class="field-item"><div class="field-label">Fee Basis</div><div class="field-value">${esc(f.FeeBasis || "—")}</div></div>
+            <div class="field-item"><div class="field-label">Proposal Date</div><div class="field-value">${fmtDateDMY(f.ProposalDate) || "—"}</div></div>
+            <div class="field-item"><div class="field-label">GST Rate</div><div class="field-value">${esc(f.GSTRate || "—")}</div></div>
+            <div class="field-item"><div class="field-label">Recipient</div><div class="field-value">${esc(f.RecipientName || "—")}${f.RecipientTitle ? ", " + esc(f.RecipientTitle) : ""}</div></div>
+            <div class="field-item"><div class="field-label">Converted To</div><div class="field-value">${esc(f.ConvertedToCSA) || "—"}</div></div>
+          </div>
+        </div>
+
+        <div class="section-card card-scope">
+          <h3>Scope of Works</h3>
+          <div class="prose-block">${esc(f.ScopeOfWorks || "Not recorded.")}</div>
+        </div>
+
+        <div class="section-card card-fees">
+          <h3>Fee Line Items</h3>
+          ${feeLinesHtml}
+        </div>
+
+        <div class="section-card card-milestones">
+          <h3>Payment Terms</h3>
+          ${paymentTermsHtml}
+        </div>
+      </div>
+
+      <div>
+        <div class="section-card card-signatories">
+          <h3>Signed Document</h3>
+          ${documentSectionHtml}
+          <div class="form-field">
+            <label>Upload signed proposal or contract (PDF)</label>
+            <input type="file" id="proposalFileInput_${p.id}" accept="application/pdf" onchange="handleProposalFileUpload('${p.id}', this)">
+          </div>
+          <div id="uploadStatus_${p.id}" style="font-size:11.5px;color:var(--text-muted);margin-top:6px;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Proposal Edit Mode ---------- */
+let editProposalId = null;
+let editProposalFeeLines = [];
+let editProposalPaymentTerms = [];
+let cloneSourceProposalId = null;
+
+function enterProposalEditMode(itemId){
+  editProposalId = itemId || null;
+  cloneSourceProposalId = null;
+
+  if(editProposalId){
+    editProposalFeeLines = allProposalFeeLineItems
+      .filter(x => x.fields.ParentProposalLookupId === editProposalId)
+      .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0))
+      .map(x => ({ description: x.fields.LineDescription || "", amount: x.fields.Amount || 0 }));
+    editProposalPaymentTerms = allProposalPaymentTerms
+      .filter(x => x.fields.ParentProposalLookupId === editProposalId)
+      .map(x => ({
+        description: x.fields.MilestoneDescription || "",
+        percentage: x.fields.Percentage || 0,
+        fee: x.fields.ApplicableFee || 0,
+        gst: x.fields.GST || 0,
+        deliveryDate: x.fields.EstimatedDeliveryDate || ""
+      }));
+  } else {
+    editProposalFeeLines = [];
+    editProposalPaymentTerms = [];
+  }
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-proposal-detail").classList.add("active");
+  renderProposalEditForm();
+}
+
+function cloneProposal(itemId){
+  const source = proposalMap[itemId];
+  if(!source) return;
+  editProposalId = null; // creating a new record
+  cloneSourceProposalId = itemId;
+
+  editProposalFeeLines = allProposalFeeLineItems
+    .filter(x => x.fields.ParentProposalLookupId === itemId)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0))
+    .map(x => ({ description: x.fields.LineDescription || "", amount: x.fields.Amount || 0 }));
+  editProposalPaymentTerms = allProposalPaymentTerms
+    .filter(x => x.fields.ParentProposalLookupId === itemId)
+    .map(x => ({
+      description: x.fields.MilestoneDescription || "",
+      percentage: x.fields.Percentage || 0,
+      fee: x.fields.ApplicableFee || 0,
+      gst: x.fields.GST || 0,
+      deliveryDate: x.fields.EstimatedDeliveryDate || ""
+    }));
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-proposal-detail").classList.add("active");
+  renderProposalEditForm();
+}
+
+function renderProposalEditForm(){
+  const isNew = !editProposalId;
+  const source = cloneSourceProposalId ? proposalMap[cloneSourceProposalId] : (isNew ? null : proposalMap[editProposalId]);
+  const f = source ? source.fields : {};
+
+  document.getElementById("proposalDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${isNew ? (cloneSourceProposalId ? "Clone of " + esc(f.Title) : "New Proposal") : esc(f.Title)}</div>
+        </div>
+        <div class="detail-sub">${isNew ? "Proposal number will be assigned automatically on save" : "Editing " + esc(f.Title)}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="cancelProposalEdit()">Cancel</button>
+        <button class="btn-primary" onclick="saveProposal()">${isNew ? "Create Proposal" : "Save Changes"}</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Proposal Details</h3>
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label>Client</label>
+              <select id="editProposalClientOrg">
+                <option value="">— Select client —</option>
+                ${clientOptions(f.ClientOrgLookupId)}
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Business Unit</label>
+              <select id="editProposalBU">${buOptions(f.BusinessUnit)}</select>
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Project Name</label>
+              <input type="text" id="editProposalProjectName" value="${esc(f.ProjectName)}">
+            </div>
+            <div class="form-field">
+              <label>Document Type</label>
+              <select id="editProposalDocType">${choiceOptions(["BHC Proposal","Client Engagement Letter","Client Sales Contract","Other"], f.DocumentType || "BHC Proposal")}</select>
+            </div>
+            <div class="form-field">
+              <label>Status</label>
+              <select id="editProposalStatus">${choiceOptions(["Draft","Sent","Accepted","Declined","Converted to CSA","Signed Proposal (Final)"], f.Status || "Draft")}</select>
+            </div>
+            <div class="form-field">
+              <label>Recipient Name</label>
+              <input type="text" id="editProposalRecipientName" value="${esc(f.RecipientName)}">
+            </div>
+            <div class="form-field">
+              <label>Recipient Title</label>
+              <input type="text" id="editProposalRecipientTitle" value="${esc(f.RecipientTitle)}">
+            </div>
+            <div class="form-field">
+              <label>Proposal Date</label>
+              <input type="text" id="editProposalDate" placeholder="YYYY-MM-DD" value="${esc(isNew && !cloneSourceProposalId ? "" : f.ProposalDate)}">
+            </div>
+            <div class="form-field">
+              <label>Fee Basis</label>
+              <select id="editProposalFeeBasis">${choiceOptions(["Fixed Price","Time & Materials"], f.FeeBasis || "Fixed Price")}</select>
+            </div>
+            <div class="form-field">
+              <label>GST Rate</label>
+              <select id="editProposalGSTRate" onchange="recalcProposalTotals()">${choiceOptions(["10%","0% (S65)"], f.GSTRate || "10%")}</select>
+            </div>
+            <div class="form-field">
+              <label>Fee (excl. GST)</label>
+              <input type="number" step="0.01" id="editProposalTotalFeeExclGST" value="${f.TotalFeeExclGST || 0}" oninput="recalcProposalTotals()">
+            </div>
+            <div class="form-field">
+              <label>GST Amount</label>
+              <input type="number" step="0.01" id="editProposalGSTAmount" value="${f.GSTAmount || 0}">
+            </div>
+            <div class="form-field">
+              <label>Total (incl. GST)</label>
+              <input type="number" step="0.01" id="editProposalTotalInclGST" value="${f.TotalInclGST || 0}">
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card card-scope">
+          <h3>Scope of Works</h3>
+          <div class="form-field">
+            <textarea id="editProposalScopeOfWorks">${esc(f.ScopeOfWorks)}</textarea>
+          </div>
+        </div>
+
+        <div class="section-card card-fees">
+          <h3>Fee Line Items</h3>
+          <div class="mini-table-head-row"><span>Description</span><span>Amount</span><span></span></div>
+          <div id="editProposalFeeLinesContainer">${renderProposalFeeLineRows()}</div>
+          <div class="add-row-link" onclick="addProposalFeeLineRow()">+ Add line item</div>
+        </div>
+
+        <div class="section-card card-milestones">
+          <h3>Payment Terms</h3>
+          <div class="mini-table-head-milestone"><span>Description</span><span>%</span><span>Fee</span><span>GST</span><span>Est. Delivery</span><span></span></div>
+          <div id="editProposalPaymentTermsContainer">${renderProposalPaymentTermRows()}</div>
+          <div class="add-row-link" onclick="addProposalPaymentTermRow()">+ Add payment term</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProposalFeeLineRows(){
+  if(editProposalFeeLines.length === 0) return `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No line items yet.</div>`;
+  return editProposalFeeLines.map((line, idx) => `
+    <div class="edit-line-row">
+      <input type="text" value="${esc(line.description)}" oninput="updateProposalFeeLine(${idx},'description',this.value)">
+      <input type="number" step="0.01" value="${line.amount}" oninput="updateProposalFeeLine(${idx},'amount',this.value)">
+      <button class="row-remove-btn" onclick="removeProposalFeeLineRow(${idx})" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+function renderProposalPaymentTermRows(){
+  if(editProposalPaymentTerms.length === 0) return `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No payment terms yet.</div>`;
+  return editProposalPaymentTerms.map((m, idx) => `
+    <div class="edit-milestone-row">
+      <input type="text" value="${esc(m.description)}" oninput="updateProposalPaymentTerm(${idx},'description',this.value)">
+      <input type="number" value="${m.percentage}" oninput="updateProposalPaymentTerm(${idx},'percentage',this.value)">
+      <input type="number" step="0.01" value="${m.fee}" oninput="updateProposalPaymentTerm(${idx},'fee',this.value)">
+      <input type="number" step="0.01" value="${m.gst}" oninput="updateProposalPaymentTerm(${idx},'gst',this.value)">
+      <input type="text" value="${esc(m.deliveryDate)}" oninput="updateProposalPaymentTerm(${idx},'deliveryDate',this.value)">
+      <button class="row-remove-btn" onclick="removeProposalPaymentTermRow(${idx})" title="Remove">&times;</button>
+    </div>
+  `).join("");
+}
+
+function updateProposalFeeLine(idx, field, value){
+  editProposalFeeLines[idx][field] = field === "amount" ? parseFloat(value)||0 : value;
+}
+function addProposalFeeLineRow(){
+  editProposalFeeLines.push({ description:"", amount:0 });
+  document.getElementById("editProposalFeeLinesContainer").innerHTML = renderProposalFeeLineRows();
+}
+function removeProposalFeeLineRow(idx){
+  editProposalFeeLines.splice(idx,1);
+  document.getElementById("editProposalFeeLinesContainer").innerHTML = renderProposalFeeLineRows();
+}
+function updateProposalPaymentTerm(idx, field, value){
+  const numeric = ["percentage","fee","gst"].includes(field);
+  editProposalPaymentTerms[idx][field] = numeric ? (parseFloat(value)||0) : value;
+}
+function addProposalPaymentTermRow(){
+  editProposalPaymentTerms.push({ description:"", percentage:0, fee:0, gst:0, deliveryDate:"" });
+  document.getElementById("editProposalPaymentTermsContainer").innerHTML = renderProposalPaymentTermRows();
+}
+function removeProposalPaymentTermRow(idx){
+  editProposalPaymentTerms.splice(idx,1);
+  document.getElementById("editProposalPaymentTermsContainer").innerHTML = renderProposalPaymentTermRows();
+}
+
+function recalcProposalTotals(){
+  const feeEl = document.getElementById("editProposalTotalFeeExclGST");
+  const rateEl = document.getElementById("editProposalGSTRate");
+  if(!feeEl || !rateEl) return;
+  const fee = parseFloat(feeEl.value) || 0;
+  const rate = rateEl.value === "10%" ? 0.10 : 0;
+  const gst = Math.round(fee * rate * 100) / 100;
+  document.getElementById("editProposalGSTAmount").value = gst.toFixed(2);
+  document.getElementById("editProposalTotalInclGST").value = (fee + gst).toFixed(2);
+}
+
+function cancelProposalEdit(){
+  if(editProposalId){
+    showProposalDetail(editProposalId);
+  } else if(cloneSourceProposalId){
+    showProposalDetail(cloneSourceProposalId);
+  } else {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById("view-proposals").classList.add("active");
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    document.querySelector('.nav-item[data-view="proposals"]').classList.add("active");
+  }
+}
+
+async function saveProposal(){
+  const saveBtn = event.target;
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = "Saving…";
+  saveBtn.disabled = true;
+
+  try{
+    const clientOrgId = document.getElementById("editProposalClientOrg").value;
+    const fields = {
+      ClientOrgLookupId: clientOrgId || null,
+      BusinessUnit: document.getElementById("editProposalBU").value,
+      ProjectName: document.getElementById("editProposalProjectName").value,
+      DocumentType: document.getElementById("editProposalDocType").value,
+      Status: document.getElementById("editProposalStatus").value,
+      RecipientName: document.getElementById("editProposalRecipientName").value,
+      RecipientTitle: document.getElementById("editProposalRecipientTitle").value,
+      ProposalDate: document.getElementById("editProposalDate").value,
+      FeeBasis: document.getElementById("editProposalFeeBasis").value,
+      GSTRate: document.getElementById("editProposalGSTRate").value,
+      TotalFeeExclGST: parseFloat(document.getElementById("editProposalTotalFeeExclGST").value) || 0,
+      GSTAmount: parseFloat(document.getElementById("editProposalGSTAmount").value) || 0,
+      TotalInclGST: parseFloat(document.getElementById("editProposalTotalInclGST").value) || 0,
+      ScopeOfWorks: document.getElementById("editProposalScopeOfWorks").value
+    };
+
+    let targetId = editProposalId;
+
+    if(!targetId){
+      const newNumber = await getNextProposalNumber();
+      fields.Title = newNumber;
+      fields.Description = fields.ProjectName;
+      const created = await graphCreateItem("CSA_Proposals", fields);
+      targetId = created.id;
+    } else {
+      await graphUpdateItem("CSA_Proposals", targetId, fields);
+      const existingLines = allProposalFeeLineItems.filter(x => x.fields.ParentProposalLookupId === targetId);
+      const existingTerms = allProposalPaymentTerms.filter(x => x.fields.ParentProposalLookupId === targetId);
+      for(const line of existingLines) await graphDeleteItem("CSA_ProposalFeeLineItems", line.id);
+      for(const t of existingTerms) await graphDeleteItem("CSA_ProposalPaymentTerms", t.id);
+    }
+
+    for(let i=0; i<editProposalFeeLines.length; i++){
+      const line = editProposalFeeLines[i];
+      if(!line.description && !line.amount) continue;
+      await graphCreateItem("CSA_ProposalFeeLineItems", {
+        Title: `${fields.Title || proposalMap[targetId]?.fields.Title || ""} Line ${i+1}`,
+        ParentProposalLookupId: targetId,
+        LineDescription: line.description,
+        Amount: line.amount,
+        SortOrder: i+1
+      });
+    }
+
+    for(let i=0; i<editProposalPaymentTerms.length; i++){
+      const t = editProposalPaymentTerms[i];
+      if(!t.description && !t.fee) continue;
+      await graphCreateItem("CSA_ProposalPaymentTerms", {
+        Title: `${fields.Title || proposalMap[targetId]?.fields.Title || ""} Term ${i+1}`,
+        ParentProposalLookupId: targetId,
+        MilestoneDescription: t.description,
+        Percentage: t.percentage,
+        ApplicableFee: t.fee,
+        GST: t.gst,
+        EstimatedDeliveryDate: t.deliveryDate
+      });
+    }
+
+    await loadAllData();
+    renderProposalsTable();
+    showProposalDetail(targetId);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save: " + err.message);
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+/* ---------- File upload ---------- */
+let proposalDocsDriveId = null;
+async function getProposalDocsDriveId(){
+  if(proposalDocsDriveId) return proposalDocsDriveId;
+  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/CSA_ProposalDocuments/drive`);
+  proposalDocsDriveId = data.id;
+  return proposalDocsDriveId;
+}
+
+async function uploadProposalDocument(file, proposalNumber){
+  const driveId = await getProposalDocsDriveId();
+  const safeFileName = `${proposalNumber} - ${file.name}`.replace(/[#%*:<>?/\\{|}]/g, "-");
+
+  if(file.size <= 4 * 1024 * 1024){
+    const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(safeFileName)}:/content`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/pdf" },
+      body: file
+    });
+    if(!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    const data = await res.json();
+    return { url: data.webUrl, name: data.name };
+  } else {
+    const sessionUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(safeFileName)}:/createUploadSession`;
+    const sessionRes = await fetch(sessionUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } })
+    });
+    if(!sessionRes.ok) throw new Error(`Couldn't start upload session: ${sessionRes.status}`);
+    const session = await sessionRes.json();
+    const uploadUrl = session.uploadUrl;
+
+    const chunkSize = 5 * 1024 * 1024; // must be a multiple of 320 KiB
+    let start = 0;
+    let lastResponseData = null;
+    while(start < file.size){
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Length": String(end - start),
+          "Content-Range": `bytes ${start}-${end-1}/${file.size}`
+        },
+        body: chunk
+      });
+      if(!res.ok && res.status !== 202) throw new Error(`Upload chunk failed: ${res.status}`);
+      if(res.status !== 202) lastResponseData = await res.json();
+      start = end;
+    }
+    return { url: lastResponseData ? lastResponseData.webUrl : "", name: safeFileName };
+  }
+}
+
+async function handleProposalFileUpload(proposalId, inputEl){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById(`uploadStatus_${proposalId}`);
+  const proposal = proposalMap[proposalId];
+  const proposalNumber = proposal ? proposal.fields.Title : "PROP";
+
+  statusEl.textContent = "Uploading…";
+  try{
+    const result = await uploadProposalDocument(file, proposalNumber);
+    await graphUpdateItem("CSA_Proposals", proposalId, {
+      SignedDocumentUrl: result.url,
+      SignedDocumentName: result.name
+    });
+    await loadAllData();
+    statusEl.textContent = "Uploaded successfully.";
+    showProposalDetail(proposalId);
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = "Upload failed: " + err.message;
+  }
+}
+
+/* ---------- Convert to CSA ---------- */
+async function convertProposalToCSA(proposalId){
+  if(!confirm("Convert this proposal into a live CSA? This will create a new agreement pre-filled from the proposal.")) return;
+
+  try{
+    const p = proposalMap[proposalId];
+    const f = p.fields;
+    const feeLines = allProposalFeeLineItems.filter(x => x.fields.ParentProposalLookupId === proposalId);
+    const paymentTerms = allProposalPaymentTerms.filter(x => x.fields.ParentProposalLookupId === proposalId);
+
+    const newCsaNumber = await getNextCsaNumber();
+
+    const csaFields = {
+      Title: newCsaNumber,
+      ClientOrgLookupId: f.ClientOrgLookupId,
+      BusinessUnit: f.BusinessUnit,
+      ProjectName: f.ProjectName,
+      Description: f.ProjectName,
+      ScopeOfWorks: f.ScopeOfWorks,
+      FeeBasis: f.FeeBasis,
+      TotalFeeExclGST: f.TotalFeeExclGST,
+      GSTRate: f.GSTRate,
+      GSTAmount: f.GSTAmount,
+      TotalInclGST: f.TotalInclGST,
+      CommencementBasis: "On Payment of Invoice",
+      TerminationDate: "Not Required",
+      Status: "Draft",
+      SourceProposalLookupId: proposalId
+    };
+    const createdCsa = await graphCreateItem("CSA_List", csaFields);
+    const csaId = createdCsa.id;
+
+    for(let i=0; i<feeLines.length; i++){
+      const line = feeLines[i].fields;
+      await graphCreateItem("CSA_FeeLineItems", {
+        Title: `${newCsaNumber} Line ${i+1}`,
+        ParentCSALookupId: csaId,
+        LineDescription: line.LineDescription,
+        Amount: line.Amount,
+        SortOrder: i+1
+      });
+    }
+    for(let i=0; i<paymentTerms.length; i++){
+      const t = paymentTerms[i].fields;
+      await graphCreateItem("CSA_PaymentMilestones", {
+        Title: `${newCsaNumber} Milestone ${i+1}`,
+        ParentCSALookupId: csaId,
+        MilestoneDescription: t.MilestoneDescription,
+        Percentage: t.Percentage,
+        ApplicableFee: t.ApplicableFee,
+        GST: t.GST,
+        EstimatedDeliveryDate: t.EstimatedDeliveryDate,
+        Status: "Pending"
+      });
+    }
+
+    await graphUpdateItem("CSA_Proposals", proposalId, {
+      Status: "Converted to CSA",
+      ConvertedToCSA: newCsaNumber
+    });
+
+    await loadAllData();
+    renderProposalsTable();
+    renderAgreementsTable();
+    openAgreementDetail(csaId);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't convert to CSA: " + err.message);
+  }
+}
+
+/* ---------- Proposal Document Generation ---------- */
+function generateProposalDocument(proposalId){
+  const p = proposalMap[proposalId];
+  if(!p) return;
+  const f = p.fields;
+  const client = clientMap[f.ClientOrgLookupId] || {};
+  const clientName = client.Title || "Client";
+
+  const feeLines = allProposalFeeLineItems
+    .filter(x => x.fields.ParentProposalLookupId === p.id)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0));
+  const paymentTerms = allProposalPaymentTerms.filter(x => x.fields.ParentProposalLookupId === p.id);
+
+  const feeLinesHtml = feeLines.map(x => `<li>${esc(x.fields.LineDescription)} &ndash; ${fmtCurrency(x.fields.Amount)} plus GST</li>`).join("");
+  const totalLine = `<li><strong>Project Total ${fmtCurrency(f.TotalFeeExclGST)} plus GST</strong></li>`;
+
+  const paymentTermsHtml = paymentTerms.map(t => {
+    const pct = t.fields.Percentage ? `${t.fields.Percentage}% ` : "";
+    return `<li>${pct}${esc(t.fields.MilestoneDescription)}</li>`;
+  }).join("");
+
+  const scopeHtml = esc(f.ScopeOfWorks || "").replace(/\n/g, "<br>");
+  const showBhcLogo = (f.BusinessUnit || "").trim() === "BHC";
+  const logoHtml = showBhcLogo
+    ? `<div class="doc-logo"><img src="${esc(BHC_ENTITY.logoUrl)}" alt="Brian Hart Consulting" onerror="this.style.display='none'"></div>`
+    : "";
+
+  const docHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${esc(f.Title)} — ${esc(clientName)}</title>
+<style>
+  @page{ size:A4; margin:22mm 18mm; }
+  body{ font-family:Georgia,'Times New Roman',serif; color:#1a1a1a; font-size:11.5px; line-height:1.6; max-width:800px; margin:0 auto; padding:30px 40px; }
+  .doc-logo{text-align:center;margin-bottom:14px;}
+  .doc-logo img{max-height:60px;max-width:220px;}
+  .date-line{margin-bottom:20px;}
+  .recipient-block{margin-bottom:20px;}
+  .recipient-block div{margin-bottom:2px;}
+  .re-line{font-weight:700;margin-bottom:16px;}
+  p{margin-bottom:12px;text-align:justify;}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.4px;margin:22px 0 10px;}
+  ol, ul{margin:8px 0 12px 22px;}
+  li{margin-bottom:6px;}
+  .fee-total{font-weight:700;margin-top:10px;}
+  .sig-block{margin-top:30px;}
+  .accept-block{margin-top:36px;border-top:1px solid #999;padding-top:20px;}
+  .accept-row{display:flex;gap:40px;margin-top:14px;font-size:11.5px;}
+  .accept-row div{flex:1;}
+  .accept-line{border-bottom:1px solid #1a1a1a;height:24px;margin-top:4px;}
+  .footer{margin-top:30px;font-size:9.5px;color:#666;text-align:center;border-top:1px solid #ccc;padding-top:8px;}
+  .no-print{position:fixed;top:16px;right:16px;}
+  .no-print button{background:#0e9f6e;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;}
+  @media print{ .no-print{display:none;} }
+</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+${logoHtml}
+
+<div class="date-line">${esc(fmtDateDMY(f.ProposalDate) || "")}</div>
+
+<div class="recipient-block">
+  <div>${esc(f.RecipientName || "")}</div>
+  <div>${esc(f.RecipientTitle || "")}</div>
+  <div>${esc(clientName.replace(/\s*\([^)]+\)\s*$/, ""))}</div>
+</div>
+
+<div>Dear ${esc((f.RecipientName||"").split(" ")[0] || "Sir/Madam")},</div>
+<br>
+<div class="re-line">Re: ${esc(f.ProjectName || "")}</div>
+
+<p>Thank you for the opportunity to submit this proposal. This proposal details the Scope of Works and Cost associated with our undertaking the following:</p>
+
+<h2>Scope of Works</h2>
+<p>${scopeHtml}</p>
+
+<h2>Our Professional Fees</h2>
+<ul>
+  ${feeLinesHtml}
+</ul>
+<div class="fee-total">Project Total ${fmtCurrency(f.TotalFeeExclGST)} plus GST</div>
+
+${paymentTerms.length ? `
+<h2>Payment Terms</h2>
+<ul>
+  ${paymentTermsHtml}
+</ul>
+` : ""}
+
+<p>I trust this proposal meets with your expectations and approval. Please do not hesitate to contact us if you have any feedback or questions.</p>
+
+<div class="sig-block">
+  <div>Yours sincerely,</div>
+  <br>
+  <div><strong>${esc(BHC_ENTITY.name)}</strong></div>
+  <div>PNG Agent for Korn Ferry (Formerly the Hay Group).</div>
+  <br><br>
+  <div><strong>Brendan Coombs</strong></div>
+  <div>Managing Director</div>
+</div>
+
+<div class="accept-block">
+  <div><strong>Proposal:</strong> Accepted &nbsp;&nbsp;/&nbsp;&nbsp; Not Accepted</div>
+  <div class="accept-row">
+    <div>
+      <div><strong>Signed:</strong></div>
+      <div class="accept-line"></div>
+    </div>
+  </div>
+  <div class="accept-row">
+    <div>
+      <div><strong>Name:</strong></div>
+      <div class="accept-line"></div>
+    </div>
+    <div>
+      <div><strong>Designation:</strong></div>
+      <div class="accept-line"></div>
+    </div>
+  </div>
+  <div class="accept-row">
+    <div>
+      <div><strong>Date:</strong></div>
+      <div class="accept-line"></div>
+    </div>
+    <div></div>
+  </div>
+</div>
+
+<div class="footer">${esc(BHC_ENTITY.name)} &middot; ${esc(BHC_ENTITY.address)} &middot; ${esc(f.Title)}</div>
+
+</body>
+</html>
+`;
+
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow pop-ups for this site to generate the document.");
     return;
   }
   win.document.open();
