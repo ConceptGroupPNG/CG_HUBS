@@ -248,11 +248,11 @@
       </div>
       <div class="nav">
         <div class="nav-item active" data-view="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
+        <div class="nav-item" data-view="proposals"><span class="nav-icon">&#128196;</span>Proposals</div>
         <div class="nav-item" data-view="agreements"><span class="nav-icon">&#9776;</span>Agreements</div>
         <div class="nav-item" data-view="clients"><span class="nav-icon">&#9679;</span>Clients</div>
         <div class="nav-item" data-view="resources"><span class="nav-icon">&#9733;</span>Resources</div>
         <div class="nav-item" data-view="timesheets"><span class="nav-icon">&#128337;</span>Timesheets</div>
-        <div class="nav-item" data-view="proposals"><span class="nav-icon">&#128196;</span>Proposals</div>
       </div>
       <div class="sidebar-footer">
         <div class="user-chip" id="userChip">—</div>
@@ -286,7 +286,7 @@
             <div id="statusBreakdown"><div class="loader">Loading…</div></div>
           </div>
           <div class="panel card-fees">
-            <h3>Contract Value by Business Unit</h3>
+            <h3>Contract Value by Business Unit (excl. GST)</h3>
             <div id="buBreakdown"><div class="loader">Loading…</div></div>
           </div>
         </div>
@@ -330,11 +330,12 @@
               <th>Project</th>
               <th>Business Unit</th>
               <th>Status</th>
+              <th>Active</th>
               <th style="text-align:right">Total (incl. GST)</th>
             </tr>
           </thead>
           <tbody id="agreementsTableBody">
-            <tr><td colspan="6"><div class="loader">Loading agreements…</div></td></tr>
+            <tr><td colspan="7"><div class="loader">Loading agreements…</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -537,11 +538,12 @@
               <th>Project</th>
               <th>Type</th>
               <th>Status</th>
+              <th>Active</th>
               <th style="text-align:right">Total (incl. GST)</th>
             </tr>
           </thead>
           <tbody id="proposalsTableBody">
-            <tr><td colspan="6"><div class="loader">Loading proposals…</div></td></tr>
+            <tr><td colspan="7"><div class="loader">Loading proposals…</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -906,7 +908,7 @@ function renderDashboard(){
   const total = allAgreements.length;
   const activeStatuses = ["Signed","Active"];
   const activeCount = allAgreements.filter(a => activeStatuses.includes(a.fields.Status)).length;
-  const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalInclGST)||0), 0);
+  const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalFeeExclGST)||0), 0);
   const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
 
   document.getElementById("metricsRow").innerHTML = `
@@ -926,9 +928,9 @@ function renderDashboard(){
       <div class="metric-sub">client countersignature pending</div>
     </div>
     <div class="metric-card metric-accent-purple">
-      <div class="metric-label">Total Contract Value</div>
+      <div class="metric-label">Total Contract Value (excl. GST)</div>
       <div class="metric-value">${fmtCurrency(totalValue)}</div>
-      <div class="metric-sub">incl. GST, all agreements</div>
+      <div class="metric-sub">excl. GST, all agreements</div>
     </div>
   `;
 
@@ -1004,7 +1006,7 @@ function renderDashboard(){
   const buCounts = {};
   allAgreements.forEach(a => {
     const bu = a.fields.BusinessUnit || "Unassigned";
-    buValues[bu] = (buValues[bu]||0) + (parseFloat(a.fields.TotalInclGST)||0);
+    buValues[bu] = (buValues[bu]||0) + (parseFloat(a.fields.TotalFeeExclGST)||0);
     buCounts[bu] = (buCounts[bu]||0) + 1;
   });
   const maxBuValue = Math.max(1, ...Object.values(buValues));
@@ -1059,7 +1061,7 @@ function renderAgreementsTable(){
 
   if(rows.length === 0){
     document.getElementById("agreementsTableBody").innerHTML =
-      `<tr><td colspan="6"><div class="empty-state">No agreements match your search.</div></td></tr>`;
+      `<tr><td colspan="7"><div class="empty-state">No agreements match your search.</div></td></tr>`;
     return;
   }
 
@@ -1067,6 +1069,7 @@ function renderAgreementsTable(){
     const f = a.fields;
     const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "—";
     const badgeClass = statusBadgeClass(f.Status);
+    const isActive = f.IsActive !== false;
     return `
       <tr data-id="${a.id}" onclick="openAgreementDetail('${a.id}')">
         <td><strong>${f.Title || "—"}</strong></td>
@@ -1074,6 +1077,7 @@ function renderAgreementsTable(){
         <td>${f.ProjectName || "—"}</td>
         <td>${f.BusinessUnit || "—"}</td>
         <td><span class="badge ${badgeClass}">${f.Status || "Draft"}</span></td>
+        <td><span class="badge ${isActive ? "badge-active" : "badge-draft"}">${isActive ? "Active" : "Inactive"}</span></td>
         <td style="text-align:right" class="amount">${fmtCurrency(f.TotalInclGST)}</td>
       </tr>
     `;
@@ -1759,7 +1763,7 @@ function renderProposalsTable(){
 
   if(rows.length === 0){
     document.getElementById("proposalsTableBody").innerHTML =
-      `<tr><td colspan="6"><div class="empty-state">No proposals match your search.</div></td></tr>`;
+      `<tr><td colspan="7"><div class="empty-state">No proposals match your search.</div></td></tr>`;
     return;
   }
 
@@ -1767,6 +1771,7 @@ function renderProposalsTable(){
     const f = p.fields;
     const clientName = (clientMap[f.ClientOrgLookupId] || {}).Title || "—";
     const badgeClass = proposalStatusBadgeClass(f.Status);
+    const isActive = f.IsActive === true;
     return `
       <tr onclick="openProposalDetail('${p.id}')">
         <td><strong>${esc(f.Title) || "—"}</strong></td>
@@ -1774,6 +1779,7 @@ function renderProposalsTable(){
         <td>${esc(f.ProjectName) || "—"}</td>
         <td>${esc(f.DocumentType) || "—"}</td>
         <td><span class="badge ${badgeClass}">${esc(f.Status) || "Draft"}</span></td>
+        <td><span class="badge ${isActive ? "badge-active" : "badge-draft"}">${isActive ? "Active" : "Inactive"}</span></td>
         <td style="text-align:right" class="amount">${fmtCurrency(f.TotalInclGST)}</td>
       </tr>
     `;
