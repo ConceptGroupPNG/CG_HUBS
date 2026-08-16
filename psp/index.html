@@ -1101,7 +1101,7 @@
               <div class="metric-icon"><i class="ti ti-cash"></i></div>
               <div class="metric-info">
                 <div class="metric-value" id="fin-ytd-revenue">—</div>
-                <div class="metric-label">Revenue YTD (PGK, 000s)</div>
+                <div class="metric-label">Revenue YTD (ex GST, PGK, 000s)</div>
               </div>
             </div>
             <div class="metric-card mc-navy">
@@ -1115,14 +1115,14 @@
               <div class="metric-icon"><i class="ti ti-clock-dollar"></i></div>
               <div class="metric-info">
                 <div class="metric-value" id="fin-pipeline">—</div>
-                <div class="metric-label">Pipeline (PGK, 000s)</div>
+                <div class="metric-label">Pipeline (ex GST, PGK, 000s)</div>
               </div>
             </div>
             <div class="metric-card mc-red">
               <div class="metric-icon"><i class="ti ti-chart-line"></i></div>
               <div class="metric-info">
                 <div class="metric-value" id="fin-avg-payslip">—</div>
-                <div class="metric-label">Avg Charge / Payslip (PGK)</div>
+                <div class="metric-label">Avg Charge / Payslip (ex GST, PGK)</div>
               </div>
             </div>
           </div>
@@ -1163,7 +1163,7 @@
           <!-- Charts Row 1 -->
           <div class="grid-2" style="margin-bottom:20px;">
             <div class="card">
-              <div class="card-header"><h3>Monthly Revenue <span style="font-weight:400;color:var(--grey-500);font-size:12px;">(PGK, in thousands)</span></h3></div>
+              <div class="card-header"><h3>Monthly Revenue <span style="font-weight:400;color:var(--grey-500);font-size:12px;">(ex GST, PGK, in thousands)</span></h3></div>
               <div class="card-body" style="padding:12px 16px;"><div id="chart-revenue-wrap" style="position:relative;"><canvas id="chart-revenue" height="160"></canvas></div></div>
             </div>
             <div class="card">
@@ -1175,7 +1175,7 @@
           <!-- Charts Row 2 — Revenue by Client (full width) -->
           <div style="margin-bottom:20px;">
             <div class="card">
-              <div class="card-header"><h3>Revenue by Client (PGK YTD)</h3></div>
+              <div class="card-header"><h3>Revenue by Client (ex GST, PGK YTD)</h3></div>
               <div class="card-body" style="overflow-x:auto;"><div id="chart-client-revenue-wrap" style="position:relative;"><canvas id="chart-client-revenue"></canvas></div></div>
             </div>
           </div>
@@ -1232,7 +1232,7 @@
                   <th style="text-align:center;">Metrics Added</th>
                   <th style="text-align:center;">Ready to Invoice</th>
                   <th style="text-align:center;">Invoiced This Year</th>
-                  <th style="text-align:right;">Revenue YTD (PGK)</th>
+                  <th style="text-align:right;">Revenue YTD (ex GST, PGK)</th>
                 </tr></thead>
                 <tbody id="fin-pipeline-tbody"></tbody>
               </table>
@@ -7875,7 +7875,7 @@ async function loadFinanceDashboard() {
   });
 
   // ── BILLING KPIs ──
-  const revenueYTD = invoicesYear.reduce((s,i) => s + toPGK(i.TotalAmount||0, i.Currency||'PGK'), 0);
+  const revenueYTD = invoicesYear.reduce((s,i) => s + toPGK(i.SubTotal||0, i.Currency||'PGK'), 0);
   const payslipsYTD = billingYear.reduce((s,i) => s + (i.EmployeesPayslips||0), 0);
   const pipelineRecs = cache.billing.filter(i => i.Metrics && i.Process && !i.Billing);
   // Pipeline value: use avg charge per payslip * pipeline payslips as estimate
@@ -7903,7 +7903,7 @@ async function loadFinanceDashboard() {
   const monthlyRevenue = Array(12).fill(0);
   invoicesYear.forEach(i => {
     const m = new Date(i.InvoiceDate).getMonth();
-    monthlyRevenue[m] += toPGK(i.TotalAmount||0, i.Currency||'PGK');
+    monthlyRevenue[m] += toPGK(i.SubTotal||0, i.Currency||'PGK');
   });
   mkChart('chart-revenue', 'bar', {
     labels: MONTHS,
@@ -7942,7 +7942,7 @@ async function loadFinanceDashboard() {
   const clientRevenue = {};
   invoicesYear.forEach(i => {
     const c = i.ContactName || i.PSPClient || 'Unknown';
-    clientRevenue[c] = (clientRevenue[c]||0) + toPGK(i.TotalAmount||0, i.Currency||'PGK');
+    clientRevenue[c] = (clientRevenue[c]||0) + toPGK(i.SubTotal||0, i.Currency||'PGK');
   });
   const crSorted = Object.entries(clientRevenue).sort((a,b) => b[1]-a[1]);
   const crWrap = document.getElementById('chart-client-revenue-wrap');
@@ -8210,7 +8210,7 @@ async function loadFinanceDashboard() {
     const metrics  = recs.filter(i => i.Metrics).length;
     const ready    = recs.filter(i => i.Metrics && i.Process && !i.Billing).length;
     const invoiced = recs.filter(i => i.Billing).length;
-    const revenue  = invoicesYear.filter(i => i.PSPClient === client).reduce((s,i) => s + toPGK(i.TotalAmount||0, i.Currency||'PGK'), 0);
+    const revenue  = invoicesYear.filter(i => i.PSPClient === client).reduce((s,i) => s + toPGK(i.SubTotal||0, i.Currency||'PGK'), 0);
     return `<tr>
       <td style="font-weight:600;">${client}</td>
       <td style="text-align:center;"><span class="fin-pip-dot complete" style="margin:0 auto;">${complete}</span></td>
@@ -10513,10 +10513,10 @@ function printFinanceDashboard() {
 <!-- KPIs -->
 <div class="sec">Billing</div>
 <div class="kpis">
-  <div class="kpi k1"><div class="val">${ytdRev}</div><div class="lbl">Revenue YTD (PGK, 000s)</div></div>
+  <div class="kpi k1"><div class="val">${ytdRev}</div><div class="lbl">Revenue YTD (ex GST, PGK, 000s)</div></div>
   <div class="kpi k2"><div class="val">${invCount}</div><div class="lbl">Invoices This Year</div></div>
-  <div class="kpi k3"><div class="val">${pipeline}</div><div class="lbl">Pipeline (PGK, 000s)</div></div>
-  <div class="kpi k4"><div class="val">${avgPay}</div><div class="lbl">Avg Charge / Payslip (PGK)</div></div>
+  <div class="kpi k3"><div class="val">${pipeline}</div><div class="lbl">Pipeline (ex GST, PGK, 000s)</div></div>
+  <div class="kpi k4"><div class="val">${avgPay}</div><div class="lbl">Avg Charge / Payslip (ex GST, PGK)</div></div>
 </div>
 <div class="sec">Payroll Metrics</div>
 <div class="kpis">
@@ -10528,12 +10528,12 @@ function printFinanceDashboard() {
 
 <!-- Monthly Revenue + NH/Term -->
 <div class="row" style="margin-top:12px">
-  <div class="panel"><h2>Monthly Revenue (PGK, thousands)</h2>${chartImg(imgRevenue)}</div>
+  <div class="panel"><h2>Monthly Revenue (ex GST, PGK, thousands)</h2>${chartImg(imgRevenue)}</div>
   <div class="panel"><h2>New Hires vs Terminations</h2>${chartImg(imgNHTerm)}</div>
 </div>
 
 <!-- Revenue by Client (page break before) -->
-<div class="panel full pb"><h2>Revenue by Client (PGK YTD)</h2>${chartImg(imgClRev)}</div>
+<div class="panel full pb"><h2>Revenue by Client (ex GST, PGK YTD)</h2>${chartImg(imgClRev)}</div>
 
 <!-- Employees + Payslips -->
 <div class="row pb">
