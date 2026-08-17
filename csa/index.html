@@ -911,12 +911,6 @@ async function updateEntryBillable(entryId, value){
   if(!entry) return;
 
   const fields = { Billable: value === "true" };
-  // Opportunistically backfill ResourceRef too, if we can resolve one — useful for
-  // resource cost tracking, but not required for the billable flag itself to stick.
-  if(!entry.fields.ResourceRefLookupId){
-    const resource = findResourceForEntry(entry);
-    if(resource) fields.ResourceRefLookupId = resource.id;
-  }
 
   try{
     await graphUpdateItem("CSA_TimeEntries", entryId, fields);
@@ -1143,14 +1137,15 @@ function renderClientsTable(){
    RENDER: RESOURCES TABLE
    ============================================================ */
 function computeResourceHours(resourceId){
-  // Matches on ResourceRef where set, else falls back to email/name match against EntryUser
+  // Matches by name/email against EntryUser. Note: CSA_TimeEntries.ResourceRef now
+  // points to a separate CSA_Resources list on CG_Time (different item IDs from this
+  // app's own Concept_CSA copy), so it can no longer be used for matching here.
   const r = resourceMap[resourceId];
   if(!r) return 0;
   const email = (r.fields.MatchEmail || "").toLowerCase().trim();
   const name = (r.fields.Title || "").toLowerCase().trim();
   return allTimeEntries
     .filter(t => {
-      if(t.fields.ResourceRefLookupId === resourceId) return true;
       const eu = (t.fields.EntryUser || "").toLowerCase().trim();
       if(!eu) return false;
       return (email && eu === email) || (name && eu === name);
@@ -1233,10 +1228,11 @@ function populateTimesheetDropdowns(){
   document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs/Proposals</option>${combinedOpts}`;
 }
 
+// Matches by name/email against EntryUser. Note: CSA_TimeEntries.ResourceRef now
+// points to a separate CSA_Resources list on CG_Time (different item IDs from this
+// app's own Concept_CSA copy), so it can no longer be trusted for matching here —
+// using it could silently resolve to the wrong resource.
 function findResourceForEntry(entry){
-  if(entry.fields.ResourceRefLookupId && resourceMap[entry.fields.ResourceRefLookupId]){
-    return resourceMap[entry.fields.ResourceRefLookupId];
-  }
   const eu = (entry.fields.EntryUser || "").toLowerCase().trim();
   if(!eu) return null;
   return allResources.find(r => {
@@ -1323,8 +1319,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
       EntryMethod: "Manual",
       EntryUser: resource.fields.Title,
       Billable: billable,
-      ActivityDetail: activityDetail,
-      ResourceRefLookupId: resourceId
+      ActivityDetail: activityDetail
     });
     await loadAllData();
     renderTimesheetsTable();
@@ -1420,7 +1415,6 @@ function generateTimesheetDocument(resourceId, start, end){
   const entries = allTimeEntries.filter(t => {
     const wd = t.fields.WorkDate;
     if(!wd || wd < start || wd > end) return false;
-    if(t.fields.ResourceRefLookupId === resourceId) return true;
     const eu = (t.fields.EntryUser || "").toLowerCase().trim();
     const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
     const name = (resource.fields.Title || "").toLowerCase().trim();
@@ -1600,7 +1594,6 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
   if(!resource) return;
 
   let entries = allTimeEntries.filter(t => {
-    if(t.fields.ResourceRefLookupId === resourceId) return true;
     const eu = (t.fields.EntryUser || "").toLowerCase().trim();
     const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
     const name = (resource.fields.Title || "").toLowerCase().trim();
@@ -2735,7 +2728,7 @@ function showResourceDetail(itemId){
               <div class="metric-value">${totalHours.toFixed(1)}</div>
             </div>
           </div>
-          <div style="font-size:11.5px;color:var(--text-muted);">Matched by ResourceRef where set, otherwise by name/email against Time Tracker entries.</div>
+          <div style="font-size:11.5px;color:var(--text-muted);">Matched by name/email against Time Tracker entries.</div>
         </div>
       </div>
     </div>
