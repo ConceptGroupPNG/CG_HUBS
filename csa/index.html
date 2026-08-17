@@ -200,6 +200,12 @@
     font-family:inherit;background:var(--card);color:var(--text);cursor:pointer;
   }
   .billable-select.is-unset{border-color:#f4c860;background:#fffaf0;color:#92400e;}
+  .activity-detail-input{
+    border:1px solid transparent;border-radius:6px;padding:5px 8px;font-size:12px;
+    font-family:inherit;background:transparent;color:var(--text);width:100%;min-width:140px;
+  }
+  .activity-detail-input:hover{border-color:var(--border);background:var(--card);}
+  .activity-detail-input:focus{outline:none;border-color:var(--teal);background:var(--card);}
   /* ---------- Edit form ---------- */
   .form-field{margin-bottom:14px;}
   .form-field label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;margin-bottom:5px;}
@@ -425,6 +431,10 @@
                 <option value="false">No</option>
               </select>
             </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Activity Detail <span style="text-transform:none;font-weight:400;">— optional</span></label>
+              <input type="text" id="logTimeActivityDetail" placeholder="e.g. Drafted remuneration report section 2">
+            </div>
           </div>
           <div class="btn-row">
             <button class="btn-secondary" id="cancelLogTimeBtn">Cancel</button>
@@ -499,12 +509,13 @@
               <th>CSA</th>
               <th style="text-align:right">Hours</th>
               <th>Billable</th>
+              <th>Activity Detail</th>
               <th>Method</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="timesheetsTableBody">
-            <tr><td colspan="7"><div class="loader">Loading time entries…</div></td></tr>
+            <tr><td colspan="8"><div class="loader">Loading time entries…</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -585,10 +596,15 @@ const msalConfig = {
 const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
 const SITE_HOST = "conceptcompg.sharepoint.com";
 const SITE_PATH = "/sites/Concept_CSA";
+const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
+const TIME_SITE_PATH = "/sites/CG_Time";
+// Lists that now live on the CG_Time site instead of Concept_CSA
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
 let siteId = null;
+let timeSiteId = null;
 
 /* ============================================================
    AUTH
@@ -655,13 +671,13 @@ async function graphWrite(method, url, body){
 }
 
 function listItemsUrl(listName){
-  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items`;
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items`;
 }
 function listItemFieldsUrl(listName, itemId){
-  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${itemId}/fields`;
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items/${itemId}/fields`;
 }
 function listItemUrl(listName, itemId){
-  return `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${itemId}`;
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items/${itemId}`;
 }
 
 async function graphCreateItem(listName, fields){
@@ -676,7 +692,7 @@ async function graphDeleteItem(listName, itemId){
 
 // Paginated fetch of all items (with $expand=fields) from a SharePoint list
 async function fetchAllListItems(listName, extraQuery=""){
-  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?expand=fields${extraQuery}`;
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items?expand=fields${extraQuery}`;
   let items = [];
   while(url){
     const page = await graphGet(url);
@@ -689,6 +705,18 @@ async function fetchAllListItems(listName, extraQuery=""){
 async function resolveSiteId(){
   const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${SITE_HOST}:${SITE_PATH}`);
   siteId = data.id;
+}
+
+async function resolveTimeSiteId(){
+  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${TIME_SITE_HOST}:${TIME_SITE_PATH}`);
+  timeSiteId = data.id;
+}
+
+// Returns the correct site ID for a given list, since CSA_ActiveEntities and
+// CSA_TimeEntries now live on a separate SharePoint site (CG_Time) from
+// everything else (Concept_CSA).
+function siteIdForList(listName){
+  return TIME_SITE_LISTS.has(listName) ? timeSiteId : siteId;
 }
 
 /* ============================================================
@@ -724,7 +752,7 @@ async function startApp(){
   document.getElementById("userChip").textContent = account ? (account.name || account.username) : "Signed in";
 
   try{
-    await resolveSiteId();
+    await Promise.all([resolveSiteId(), resolveTimeSiteId()]);
     await loadAllData();
     renderDashboard();
     renderAgreementsTable();
@@ -1221,7 +1249,7 @@ function findResourceForEntry(entry){
 function renderTimesheetsTable(){
   if(allTimeEntries.length === 0){
     document.getElementById("timesheetsTableBody").innerHTML =
-      `<tr><td colspan="7"><div class="empty-state">No time entries yet.</div></td></tr>`;
+      `<tr><td colspan="8"><div class="empty-state">No time entries yet.</div></td></tr>`;
     return;
   }
   const rows = allTimeEntries.slice().sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||"")).slice(0, 150);
@@ -1240,6 +1268,7 @@ function renderTimesheetsTable(){
         <td>${esc(csaLabel)}</td>
         <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
         <td>${billableSelectHtml(t)}</td>
+        <td><input type="text" class="activity-detail-input" value="${esc(f.ActivityDetail)}" placeholder="—" data-original="${esc(f.ActivityDetail)}" onblur="updateActivityDetail('${t.id}', this)"></td>
         <td>${esc(f.EntryMethod) || "—"}</td>
         <td><button class="btn-danger-text" onclick="deleteTimeEntry('${t.id}')">Delete</button></td>
       </tr>
@@ -1263,6 +1292,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
   const date = document.getElementById("logTimeDate").value;
   const hours = parseFloat(document.getElementById("logTimeHours").value) || 0;
   const billable = document.getElementById("logTimeBillable").value === "true";
+  const activityDetail = document.getElementById("logTimeActivityDetail").value;
 
   if(!resourceId || !csaValue || !date || hours <= 0){
     alert("Please select a resource, a CSA or Proposal, a date, and enter hours greater than 0.");
@@ -1293,12 +1323,14 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
       EntryMethod: "Manual",
       EntryUser: resource.fields.Title,
       Billable: billable,
+      ActivityDetail: activityDetail,
       ResourceRefLookupId: resourceId
     });
     await loadAllData();
     renderTimesheetsTable();
     document.getElementById("logTimeFormCard").style.display = "none";
     document.getElementById("logTimeHours").value = "";
+    document.getElementById("logTimeActivityDetail").value = "";
   }catch(err){
     console.error(err);
     alert("Couldn't save entry: " + err.message);
@@ -1317,6 +1349,28 @@ async function deleteTimeEntry(itemId){
   }catch(err){
     console.error(err);
     alert("Couldn't delete entry: " + err.message);
+  }
+}
+
+// Saves the Activity Detail text when the field loses focus, but only if it
+// actually changed — avoids a write on every click into an unedited cell.
+async function updateActivityDetail(itemId, inputEl){
+  const newValue = inputEl.value;
+  const originalValue = inputEl.getAttribute("data-original") || "";
+  if(newValue === originalValue) return;
+
+  inputEl.disabled = true;
+  try{
+    await graphUpdateItem("CSA_TimeEntries", itemId, { ActivityDetail: newValue });
+    inputEl.setAttribute("data-original", newValue);
+    const entry = allTimeEntries.find(t => t.id === itemId);
+    if(entry) entry.fields.ActivityDetail = newValue;
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save activity detail: " + err.message);
+    inputEl.value = originalValue;
+  }finally{
+    inputEl.disabled = false;
   }
 }
 
@@ -1598,9 +1652,10 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
       <td>${esc(t.fields.CSA) || "—"}</td>
       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
       <td>${billableTextDisplay(t)}</td>
+      <td>${esc(t.fields.ActivityDetail) || "—"}</td>
       <td>${esc(t.fields.EntryMethod) || "—"}</td>
     </tr>
-  `).join("") : `<tr><td colspan="5" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+  `).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
 
   const subtotalsHtml = csaLabels.map(label => `
     <tr><td>${esc(label)}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
@@ -1651,7 +1706,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
 
 <table class="rpt-table">
   <thead>
-    <tr><th>Date</th><th>CSA</th><th style="text-align:right">Hours</th><th>Billable</th><th>Method</th></tr>
+    <tr><th>Date</th><th>CSA</th><th style="text-align:right">Hours</th><th>Billable</th><th>Activity Detail</th><th>Method</th></tr>
   </thead>
   <tbody>
     ${rowsHtml}
@@ -1696,12 +1751,15 @@ async function syncActiveEntity(sourceType, title, description, isActive){
   if(!title) return;
   try{
     const existing = await fetchAllListItems("CSA_ActiveEntities");
-    const match = existing.find(x => (x.fields.Title||"").trim() === title.trim());
+    // Only ever match against rows this app itself created — other systems now
+    // write to this shared list too, and their entries must not be touched.
+    const match = existing.find(x => (x.fields.Title||"").trim() === title.trim() && x.fields.Source === "CSA_HUB");
 
     if(match){
       await graphUpdateItem("CSA_ActiveEntities", match.id, {
         Description: description || title,
         SourceType: sourceType,
+        Source: "CSA_HUB",
         IsActive: !!isActive
       });
     } else if(isActive){
@@ -1711,6 +1769,7 @@ async function syncActiveEntity(sourceType, title, description, isActive){
         Title: title,
         Description: description || title,
         SourceType: sourceType,
+        Source: "CSA_HUB",
         IsActive: true
       });
     }
