@@ -320,6 +320,10 @@
         <h3><span>&#8987;</span>Exceptions queue</h3>
         <div class="panel-sub">Most recent, from CG_ExceptionsQueue</div>
         <div class="ex-list" id="exceptionsList"></div>
+        <div style="margin-top:12px;border-top:1px solid var(--hairline-soft);padding-top:12px;">
+          <button id="seedExceptionsBtn" class="login-btn" style="width:auto;padding:8px 14px;font-size:12px;">Seed from Billable-not-set backlog</button>
+          <div id="seedPreview" style="display:none;margin-top:10px;"></div>
+        </div>
       </div>
     </div>
 
@@ -413,6 +417,7 @@ document.getElementById("loginBtn").addEventListener("click", ()=>{
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
   msalInstance.logoutRedirect();
 });
+document.getElementById("seedExceptionsBtn").addEventListener("click", showSeedPreview);
 
 function showLoginError(e){
   console.error(e);
@@ -444,6 +449,31 @@ async function graphGet(url){
     throw new Error(`Graph error ${res.status}: ${body}`);
   }
   return res.json();
+}
+
+async function graphWrite(method, url, body){
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const errBody = await res.text();
+    throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
+  }
+  if(res.status === 204) return null;
+  return res.json().catch(()=>null);
+}
+
+function listItemsUrl(listName){
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items`;
+}
+
+async function graphCreateItem(listName, fields){
+  return graphWrite("POST", listItemsUrl(listName), { fields });
 }
 
 function siteIdForList(listName){
@@ -548,6 +578,86 @@ function resourceForEntry(entry){
     const name = (r.fields.Title || "").toLowerCase().trim();
     return (email && eu === email) || (name && eu === name);
   }) || null;
+}
+
+/* ============================================================
+   EXCEPTIONS QUEUE — one-off seed from the Billable-not-set backlog
+   Per the CG Time design proposal (§3.5/§5): every CSA_TimeEntries
+   row with Billable left blank and EntryMethod not "Manual" (i.e.
+   logged via the CSA Time Widget, not CSA HUB's own UI) becomes an
+   open BillableNotSet exception. Safe to re-run — already-seeded
+   entries are skipped by matching RelatedTimeEntryId + SourceList +
+   ExceptionType against what's already in CG_ExceptionsQueue.
+   ============================================================ */
+function alreadySeeded(entryId){
+  return allExceptions.some(e =>
+    e.fields.RelatedTimeEntryId === entryId &&
+    e.fields.SourceList === "CSA_TimeEntries" &&
+    e.fields.ExceptionType === "BillableNotSet"
+  );
+}
+
+function computeSeedCandidates(){
+  return allTimeEntries.filter(t =>
+    !hasBillableChoice(t) &&
+    (t.fields.EntryMethod || "").trim() !== "Manual" &&
+    !alreadySeeded(t.id)
+  );
+}
+
+function showSeedPreview(){
+  const candidates = computeSeedCandidates();
+  const box = document.getElementById("seedPreview");
+  box.style.display = "block";
+  if(candidates.length === 0){
+    box.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">Nothing to seed — every Billable-not-set widget entry already has an exception on file.</div>`;
+    return;
+  }
+  const rows = candidates.map(t=>{
+    const f = t.fields;
+    const resource = resourceForEntry(t);
+    const name = resource ? resource.fields.Title : (f.EntryUser || "Unmatched");
+    return `<div style="font-size:11.5px;color:var(--ink-secondary);padding:3px 0;">${esc(name)} &middot; ${esc(f.CSA||"Unspecified")} &middot; ${f.Hours!=null?parseFloat(f.Hours).toFixed(1):"?"}h &middot; ${esc(f.WorkDate||"?")}</div>`;
+  }).join("");
+  box.innerHTML = `
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px;">${candidates.length} candidate${candidates.length===1?"":"s"} &mdash; will create ${candidates.length} open BillableNotSet exception${candidates.length===1?"":"s"}:</div>
+    <div style="max-height:160px;overflow-y:auto;background:var(--surface-card-2);border-radius:8px;padding:8px 10px;margin-bottom:10px;">${rows}</div>
+    <button id="seedConfirmBtn" class="login-btn" style="width:auto;padding:7px 14px;font-size:12px;">Create ${candidates.length} exception${candidates.length===1?"":"s"}</button>
+    <button id="seedCancelBtn" style="width:auto;padding:7px 14px;font-size:12px;background:transparent;border:1px solid var(--hairline);border-radius:9px;color:var(--ink-secondary);cursor:pointer;margin-left:8px;">Cancel</button>
+  `;
+  document.getElementById("seedConfirmBtn").addEventListener("click", () => runSeed(candidates));
+  document.getElementById("seedCancelBtn").addEventListener("click", () => { box.style.display = "none"; box.innerHTML = ""; });
+}
+
+async function runSeed(candidates){
+  const box = document.getElementById("seedPreview");
+  box.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">Creating ${candidates.length} exception(s)&hellip;</div>`;
+  let created = 0, failed = 0;
+  for(const t of candidates){
+    const f = t.fields;
+    const resource = resourceForEntry(t);
+    const name = resource ? resource.fields.Title : (f.EntryUser || "Unknown");
+    const hours = f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "?";
+    const summary = `Billable not set — ${name}, ${hours}h on ${f.CSA || "Unspecified"}`;
+    try{
+      await graphCreateItem("CG_ExceptionsQueue", {
+        Title: summary,
+        RelatedTimeEntryId: t.id,
+        SourceList: "CSA_TimeEntries",
+        ExceptionType: "BillableNotSet",
+        Status: "Open",
+        RaisedDate: new Date().toISOString()
+      });
+      created++;
+    }catch(err){
+      console.error("Failed to seed exception for entry", t.id, err);
+      failed++;
+    }
+  }
+  box.innerHTML = `<div style="font-size:12px;color:${failed?'var(--status-critical)':'var(--status-good)'};">Created ${created} exception${created===1?"":"s"}${failed?`, ${failed} failed — check browser console`:""}.</div>`;
+  allExceptions = await fetchAllListItems("CG_ExceptionsQueue");
+  renderStatTiles();
+  renderExceptions();
 }
 
 /* ============================================================
