@@ -223,6 +223,38 @@
   .login-error{color:var(--status-critical);font-size:11.5px;margin-top:14px;display:none;}
   #app{display:none;}
   .signout-link{font-size:11px;color:var(--ink-muted);cursor:pointer;text-decoration:underline;margin-top:6px;text-align:right;}
+
+  /* ---------- views ---------- */
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- resources view ---------- */
+  .res-table-wrap{background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
+  .res-row{display:grid;grid-template-columns:1.4fr 1.6fr .6fr 2fr;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
+  .res-row:last-child{border-bottom:none;}
+  .res-row.head{background:var(--surface-card-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);font-weight:600;padding:10px 18px;}
+  .res-name{font-weight:600;color:var(--ink-primary);font-size:13px;}
+  .res-email{color:var(--ink-muted);font-size:11.5px;}
+  .res-active{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+  .res-active.yes{color:var(--status-good);}
+  .res-active.no{color:var(--ink-muted);}
+  .hub-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .hub-chip{
+    display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+    padding:3px 9px 3px 10px;border-radius:20px;background:var(--brass-wash);color:var(--brass-deep);
+    border:1px solid rgba(134,105,58,0.25);
+  }
+  .hub-chip .x{cursor:pointer;opacity:.6;font-weight:700;}
+  .hub-chip .x:hover{opacity:1;color:var(--status-critical);}
+  .hub-add select{
+    font-size:11px;border:1px solid var(--hairline);border-radius:7px;padding:3px 6px;
+    background:var(--surface-card);color:var(--ink-secondary);
+  }
+  .hub-add button{
+    font-size:11px;border:none;border-radius:7px;padding:4px 10px;margin-left:5px;cursor:pointer;
+    background:var(--brass-wash);color:var(--brass-deep);font-weight:700;
+  }
+  .hub-add button:hover{background:var(--brass-light);color:#fff8e8;}
 </style>
 </head>
 <body>
@@ -247,14 +279,14 @@
     </div>
 
     <div class="nav-group">Overview</div>
-    <div class="nav-item active"><span class="ic">&#9632;</span>Dashboard</div>
+    <div class="nav-item active" data-view="dashboard"><span class="ic">&#9632;</span>Dashboard</div>
 
     <div class="nav-group">Collect</div>
     <div class="nav-item"><span class="ic">&#9998;</span>Time Entries</div>
     <div class="nav-item"><span class="ic">&#128337;</span>Timesheets</div>
 
     <div class="nav-group">Coordinate</div>
-    <div class="nav-item"><span class="ic">&#9733;</span>Resources</div>
+    <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
     <div class="nav-item"><span class="ic">&#8987;</span>Exceptions <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
     <div class="nav-group">Report</div>
@@ -273,7 +305,7 @@
   <main class="main">
     <div class="topbar">
       <div>
-        <h1>Dashboard</h1>
+        <h1 id="viewTitle">Dashboard</h1>
         <div class="sub">Group-wide time, collected across CSA&nbsp;HUB &middot; PSP&nbsp;HUB &middot; CG&nbsp;Training&nbsp;HUB &middot; <span id="lastUpdated">loading…</span></div>
       </div>
       <div class="top-right">
@@ -284,6 +316,7 @@
       </div>
     </div>
 
+    <div class="view active" id="view-dashboard">
     <!-- stat tiles -->
     <div class="stat-row">
       <div class="stat-card">
@@ -355,6 +388,9 @@
         </div>
       </div>
     </div>
+    </div>
+
+    <div class="view" id="view-resources"></div>
 
   </main>
 </div>
@@ -413,6 +449,17 @@ document.getElementById("loginBtn").addEventListener("click", ()=>{
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
   msalInstance.logoutRedirect();
 });
+document.querySelectorAll(".nav-item[data-view]").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item[data-view]").forEach(i => i.classList.remove("active"));
+    item.classList.add("active");
+    const viewName = item.getAttribute("data-view");
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById(`view-${viewName}`).classList.add("active");
+    document.getElementById("viewTitle").textContent = viewName === "dashboard" ? "Dashboard" : "Resources";
+    if(viewName === "resources") renderResourcesView();
+  });
+});
 
 function showLoginError(e){
   console.error(e);
@@ -469,6 +516,14 @@ function listItemsUrl(listName){
 
 async function graphCreateItem(listName, fields){
   return graphWrite("POST", listItemsUrl(listName), { fields });
+}
+
+function listItemFieldsUrl(listName, itemId){
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items/${itemId}/fields`;
+}
+
+async function graphUpdateItem(listName, itemId, fields){
+  return graphWrite("PATCH", listItemFieldsUrl(listName, itemId), fields);
 }
 
 function siteIdForList(listName){
@@ -849,6 +904,118 @@ function renderCalendarHeat(){
     if(level===3) cell.style.borderColor = "transparent";
     cal.appendChild(cell);
   });
+}
+
+/* ============================================================
+   RESOURCES VIEW — manage which HUBs each CSA_Resources person is
+   also active in, writing to CG_ResourceHubAssignments. Removal is
+   a soft-delete (IsActive: false), consistent with the IsActive
+   pattern already used elsewhere rather than a hard delete.
+   ============================================================ */
+const ALL_HUBS = ["CSA_HUB", "PSP_HUB", "TRAINING_HUB"];
+
+function assignmentsForResource(resource){
+  const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
+  if(!email) return [];
+  return allHubAssignments.filter(a =>
+    (a.fields.ResourceEmail||"").toLowerCase().trim() === email && a.fields.IsActive !== false
+  );
+}
+
+function setResStatusMsg(text, isError){
+  const msg = document.getElementById("resStatusMsg");
+  if(!msg) return;
+  msg.textContent = text;
+  msg.style.color = isError ? "var(--status-critical)" : "var(--status-good)";
+}
+
+function renderResourcesView(){
+  const container = document.getElementById("view-resources");
+  if(allResources.length === 0){
+    container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No resources found in CSA_Resources.</div></div>`;
+    return;
+  }
+  const sorted = allResources.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const rows = sorted.map(r => {
+    const active = r.fields.IsActive !== false;
+    const email = (r.fields.MatchEmail || "").toLowerCase().trim();
+    const assignments = assignmentsForResource(r);
+    const assignedHubs = new Set(assignments.map(a=>a.fields.Hub));
+    const chips = assignments.map(a => `
+      <span class="hub-chip">${esc(a.fields.Hub)}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
+    `).join("");
+    const available = ALL_HUBS.filter(h => !assignedHubs.has(h));
+    const addControl = available.length ? `
+      <span class="hub-add">
+        <select class="hub-select" data-name="${esc(r.fields.Title||"")}" data-email="${esc(email)}">
+          ${available.map(h=>`<option value="${h}">${h}</option>`).join("")}
+        </select>
+        <button class="hub-add-btn">+ Add</button>
+      </span>
+    ` : `<span style="font-size:11px;color:var(--ink-muted);">all HUBs assigned</span>`;
+    return `
+      <div class="res-row">
+        <div class="res-name">${esc(r.fields.Title||"—")}</div>
+        <div class="res-email">${esc(r.fields.MatchEmail||"—")}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div>
+          <div class="hub-chips">${chips || '<span style="font-size:11px;color:var(--ink-muted);">CSA HUB only (on record)</span>'}</div>
+          <div style="margin-top:6px;">${addControl}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9733;</span>Resource &rarr; HUB assignments</h3>
+      <div class="panel-sub">Everyone here comes from CSA_Resources. Add a HUB for anyone who also does PSP HUB or CG Training work &mdash; writes straight to CG_ResourceHubAssignments.</div>
+      <div id="resStatusMsg" style="font-size:11.5px;min-height:14px;"></div>
+    </div>
+    <div class="res-table-wrap">
+      <div class="res-row head"><div>Name</div><div>Email</div><div>Status</div><div>HUB assignments</div></div>
+      ${rows}
+    </div>
+  `;
+  container.querySelectorAll(".x[data-remove-id]").forEach(el => {
+    el.addEventListener("click", () => removeHubAssignment(el.getAttribute("data-remove-id")));
+  });
+  container.querySelectorAll(".hub-add-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const wrap = btn.closest(".hub-add");
+      const select = wrap.querySelector(".hub-select");
+      addHubAssignmentFor(select.dataset.name, select.dataset.email, select.value);
+    });
+  });
+}
+
+async function addHubAssignmentFor(name, email, hub){
+  if(!email){
+    setResStatusMsg(`Can't add a HUB for ${name} — no MatchEmail on file in CSA_Resources.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_ResourceHubAssignments", { Title: name, ResourceEmail: email, Hub: hub, IsActive: true });
+    allHubAssignments = await fetchAllListItems("CG_ResourceHubAssignments");
+    renderResourcesView();
+    renderStatTiles();
+    setResStatusMsg(`Added ${hub} for ${name}.`, false);
+  }catch(err){
+    console.error(err);
+    setResStatusMsg(`Couldn't add that assignment — ${err.message}`, true);
+  }
+}
+
+async function removeHubAssignment(itemId){
+  try{
+    await graphUpdateItem("CG_ResourceHubAssignments", itemId, { IsActive: false });
+    allHubAssignments = await fetchAllListItems("CG_ResourceHubAssignments");
+    renderResourcesView();
+    renderStatTiles();
+    setResStatusMsg("Removed.", false);
+  }catch(err){
+    console.error(err);
+    setResStatusMsg(`Couldn't remove that assignment — ${err.message}`, true);
+  }
 }
 
 /* ============================================================
