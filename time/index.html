@@ -922,13 +922,6 @@ function assignmentsForResource(resource){
   );
 }
 
-function setResStatusMsg(text, isError){
-  const msg = document.getElementById("resStatusMsg");
-  if(!msg) return;
-  msg.textContent = text;
-  msg.style.color = isError ? "var(--status-critical)" : "var(--status-good)";
-}
-
 function renderResourcesView(){
   const container = document.getElementById("view-resources");
   if(allResources.length === 0){
@@ -945,14 +938,24 @@ function renderResourcesView(){
       <span class="hub-chip">${esc(a.fields.Hub)}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
     `).join("");
     const available = ALL_HUBS.filter(h => !assignedHubs.has(h));
-    const addControl = available.length ? `
-      <span class="hub-add">
-        <select class="hub-select" data-name="${esc(r.fields.Title||"")}" data-email="${esc(email)}">
-          ${available.map(h=>`<option value="${h}">${h}</option>`).join("")}
-        </select>
-        <button class="hub-add-btn">+ Add</button>
-      </span>
-    ` : `<span style="font-size:11px;color:var(--ink-muted);">all HUBs assigned</span>`;
+    // No MatchEmail means there's no reliable key to write CG_ResourceHubAssignments
+    // against (or to match it back to this person later) — so there's nothing
+    // actionable to show here rather than a control that can only ever fail.
+    let addControl;
+    if(!email){
+      addControl = `<span style="font-size:11px;color:var(--ink-muted);">no MatchEmail on file in CSA_Resources — can't assign a HUB here</span>`;
+    } else if(available.length === 0){
+      addControl = `<span style="font-size:11px;color:var(--ink-muted);">all HUBs assigned</span>`;
+    } else {
+      addControl = `
+        <span class="hub-add">
+          <select class="hub-select" data-name="${esc(r.fields.Title||"")}" data-email="${esc(email)}">
+            ${available.map(h=>`<option value="${h}">${h}</option>`).join("")}
+          </select>
+          <button class="hub-add-btn">+ Add</button>
+        </span>
+      `;
+    }
     return `
       <div class="res-row">
         <div class="res-name">${esc(r.fields.Title||"—")}</div>
@@ -961,6 +964,7 @@ function renderResourcesView(){
         <div>
           <div class="hub-chips">${chips || '<span style="font-size:11px;color:var(--ink-muted);">CSA HUB only (on record)</span>'}</div>
           <div style="margin-top:6px;">${addControl}</div>
+          <div class="hub-msg" style="font-size:11px;margin-top:4px;min-height:14px;"></div>
         </div>
       </div>
     `;
@@ -969,7 +973,6 @@ function renderResourcesView(){
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9733;</span>Resource &rarr; HUB assignments</h3>
       <div class="panel-sub">Everyone here comes from CSA_Resources. Add a HUB for anyone who also does PSP HUB or CG Training work &mdash; writes straight to CG_ResourceHubAssignments.</div>
-      <div id="resStatusMsg" style="font-size:11.5px;min-height:14px;"></div>
     </div>
     <div class="res-table-wrap">
       <div class="res-row head"><div>Name</div><div>Email</div><div>Status</div><div>HUB assignments</div></div>
@@ -977,20 +980,30 @@ function renderResourcesView(){
     </div>
   `;
   container.querySelectorAll(".x[data-remove-id]").forEach(el => {
-    el.addEventListener("click", () => removeHubAssignment(el.getAttribute("data-remove-id")));
+    el.addEventListener("click", () => {
+      const msgEl = el.closest(".res-row").querySelector(".hub-msg");
+      removeHubAssignment(el.getAttribute("data-remove-id"), msgEl);
+    });
   });
   container.querySelectorAll(".hub-add-btn").forEach(btn => {
     btn.addEventListener("click", () => {
-      const wrap = btn.closest(".hub-add");
-      const select = wrap.querySelector(".hub-select");
-      addHubAssignmentFor(select.dataset.name, select.dataset.email, select.value);
+      const row = btn.closest(".res-row");
+      const select = row.querySelector(".hub-select");
+      const msgEl = row.querySelector(".hub-msg");
+      addHubAssignmentFor(select.dataset.name, select.dataset.email, select.value, msgEl);
     });
   });
 }
 
-async function addHubAssignmentFor(name, email, hub){
+function reportRowMsg(msgEl, text, isError){
+  if(!msgEl) return;
+  msgEl.textContent = text;
+  msgEl.style.color = isError ? "var(--status-critical)" : "var(--status-good)";
+}
+
+async function addHubAssignmentFor(name, email, hub, msgEl){
   if(!email){
-    setResStatusMsg(`Can't add a HUB for ${name} — no MatchEmail on file in CSA_Resources.`, true);
+    reportRowMsg(msgEl, `Can't add a HUB for ${name} — no MatchEmail on file in CSA_Resources.`, true);
     return;
   }
   try{
@@ -998,23 +1011,21 @@ async function addHubAssignmentFor(name, email, hub){
     allHubAssignments = await fetchAllListItems("CG_ResourceHubAssignments");
     renderResourcesView();
     renderStatTiles();
-    setResStatusMsg(`Added ${hub} for ${name}.`, false);
   }catch(err){
     console.error(err);
-    setResStatusMsg(`Couldn't add that assignment — ${err.message}`, true);
+    reportRowMsg(msgEl, `Couldn't add that assignment — ${err.message}`, true);
   }
 }
 
-async function removeHubAssignment(itemId){
+async function removeHubAssignment(itemId, msgEl){
   try{
     await graphUpdateItem("CG_ResourceHubAssignments", itemId, { IsActive: false });
     allHubAssignments = await fetchAllListItems("CG_ResourceHubAssignments");
     renderResourcesView();
     renderStatTiles();
-    setResStatusMsg("Removed.", false);
   }catch(err){
     console.error(err);
-    setResStatusMsg(`Couldn't remove that assignment — ${err.message}`, true);
+    reportRowMsg(msgEl, `Couldn't remove that assignment — ${err.message}`, true);
   }
 }
 
