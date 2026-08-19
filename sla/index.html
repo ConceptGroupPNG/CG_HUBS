@@ -133,6 +133,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">📊 Dashboard</div>
     <div class="nav-item" data-page="tickets" onclick="navigate('tickets')">🎫 Tickets</div>
     <div class="nav-item" data-page="email" onclick="navigate('email')">✉️ Email Intake</div>
+    <div class="nav-item" data-page="agreements" onclick="agreementDetailId=null; workOrderDetailId=null; adHocClientDetailId=null; navigate('agreements')">🗂 Agreements</div>
     <div class="nav-item" data-page="invoices" onclick="navigate('invoices')">🧾 Invoices</div>
     <div class="nav-section">Setup</div>
     <div class="nav-item" data-page="clients" onclick="navigate('clients')">🏢 Clients</div>
@@ -146,6 +147,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div id="page-dashboard" class="page"></div>
     <div id="page-tickets" class="page"></div>
     <div id="page-email" class="page"></div>
+    <div id="page-agreements" class="page"></div>
     <div id="page-invoices" class="page"></div>
     <div id="page-clients" class="page"></div>
     <div id="page-admin" class="page"></div>
@@ -177,10 +179,20 @@ const graphScopes = ["Sites.ReadWrite.All", "Mail.Read.Shared", "User.Read"];
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
-// SLA HUB's own SharePoint site — every list this app uses lives here.
+// SLA HUB's own SharePoint site — every list this app uses lives here...
 const SITE_HOST = "conceptcompg.sharepoint.com";
 const SITE_PATH = "/sites/Helpdesk";
 let _siteId = null;
+
+// ...except CSA_ActiveEntities and CSA_TimeEntries, which live on CG_Time.
+// SLA HUB writes/reads those two lists cross-site, the same pattern CSA HUB
+// itself already uses, so Agreements/WorkOrders/Ad Hoc Client Support show up
+// in CG Time's shared Time Tracking Widget and any hours logged there roll
+// back up into SLA HUB (see syncActiveEntity() and hoursForOwningEntity()).
+const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
+const TIME_SITE_PATH = "/sites/CG_Time";
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries"]);
+let _timeSiteId = null;
 
 // TODO before go-live: confirm the exact shared helpdesk mailbox address.
 // Staff signing in must have delegated (Mail.Read.Shared) access to this mailbox.
@@ -226,8 +238,21 @@ async function resolveSiteId(){
   return _siteId;
 }
 
+async function resolveTimeSiteId(){
+  if(_timeSiteId) return _timeSiteId;
+  const data = await callGraph(`${GRAPH}/sites/${TIME_SITE_HOST}:${TIME_SITE_PATH}`);
+  _timeSiteId = data.id;
+  return _timeSiteId;
+}
+
+// Dispatches to the right site per list — CSA_ActiveEntities/CSA_TimeEntries
+// live on CG_Time, every SLA_* list lives on Helpdesk.
+async function siteIdForList(listName){
+  return TIME_SITE_LISTS.has(listName) ? await resolveTimeSiteId() : await resolveSiteId();
+}
+
 async function fetchAllListItems(listName){
-  const siteId = await resolveSiteId();
+  const siteId = await siteIdForList(listName);
   let url = `${GRAPH}/sites/${siteId}/lists/${listName}/items?$expand=fields&$top=200`;
   let items = [];
   while(url){
@@ -239,14 +264,14 @@ async function fetchAllListItems(listName){
 }
 
 async function graphCreateItem(listName, fields){
-  const siteId = await resolveSiteId();
+  const siteId = await siteIdForList(listName);
   return callGraph(`${GRAPH}/sites/${siteId}/lists/${listName}/items`, {
     method: "POST", body: JSON.stringify({ fields })
   });
 }
 
 async function graphUpdateItem(listName, itemId, fields){
-  const siteId = await resolveSiteId();
+  const siteId = await siteIdForList(listName);
   return callGraph(`${GRAPH}/sites/${siteId}/lists/${listName}/items/${itemId}/fields`, {
     method: "PATCH", body: JSON.stringify(fields)
   });
@@ -305,26 +330,44 @@ function addBusinessHours(startDate, hours){
 /* ---------- Global state (in-memory cache) ---------- */
 let state = {
   tickets: [], clients: [], endClients: [], resources: [], timeEntries: [],
-  priorityDefaults: [], exceptions: [], invoices: [], me: null
+  priorityDefaults: [], exceptions: [], invoices: [],
+  agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
+  me: null
 };
 
 function priorityDef(name){
   return state.priorityDefaults.find(p => p.fields.Title === name) || {};
 }
-// Resolution order: End-Client override -> Client override -> group default.
-// (Implemented once as resolveTargetsFor(), reused by both ticket creation and
-// display — see below, defined alongside the other ticket-form helpers.)
+// Resolution order: Agreement override (if the ticket has one) -> End-Client
+// override -> Client override -> group default. (Implemented once as
+// resolveTargetsFor(), reused by both ticket creation and display — see
+// below, defined alongside the other ticket-form helpers.)
 function num(v){ return (v===undefined||v===null||v==="") ? null : Number(v); }
 function ticketLookupId(ticket, fieldBase){
   // SharePoint lookup fields expose "<Field>LookupId" on the fields object.
+  // Generic despite the name — used for tickets, agreements, work orders and
+  // time entries alike, anywhere a Lookup column needs reading back.
   return ticket.fields[fieldBase+"LookupId"];
 }
-// Rate is set per SLA/ticket or Custom Work Order — it is NOT inherited from
-// Client or End Client (those don't carry a rate at all). Internal field name
-// stays "RateOverride" (matches the already-provisioned SharePoint column,
-// just relabeled "Rate" in the UI) rather than churning the schema.
+// Rate resolution order: an explicit per-ticket override always wins; failing
+// that, a ticket owned by a formal Agreement or Work Order inherits that
+// record's Rate; an Ad Hoc ticket with no override has no rate (0). Client
+// and End Client never carry a rate — see the correction in
+// Fix-SLAHub-RemoveClientRateFields.ps1. Internal field name stays
+// "RateOverride" (matches the already-provisioned SharePoint column, just
+// relabeled "Rate" in the UI) rather than churning the schema further.
 function resolveRate(ticket){
-  return Number(ticket.fields.RateOverride) || 0;
+  const own = Number(ticket.fields.RateOverride);
+  if(own) return own;
+  if(ticket.fields.OwningEntityType === "Agreement"){
+    const ag = state.agreements.find(a => String(a.id) === String(ticketLookupId(ticket,"OwningAgreement")));
+    if(ag && Number(ag.fields.Rate)) return Number(ag.fields.Rate);
+  }
+  if(ticket.fields.OwningEntityType === "WorkOrder"){
+    const wo = state.workOrders.find(w => String(w.id) === String(ticketLookupId(ticket,"OwningWorkOrder")));
+    if(wo && Number(wo.fields.Rate)) return Number(wo.fields.Rate);
+  }
+  return 0;
 }
 
 /* response/resolution state per ticket: 'met' | 'ontrack' | 'atrisk' | 'breached' */
@@ -362,7 +405,7 @@ function priorityBadge(p){
 /* ============================================================
    NAVIGATION / RENDER ENGINE
    ============================================================ */
-const PAGES = ["dashboard","tickets","email","invoices","clients","admin"];
+const PAGES = ["dashboard","tickets","email","agreements","invoices","clients","admin"];
 let currentPage = "dashboard";
 
 function navigate(page){
@@ -373,7 +416,7 @@ function navigate(page){
   });
   const renderers = {
     dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
-    invoices: renderInvoices, clients: renderClients, admin: renderAdmin
+    agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, admin: renderAdmin
   };
   renderers[page]();
 }
@@ -404,7 +447,7 @@ async function init(){
 
 async function loadCoreData(){
   try{
-    const [tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices] = await Promise.all([
+    const [tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices, agreements, workOrders] = await Promise.all([
       fetchAllListItems("SLA_Tickets"),
       fetchAllListItems("SLA_Clients"),
       fetchAllListItems("SLA_EndClients"),
@@ -412,12 +455,28 @@ async function loadCoreData(){
       fetchAllListItems("SLA_TimeEntries"),
       fetchAllListItems("SLA_PriorityDefaults"),
       fetchAllListItems("SLA_ExceptionsQueue"),
-      fetchAllListItems("SLA_Invoices")
+      fetchAllListItems("SLA_Invoices"),
+      fetchAllListItems("SLA_Agreements"),
+      fetchAllListItems("SLA_WorkOrders")
     ]);
-    state = { ...state, tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices };
+    state = { ...state, tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices, agreements, workOrders };
   }catch(e){
     console.error(e);
     toast("Couldn't load data from SharePoint: " + e.message, true);
+  }
+  // Cross-site reads (CG_Time) — kept separate and non-fatal: if the signed-in
+  // user hasn't got access there yet, or CG_Time is briefly unreachable, the
+  // rest of SLA HUB still works. Only "hours logged via CG Time's Time
+  // Tracking Widget" is affected until this succeeds.
+  try{
+    const [crossActiveEntities, crossTimeEntries] = await Promise.all([
+      fetchAllListItems("CSA_ActiveEntities"),
+      fetchAllListItems("CSA_TimeEntries")
+    ]);
+    state.crossActiveEntities = crossActiveEntities;
+    state.crossTimeEntries = crossTimeEntries;
+  }catch(e){
+    console.warn("Couldn't load CG_Time cross-site data (Active Entities / Time Entries):", e);
   }
 }
 
@@ -600,13 +659,18 @@ function renderTicketsTable(){
 
 
 /* ---------- Shared target resolution (used by creation + display) ---------- */
-function resolveTargetsFor(priority, clientId, endClientId){
+// Resolution order: Agreement override (if this ticket belongs to one) ->
+// End-Client override -> Client override -> group default. Work Orders don't
+// carry SLA-target overrides (they're a fixed-scope job, not an ongoing
+// support contract), so they fall straight through to End-Client/Client/default.
+function resolveTargetsFor(priority, clientId, endClientId, agreementId){
+  const agreement = agreementId ? state.agreements.find(a => String(a.id) === String(agreementId)) : null;
   const client = state.clients.find(c => String(c.id) === String(clientId));
   const endClient = state.endClients.find(c => String(c.id) === String(endClientId));
   const def = priorityDef(priority);
   const respKey = "ResponseTarget"+priority, resKey = "ResolutionTarget"+priority;
-  const response = num(endClient?.fields?.[respKey]) ?? num(client?.fields?.[respKey]) ?? num(def.fields?.ResponseTargetHours) ?? 8;
-  const resolution = num(endClient?.fields?.[resKey]) ?? num(client?.fields?.[resKey]) ?? num(def.fields?.ResolutionTargetHours) ?? 24;
+  const response = num(agreement?.fields?.[respKey]) ?? num(endClient?.fields?.[respKey]) ?? num(client?.fields?.[respKey]) ?? num(def.fields?.ResponseTargetHours) ?? 8;
+  const resolution = num(agreement?.fields?.[resKey]) ?? num(endClient?.fields?.[resKey]) ?? num(client?.fields?.[resKey]) ?? num(def.fields?.ResolutionTargetHours) ?? 24;
   return { response, resolution };
 }
 
@@ -614,6 +678,159 @@ function endClientOptions(clientId, selected){
   return state.endClients
     .filter(ec => !clientId || String(ec.fields.ParentClientLookupId) === String(clientId))
     .map(ec => `<option value="${ec.id}" ${String(ec.id)===String(selected)?"selected":""}>${esc(ec.fields.Title)}</option>`).join("");
+}
+
+/* ============================================================
+   OWNING ENTITY MODEL — Agreements, Work Orders, Ad Hoc bypass.
+   A ticket (and a time entry) can belong to a formal SLA_Agreements
+   record, a formal SLA_WorkOrders record, or neither (Ad Hoc — the
+   ticket's own Client/EndClient carry the relationship instead, same
+   as before this model existed). Mirrors CSA HUB's Proposal/Agreement
+   pattern, generalized with a third "no formal record" option since
+   SLA HUB's brief explicitly calls for one.
+   ============================================================ */
+
+// The exact text written to CG_Time's CSA_ActiveEntities.Title, and matched
+// back against CSA_TimeEntries.CSA — same plain-text matching convention
+// CSA HUB already uses (Lookups can't span site collections). Prefixed with
+// the entity's own number/type so it stays unique and human-readable in the
+// Time Tracking Widget's dropdown.
+function activeEntityTitleFor(type, entity){
+  if(!entity) return null;
+  if(type === "Agreement")  return `${entity.fields.AgreementNumber || ("AGR-"+entity.id)} — ${entity.fields.Title}`;
+  if(type === "WorkOrder")  return `${entity.fields.WorkOrderNumber || ("WO-"+entity.id)} — ${entity.fields.Title}`;
+  if(type === "AdHocClient") return `Ad Hoc — ${entity.fields.Title}`;
+  return entity.fields.Title;
+}
+
+// Keeps CG_Time's shared CSA_ActiveEntities in sync so the Time Tracking
+// Widget's dropdown reflects active Agreements/Work Orders/Ad Hoc Clients.
+// Mirrors CSA HUB's syncActiveEntity() function exactly, with Source:"SLA_HUB"
+// so the two hubs' rows in that shared list never collide or overwrite
+// each other. Never blocks the actual save if the sync itself fails.
+async function syncActiveEntity(sourceType, title, description, isActive){
+  if(!title) return;
+  try{
+    const existing = await fetchAllListItems("CSA_ActiveEntities");
+    const match = existing.find(x => (x.fields.Title||"").trim() === title.trim() && x.fields.Source === "SLA_HUB");
+    if(match){
+      await graphUpdateItem("CSA_ActiveEntities", match.id, {
+        Description: description || title, SourceType: sourceType, Source: "SLA_HUB", IsActive: !!isActive
+      });
+    } else if(isActive){
+      await graphCreateItem("CSA_ActiveEntities", {
+        Title: title, Description: description || title, SourceType: sourceType, Source: "SLA_HUB", IsActive: true
+      });
+    }
+    state.crossActiveEntities = await fetchAllListItems("CSA_ActiveEntities").catch(()=>state.crossActiveEntities);
+  }catch(err){
+    console.error("Active entity sync failed:", err);
+  }
+}
+
+function owningEntityOptionsHtml(type){
+  if(type === "Agreement") return state.agreements.filter(a => a.fields.Status==="Active")
+    .map(a => `<option value="${a.id}">${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</option>`).join("");
+  if(type === "WorkOrder") return state.workOrders.filter(w => ["Draft","Active"].includes(w.fields.Status))
+    .map(w => `<option value="${w.id}">${esc(w.fields.WorkOrderNumber||("WO-"+w.id))} — ${esc(w.fields.Title)}</option>`).join("");
+  return "";
+}
+
+// Wired to the ticket form's Owning-entity select (id "tf_owntype").
+function onOwningTypeChange(){
+  const type = document.getElementById("tf_owntype").value;
+  const wrap = document.getElementById("tf_ownref_wrap");
+  if(type === "AdHoc"){ wrap.style.display = "none"; document.getElementById("tf_ownref").innerHTML = ""; return; }
+  wrap.style.display = "";
+  document.getElementById("tf_ownref_label").textContent = type === "Agreement" ? "Agreement" : "Work order";
+  document.getElementById("tf_ownref").innerHTML = `<option value="">— select —</option>` + owningEntityOptionsHtml(type);
+}
+
+// Wired to the ticket form's Agreement/Work order select (id "tf_ownref") —
+// auto-fills Client/End Client and the Rate field from the chosen record,
+// still editable afterwards (this only sets sensible defaults).
+function onOwningRefChange(){
+  const type = document.getElementById("tf_owntype").value;
+  const refId = document.getElementById("tf_ownref").value;
+  if(!refId) return;
+  const entity = type === "Agreement"
+    ? state.agreements.find(a => String(a.id)===String(refId))
+    : state.workOrders.find(w => String(w.id)===String(refId));
+  if(!entity) return;
+  const clientId = ticketLookupId(entity,"Client");
+  const endClientId = ticketLookupId(entity,"EndClient");
+  if(clientId){
+    document.getElementById("tf_client").value = clientId;
+    document.getElementById("tf_endclient").innerHTML = endClientOptions(clientId, endClientId);
+  }
+  if(Number(entity.fields.Rate)){
+    document.getElementById("tf_billable").value = "true";
+    document.getElementById("tf_rate_wrap").style.display = "";
+    document.getElementById("tf_rate").value = entity.fields.Rate;
+  }
+}
+
+// All hours attributable to an Agreement or Work Order: tickets owned by it
+// (their SLA_TimeEntries rows), entries logged directly against it in SLA
+// HUB (no ticket), and entries logged externally via CG_Time's Time Tracking
+// Widget (matched cross-site by the synced CSA_ActiveEntities title).
+function hoursForOwningEntity(type, entity){
+  const activeTitle = activeEntityTitleFor(type, entity);
+  const ownedTicketIds = new Set(
+    state.tickets.filter(t => t.fields.OwningEntityType===type &&
+      String(ticketLookupId(t, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id))
+      .map(t => String(t.id))
+  );
+  const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
+  const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType===type &&
+    String(ticketLookupId(e, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id));
+  const external = state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === activeTitle);
+  return { ownedTicketIds, ticketTied, direct, external,
+    total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
+}
+
+// Same idea for a Client's Ad Hoc Support — no formal Agreement/Work Order,
+// just AdHoc-type tickets against this Client plus any hours logged directly
+// or via the Widget against its synced "Ad Hoc — {Client}" active entity.
+function hoursForAdHocClient(client){
+  const activeTitle = activeEntityTitleFor("AdHocClient", client);
+  const ownedTicketIds = new Set(
+    state.tickets.filter(t => (t.fields.OwningEntityType||"AdHoc")==="AdHoc" &&
+      String(ticketLookupId(t,"Client"))===String(client.id)).map(t => String(t.id))
+  );
+  const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
+  const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType==="AdHocClient" &&
+    String(ticketLookupId(e,"OwningClient"))===String(client.id));
+  const external = state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === activeTitle);
+  return { ownedTicketIds, ticketTied, direct, external,
+    total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
+}
+
+function owningEntityLinkHtml(ticket){
+  const type = ticket.fields.OwningEntityType || "AdHoc";
+  if(type === "Agreement"){
+    const ag = state.agreements.find(a => String(a.id)===String(ticketLookupId(ticket,"OwningAgreement")));
+    return ag ? `<a href="#" onclick="openAgreementDetail('${ag.id}'); return false;">${esc(ag.fields.AgreementNumber||("AGR-"+ag.id))} — ${esc(ag.fields.Title)}</a>` : "Agreement (not found)";
+  }
+  if(type === "WorkOrder"){
+    const wo = state.workOrders.find(w => String(w.id)===String(ticketLookupId(ticket,"OwningWorkOrder")));
+    return wo ? `<a href="#" onclick="openWorkOrderDetail('${wo.id}'); return false;">${esc(wo.fields.WorkOrderNumber||("WO-"+wo.id))} — ${esc(wo.fields.Title)}</a>` : "Work order (not found)";
+  }
+  return "Ad Hoc (no formal agreement)";
+}
+
+function combinedTimeRowsHtml(bucket){
+  const rows = [
+    ...bucket.ticketTied.map(e => ({ ...e.fields, _via: "Ticket" })),
+    ...bucket.direct.map(e => ({ ...e.fields, _via: "Direct (SLA HUB)" })),
+    ...bucket.external.map(e => ({ ...e.fields, _via: "CG Time widget" }))
+  ].sort((a,b)=> new Date(b.WorkDate||0) - new Date(a.WorkDate||0));
+  if(!rows.length) return `<div class="empty">No time logged yet.</div>`;
+  return `<table><thead><tr><th>Date</th><th>User</th><th>Hours</th><th>Billable</th><th>Via</th><th>Detail</th></tr></thead>
+    <tbody>${rows.map(f=>`<tr>
+      <td>${fmtDate(f.WorkDate)}</td><td>${esc(f.EntryUser)}</td><td>${f.Hours}</td>
+      <td>${f.Billable?"Yes":"No"}</td><td>${esc(f._via)}</td><td>${esc(f.ActivityDetail||"")}</td>
+    </tr>`).join("")}</tbody></table>`;
 }
 
 /* ---------- Create / edit ticket ---------- */
@@ -628,6 +845,12 @@ function openTicketForm(){
       <div class="field"><label>Priority</label><select id="tf_priority">
         <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
       </select></div>
+      <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
+        <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+        <option value="Agreement">SLA Agreement</option>
+        <option value="WorkOrder">Custom Work Order</option>
+      </select></div>
+      <div class="field" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
       <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
         <option value="">— none (internal) —</option>
         ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
@@ -651,7 +874,12 @@ function openTicketForm(){
 
 async function submitTicketForm(){
   await submitTicketFormCore({});
-  renderTicketsTable();
+  // Guard: this form can now be opened from the Agreements page too (via
+  // "+ New ticket under this agreement/work order"), where the Tickets
+  // page's own table markup may not exist in the DOM yet.
+  if(document.getElementById("ticketsTableWrap")) renderTicketsTable();
+  if(agreementDetailId) renderAgreementDetail();
+  if(workOrderDetailId) renderWorkOrderDetail();
 }
 
 /* ---------- Ticket detail ---------- */
@@ -685,6 +913,7 @@ function renderTicketDetail(){
         </div>
         <b>Response SLA</b><div>${statusBadge(bs.response)} due ${fmtDateTime(t.fields.ResponseDueAt)}</div>
         <b>Resolution SLA</b><div>${statusBadge(bs.resolution)} due ${fmtDateTime(t.fields.ResolutionDueAt)}</div>
+        <b>Owning entity</b><div>${owningEntityLinkHtml(t)}</div>
         <b>Requested by</b><div>${esc(t.fields.RequestedByName||"—")} ${t.fields.RequestedByEmail?`(${esc(t.fields.RequestedByEmail)})`:""}</div>
         <b>Assigned to</b><div>${esc(t.fields.AssignedToName||"Unassigned")}</div>
         <b>Billable</b><div>${t.fields.Billable? "Yes":"No"}${t.fields.Billable?`
@@ -831,6 +1060,12 @@ async function convertEmailToTicket(messageId){
       <div class="field"><label>Priority</label><select id="tf_priority">
         <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
       </select></div>
+      <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
+        <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+        <option value="Agreement">SLA Agreement</option>
+        <option value="WorkOrder">Custom Work Order</option>
+      </select></div>
+      <div class="field" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
       <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
         <option value="">— none (internal) —</option>
         ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
@@ -882,15 +1117,38 @@ async function submitTicketFormCore(opts={}){
   const title = document.getElementById("tf_title").value.trim();
   if(!title){ toast("Title is required", true); return; }
   const priority = document.getElementById("tf_priority").value;
-  const clientId = document.getElementById("tf_client").value;
-  const endClientId = document.getElementById("tf_endclient").value;
+  let clientId = document.getElementById("tf_client").value;
+  let endClientId = document.getElementById("tf_endclient").value;
   const now = new Date();
-  const targets = resolveTargetsFor(priority, clientId, endClientId);
+
+  // Owning entity (Agreement / Work Order / Ad Hoc) — resolved from state
+  // directly rather than trusting the UI's auto-fill, so a ticket always
+  // ends up with the right Client/EndClient even if onOwningRefChange()
+  // never fired for some reason.
+  const owningType = document.getElementById("tf_owntype") ? document.getElementById("tf_owntype").value : "AdHoc";
+  const owningRefId = document.getElementById("tf_ownref") ? document.getElementById("tf_ownref").value : "";
+  let owningAgreement = null, owningWorkOrder = null;
+  if(owningType === "Agreement" && owningRefId){
+    owningAgreement = state.agreements.find(a => String(a.id)===String(owningRefId));
+    if(owningAgreement){
+      clientId = ticketLookupId(owningAgreement,"Client") || clientId;
+      endClientId = ticketLookupId(owningAgreement,"EndClient") || endClientId;
+    }
+  } else if(owningType === "WorkOrder" && owningRefId){
+    owningWorkOrder = state.workOrders.find(w => String(w.id)===String(owningRefId));
+    if(owningWorkOrder){
+      clientId = ticketLookupId(owningWorkOrder,"Client") || clientId;
+      endClientId = ticketLookupId(owningWorkOrder,"EndClient") || endClientId;
+    }
+  }
+
+  const targets = resolveTargetsFor(priority, clientId, endClientId, owningAgreement?.id);
 
   const fields = {
     Title: title,
     Type: document.getElementById("tf_type").value,
     Priority: priority,
+    OwningEntityType: owningType,
     RequestedByName: document.getElementById("tf_reqname").value,
     RequestedByEmail: document.getElementById("tf_reqemail").value,
     AssignedToName: document.getElementById("tf_assignname").value,
@@ -907,6 +1165,8 @@ async function submitTicketFormCore(opts={}){
   };
   if(clientId) fields.ClientLookupId = Number(clientId);
   if(endClientId) fields.EndClientLookupId = Number(endClientId);
+  if(owningAgreement) fields.OwningAgreementLookupId = Number(owningAgreement.id);
+  if(owningWorkOrder) fields.OwningWorkOrderLookupId = Number(owningWorkOrder.id);
 
   try{
     const created = await graphCreateItem("SLA_Tickets", fields);
@@ -1024,15 +1284,19 @@ async function submitClientForm(id){
   };
   if(!fields.Title){ toast("Name is required", true); return; }
   try{
+    let clientObj;
     if(id){
       await graphUpdateItem("SLA_Clients", id, fields);
-      const c = state.clients.find(x=>String(x.id)===String(id));
-      Object.assign(c.fields, fields);
+      clientObj = state.clients.find(x=>String(x.id)===String(id));
+      Object.assign(clientObj.fields, fields);
     } else {
-      const created = await graphCreateItem("SLA_Clients", fields);
-      state.clients.push(created);
+      clientObj = await graphCreateItem("SLA_Clients", fields);
+      state.clients.push(clientObj);
     }
     closeModal(); toast("Client saved"); renderClients();
+    // Sync this client's Ad Hoc Support active entity so it shows up in
+    // CG Time's Time Tracking Widget as somewhere to log hours directly.
+    syncActiveEntity("AdHocClient", activeEntityTitleFor("AdHocClient", clientObj), clientObj.fields.Title, !!fields.Billable);
   }catch(e){ console.error(e); toast("Couldn't save client: " + e.message, true); }
 }
 
@@ -1079,6 +1343,480 @@ async function submitEndClientForm(id){
     }
     closeModal(); toast("End client saved"); renderClients();
   }catch(e){ console.error(e); toast("Couldn't save end client: " + e.message, true); }
+}
+
+/* ============================================================
+   AGREEMENTS / WORK ORDERS / AD HOC SUPPORT — the owning-entity model.
+   Three tabs on one page: formal SLA Agreements, formal Work Orders, and
+   Ad Hoc Support (Billable clients with no formal record). Each detail
+   view shows every ticket owned by that entity plus every hour logged
+   against it — manually via a ticket, directly in SLA HUB, or via CG
+   Time's shared Time Tracking Widget — combined into one table.
+   ============================================================ */
+let agreementsTab = "agreements"; // "agreements" | "workorders" | "adhoc"
+let agreementDetailId = null;
+let workOrderDetailId = null;
+let adHocClientDetailId = null;
+
+function renderAgreements(){
+  // Note: deliberately does NOT reset agreementDetailId/workOrderDetailId/
+  // adHocClientDetailId here — openAgreementDetail() etc. set the relevant
+  // one just before calling this (via navigate()), and each tab's list
+  // renderer only ever reads its own matching id, so nothing stale leaks
+  // across tabs. Resetting here would wipe that id before it's ever read.
+  document.getElementById("page-agreements").innerHTML = `
+    <div class="page-header">
+      <div><h2>Agreements</h2><div class="sub">What tickets and hours are logged against — SLA Agreements, Work Orders, or Ad Hoc Support</div></div>
+      ${agreementsTab==='agreements' ? `<button class="btn btn-accent" onclick="openAgreementForm()">+ New agreement</button>` : ""}
+      ${agreementsTab==='workorders' ? `<button class="btn btn-accent" onclick="openWorkOrderForm()">+ New work order</button>` : ""}
+    </div>
+    <div class="tabbar">
+      <div class="tab ${agreementsTab==='agreements'?'active':''}" onclick="agreementsTab='agreements'; agreementDetailId=null; renderAgreements();">Agreements</div>
+      <div class="tab ${agreementsTab==='workorders'?'active':''}" onclick="agreementsTab='workorders'; workOrderDetailId=null; renderAgreements();">Work Orders</div>
+      <div class="tab ${agreementsTab==='adhoc'?'active':''}" onclick="agreementsTab='adhoc'; adHocClientDetailId=null; renderAgreements();">Ad Hoc Support</div>
+    </div>
+    <div id="agreementsBodyWrap"></div>
+  `;
+  if(agreementsTab==='agreements') renderAgreementsList();
+  else if(agreementsTab==='workorders') renderWorkOrdersList();
+  else renderAdHocList();
+}
+
+/* ---------- Agreements ---------- */
+function renderAgreementsList(){
+  const wrap = document.getElementById("agreementsBodyWrap");
+  const rows = state.agreements;
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;">
+      ${rows.length ? `
+      <table><thead><tr><th>Number</th><th>Title</th><th>Client</th><th>Status</th><th>Rate</th><th></th></tr></thead>
+      <tbody>${rows.map(a=>{
+        const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(a,"Client")));
+        return `<tr class="clickable" onclick="openAgreementDetail('${a.id}')">
+          <td><b>${esc(a.fields.AgreementNumber||("AGR-"+a.id))}</b></td>
+          <td>${esc(a.fields.Title)}</td>
+          <td>${esc(client?client.fields.Title:"—")}</td>
+          <td><span class="badge ${a.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(a.fields.Status||"—")}</span></td>
+          <td>${a.fields.Rate?fmtMoney(a.fields.Rate, client?.fields?.Currency):"—"}</td>
+          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openAgreementForm('${a.id}')">Edit</button></td>
+        </tr>`;
+      }).join("")}</tbody></table>` : `<div class="empty">No agreements yet.</div>`}
+    </div>
+    <div id="agreementDetailWrap"></div>
+  `;
+  renderAgreementDetail();
+}
+
+function openAgreementDetail(id){
+  agreementsTab = 'agreements'; agreementDetailId = id;
+  navigate('agreements');
+  document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
+}
+
+function renderAgreementDetail(){
+  const wrap = document.getElementById("agreementDetailWrap");
+  if(!wrap) return;
+  if(!agreementDetailId){ wrap.innerHTML = ""; return; }
+  const a = state.agreements.find(x=>String(x.id)===String(agreementDetailId));
+  if(!a){ wrap.innerHTML = ""; return; }
+  const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(a,"Client")));
+  const endClient = state.endClients.find(c=>String(c.id)===String(ticketLookupId(a,"EndClient")));
+  const bucket = hoursForOwningEntity("Agreement", a);
+  const tickets = state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id)));
+
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="agreementDetailId=null; renderAgreementDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</h3>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(client?client.fields.Title:"—")}${endClient?` · ${esc(endClient.fields.Title)}`:""}</div>
+      <div class="kv">
+        <b>Status</b><div>
+          <select onchange="updateAgreementStatus('${a.id}', this.value)">
+            ${["Draft","Active","Expired","Terminated"].map(s=>`<option ${s===a.fields.Status?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <b>Rate</b><div><input type="number" step="0.01" value="${a.fields.Rate||0}" style="width:100px;" onchange="updateAgreementRate('${a.id}', this.value)"></div>
+        <b>Start / End</b><div>${fmtDate(a.fields.StartDate)} – ${fmtDate(a.fields.EndDate)}</div>
+        <b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div>
+      </div>
+      ${a.fields.Notes ? `<div class="section-title">Notes</div><div>${esc(a.fields.Notes).replace(/\n/g,"<br>")}</div>` : ""}
+
+      <div class="section-title">Tickets under this agreement</div>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+        <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this agreement yet.</div>`}
+
+      <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
+      ${combinedTimeRowsHtml(bucket)}
+
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+        <button class="btn btn-sm" onclick="openDirectLogTimeForm('Agreement','${a.id}')">+ Log time directly</button>
+        <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('Agreement','${a.id}');">+ New ticket under this agreement</button>
+      </div>
+    </div>
+  `;
+}
+
+async function updateAgreementStatus(id, status){
+  const a = state.agreements.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  try{
+    await graphUpdateItem("SLA_Agreements", id, { Status: status });
+    a.fields.Status = status;
+    toast("Status updated"); renderAgreementsList(); agreementDetailId=id; renderAgreementDetail();
+    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, status==="Active");
+  }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
+}
+async function updateAgreementRate(id, value){
+  const a = state.agreements.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  const rate = Number(value)||0;
+  try{
+    await graphUpdateItem("SLA_Agreements", id, { Rate: rate });
+    a.fields.Rate = rate;
+    toast("Rate updated");
+  }catch(e){ console.error(e); toast("Couldn't update rate: " + e.message, true); }
+}
+
+function openAgreementForm(id){
+  const a = id ? state.agreements.find(x=>String(x.id)===String(id)) : null;
+  const f = a?.fields || {};
+  openModal(`
+    <h3>${a?"Edit":"New"} agreement</h3>
+    <div class="form-grid">
+      <div class="field span2"><label>Title</label><input id="agf_title" value="${esc(f.Title||"")}" placeholder="e.g. DayForce — ANZ PNG Support Agreement"></div>
+      <div class="field"><label>Client</label><select id="agf_client" onchange="document.getElementById('agf_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
+        ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+      </select></div>
+      <div class="field"><label>End client</label><select id="agf_endclient"><option value="">—</option>${endClientOptions(f.ClientLookupId||(state.clients[0]&&state.clients[0].id), f.EndClientLookupId)}</select></div>
+      <div class="field"><label>Status</label><select id="agf_status">
+        ${["Draft","Active","Expired","Terminated"].map(s=>`<option ${s===f.Status?"selected":""}>${s}</option>`).join("")}
+      </select></div>
+      <div class="field"><label>Rate</label><input id="agf_rate" type="number" step="0.01" value="${f.Rate||""}"></div>
+      <div class="field"><label>Start date</label><input id="agf_start" type="date" value="${f.StartDate?f.StartDate.slice(0,10):""}"></div>
+      <div class="field"><label>End date</label><input id="agf_end" type="date" value="${f.EndDate?f.EndDate.slice(0,10):""}"></div>
+      <div class="field span2"><label>Notes</label><textarea id="agf_notes">${esc(f.Notes||"")}</textarea></div>
+    </div>
+    <div class="section-title">SLA overrides (blank = inherit from End Client / Client / group default)</div>
+    <div class="form-grid">${priorityOverrideFields("agf", a)}</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="submitAgreementForm('${id||""}')">Save</button>
+    </div>
+  `);
+}
+
+async function submitAgreementForm(id){
+  const title = document.getElementById("agf_title").value.trim();
+  if(!title){ toast("Title is required", true); return; }
+  const clientId = document.getElementById("agf_client").value;
+  const endClientId = document.getElementById("agf_endclient").value;
+  const status = document.getElementById("agf_status").value;
+  const fields = {
+    Title: title,
+    Status: status,
+    Rate: Number(document.getElementById("agf_rate").value)||0,
+    StartDate: document.getElementById("agf_start").value ? new Date(document.getElementById("agf_start").value).toISOString() : null,
+    EndDate: document.getElementById("agf_end").value ? new Date(document.getElementById("agf_end").value).toISOString() : null,
+    Notes: document.getElementById("agf_notes").value,
+    ...readPriorityOverrideFields("agf")
+  };
+  if(clientId) fields.ClientLookupId = Number(clientId);
+  if(endClientId) fields.EndClientLookupId = Number(endClientId);
+  try{
+    let a;
+    if(id){
+      await graphUpdateItem("SLA_Agreements", id, fields);
+      a = state.agreements.find(x=>String(x.id)===String(id));
+      Object.assign(a.fields, fields);
+    } else {
+      a = await graphCreateItem("SLA_Agreements", fields);
+      const num = "AGR-" + a.id;
+      await graphUpdateItem("SLA_Agreements", a.id, { AgreementNumber: num });
+      a.fields.AgreementNumber = num;
+      state.agreements.push(a);
+    }
+    closeModal(); toast("Agreement saved"); renderAgreementsList();
+    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, status==="Active");
+  }catch(e){ console.error(e); toast("Couldn't save agreement: " + e.message, true); }
+}
+
+/* ---------- Work Orders ---------- */
+function renderWorkOrdersList(){
+  const wrap = document.getElementById("agreementsBodyWrap");
+  const rows = state.workOrders;
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;">
+      ${rows.length ? `
+      <table><thead><tr><th>Number</th><th>Title</th><th>Client</th><th>Status</th><th>Rate</th><th></th></tr></thead>
+      <tbody>${rows.map(w=>{
+        const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(w,"Client")));
+        return `<tr class="clickable" onclick="openWorkOrderDetail('${w.id}')">
+          <td><b>${esc(w.fields.WorkOrderNumber||("WO-"+w.id))}</b></td>
+          <td>${esc(w.fields.Title)}</td>
+          <td>${esc(client?client.fields.Title:"—")}</td>
+          <td><span class="badge ${w.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(w.fields.Status||"—")}</span></td>
+          <td>${w.fields.Rate?fmtMoney(w.fields.Rate, client?.fields?.Currency):"—"}</td>
+          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openWorkOrderForm('${w.id}')">Edit</button></td>
+        </tr>`;
+      }).join("")}</tbody></table>` : `<div class="empty">No work orders yet.</div>`}
+    </div>
+    <div id="workOrderDetailWrap"></div>
+  `;
+  renderWorkOrderDetail();
+}
+
+function openWorkOrderDetail(id){
+  agreementsTab = 'workorders'; workOrderDetailId = id;
+  navigate('agreements');
+  document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
+}
+
+function renderWorkOrderDetail(){
+  const wrap = document.getElementById("workOrderDetailWrap");
+  if(!wrap) return;
+  if(!workOrderDetailId){ wrap.innerHTML = ""; return; }
+  const w = state.workOrders.find(x=>String(x.id)===String(workOrderDetailId));
+  if(!w){ wrap.innerHTML = ""; return; }
+  const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(w,"Client")));
+  const endClient = state.endClients.find(c=>String(c.id)===String(ticketLookupId(w,"EndClient")));
+  const bucket = hoursForOwningEntity("WorkOrder", w);
+  const tickets = state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id)));
+
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="workOrderDetailId=null; renderWorkOrderDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${esc(w.fields.WorkOrderNumber||("WO-"+w.id))} — ${esc(w.fields.Title)}</h3>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(client?client.fields.Title:"—")}${endClient?` · ${esc(endClient.fields.Title)}`:""}</div>
+      <div class="kv">
+        <b>Status</b><div>
+          <select onchange="updateWorkOrderStatus('${w.id}', this.value)">
+            ${["Draft","Active","Completed","Cancelled"].map(s=>`<option ${s===w.fields.Status?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <b>Rate</b><div><input type="number" step="0.01" value="${w.fields.Rate||0}" style="width:100px;" onchange="updateWorkOrderRate('${w.id}', this.value)"></div>
+        <b>Start / Target</b><div>${fmtDate(w.fields.StartDate)} – ${fmtDate(w.fields.TargetCompletionDate)}</div>
+        <b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div>
+      </div>
+      ${w.fields.Scope ? `<div class="section-title">Scope</div><div>${esc(w.fields.Scope).replace(/\n/g,"<br>")}</div>` : ""}
+      ${w.fields.Notes ? `<div class="section-title">Notes</div><div>${esc(w.fields.Notes).replace(/\n/g,"<br>")}</div>` : ""}
+
+      <div class="section-title">Tickets under this work order</div>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+        <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this work order yet.</div>`}
+
+      <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
+      ${combinedTimeRowsHtml(bucket)}
+
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+        <button class="btn btn-sm" onclick="openDirectLogTimeForm('WorkOrder','${w.id}')">+ Log time directly</button>
+        <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('WorkOrder','${w.id}');">+ New ticket under this work order</button>
+      </div>
+    </div>
+  `;
+}
+
+async function updateWorkOrderStatus(id, status){
+  const w = state.workOrders.find(x=>String(x.id)===String(id));
+  if(!w) return;
+  try{
+    await graphUpdateItem("SLA_WorkOrders", id, { Status: status });
+    w.fields.Status = status;
+    toast("Status updated"); renderWorkOrdersList(); workOrderDetailId=id; renderWorkOrderDetail();
+    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, status==="Active");
+  }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
+}
+async function updateWorkOrderRate(id, value){
+  const w = state.workOrders.find(x=>String(x.id)===String(id));
+  if(!w) return;
+  const rate = Number(value)||0;
+  try{
+    await graphUpdateItem("SLA_WorkOrders", id, { Rate: rate });
+    w.fields.Rate = rate;
+    toast("Rate updated");
+  }catch(e){ console.error(e); toast("Couldn't update rate: " + e.message, true); }
+}
+
+function openWorkOrderForm(id){
+  const w = id ? state.workOrders.find(x=>String(x.id)===String(id)) : null;
+  const f = w?.fields || {};
+  openModal(`
+    <h3>${w?"Edit":"New"} work order</h3>
+    <div class="form-grid">
+      <div class="field span2"><label>Title</label><input id="wof_title" value="${esc(f.Title||"")}" placeholder="e.g. Orica PNG — Server migration"></div>
+      <div class="field"><label>Client</label><select id="wof_client" onchange="document.getElementById('wof_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
+        ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+      </select></div>
+      <div class="field"><label>End client</label><select id="wof_endclient"><option value="">—</option>${endClientOptions(f.ClientLookupId||(state.clients[0]&&state.clients[0].id), f.EndClientLookupId)}</select></div>
+      <div class="field"><label>Status</label><select id="wof_status">
+        ${["Draft","Active","Completed","Cancelled"].map(s=>`<option ${s===f.Status?"selected":""}>${s}</option>`).join("")}
+      </select></div>
+      <div class="field"><label>Rate</label><input id="wof_rate" type="number" step="0.01" value="${f.Rate||""}"></div>
+      <div class="field"><label>Start date</label><input id="wof_start" type="date" value="${f.StartDate?f.StartDate.slice(0,10):""}"></div>
+      <div class="field"><label>Target completion</label><input id="wof_target" type="date" value="${f.TargetCompletionDate?f.TargetCompletionDate.slice(0,10):""}"></div>
+      <div class="field span2"><label>Scope</label><textarea id="wof_scope">${esc(f.Scope||"")}</textarea></div>
+      <div class="field span2"><label>Notes</label><textarea id="wof_notes">${esc(f.Notes||"")}</textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="submitWorkOrderForm('${id||""}')">Save</button>
+    </div>
+  `);
+}
+
+async function submitWorkOrderForm(id){
+  const title = document.getElementById("wof_title").value.trim();
+  if(!title){ toast("Title is required", true); return; }
+  const clientId = document.getElementById("wof_client").value;
+  const endClientId = document.getElementById("wof_endclient").value;
+  const status = document.getElementById("wof_status").value;
+  const fields = {
+    Title: title,
+    Status: status,
+    Rate: Number(document.getElementById("wof_rate").value)||0,
+    StartDate: document.getElementById("wof_start").value ? new Date(document.getElementById("wof_start").value).toISOString() : null,
+    TargetCompletionDate: document.getElementById("wof_target").value ? new Date(document.getElementById("wof_target").value).toISOString() : null,
+    Scope: document.getElementById("wof_scope").value,
+    Notes: document.getElementById("wof_notes").value
+  };
+  if(clientId) fields.ClientLookupId = Number(clientId);
+  if(endClientId) fields.EndClientLookupId = Number(endClientId);
+  try{
+    let w;
+    if(id){
+      await graphUpdateItem("SLA_WorkOrders", id, fields);
+      w = state.workOrders.find(x=>String(x.id)===String(id));
+      Object.assign(w.fields, fields);
+    } else {
+      w = await graphCreateItem("SLA_WorkOrders", fields);
+      const num = "WO-" + w.id;
+      await graphUpdateItem("SLA_WorkOrders", w.id, { WorkOrderNumber: num });
+      w.fields.WorkOrderNumber = num;
+      state.workOrders.push(w);
+    }
+    closeModal(); toast("Work order saved"); renderWorkOrdersList();
+    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, status==="Active");
+  }catch(e){ console.error(e); toast("Couldn't save work order: " + e.message, true); }
+}
+
+/* ---------- Ad Hoc Support ---------- */
+function renderAdHocList(){
+  const wrap = document.getElementById("agreementsBodyWrap");
+  const rows = state.clients.filter(c => c.fields.Billable);
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;">
+      ${rows.length ? `
+      <table><thead><tr><th>Client</th><th>Currency</th><th></th></tr></thead>
+      <tbody>${rows.map(c=>`<tr class="clickable" onclick="openAdHocClientDetail('${c.id}')">
+        <td><b>${esc(c.fields.Title)}</b></td><td>${esc(c.fields.Currency||"—")}</td>
+        <td><button class="btn btn-sm" onclick="event.stopPropagation(); openDirectLogTimeForm('AdHocClient','${c.id}')">+ Log time</button></td>
+      </tr>`).join("")}</tbody></table>` : `<div class="empty">No billable clients yet — add one under Clients first.</div>`}
+    </div>
+    <div id="adHocDetailWrap"></div>
+  `;
+  renderAdHocDetail();
+}
+
+function openAdHocClientDetail(id){
+  agreementsTab = 'adhoc'; adHocClientDetailId = id;
+  navigate('agreements');
+  document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
+}
+
+function renderAdHocDetail(){
+  const wrap = document.getElementById("adHocDetailWrap");
+  if(!wrap) return;
+  if(!adHocClientDetailId){ wrap.innerHTML = ""; return; }
+  const c = state.clients.find(x=>String(x.id)===String(adHocClientDetailId));
+  if(!c){ wrap.innerHTML = ""; return; }
+  const bucket = hoursForAdHocClient(c);
+  const tickets = state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id)));
+
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="adHocClientDetailId=null; renderAdHocDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${esc(c.fields.Title)} — Ad Hoc Support</h3>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">No formal Agreement or Work Order — hours logged straight against the client.</div>
+      <div class="kv"><b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div></div>
+
+      <div class="section-title">Ad Hoc tickets for this client</div>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+        <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No Ad Hoc tickets for this client yet.</div>`}
+
+      <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
+      ${combinedTimeRowsHtml(bucket)}
+
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+        <button class="btn btn-sm" onclick="openDirectLogTimeForm('AdHocClient','${c.id}')">+ Log time directly</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Shared: direct time logging (no ticket) + preset-on-open ---------- */
+function openDirectLogTimeForm(type, refId){
+  const label = type==="Agreement" ? "agreement" : type==="WorkOrder" ? "work order" : "client (Ad Hoc)";
+  openModal(`
+    <h3>Log time directly against this ${label}</h3>
+    <div class="form-grid">
+      <div class="field"><label>Date</label><input id="dlt_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>Hours</label><input id="dlt_hours" type="number" step="0.25" min="0"></div>
+      <div class="field"><label>Billable</label><select id="dlt_billable"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="field span2"><label>Activity detail</label><textarea id="dlt_detail"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="submitDirectLogTime('${type}','${refId}')">Save</button>
+    </div>
+  `);
+}
+
+async function submitDirectLogTime(type, refId){
+  const hours = Number(document.getElementById("dlt_hours").value);
+  if(!hours || hours<=0){ toast("Enter hours logged", true); return; }
+  const entityLabel = type==="Agreement" ? (state.agreements.find(a=>String(a.id)===String(refId))?.fields?.Title||"")
+    : type==="WorkOrder" ? (state.workOrders.find(w=>String(w.id)===String(refId))?.fields?.Title||"")
+    : (state.clients.find(c=>String(c.id)===String(refId))?.fields?.Title||"");
+  const fields = {
+    Title: "Time entry — " + entityLabel,
+    WorkDate: new Date(document.getElementById("dlt_date").value).toISOString(),
+    EntryUser: (currentAccount?.username || "").toLowerCase().trim(),
+    Hours: hours,
+    EntryMethod: "Manual",
+    Billable: document.getElementById("dlt_billable").value === "true",
+    ActivityDetail: document.getElementById("dlt_detail").value,
+    OwningEntityType: type
+  };
+  if(type==="Agreement") fields.OwningAgreementLookupId = Number(refId);
+  else if(type==="WorkOrder") fields.OwningWorkOrderLookupId = Number(refId);
+  else fields.OwningClientLookupId = Number(refId);
+  try{
+    const created = await graphCreateItem("SLA_TimeEntries", fields);
+    state.timeEntries.push(created);
+    closeModal(); toast("Time logged");
+    if(type==="Agreement") renderAgreementDetail();
+    else if(type==="WorkOrder") renderWorkOrderDetail();
+    else renderAdHocDetail();
+  }catch(e){ console.error(e); toast("Couldn't log time: " + e.message, true); }
+}
+
+// Pre-selects the Owning entity dropdowns on the (already-open) ticket form —
+// used by the "+ New ticket under this agreement/work order" buttons.
+function presetOwningEntity(type, refId){
+  const typeSel = document.getElementById("tf_owntype");
+  if(!typeSel) return;
+  typeSel.value = type;
+  onOwningTypeChange();
+  const refSel = document.getElementById("tf_ownref");
+  if(refSel){ refSel.value = refId; onOwningRefChange(); }
 }
 
 /* ============================================================
