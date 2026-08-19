@@ -329,7 +329,7 @@
     <div class="nav-item"><span class="ic">&#8987;</span>Exceptions <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
     <div class="nav-group">Report</div>
-    <div class="nav-item"><span class="ic">&#9776;</span>Reports</div>
+    <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
     <div class="nav-item"><span class="ic">&#128197;</span>Calendars</div>
 
     <div class="nav-group">Admin</div>
@@ -435,6 +435,8 @@
 
     <div class="view" id="view-timesheets"></div>
 
+    <div class="view" id="view-reports"></div>
+
   </main>
 </div>
 </div>
@@ -497,11 +499,13 @@ const VIEW_TITLES = {
   "resources": "Resources",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
+  "reports": "Reports",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
+  "reports": renderReportsView,
 };
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
@@ -1113,9 +1117,10 @@ function renderResourcesView(){
       `;
     }
     const homeHub = esc(r._sourceHubLabel || "unknown source");
+    const buLabel = esc(r.fields.BusinessUnit || "—");
     return `
       <div class="res-row">
-        <div class="res-name">${esc(r.fields.Title||"—")}<div style="font-size:10px;color:var(--ink-muted);font-weight:400;margin-top:2px;">home: ${homeHub}</div></div>
+        <div class="res-name">${esc(r.fields.Title||"—")}<div style="font-size:10px;color:var(--ink-muted);font-weight:400;margin-top:2px;">home: ${homeHub} &middot; BU: ${buLabel}</div></div>
         <div class="res-email">${esc(r.fields.MatchEmail||"—")}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div>
@@ -1249,7 +1254,7 @@ function renderTimeEntriesView(){
     <div class="panel">
       <table>
         <thead>
-          <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr>
+          <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
         </thead>
         <tbody id="teResultsBody"></tbody>
       </table>
@@ -1277,7 +1282,7 @@ function renderTimeEntriesResults(){
     ? `showing first ${TIME_ENTRIES_ROW_CAP} of ${filtered.length} — narrow the filters to see more`
     : `${filtered.length} entr${filtered.length===1?"y":"ies"}`;
   if(shown.length === 0){
-    body.innerHTML = `<tr><td colspan="6">No entries match these filters.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7">No entries match these filters.</td></tr>`;
     return;
   }
   body.innerHTML = shown.map(t=>{
@@ -1291,6 +1296,7 @@ function renderTimeEntriesResults(){
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td>${esc(f.ActivityDetail || "—")}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
         <td>${billable}</td>
       </tr>
@@ -1338,7 +1344,7 @@ function renderTimesheetsView(){
       </div>
       <div class="filter-field"><label>From</label><input type="date" id="tsFrom" value="${esc(tsFilters.start)}"></div>
       <div class="filter-field"><label>To</label><input type="date" id="tsTo" value="${esc(tsFilters.end)}"></div>
-      <button class="print-btn" id="tsPrintBtn">Print</button>
+      <button class="print-btn" id="tsPrintBtn">Open printable timesheet</button>
     </div>
     <div id="tsBody"></div>
   `;
@@ -1346,7 +1352,12 @@ function renderTimesheetsView(){
   document.getElementById("tsResource").addEventListener("change", e => { tsFilters.resourceEmail = e.target.value; renderTimesheetBody(); });
   document.getElementById("tsFrom").addEventListener("change", e => { tsFilters.start = e.target.value; renderTimesheetBody(); });
   document.getElementById("tsTo").addEventListener("change", e => { tsFilters.end = e.target.value; renderTimesheetBody(); });
-  document.getElementById("tsPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("tsPrintBtn").addEventListener("click", () => {
+    if(!tsFilters.resourceEmail){ alert("Please select a resource first."); return; }
+    const resource = allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === tsFilters.resourceEmail);
+    if(!resource) return;
+    openDocInNewTab(buildTimesheetDocHtml(resource, tsFilters.start, tsFilters.end));
+  });
 
   renderTimesheetBody();
 }
@@ -1416,6 +1427,353 @@ function renderTimesheetBody(){
       </table>
     </div>
   `;
+}
+
+/* ============================================================
+   PRINTABLE DOCUMENTS — Timesheets and Reports, generated as
+   self-contained documents in a new tab, same pattern csa-hub's
+   own "Generate Timesheet" / "Generate Report" features already
+   use in production (@page-sized for A4, own Print/Save-as-PDF
+   button, signature block on the timesheet). CG Time reuses that
+   proven format rather than inventing a new one, just sourced
+   from CG Time's own aggregated (read-only) data.
+   ============================================================ */
+function fmtDateDMY(str){
+  if(!str) return "";
+  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return str;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function dateRangeArray(start, end){
+  const dates = [];
+  if(!start || !end) return dates;
+  let cur = new Date(start + "T00:00:00");
+  const endD = new Date(end + "T00:00:00");
+  while(cur <= endD){
+    dates.push(toDateStr(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+function openDocInNewTab(html){
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow pop-ups for this site to open the document.");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+const DOC_STYLE = `
+  @page{ size:A4; margin:20mm 16mm; }
+  body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:800px; margin:0 auto; padding:30px 40px; }
+  .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
+  .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
+  .meta-row{margin-bottom:16px;font-size:12px;}
+  .meta-row div{margin-bottom:4px;}
+  .meta-row b{display:inline-block;width:110px;}
+  table.ts-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;table-layout:fixed;}
+  table.ts-table th{background:#f2f2f2;border:1px solid #999;padding:6px 5px;text-align:left;font-size:9px;text-transform:uppercase;overflow:hidden;}
+  table.ts-table td{border:1px solid #999;padding:6px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.ts-table th:first-child, table.ts-table td:first-child{width:26%;}
+  table.ts-table tfoot td{font-weight:700;background:#fafafa;}
+  table.rpt-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:20px;}
+  table.rpt-table thead{display:table-header-group;}
+  table.rpt-table tr{page-break-inside:avoid;}
+  table.rpt-table th{background:#f2f2f2;border:1px solid #999;padding:6px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;}
+  table.rpt-table td{border:1px solid #999;padding:6px 8px;}
+  table.subtotal-table{width:60%;border-collapse:collapse;font-size:11px;margin-bottom:20px;}
+  table.subtotal-table td{border:1px solid #999;padding:6px 8px;}
+  table.subtotal-table tr:last-child td{font-weight:700;background:#fafafa;}
+  .summary-row{margin-bottom:20px;font-size:12px;margin-top:16px;}
+  .summary-row div{margin-bottom:4px;}
+  .sig-row{display:flex;justify-content:space-between;gap:60px;font-size:11.5px;margin-top:30px;}
+  .sig-col{flex:1;}
+  .sig-line{border-bottom:1px solid #1a1a1a;height:26px;margin-bottom:4px;}
+  .sig-field{margin-top:14px;}
+  .sig-field b{display:inline-block;width:60px;}
+  .footer-stamp{margin-top:30px;font-size:10px;color:#888;border-top:1px solid #ccc;padding-top:8px;}
+  .no-print{position:fixed;top:16px;right:16px;}
+  .no-print button{background:#5e491f;color:#fff8e8;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;}
+  @media print{ .no-print{display:none;} }
+`;
+
+function buildTimesheetDocHtml(resource, start, end){
+  const entries = entriesForResourceAndPeriod(resource, start, end);
+  const dates = dateRangeArray(start, end);
+  const csaLabels = [...new Set(entries.map(t => (t.fields.CSA||"").trim()).filter(Boolean))];
+
+  const csaRows = csaLabels.map(label => {
+    const cells = dates.map(d => entries
+      .filter(t => (t.fields.CSA||"").trim() === label && t.fields.WorkDate === d)
+      .reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0));
+    return { label, cells, rowTotal: cells.reduce((a,b)=>a+b,0) };
+  });
+  const columnTotals = dates.map((d,i) => csaRows.reduce((sum,r)=> sum + r.cells[i], 0));
+  const grandTotal = columnTotals.reduce((a,b)=>a+b,0);
+  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+
+  const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric"});
+  const dayLabelFull = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+  const periodLabel = start === end ? dayLabelFull(start) : `${dayLabelFull(start)} — ${dayLabelFull(end)}`;
+
+  const MAX_COLS = 9;
+  const dateChunks = [];
+  for(let i=0; i<dates.length; i+=MAX_COLS) dateChunks.push(dates.slice(i, i+MAX_COLS));
+
+  const gridHtml = csaRows.length ? dateChunks.map(chunk => {
+    const startIdx = dates.indexOf(chunk[0]);
+    return `
+    <table class="ts-table">
+      <thead>
+        <tr>
+          <th>CSA</th>
+          ${chunk.map(d => `<th style="text-align:right">${dayLabel(d)}</th>`).join("")}
+          <th style="text-align:right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${csaRows.map(r => {
+          const chunkCells = r.cells.slice(startIdx, startIdx+chunk.length);
+          const chunkTotal = dateChunks.length > 1 ? chunkCells.reduce((a,b)=>a+b,0) : r.rowTotal;
+          return `
+          <tr>
+            <td>${esc(r.label)}</td>
+            ${chunkCells.map(c => `<td style="text-align:right">${c ? c.toFixed(2) : ""}</td>`).join("")}
+            <td style="text-align:right"><strong>${chunkTotal ? chunkTotal.toFixed(2) : ""}</strong></td>
+          </tr>
+        `;
+        }).join("")}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          ${chunk.map((d,i) => `<td style="text-align:right">${columnTotals[startIdx+i] ? columnTotals[startIdx+i].toFixed(2) : ""}</td>`).join("")}
+          <td style="text-align:right">${chunk.map((d,i)=>columnTotals[startIdx+i]).reduce((a,b)=>a+b,0).toFixed(2)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+  }).join("") : `<p style="font-size:12px;color:#666;">No time entries recorded for this period.</p>`;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Timesheet — ${esc(resource.fields.Title)} — ${esc(periodLabel)}</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Timesheet</div>
+<div class="doc-sub">${esc(resource.fields.Title)} &middot; ${esc(periodLabel)}</div>
+
+<div class="meta-row">
+  <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
+  <div><b>Home HUB:</b> ${esc(resource._sourceHubLabel || "—")}</div>
+  <div><b>Business Unit:</b> ${esc(resource.fields.BusinessUnit || "—")}</div>
+  <div><b>Period:</b> ${esc(fmtDateDMY(start))} to ${esc(fmtDateDMY(end))}</div>
+</div>
+
+${gridHtml}
+
+<div class="summary-row">
+  <div><b>Total Hours:</b> ${grandTotal.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
+</div>
+
+<div class="sig-row">
+  <div class="sig-col">
+    <div style="font-size:11.5px;"><b>Employee Sign-Off</b></div>
+    <div class="sig-field"><b>Signed:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Name:</b></div>
+    <div class="sig-line">${esc(resource.fields.Title)}</div>
+    <div class="sig-field"><b>Date:</b></div>
+    <div class="sig-line"></div>
+  </div>
+  <div class="sig-col">
+    <div style="font-size:11.5px;"><b>Approved By</b></div>
+    <div class="sig-field"><b>Signed:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Name:</b></div>
+    <div class="sig-line"></div>
+    <div class="sig-field"><b>Date:</b></div>
+    <div class="sig-line"></div>
+  </div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+
+</body>
+</html>
+`;
+}
+
+function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, billableFilter){
+  let entries = entriesForResourceAndPeriod(resource, start || "0000-01-01", end || "9999-12-31");
+  if(csaFilterTitle) entries = entries.filter(t => (t.fields.CSA||"").trim() === csaFilterTitle);
+  if(billableFilter === "billable") entries = entries.filter(t => t.fields.Billable === true);
+  if(billableFilter === "not-billable") entries = entries.filter(t => t.fields.Billable === false);
+  if(billableFilter === "not-set") entries = entries.filter(t => !hasBillableChoice(t));
+
+  const actualStart = entries.length ? entries[0].fields.WorkDate : (start || "—");
+  const actualEnd = entries.length ? entries[entries.length-1].fields.WorkDate : (end || "—");
+  const grandTotal = entries.reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+
+  const byCSA = {};
+  entries.forEach(t => {
+    const label = t.fields.CSA || "Unspecified";
+    byCSA[label] = (byCSA[label] || 0) + (parseFloat(t.fields.Hours)||0);
+  });
+  const csaLabels = Object.keys(byCSA).sort();
+
+  const filterDescParts = [];
+  if(csaFilterTitle) filterDescParts.push(csaFilterTitle);
+  if(billableFilter === "billable") filterDescParts.push("Billable only");
+  if(billableFilter === "not-billable") filterDescParts.push("Non-billable only");
+  if(billableFilter === "not-set") filterDescParts.push("Not set only");
+  const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
+
+  const rowsHtml = entries.length ? entries.map(t => {
+    const billableTxt = hasBillableChoice(t) ? (t.fields.Billable ? "Yes" : "No") : "Not Set";
+    return `
+    <tr>
+      <td>${fmtDateDMY(t.fields.WorkDate) || "—"}</td>
+      <td>${esc(t.fields.CSA) || "—"}</td>
+      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
+      <td>${billableTxt}</td>
+      <td>${esc(t.fields.ActivityDetail) || "—"}</td>
+      <td>${esc(t.fields.EntryMethod) || "—"}</td>
+    </tr>
+  `;
+  }).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+
+  const subtotalsHtml = csaLabels.map(label => `
+    <tr><td>${esc(label)}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
+  `).join("");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Time Entries Report — ${esc(resource.fields.Title)}</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Time Entries Report</div>
+<div class="doc-sub">${esc(resource.fields.Title)}</div>
+
+<div class="meta-row">
+  <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
+  <div><b>Filter:</b> ${esc(filterDesc)}</div>
+  <div><b>Period:</b> ${esc(fmtDateDMY(actualStart))} to ${esc(fmtDateDMY(actualEnd))}</div>
+  <div><b>Entries:</b> ${entries.length}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Date</th><th>Logged Against</th><th style="text-align:right">Hours</th><th>Billable</th><th>Activity Detail</th><th>Entry Method</th></tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+
+${csaLabels.length ? `
+<table class="subtotal-table">
+  <tbody>
+    ${subtotalsHtml}
+    <tr><td>Total</td><td style="text-align:right">${grandTotal.toFixed(2)}</td></tr>
+  </tbody>
+</table>
+` : ""}
+
+<div class="summary-row">
+  <div><b>Total Hours:</b> ${grandTotal.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+
+</body>
+</html>
+`;
+}
+
+/* ============================================================
+   REPORTS VIEW — generates the same kind of printable Time
+   Entries Report csa-hub already produces, sourced from CG
+   Time's aggregated data. Read-only, opens in a new tab.
+   ============================================================ */
+let reportFilters = { resourceEmail: "", csa: "", from: "", to: "", billable: "all" };
+
+function renderReportsView(){
+  const container = document.getElementById("view-reports");
+  const resourceOptions = allResources.slice()
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
+    .join("");
+  const csaOptions = allActiveEntities.slice()
+    .filter(e => e.fields.Title)
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(e => `<option value="${esc(e.fields.Title)}">${esc(e.fields.Title)}</option>`)
+    .join("");
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Resource</label>
+        <select id="rptResource">
+          <option value="">Select a resource…</option>
+          ${resourceOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>CSA / Proposal</label>
+        <select id="rptCsa">
+          <option value="">All</option>
+          ${csaOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>From</label><input type="date" id="rptFrom" value="${esc(reportFilters.from)}"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="rptTo" value="${esc(reportFilters.to)}"></div>
+      <div class="filter-field"><label>Billable</label>
+        <select id="rptBillable">
+          <option value="all">All</option>
+          <option value="billable">Billable</option>
+          <option value="not-billable">Not billable</option>
+          <option value="not-set">Not set</option>
+        </select>
+      </div>
+      <button class="print-btn" id="rptGenerateBtn">Generate Report</button>
+    </div>
+    <div class="panel">
+      <div style="font-size:12px;color:var(--ink-muted);">Pick a resource (and optionally narrow by CSA, date range, or billable status), then Generate Report opens a printable document in a new tab &mdash; same format as CSA HUB's own Time Entries Report.</div>
+    </div>
+  `;
+  document.getElementById("rptResource").value = reportFilters.resourceEmail;
+  document.getElementById("rptCsa").value = reportFilters.csa;
+  document.getElementById("rptBillable").value = reportFilters.billable;
+
+  document.getElementById("rptResource").addEventListener("change", e => reportFilters.resourceEmail = e.target.value);
+  document.getElementById("rptCsa").addEventListener("change", e => reportFilters.csa = e.target.value);
+  document.getElementById("rptFrom").addEventListener("change", e => reportFilters.from = e.target.value);
+  document.getElementById("rptTo").addEventListener("change", e => reportFilters.to = e.target.value);
+  document.getElementById("rptBillable").addEventListener("change", e => reportFilters.billable = e.target.value);
+  document.getElementById("rptGenerateBtn").addEventListener("click", () => {
+    if(!reportFilters.resourceEmail){ alert("Please select a resource."); return; }
+    const resource = allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === reportFilters.resourceEmail);
+    if(!resource) return;
+    openDocInNewTab(buildTimeEntriesReportDocHtml(resource, reportFilters.csa, reportFilters.from, reportFilters.to, reportFilters.billable));
+  });
 }
 
 /* ============================================================
