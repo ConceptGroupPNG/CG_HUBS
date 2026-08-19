@@ -552,6 +552,64 @@ async function resolveTimeSiteId(){
 }
 
 /* ============================================================
+   RESOURCE SOURCES — each HUB owns and manages its own Resources
+   list; CG Time only ever reads them, never writes. Add an entry
+   here when a HUB stands up its own {Hub}_Resources list — nothing
+   else in the app needs to change. Every source list MUST expose a
+   MatchEmail column using the same convention as CSA_Resources, or
+   cross-HUB matching (time entries, hub assignments) breaks for
+   that HUB's people.
+   Only CSA HUB has a Resources list today — PSP HUB and CG Training
+   HUB don't have one yet, and SLA HUB doesn't exist yet either.
+   ============================================================ */
+const RESOURCE_SOURCES = [
+  { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_Resources", siteHost: SITE_HOST, sitePath: SITE_PATH },
+  // { hub: "PSP_HUB", label: "PSP HUB", listName: "PSP_Resources", siteHost: SITE_HOST, sitePath: "/sites/PSP_HUB_SITE" },
+  // { hub: "TRAINING_HUB", label: "CG Training HUB", listName: "TRAINING_Resources", siteHost: SITE_HOST, sitePath: "/sites/training.admin" },
+];
+
+// Resolved site IDs, keyed by "host:path", so multiple resource
+// sources on the same site only resolve that site once.
+const siteIdCache = {};
+async function resolveSite(host, path){
+  const key = `${host}:${path}`;
+  if(siteIdCache[key]) return siteIdCache[key];
+  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${host}:${path}`);
+  siteIdCache[key] = data.id;
+  return data.id;
+}
+
+async function fetchListItemsFromSite(siteId, listName, extraQuery=""){
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?expand=fields${extraQuery}`;
+  let items = [];
+  while(url){
+    const page = await graphGet(url);
+    items = items.concat(page.value || []);
+    url = page["@odata.nextLink"] || null;
+  }
+  return items;
+}
+
+// Fetches every configured HUB's own Resources list and merges them,
+// tagging each row with which HUB it came from. A source that fails
+// (list not created yet, site unreachable) is skipped with a console
+// warning instead of breaking the whole dashboard — most HUBs don't
+// have a Resources list of their own yet.
+async function fetchAllResources(){
+  const results = await Promise.all(RESOURCE_SOURCES.map(async src => {
+    try{
+      const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
+      const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
+      return items.map(item => ({ ...item, _sourceHub: src.hub, _sourceHubLabel: src.label }));
+    }catch(err){
+      console.warn(`Resource source ${src.listName} (${src.hub}) unavailable — skipping.`, err);
+      return [];
+    }
+  }));
+  return results.flat();
+}
+
+/* ============================================================
    APP STATE
    ============================================================ */
 let allTimeEntries = [];
@@ -582,7 +640,7 @@ async function refreshAllData(){
     [allTimeEntries, allActiveEntities, allResources, allExceptions, allHubAssignments] = await Promise.all([
       fetchAllListItems("CSA_TimeEntries"),
       fetchAllListItems("CSA_ActiveEntities"),
-      fetchAllListItems("CSA_Resources"),
+      fetchAllResources(),
       fetchAllListItems("CG_ExceptionsQueue"),
       fetchAllListItems("CG_ResourceHubAssignments")
     ]);
@@ -855,10 +913,12 @@ function renderTopResources(){
   const mStart = monthStartStr(0), mEnd = monthEndStr(0);
   const monthEntries = allTimeEntries.filter(t => t.fields.WorkDate && t.fields.WorkDate >= mStart && t.fields.WorkDate <= mEnd);
   const hoursByLabel = {};
+  const hubByLabel = {};
   monthEntries.forEach(t=>{
     const r = resourceForEntry(t);
     const label = r ? r.fields.Title : (t.fields.EntryUser || "Unmatched");
     hoursByLabel[label] = (hoursByLabel[label]||0) + (parseFloat(t.fields.Hours)||0);
+    if(r && r._sourceHubLabel) hubByLabel[label] = r._sourceHubLabel;
   });
   const ranked = Object.entries(hoursByLabel).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const list = document.getElementById("topResourcesList");
@@ -869,7 +929,7 @@ function renderTopResources(){
   list.innerHTML = ranked.map(([name,hrs],i)=>`
     <div class="tr-row">
       <div class="tr-rank">${i+1}</div>
-      <div><div class="tr-name">${esc(name)}</div><div class="tr-sub">CSA HUB</div></div>
+      <div><div class="tr-name">${esc(name)}</div><div class="tr-sub">${esc(hubByLabel[name] || "—")}</div></div>
       <div class="tr-hours">${hrs.toFixed(1)}</div>
     </div>
   `).join("");
@@ -937,7 +997,10 @@ function renderResourcesView(){
     const chips = assignments.map(a => `
       <span class="hub-chip">${esc(a.fields.Hub)}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
     `).join("");
-    const available = ALL_HUBS.filter(h => !assignedHubs.has(h));
+    // Exclude the HUB this person's own Resources list already puts them
+    // in — that's their home HUB, implicit from the source list, not
+    // something CG_ResourceHubAssignments needs to restate.
+    const available = ALL_HUBS.filter(h => !assignedHubs.has(h) && h !== r._sourceHub);
     // No MatchEmail means there's no reliable key to write CG_ResourceHubAssignments
     // against (or to match it back to this person later) — so there's nothing
     // actionable to show here rather than a control that can only ever fail.
@@ -956,13 +1019,14 @@ function renderResourcesView(){
         </span>
       `;
     }
+    const homeHub = esc(r._sourceHubLabel || "unknown source");
     return `
       <div class="res-row">
-        <div class="res-name">${esc(r.fields.Title||"—")}</div>
+        <div class="res-name">${esc(r.fields.Title||"—")}<div style="font-size:10px;color:var(--ink-muted);font-weight:400;margin-top:2px;">home: ${homeHub}</div></div>
         <div class="res-email">${esc(r.fields.MatchEmail||"—")}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div>
-          <div class="hub-chips">${chips || '<span style="font-size:11px;color:var(--ink-muted);">CSA HUB only (on record)</span>'}</div>
+          <div class="hub-chips">${chips || `<span style="font-size:11px;color:var(--ink-muted);">${homeHub} only (on record)</span>`}</div>
           <div style="margin-top:6px;">${addControl}</div>
           <div class="hub-msg" style="font-size:11px;margin-top:4px;min-height:14px;"></div>
         </div>
@@ -972,7 +1036,7 @@ function renderResourcesView(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9733;</span>Resource &rarr; HUB assignments</h3>
-      <div class="panel-sub">Everyone here comes from CSA_Resources. Add a HUB for anyone who also does PSP HUB or CG Training work &mdash; writes straight to CG_ResourceHubAssignments.</div>
+      <div class="panel-sub">Pulled from every HUB's own Resources list (only CSA_Resources exists today). Add a HUB for anyone who also works outside their home HUB &mdash; writes straight to CG_ResourceHubAssignments.</div>
     </div>
     <div class="res-table-wrap">
       <div class="res-row head"><div>Name</div><div>Email</div><div>Status</div><div>HUB assignments</div></div>
