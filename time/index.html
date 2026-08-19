@@ -326,7 +326,7 @@
 
     <div class="nav-group">Coordinate</div>
     <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
-    <div class="nav-item"><span class="ic">&#8987;</span>Exceptions <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
+    <div class="nav-item" data-view="exceptions"><span class="ic">&#8987;</span>Exceptions <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
@@ -430,6 +430,7 @@
     </div>
 
     <div class="view" id="view-resources"></div>
+    <div class="view" id="view-exceptions"></div>
 
     <div class="view" id="view-time-entries"></div>
 
@@ -497,12 +498,14 @@ document.getElementById("signoutBtn").addEventListener("click", ()=>{
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
   "resources": "Resources",
+  "exceptions": "Exceptions",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
+  "exceptions": renderExceptionsView,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
@@ -972,6 +975,98 @@ function renderExceptions(){
         <div class="ex-body">
           <div class="ex-title">${esc(f.Title || "(untitled)")}</div>
           <div class="ex-meta">${esc(f.ExceptionType || "Other")}${f.RaisedDate ? " · " + esc(f.RaisedDate) : ""}</div>
+        </div>
+        <span class="badge ${resolved?'resolved':'open'}">${resolved?'Resolved':'Open'}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+/* ============================================================
+   EXCEPTIONS VIEW — the full CG_ExceptionsQueue, filterable.
+   Read-only here too: an exception raised against CSA_TimeEntries
+   resolves itself once the source HUB fixes the underlying entry
+   (see autoResolveExceptions above) — there's no manual "Resolve"
+   action in CG Time itself, on purpose.
+   ============================================================ */
+let exFilters = { status: "open", type: "all", search: "" };
+
+function filteredExceptions(){
+  return allExceptions.filter(e => {
+    const f = e.fields;
+    if(exFilters.status === "open" && f.Status !== "Open") return false;
+    if(exFilters.status === "resolved" && f.Status !== "Resolved") return false;
+    if(exFilters.type !== "all" && (f.ExceptionType || "Other") !== exFilters.type) return false;
+    if(exFilters.search){
+      const needle = exFilters.search.toLowerCase();
+      const hay = `${f.Title||""} ${f.ExceptionType||""} ${f.SourceList||""}`.toLowerCase();
+      if(!hay.includes(needle)) return false;
+    }
+    return true;
+  });
+}
+
+function renderExceptionsView(){
+  const container = document.getElementById("view-exceptions");
+  const types = [...new Set(allExceptions.map(e => e.fields.ExceptionType || "Other"))].sort();
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Status</label>
+        <select id="exStatus">
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="filter-field"><label>Type</label>
+        <select id="exType">
+          <option value="all">All types</option>
+          ${types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="filter-field"><label>Search</label><input type="search" id="exSearch" placeholder="title, type, source…" value="${esc(exFilters.search)}"></div>
+      <div class="filter-count" id="exCount"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-sub" style="margin-bottom:10px;">From CG_ExceptionsQueue &middot; resolves itself once the underlying record is fixed in the HUB that owns it &mdash; there's no manual resolve action here.</div>
+      <div class="ex-list" id="exceptionsFullList"></div>
+    </div>
+  `;
+  document.getElementById("exStatus").value = exFilters.status;
+  document.getElementById("exType").value = exFilters.type;
+
+  document.getElementById("exStatus").addEventListener("change", e => { exFilters.status = e.target.value; renderExceptionsResults(); });
+  document.getElementById("exType").addEventListener("change", e => { exFilters.type = e.target.value; renderExceptionsResults(); });
+  document.getElementById("exSearch").addEventListener("input", e => { exFilters.search = e.target.value; renderExceptionsResults(); });
+
+  renderExceptionsResults();
+}
+
+function renderExceptionsResults(){
+  const list = document.getElementById("exceptionsFullList");
+  const countEl = document.getElementById("exCount");
+  if(!list) return;
+  const filtered = filteredExceptions().slice().sort((a,b)=> (b.fields.RaisedDate||"").localeCompare(a.fields.RaisedDate||""));
+  countEl.textContent = `${filtered.length} exception${filtered.length===1?"":"s"}`;
+  if(filtered.length === 0){
+    list.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">No exceptions match these filters.</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(e=>{
+    const f = e.fields;
+    const resolved = f.Status === "Resolved";
+    const icon = resolved ? '<span style="color:var(--status-good);">&#10003;</span>' : '&#8987;';
+    const metaParts = [esc(f.ExceptionType || "Other")];
+    if(f.SourceList) metaParts.push(esc(f.SourceList));
+    if(f.RaisedDate) metaParts.push("raised " + esc(f.RaisedDate.slice(0,10)));
+    if(resolved && f.ResolvedDate) metaParts.push("resolved " + esc(f.ResolvedDate.slice(0,10)));
+    return `
+      <div class="ex-item" style="${resolved?'opacity:.6;':''}">
+        <div class="ex-icon">${icon}</div>
+        <div class="ex-body">
+          <div class="ex-title">${esc(f.Title || "(untitled)")}</div>
+          <div class="ex-meta">${metaParts.join(" &middot; ")}</div>
+          ${resolved && f.ResolvedBy ? `<div class="ex-meta" style="font-style:italic;">${esc(f.ResolvedBy)}</div>` : ""}
         </div>
         <span class="badge ${resolved?'resolved':'open'}">${resolved?'Resolved':'Open'}</span>
       </div>
