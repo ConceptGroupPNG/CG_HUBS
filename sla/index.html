@@ -55,10 +55,12 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .page-header h2{font-size:21px;margin:0;font-weight:700;}
 .page-header .sub{color:var(--ink-2);font-size:13px;margin-top:2px;}
 
-.btn{border:1px solid var(--border);background:var(--surface-1);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--ink);}
-.btn:hover{background:#f0f1f3;}
-.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent);}
-.btn-accent:hover{background:var(--accent-dk);}
+.btn{border:1.5px solid var(--border);background:var(--surface-1);border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;color:var(--ink);transition:all .12s ease;}
+.btn:hover{background:#f0f1f3;border-color:var(--ink-2);}
+.btn:active{transform:scale(.96);}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 10px rgba(42,120,214,0.35);}
+.btn-accent:hover{background:var(--accent-dk);border-color:var(--accent-dk);box-shadow:0 4px 14px rgba(42,120,214,0.45);transform:translateY(-1px);}
+.btn-accent:active{transform:translateY(0) scale(.96);}
 .btn-sm{padding:5px 10px;font-size:12px;}
 .btn-gold{background:var(--brand-gold);color:#22200f;border-color:var(--brand-gold);}
 .btn-gold:hover{background:var(--brand-gold-dk);}
@@ -93,18 +95,32 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .filter-bar select:focus,.filter-bar input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(42,120,214,0.16);}
 .filter-bar input[type=text]{min-width:200px;}
 
-.modal-overlay{position:fixed;inset:0;background:rgba(10,11,15,0.45);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;z-index:100;overflow-y:auto;}
-.modal-overlay.active{display:flex;}
-.modal{background:#fff;border-radius:14px;width:100%;max-width:640px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.3);border:3px solid var(--accent);}
-.modal h3{margin:0 0 16px;font-size:17px;}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;}
+@keyframes modalPop{from{opacity:0;transform:translateY(-16px) scale(.96);}to{opacity:1;transform:none;}}
+@keyframes overlayIn{from{opacity:0;}to{opacity:1;}}
+.modal-overlay{position:fixed;inset:0;background:rgba(10,12,18,0.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:48px 20px;z-index:100;overflow-y:auto;}
+.modal-overlay.active{display:flex;animation:overlayIn .15s ease-out;}
+.modal{position:relative;background:#fff;border-radius:16px;width:100%;max-width:660px;padding:30px 32px 28px;box-shadow:0 24px 70px rgba(10,12,18,0.4);border:3px solid var(--accent);animation:modalPop .22s cubic-bezier(.16,1,.3,1);}
+.modal-x{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:50%;border:none;background:var(--page);color:var(--ink-2);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s ease;}
+.modal-x:hover{background:var(--critical-bg);color:var(--critical);transform:rotate(90deg);}
+#modalBody h3{margin:0 0 3px;font-size:20px;font-weight:800;letter-spacing:-.01em;padding-right:30px;}
+.modal-sub{color:var(--ink-2);font-size:12.5px;margin:0 0 20px;line-height:1.5;padding-bottom:16px;border-bottom:1px solid var(--gridline);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;}
 .form-grid.full{grid-template-columns:1fr;}
-.field label{display:block;font-size:11.5px;font-weight:700;color:var(--ink-2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em;}
-.field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;}
-.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(42,120,214,0.16);}
+.field-divider{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:6px 0 -2px;}
+.field-divider:first-child{margin-top:0;}
+.field-divider span{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-dk);white-space:nowrap;}
+.field-divider span::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--accent);display:inline-block;flex-shrink:0;}
+.field-divider::after{content:"";flex:1;height:1px;background:var(--gridline);}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;}
+.field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--page);font-size:13.5px;color:var(--ink);transition:border-color .12s ease,box-shadow .12s ease,background .12s ease;}
+.field select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2353565f'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px;}
+.field input:hover,.field select:hover,.field textarea:hover{border-color:var(--ink-2);}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;background:#fff;border-color:var(--accent);box-shadow:0 0 0 3px rgba(42,120,214,0.16);}
 .field textarea{resize:vertical;min-height:70px;}
 .field.span2{grid-column:1/-1;}
-.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;}
+.field.highlight{background:var(--good-bg);border:1.5px solid rgba(12,163,12,0.25);border-radius:10px;padding:10px 12px 12px;}
+.field.highlight label{color:var(--good);}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;padding-top:18px;border-top:1px solid var(--gridline);}
 
 .toast-wrap{position:fixed;top:18px;right:18px;z-index:200;display:flex;flex-direction:column;gap:8px;}
 .toast{background:#1b1d24;color:#fff;padding:11px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,0.25);}
@@ -159,7 +175,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
   </div>
 </div>
 
-<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal"><button class="modal-x" onclick="closeModal()" aria-label="Close" title="Close">✕</button><div id="modalBody"></div></div></div>
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script>
@@ -841,8 +857,10 @@ function combinedTimeRowsHtml(bucket){
 /* ---------- Create / edit ticket ---------- */
 function openTicketForm(){
   openModal(`
-    <h3>New ticket</h3>
+    <h3>🎫 New ticket</h3>
+    <p class="modal-sub">Log a Support Request, Custom Work Order, or Ad Hoc Billable Support ticket. Pick an Agreement or Work Order below to auto-fill its Client and Rate.</p>
     <div class="form-grid">
+      <div class="field-divider"><span>Ticket details</span></div>
       <div class="field span2"><label>Title</label><input id="tf_title" type="text" placeholder="Short summary"></div>
       <div class="field"><label>Type</label><select id="tf_type">
         <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
@@ -850,6 +868,8 @@ function openTicketForm(){
       <div class="field"><label>Priority</label><select id="tf_priority">
         <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
       </select></div>
+
+      <div class="field-divider"><span>Ownership</span></div>
       <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
         <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
         <option value="Agreement">SLA Agreement</option>
@@ -861,14 +881,20 @@ function openTicketForm(){
         ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+
+      <div class="field-divider"><span>People</span></div>
       <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
       <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
       <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
+
+      <div class="field-divider"><span>Billing</span></div>
       <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
+      <div class="field highlight" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
       <div class="field"><label>Source</label><select id="tf_source"><option>Manual</option><option>Email</option><option>Phone</option></select></div>
-      <div class="field span2"><label>Description</label><textarea id="tf_desc"></textarea></div>
+
+      <div class="field-divider"><span>Description</span></div>
+      <div class="field span2"><textarea id="tf_desc" placeholder="What's going on — include anything the tech will need to triage this."></textarea></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -974,13 +1000,14 @@ async function updateTicketRate(id, value){
 
 function openLogTimeForm(ticketId){
   openModal(`
-    <h3>Log time</h3>
+    <h3>⏱ Log time</h3>
+    <p class="modal-sub">Records against this ticket and rolls straight up into its owning Agreement or Work Order, if it has one.</p>
     <div class="form-grid">
       <div class="field"><label>Date</label><input id="lt_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Hours</label><input id="lt_hours" type="number" step="0.25" min="0"></div>
+      <div class="field"><label>Hours</label><input id="lt_hours" type="number" step="0.25" min="0" placeholder="0.00"></div>
       <div class="field"><label>Billable</label><select id="lt_billable"><option value="true">Yes</option><option value="false">No</option></select></div>
       <div class="field"><label>Method</label><select id="lt_method"><option>Manual</option><option>Timer</option></select></div>
-      <div class="field span2"><label>Activity detail</label><textarea id="lt_detail"></textarea></div>
+      <div class="field span2"><label>Activity detail</label><textarea id="lt_detail" placeholder="What was done"></textarea></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -1056,8 +1083,10 @@ async function convertEmailToTicket(messageId){
   const fromAddr = m.from?.emailAddress?.address || "";
   const fromName = m.from?.emailAddress?.name || fromAddr;
   openModal(`
-    <h3>Convert email to ticket</h3>
+    <h3>✉️ Convert email to ticket</h3>
+    <p class="modal-sub">From <b>${esc(fromName)}</b>${fromAddr?` (${esc(fromAddr)})`:""} — review and adjust before creating the ticket.</p>
     <div class="form-grid">
+      <div class="field-divider"><span>Ticket details</span></div>
       <div class="field span2"><label>Title</label><input id="tf_title" type="text" value="${esc(m.subject||"")}"></div>
       <div class="field"><label>Type</label><select id="tf_type">
         <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
@@ -1065,6 +1094,8 @@ async function convertEmailToTicket(messageId){
       <div class="field"><label>Priority</label><select id="tf_priority">
         <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
       </select></div>
+
+      <div class="field-divider"><span>Ownership</span></div>
       <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
         <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
         <option value="Agreement">SLA Agreement</option>
@@ -1076,14 +1107,20 @@ async function convertEmailToTicket(messageId){
         ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+
+      <div class="field-divider"><span>People</span></div>
       <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
       <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
       <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
+
+      <div class="field-divider"><span>Billing</span></div>
       <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
+      <div class="field highlight" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
       <input type="hidden" id="tf_source" value="Email">
-      <div class="field span2"><label>Description</label><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
+
+      <div class="field-divider"><span>Description</span></div>
+      <div class="field span2"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -1250,18 +1287,24 @@ function openClientForm(id){
   const c = id ? state.clients.find(x=>String(x.id)===String(id)) : null;
   const f = c?.fields || {};
   openModal(`
-    <h3>${c?"Edit":"New"} client</h3>
+    <h3>🏢 ${c?"Edit":"New"} client</h3>
+    <p class="modal-sub">The contracting / Xero entity. Add End Clients underneath once this is saved if the work is actually delivered to their subsidiaries or sites.</p>
     <div class="form-grid">
-      <div class="field"><label>Name</label><input id="cf_title" value="${esc(f.Title||"")}"></div>
-      <div class="field"><label>Xero contact name</label><input id="cf_invname" value="${esc(f.ClientInvoiceName||"")}"></div>
-      <div class="field"><label>Email</label><input id="cf_email" value="${esc(f.EmailAddress||"")}"></div>
+      <div class="field-divider"><span>Client</span></div>
+      <div class="field"><label>Name</label><input id="cf_title" value="${esc(f.Title||"")}" placeholder="e.g. DayForce"></div>
       <div class="field"><label>Billable</label><select id="cf_billable"><option value="true" ${f.Billable?"selected":""}>Yes</option><option value="false" ${!f.Billable?"selected":""}>No</option></select></div>
+      <div class="field"><label>Email</label><input id="cf_email" value="${esc(f.EmailAddress||"")}"></div>
       <div class="field"><label>Currency</label><input id="cf_currency" value="${esc(f.Currency||"PGK")}"></div>
+
+      <div class="field-divider"><span>Xero / billing</span></div>
+      <div class="field"><label>Xero contact name</label><input id="cf_invname" value="${esc(f.ClientInvoiceName||"")}"></div>
       <div class="field"><label>Tax type</label><select id="cf_taxtype"><option ${f.TaxType==="Tax on Sales"?"selected":""}>Tax on Sales</option><option ${f.TaxType==="Zero Rated"?"selected":""}>Zero Rated</option></select></div>
       <div class="field"><label>Account code</label><input id="cf_acctcode" value="${esc(f.AccountCode||"201")}"></div>
       <div class="field"><label>Inventory item code</label><input id="cf_itemcode" value="${esc(f.InventoryItemCode||"Bureau")}"></div>
       <div class="field"><label>Tracking category name</label><input id="cf_trackname" value="${esc(f.TrackingName1||"Department")}"></div>
-      <div class="field span2"><label>Notes</label><textarea id="cf_notes">${esc(f.Notes||"")}</textarea></div>
+
+      <div class="field-divider"><span>Notes</span></div>
+      <div class="field span2"><textarea id="cf_notes">${esc(f.Notes||"")}</textarea></div>
     </div>
     <div class="section-title">SLA overrides (blank = use group default)</div>
     <div class="form-grid">${priorityOverrideFields("cf", c)}</div>
@@ -1309,8 +1352,10 @@ function openEndClientForm(id){
   const ec = id ? state.endClients.find(x=>String(x.id)===String(id)) : null;
   const f = ec?.fields || {};
   openModal(`
-    <h3>${ec?"Edit":"New"} end client</h3>
+    <h3>🏬 ${ec?"Edit":"New"} end client</h3>
+    <p class="modal-sub">The site actually receiving the work — e.g. ANZ PNG under DayForce. Xero tracking option disambiguates it on invoices when several End Clients share one Client.</p>
     <div class="form-grid">
+      <div class="field-divider"><span>End client</span></div>
       <div class="field"><label>Name</label><input id="ecf_title" value="${esc(f.Title||"")}"></div>
       <div class="field"><label>Parent client</label><select id="ecf_parent">
         ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ParentClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
@@ -1489,8 +1534,10 @@ function openAgreementForm(id){
   const a = id ? state.agreements.find(x=>String(x.id)===String(id)) : null;
   const f = a?.fields || {};
   openModal(`
-    <h3>${a?"Edit":"New"} agreement</h3>
+    <h3>🗂 ${a?"Edit":"New"} agreement</h3>
+    <p class="modal-sub">The formal SLA contract — tickets and time logged under it inherit its Rate and SLA-target overrides. Set Status to Active to make it selectable on new tickets and syncable to CG Time's Time Tracking Widget.</p>
     <div class="form-grid">
+      <div class="field-divider"><span>Agreement</span></div>
       <div class="field span2"><label>Title</label><input id="agf_title" value="${esc(f.Title||"")}" placeholder="e.g. DayForce — ANZ PNG Support Agreement"></div>
       <div class="field"><label>Client</label><select id="agf_client" onchange="document.getElementById('agf_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
         ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
@@ -1499,10 +1546,14 @@ function openAgreementForm(id){
       <div class="field"><label>Status</label><select id="agf_status">
         ${["Draft","Active","Expired","Terminated"].map(s=>`<option ${s===f.Status?"selected":""}>${s}</option>`).join("")}
       </select></div>
-      <div class="field"><label>Rate</label><input id="agf_rate" type="number" step="0.01" value="${f.Rate||""}"></div>
+      <div class="field highlight"><label>Rate</label><input id="agf_rate" type="number" step="0.01" value="${f.Rate||""}" placeholder="0.00"></div>
+
+      <div class="field-divider"><span>Term</span></div>
       <div class="field"><label>Start date</label><input id="agf_start" type="date" value="${f.StartDate?f.StartDate.slice(0,10):""}"></div>
       <div class="field"><label>End date</label><input id="agf_end" type="date" value="${f.EndDate?f.EndDate.slice(0,10):""}"></div>
-      <div class="field span2"><label>Notes</label><textarea id="agf_notes">${esc(f.Notes||"")}</textarea></div>
+
+      <div class="field-divider"><span>Notes</span></div>
+      <div class="field span2"><textarea id="agf_notes">${esc(f.Notes||"")}</textarea></div>
     </div>
     <div class="section-title">SLA overrides (blank = inherit from End Client / Client / group default)</div>
     <div class="form-grid">${priorityOverrideFields("agf", a)}</div>
@@ -1651,8 +1702,10 @@ function openWorkOrderForm(id){
   const w = id ? state.workOrders.find(x=>String(x.id)===String(id)) : null;
   const f = w?.fields || {};
   openModal(`
-    <h3>${w?"Edit":"New"} work order</h3>
+    <h3>🧰 ${w?"Edit":"New"} work order</h3>
+    <p class="modal-sub">A fixed-scope job rather than an ongoing SLA. Direct flow: create as Draft, flip to Active once work actually starts.</p>
     <div class="form-grid">
+      <div class="field-divider"><span>Work order</span></div>
       <div class="field span2"><label>Title</label><input id="wof_title" value="${esc(f.Title||"")}" placeholder="e.g. Orica PNG — Server migration"></div>
       <div class="field"><label>Client</label><select id="wof_client" onchange="document.getElementById('wof_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
         ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
@@ -1661,10 +1714,14 @@ function openWorkOrderForm(id){
       <div class="field"><label>Status</label><select id="wof_status">
         ${["Draft","Active","Completed","Cancelled"].map(s=>`<option ${s===f.Status?"selected":""}>${s}</option>`).join("")}
       </select></div>
-      <div class="field"><label>Rate</label><input id="wof_rate" type="number" step="0.01" value="${f.Rate||""}"></div>
+      <div class="field highlight"><label>Rate</label><input id="wof_rate" type="number" step="0.01" value="${f.Rate||""}" placeholder="0.00"></div>
+
+      <div class="field-divider"><span>Timeline</span></div>
       <div class="field"><label>Start date</label><input id="wof_start" type="date" value="${f.StartDate?f.StartDate.slice(0,10):""}"></div>
       <div class="field"><label>Target completion</label><input id="wof_target" type="date" value="${f.TargetCompletionDate?f.TargetCompletionDate.slice(0,10):""}"></div>
-      <div class="field span2"><label>Scope</label><textarea id="wof_scope">${esc(f.Scope||"")}</textarea></div>
+
+      <div class="field-divider"><span>Scope &amp; notes</span></div>
+      <div class="field span2"><label>Scope</label><textarea id="wof_scope" placeholder="What's included in this job">${esc(f.Scope||"")}</textarea></div>
       <div class="field span2"><label>Notes</label><textarea id="wof_notes">${esc(f.Notes||"")}</textarea></div>
     </div>
     <div class="modal-actions">
@@ -1770,12 +1827,13 @@ function renderAdHocDetail(){
 function openDirectLogTimeForm(type, refId){
   const label = type==="Agreement" ? "agreement" : type==="WorkOrder" ? "work order" : "client (Ad Hoc)";
   openModal(`
-    <h3>Log time directly against this ${label}</h3>
+    <h3>⏱ Log time directly</h3>
+    <p class="modal-sub">Against this ${label} — no ticket needed. Shows up in its combined time log alongside anything logged via a ticket or CG Time's widget.</p>
     <div class="form-grid">
       <div class="field"><label>Date</label><input id="dlt_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Hours</label><input id="dlt_hours" type="number" step="0.25" min="0"></div>
-      <div class="field"><label>Billable</label><select id="dlt_billable"><option value="true">Yes</option><option value="false">No</option></select></div>
-      <div class="field span2"><label>Activity detail</label><textarea id="dlt_detail"></textarea></div>
+      <div class="field"><label>Hours</label><input id="dlt_hours" type="number" step="0.25" min="0" placeholder="0.00"></div>
+      <div class="field span2"><label>Billable</label><select id="dlt_billable"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="field span2"><label>Activity detail</label><textarea id="dlt_detail" placeholder="What was done"></textarea></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
