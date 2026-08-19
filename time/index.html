@@ -54,6 +54,13 @@
     padding:22px 14px 18px;
     display:flex;flex-direction:column;
     border-right:1px solid rgba(0,0,0,0.35);
+    /* Pinned to the viewport rather than stretching to match .main's
+       height (the default CSS grid row-stretch behaviour) — otherwise
+       once a tall view like Dashboard finishes loading, the sidebar
+       grows taller than the screen right along with it, and
+       .sidebar-foot's margin-top:auto pushes "Signed in as…" down
+       past the bottom of the visible viewport. */
+    position:sticky; top:0; height:100vh; overflow-y:auto;
   }
   .brand{display:flex;align-items:center;justify-content:center;padding:2px 10px 0;margin-bottom:0;border-bottom:1px solid rgba(233,223,201,0.16);}
   .brand-logo{width:100%;max-width:188px;height:auto;display:block;filter:drop-shadow(0 3px 7px rgba(0,0,0,0.45));}
