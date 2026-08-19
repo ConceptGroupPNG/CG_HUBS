@@ -228,6 +228,45 @@
   .view{display:none;}
   .view.active{display:block;}
 
+  /* ---------- filter bar (Time Entries / Timesheets) ---------- */
+  .filter-bar{
+    display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;
+    background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);
+    padding:14px 18px;box-shadow:var(--shadow);margin-bottom:16px;
+  }
+  .filter-field{display:flex;flex-direction:column;gap:4px;}
+  .filter-field label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);font-weight:600;}
+  .filter-field input, .filter-field select{
+    font-size:12.5px;border:1px solid var(--hairline);border-radius:8px;padding:6px 9px;
+    background:var(--surface-card-2);color:var(--ink-primary);min-width:140px;
+  }
+  .filter-field input[type="search"]{min-width:200px;}
+  .filter-count{font-size:11.5px;color:var(--ink-muted);margin-left:auto;align-self:center;}
+
+  /* ---------- timesheet summary ---------- */
+  .ts-stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;}
+  .ts-stat{
+    background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);
+    padding:14px 16px;box-shadow:var(--shadow);
+  }
+  .ts-stat .lbl{font-size:11px;color:var(--ink-secondary);text-transform:uppercase;letter-spacing:.06em;}
+  .ts-stat .val{font-size:22px;font-weight:700;margin-top:6px;color:var(--ink-primary);}
+  .ts-group-row{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:9px 10px;border-bottom:1px solid var(--hairline-soft);font-size:12.5px;}
+  .ts-group-row:last-child{border-bottom:none;}
+  .ts-group-row.total{font-weight:700;border-top:1px solid var(--hairline);margin-top:4px;padding-top:10px;}
+  .print-btn{
+    background:transparent;border:1px solid var(--hairline);border-radius:9px;padding:7px 14px;
+    font-size:12px;color:var(--ink-secondary);cursor:pointer;
+  }
+  .print-btn:hover{background:var(--surface-card-2);}
+
+  @media print{
+    .sidebar, .topbar, .signout-link, .data-banner, .filter-bar, .print-btn{ display:none !important; }
+    .main{ padding:0; }
+    body{ background:#fff; }
+    .panel, .ts-stat, .res-table-wrap{ box-shadow:none; border:1px solid #ccc; }
+  }
+
   /* ---------- resources view ---------- */
   .res-table-wrap{background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
   .res-row{display:grid;grid-template-columns:1.4fr 1.6fr .6fr 2fr;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
@@ -282,8 +321,8 @@
     <div class="nav-item active" data-view="dashboard"><span class="ic">&#9632;</span>Dashboard</div>
 
     <div class="nav-group">Collect</div>
-    <div class="nav-item"><span class="ic">&#9998;</span>Time Entries</div>
-    <div class="nav-item"><span class="ic">&#128337;</span>Timesheets</div>
+    <div class="nav-item" data-view="time-entries"><span class="ic">&#9998;</span>Time Entries</div>
+    <div class="nav-item" data-view="timesheets"><span class="ic">&#128337;</span>Timesheets</div>
 
     <div class="nav-group">Coordinate</div>
     <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
@@ -392,6 +431,10 @@
 
     <div class="view" id="view-resources"></div>
 
+    <div class="view" id="view-time-entries"></div>
+
+    <div class="view" id="view-timesheets"></div>
+
   </main>
 </div>
 </div>
@@ -449,6 +492,17 @@ document.getElementById("loginBtn").addEventListener("click", ()=>{
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
   msalInstance.logoutRedirect();
 });
+const VIEW_TITLES = {
+  "dashboard": "Dashboard",
+  "resources": "Resources",
+  "time-entries": "Time Entries",
+  "timesheets": "Timesheets",
+};
+const VIEW_RENDERERS = {
+  "resources": renderResourcesView,
+  "time-entries": renderTimeEntriesView,
+  "timesheets": renderTimesheetsView,
+};
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item[data-view]").forEach(i => i.classList.remove("active"));
@@ -456,8 +510,8 @@ document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     const viewName = item.getAttribute("data-view");
     document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
     document.getElementById(`view-${viewName}`).classList.add("active");
-    document.getElementById("viewTitle").textContent = viewName === "dashboard" ? "Dashboard" : "Resources";
-    if(viewName === "resources") renderResourcesView();
+    document.getElementById("viewTitle").textContent = VIEW_TITLES[viewName] || viewName;
+    if(VIEW_RENDERERS[viewName]) VIEW_RENDERERS[viewName]();
   });
 });
 
@@ -1130,6 +1184,238 @@ async function removeHubAssignment(itemId, msgEl){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't remove that assignment — ${err.message}`, true);
   }
+}
+
+/* ============================================================
+   TIME ENTRIES VIEW — a filterable, browsable log of every
+   CSA_TimeEntries row. Read-only, same as the rest of CG Time —
+   entries themselves are only ever created or edited from CSA
+   HUB or the CSA Time Widget, never from here.
+   ============================================================ */
+let teFilters = { from: "", to: "", resourceEmail: "", billable: "all", search: "" };
+const TIME_ENTRIES_ROW_CAP = 200;
+
+function filteredTimeEntries(){
+  return allTimeEntries.filter(t => {
+    const f = t.fields;
+    if(teFilters.from && (!f.WorkDate || f.WorkDate < teFilters.from)) return false;
+    if(teFilters.to && (!f.WorkDate || f.WorkDate > teFilters.to)) return false;
+    if(teFilters.resourceEmail){
+      const r = resourceForEntry(t);
+      const email = r ? (r.fields.MatchEmail||"").toLowerCase().trim() : "";
+      if(email !== teFilters.resourceEmail) return false;
+    }
+    if(teFilters.billable === "billable" && f.Billable !== true) return false;
+    if(teFilters.billable === "not-billable" && f.Billable !== false) return false;
+    if(teFilters.billable === "not-set" && hasBillableChoice(t)) return false;
+    if(teFilters.search){
+      const needle = teFilters.search.toLowerCase();
+      const r = resourceForEntry(t);
+      const name = (r ? r.fields.Title : f.EntryUser || "").toLowerCase();
+      const csa = (f.CSA || "").toLowerCase();
+      if(!name.includes(needle) && !csa.includes(needle)) return false;
+    }
+    return true;
+  }).sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||""));
+}
+
+function renderTimeEntriesView(){
+  const container = document.getElementById("view-time-entries");
+  const resourceOptions = allResources.slice()
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
+    .join("");
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>From</label><input type="date" id="teFrom" value="${esc(teFilters.from)}"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="teTo" value="${esc(teFilters.to)}"></div>
+      <div class="filter-field"><label>Resource</label>
+        <select id="teResource">
+          <option value="">All resources</option>
+          ${resourceOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>Billable</label>
+        <select id="teBillable">
+          <option value="all">All</option>
+          <option value="billable">Billable</option>
+          <option value="not-billable">Not billable</option>
+          <option value="not-set">Not set</option>
+        </select>
+      </div>
+      <div class="filter-field"><label>Search</label><input type="search" id="teSearch" placeholder="resource or CSA…" value="${esc(teFilters.search)}"></div>
+      <div class="filter-count" id="teCount"></div>
+    </div>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr>
+        </thead>
+        <tbody id="teResultsBody"></tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById("teResource").value = teFilters.resourceEmail;
+  document.getElementById("teBillable").value = teFilters.billable;
+
+  document.getElementById("teFrom").addEventListener("change", e => { teFilters.from = e.target.value; renderTimeEntriesResults(); });
+  document.getElementById("teTo").addEventListener("change", e => { teFilters.to = e.target.value; renderTimeEntriesResults(); });
+  document.getElementById("teResource").addEventListener("change", e => { teFilters.resourceEmail = e.target.value; renderTimeEntriesResults(); });
+  document.getElementById("teBillable").addEventListener("change", e => { teFilters.billable = e.target.value; renderTimeEntriesResults(); });
+  document.getElementById("teSearch").addEventListener("input", e => { teFilters.search = e.target.value; renderTimeEntriesResults(); });
+
+  renderTimeEntriesResults();
+}
+
+function renderTimeEntriesResults(){
+  const body = document.getElementById("teResultsBody");
+  const countEl = document.getElementById("teCount");
+  if(!body) return;
+  const filtered = filteredTimeEntries();
+  const shown = filtered.slice(0, TIME_ENTRIES_ROW_CAP);
+  countEl.textContent = filtered.length > TIME_ENTRIES_ROW_CAP
+    ? `showing first ${TIME_ENTRIES_ROW_CAP} of ${filtered.length} — narrow the filters to see more`
+    : `${filtered.length} entr${filtered.length===1?"y":"ies"}`;
+  if(shown.length === 0){
+    body.innerHTML = `<tr><td colspan="6">No entries match these filters.</td></tr>`;
+    return;
+  }
+  body.innerHTML = shown.map(t=>{
+    const f = t.fields;
+    const resource = resourceForEntry(t);
+    const name = resource ? resource.fields.Title : (f.EntryUser || "—");
+    const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    return `
+      <tr>
+        <td>${esc(f.WorkDate || "—")}</td>
+        <td class="entity">${esc(name)}</td>
+        <td>${esc(f.CSA || "—")}</td>
+        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
+        <td>${billable}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+/* ============================================================
+   TIMESHEETS VIEW — one resource's time for a chosen period,
+   grouped by what it was logged against, with a Print action
+   for a clean document via the browser's own print dialog.
+   Read-only, same as everywhere else in CG Time.
+   ============================================================ */
+let tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) };
+
+function entriesForResourceAndPeriod(resource, start, end){
+  const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
+  const name = (resource.fields.Title || "").toLowerCase().trim();
+  return allTimeEntries.filter(t => {
+    const eu = (t.fields.EntryUser || "").toLowerCase().trim();
+    const matches = eu && ((email && eu === email) || (name && eu === name));
+    if(!matches) return false;
+    const wd = t.fields.WorkDate;
+    return wd && (!start || wd >= start) && (!end || wd <= end);
+  }).sort((a,b) => (a.fields.WorkDate||"").localeCompare(b.fields.WorkDate||""));
+}
+
+function renderTimesheetsView(){
+  const container = document.getElementById("view-timesheets");
+  const resourceOptions = allResources.slice()
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
+    .join("");
+  if(!tsFilters.resourceEmail && allResources.length){
+    const withEmail = allResources.find(r => (r.fields.MatchEmail||"").trim());
+    if(withEmail) tsFilters.resourceEmail = (withEmail.fields.MatchEmail||"").toLowerCase().trim();
+  }
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Resource</label>
+        <select id="tsResource">
+          <option value="">Select a resource…</option>
+          ${resourceOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>From</label><input type="date" id="tsFrom" value="${esc(tsFilters.start)}"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="tsTo" value="${esc(tsFilters.end)}"></div>
+      <button class="print-btn" id="tsPrintBtn">Print</button>
+    </div>
+    <div id="tsBody"></div>
+  `;
+  document.getElementById("tsResource").value = tsFilters.resourceEmail;
+  document.getElementById("tsResource").addEventListener("change", e => { tsFilters.resourceEmail = e.target.value; renderTimesheetBody(); });
+  document.getElementById("tsFrom").addEventListener("change", e => { tsFilters.start = e.target.value; renderTimesheetBody(); });
+  document.getElementById("tsTo").addEventListener("change", e => { tsFilters.end = e.target.value; renderTimesheetBody(); });
+  document.getElementById("tsPrintBtn").addEventListener("click", () => window.print());
+
+  renderTimesheetBody();
+}
+
+function renderTimesheetBody(){
+  const body = document.getElementById("tsBody");
+  if(!body) return;
+  if(!tsFilters.resourceEmail){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a resource to see their timesheet.</div></div>`;
+    return;
+  }
+  const resource = allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === tsFilters.resourceEmail);
+  if(!resource){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Resource not found.</div></div>`;
+    return;
+  }
+  const entries = entriesForResourceAndPeriod(resource, tsFilters.start, tsFilters.end);
+  const total = entries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const billable = entries.filter(t=>t.fields.Billable===true).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const notBillable = entries.filter(t=>t.fields.Billable===false).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const notSet = entries.filter(t=>!hasBillableChoice(t)).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+
+  const byCsa = {};
+  entries.forEach(t=>{
+    const label = t.fields.CSA || "Unspecified";
+    byCsa[label] = (byCsa[label]||0) + (parseFloat(t.fields.Hours)||0);
+  });
+  const groupRows = Object.entries(byCsa).sort((a,b)=>b[1]-a[1]).map(([label,hrs])=>`
+    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${hrs.toFixed(1)}h</div></div>
+  `).join("");
+
+  const entryRows = entries.map(t=>{
+    const f = t.fields;
+    const billableTxt = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    return `
+      <tr>
+        <td>${esc(f.WorkDate||"—")}</td>
+        <td>${esc(f.CSA||"—")}</td>
+        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td><span class="src-tag">${esc(f.EntryMethod||"—")}</span></td>
+        <td>${billableTxt}</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128337;</span>${esc(resource.fields.Title||"—")}</h3>
+      <div class="panel-sub">${esc(resource.fields.MatchEmail||"—")} &middot; ${esc(tsFilters.start)} to ${esc(tsFilters.end)} &middot; ${esc(resource._sourceHubLabel||"—")}</div>
+    </div>
+    <div class="ts-stat-row">
+      <div class="ts-stat"><div class="lbl">Total hours</div><div class="val">${total.toFixed(1)}</div></div>
+      <div class="ts-stat"><div class="lbl">Billable</div><div class="val">${billable.toFixed(1)}</div></div>
+      <div class="ts-stat"><div class="lbl">Not billable</div><div class="val">${notBillable.toFixed(1)}</div></div>
+      <div class="ts-stat"><div class="lbl">Not set</div><div class="val">${notSet.toFixed(1)}</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9776;</span>By CSA / logged against</h3>
+      ${groupRows || '<div style="font-size:12px;color:var(--ink-muted);">No entries in this period.</div>'}
+      ${entries.length ? `<div class="ts-group-row total"><div>Total</div><div></div><div>${total.toFixed(1)}h</div></div>` : ""}
+    </div>
+    <div class="panel">
+      <h3><span>&#9998;</span>Entries</h3>
+      <table>
+        <thead><tr><th>Work date</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr></thead>
+        <tbody>${entryRows || '<tr><td colspan="5">No entries in this period.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 /* ============================================================
