@@ -351,7 +351,7 @@
 
       <div class="panel">
         <h3><span>&#8987;</span>Exceptions queue</h3>
-        <div class="panel-sub">Most recent, from CG_ExceptionsQueue</div>
+        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; resolves itself once Billable is set on the entry in CSA HUB</div>
         <div class="ex-list" id="exceptionsList"></div>
       </div>
     </div>
@@ -646,8 +646,9 @@ async function refreshAllData(){
     ]);
     banner.style.display = "none";
 
+    lastAutoResolveCount = await autoResolveExceptions();
     lastAutoSeedCount = await autoSeedExceptions();
-    if(lastAutoSeedCount > 0){
+    if(lastAutoResolveCount > 0 || lastAutoSeedCount > 0){
       allExceptions = await fetchAllListItems("CG_ExceptionsQueue");
     }
 
@@ -707,6 +708,7 @@ function resourceForEntry(entry){
    what's already in CG_ExceptionsQueue.
    ============================================================ */
 let lastAutoSeedCount = 0;
+let lastAutoResolveCount = 0;
 
 function alreadySeeded(entryId){
   return allExceptions.some(e =>
@@ -748,6 +750,40 @@ async function autoSeedExceptions(){
     }
   }
   return created;
+}
+
+// The fix for a BillableNotSet exception is setting Billable on the
+// entry itself — that only ever happens inside CSA HUB, since CG Time
+// doesn't write to CSA_TimeEntries. So instead of a "Resolve" action
+// here, CG Time just re-checks the source entry on every load: once
+// Billable is actually set in CSA HUB, the exception closes itself.
+// Also closes out an exception if its source entry has been deleted
+// entirely, so the queue doesn't accumulate orphaned rows.
+async function autoResolveExceptions(){
+  const openBillableExceptions = allExceptions.filter(e =>
+    e.fields.Status === "Open" &&
+    e.fields.ExceptionType === "BillableNotSet" &&
+    e.fields.SourceList === "CSA_TimeEntries"
+  );
+  let resolved = 0;
+  for(const exc of openBillableExceptions){
+    const entry = allTimeEntries.find(t => t.id === exc.fields.RelatedTimeEntryId);
+    let reason = null;
+    if(!entry) reason = "Auto-resolved — source entry no longer found in CSA_TimeEntries";
+    else if(hasBillableChoice(entry)) reason = "Auto-resolved — Billable is now set in CSA HUB";
+    if(!reason) continue;
+    try{
+      await graphUpdateItem("CG_ExceptionsQueue", exc.id, {
+        Status: "Resolved",
+        ResolvedBy: reason,
+        ResolvedDate: new Date().toISOString()
+      });
+      resolved++;
+    }catch(err){
+      console.error("Auto-resolve failed for exception", exc.id, err);
+    }
+  }
+  return resolved;
 }
 
 /* ============================================================
@@ -855,8 +891,11 @@ function renderHubChart(){
 
 function renderExceptions(){
   const list = document.getElementById("exceptionsList");
-  const note = lastAutoSeedCount > 0
-    ? `<div style="font-size:11px;color:var(--status-good);margin-bottom:8px;">${lastAutoSeedCount} new exception${lastAutoSeedCount===1?"":"s"} auto-seeded from the Billable-not-set backlog on this load.</div>`
+  const noteParts = [];
+  if(lastAutoSeedCount > 0) noteParts.push(`${lastAutoSeedCount} new exception${lastAutoSeedCount===1?"":"s"} auto-seeded`);
+  if(lastAutoResolveCount > 0) noteParts.push(`${lastAutoResolveCount} auto-resolved`);
+  const note = noteParts.length
+    ? `<div style="font-size:11px;color:var(--status-good);margin-bottom:8px;">${noteParts.join(" &middot; ")} on this load.</div>`
     : "";
   if(allExceptions.length === 0){
     list.innerHTML = note + `<div style="font-size:12px;color:var(--ink-muted);">No exceptions in the queue yet.</div>`;
