@@ -37,9 +37,9 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 #app{display:none;height:100vh;}
 #app.active{display:flex;}
 .sidebar{width:230px;flex-shrink:0;background:#161821;color:#e7e8ec;display:flex;flex-direction:column;}
-.sidebar .brand{display:flex;align-items:center;gap:10px;padding:20px 18px;border-bottom:1px solid rgba(255,255,255,0.08);}
-.sidebar .brand img{height:26px;}
-.sidebar .brand span{font-weight:700;font-size:15px;letter-spacing:.2px;}
+.sidebar .brand{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:26px 18px;border-bottom:1px solid rgba(255,255,255,0.08);text-align:center;}
+.sidebar .brand img{height:56px;width:auto;max-width:180px;object-fit:contain;}
+.sidebar .brand span{font-weight:700;font-size:15px;letter-spacing:.4px;}
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 18px;font-size:13.5px;color:#c4c6ce;cursor:pointer;border-left:3px solid transparent;}
 .nav-item:hover{background:rgba(255,255,255,0.05);color:#fff;}
 .nav-item.active{background:rgba(42,120,214,0.18);color:#fff;border-left-color:var(--accent);}
@@ -319,11 +319,12 @@ function ticketLookupId(ticket, fieldBase){
   // SharePoint lookup fields expose "<Field>LookupId" on the fields object.
   return ticket.fields[fieldBase+"LookupId"];
 }
+// Rate is set per SLA/ticket or Custom Work Order — it is NOT inherited from
+// Client or End Client (those don't carry a rate at all). Internal field name
+// stays "RateOverride" (matches the already-provisioned SharePoint column,
+// just relabeled "Rate" in the UI) rather than churning the schema.
 function resolveRate(ticket){
-  const client = state.clients.find(c => String(c.id) === String(ticketLookupId(ticket,"Client")));
-  const endClient = state.endClients.find(c => String(c.id) === String(ticketLookupId(ticket,"EndClient")));
-  if(ticket.fields.RateOverride) return Number(ticket.fields.RateOverride);
-  return num(endClient?.fields?.RateOverride) ?? num(client?.fields?.DefaultRate) ?? 0;
+  return Number(ticket.fields.RateOverride) || 0;
 }
 
 /* response/resolution state per ticket: 'met' | 'ontrack' | 'atrisk' | 'breached' */
@@ -636,7 +637,8 @@ function openTicketForm(){
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
       <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
       <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
-      <div class="field"><label>Billable</label><select id="tf_billable"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
       <div class="field"><label>Source</label><select id="tf_source"><option>Manual</option><option>Email</option><option>Phone</option></select></div>
       <div class="field span2"><label>Description</label><textarea id="tf_desc"></textarea></div>
     </div>
@@ -685,7 +687,8 @@ function renderTicketDetail(){
         <b>Resolution SLA</b><div>${statusBadge(bs.resolution)} due ${fmtDateTime(t.fields.ResolutionDueAt)}</div>
         <b>Requested by</b><div>${esc(t.fields.RequestedByName||"—")} ${t.fields.RequestedByEmail?`(${esc(t.fields.RequestedByEmail)})`:""}</div>
         <b>Assigned to</b><div>${esc(t.fields.AssignedToName||"Unassigned")}</div>
-        <b>Billable</b><div>${t.fields.Billable? "Yes":"No"}${t.fields.Billable?` · rate ${fmtMoney(resolveRate(t))}`:""}</div>
+        <b>Billable</b><div>${t.fields.Billable? "Yes":"No"}${t.fields.Billable?`
+          · rate <input type="number" step="0.01" value="${resolveRate(t)}" style="width:80px;" onchange="updateTicketRate('${t.id}', this.value)">`:""}</div>
         <b>Opened</b><div>${fmtDateTime(t.fields.DateOpened)}</div>
       </div>
 
@@ -722,6 +725,17 @@ async function updateTicketStatus(id, status){
     renderTicketDetail(); renderTicketsTable();
     await reconcileExceptions();
   }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
+}
+
+async function updateTicketRate(id, value){
+  const t = state.tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  const rate = Number(value)||0;
+  try{
+    await graphUpdateItem("SLA_Tickets", id, { RateOverride: rate });
+    t.fields.RateOverride = rate;
+    toast("Rate updated");
+  }catch(e){ console.error(e); toast("Couldn't update rate: " + e.message, true); }
 }
 
 function openLogTimeForm(ticketId){
@@ -826,7 +840,8 @@ async function convertEmailToTicket(messageId){
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
       <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
       <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
-      <div class="field"><label>Billable</label><select id="tf_billable"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
       <input type="hidden" id="tf_source" value="Email">
       <div class="field span2"><label>Description</label><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
     </div>
@@ -881,6 +896,7 @@ async function submitTicketFormCore(opts={}){
     AssignedToName: document.getElementById("tf_assignname").value,
     AssignedToEmail: document.getElementById("tf_assignemail").value,
     Billable: document.getElementById("tf_billable").value === "true",
+    RateOverride: document.getElementById("tf_rate") ? (Number(document.getElementById("tf_rate").value)||0) : 0,
     Source: opts.source || document.getElementById("tf_source").value,
     SourceMessageId: opts.sourceMessageId || "",
     Description: document.getElementById("tf_desc").value,
@@ -924,10 +940,10 @@ function renderClients(){
   if(clientsTab === "clients"){
     wrap.innerHTML = state.clients.length ? `
       <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Default rate</th><th>Currency</th><th></th></tr></thead>
+        <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Currency</th><th></th></tr></thead>
         <tbody>${state.clients.map(c=>`<tr>
           <td>${esc(c.fields.Title)}</td><td>${esc(c.fields.ClientInvoiceName||"—")}</td>
-          <td>${c.fields.Billable?"Yes":"No"}</td><td>${fmtMoney(c.fields.DefaultRate, c.fields.Currency)}</td>
+          <td>${c.fields.Billable?"Yes":"No"}</td>
           <td>${esc(c.fields.Currency||"—")}</td>
           <td><button class="btn btn-sm" onclick="openClientForm('${c.id}')">Edit</button></td>
         </tr>`).join("")}</tbody></table>
@@ -935,12 +951,12 @@ function renderClients(){
   } else {
     wrap.innerHTML = state.endClients.length ? `
       <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th><th>Rate override</th><th></th></tr></thead>
+        <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th><th></th></tr></thead>
         <tbody>${state.endClients.map(ec=>{
           const parent = state.clients.find(c=>String(c.id)===String(ec.fields.ParentClientLookupId));
           return `<tr>
           <td>${esc(ec.fields.Title)}</td><td>${esc(parent?parent.fields.Title:"—")}</td>
-          <td>${esc(ec.fields.TrackingOption1||"—")}</td><td>${ec.fields.RateOverride?fmtMoney(ec.fields.RateOverride):"—"}</td>
+          <td>${esc(ec.fields.TrackingOption1||"—")}</td>
           <td><button class="btn btn-sm" onclick="openEndClientForm('${ec.id}')">Edit</button></td>
         </tr>`;}).join("")}</tbody></table>
       </div>` : `<div class="empty">No end clients yet.</div>`;
@@ -975,7 +991,6 @@ function openClientForm(id){
       <div class="field"><label>Xero contact name</label><input id="cf_invname" value="${esc(f.ClientInvoiceName||"")}"></div>
       <div class="field"><label>Email</label><input id="cf_email" value="${esc(f.EmailAddress||"")}"></div>
       <div class="field"><label>Billable</label><select id="cf_billable"><option value="true" ${f.Billable?"selected":""}>Yes</option><option value="false" ${!f.Billable?"selected":""}>No</option></select></div>
-      <div class="field"><label>Default rate</label><input id="cf_rate" type="number" step="0.01" value="${f.DefaultRate??""}"></div>
       <div class="field"><label>Currency</label><input id="cf_currency" value="${esc(f.Currency||"PGK")}"></div>
       <div class="field"><label>Tax type</label><select id="cf_taxtype"><option ${f.TaxType==="Tax on Sales"?"selected":""}>Tax on Sales</option><option ${f.TaxType==="Zero Rated"?"selected":""}>Zero Rated</option></select></div>
       <div class="field"><label>Account code</label><input id="cf_acctcode" value="${esc(f.AccountCode||"201")}"></div>
@@ -998,7 +1013,6 @@ async function submitClientForm(id){
     ClientInvoiceName: document.getElementById("cf_invname").value,
     EmailAddress: document.getElementById("cf_email").value,
     Billable: document.getElementById("cf_billable").value === "true",
-    DefaultRate: Number(document.getElementById("cf_rate").value)||0,
     Currency: document.getElementById("cf_currency").value || "PGK",
     TaxType: document.getElementById("cf_taxtype").value,
     AccountCode: document.getElementById("cf_acctcode").value,
@@ -1033,7 +1047,6 @@ function openEndClientForm(id){
         ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ParentClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>Xero tracking option</label><input id="ecf_tracking" value="${esc(f.TrackingOption1||"")}" placeholder="e.g. ANZ PNG"></div>
-      <div class="field"><label>Rate override</label><input id="ecf_rate" type="number" step="0.01" value="${f.RateOverride??""}" placeholder="inherit"></div>
       <div class="field"><label>Location</label><input id="ecf_location" value="${esc(f.Location||"")}"></div>
     </div>
     <div class="section-title">SLA overrides (blank = inherit from Client)</div>
@@ -1050,7 +1063,6 @@ async function submitEndClientForm(id){
     Title: document.getElementById("ecf_title").value.trim(),
     ParentClientLookupId: Number(document.getElementById("ecf_parent").value),
     TrackingOption1: document.getElementById("ecf_tracking").value,
-    RateOverride: document.getElementById("ecf_rate").value===""?null:Number(document.getElementById("ecf_rate").value),
     Location: document.getElementById("ecf_location").value,
     IsActive: true,
     ...readPriorityOverrideFields("ecf")
