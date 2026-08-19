@@ -294,6 +294,24 @@
     background:var(--brass-wash);color:var(--brass-deep);font-weight:700;
   }
   .hub-add button:hover{background:var(--brass-light);color:#fff8e8;}
+
+  /* ---------- hubs admin view ---------- */
+  .hubadmin-row{display:grid;grid-template-columns:1.1fr 1.2fr 1.3fr 1.6fr .7fr .9fr;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
+  .hubadmin-row:last-child{border-bottom:none;}
+  .hubadmin-row.head{background:var(--surface-card-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);font-weight:600;padding:10px 18px;}
+  .hubadmin-key{font-weight:600;color:var(--ink-primary);font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .hubadmin-site{color:var(--ink-muted);font-size:11px;word-break:break-all;}
+  .hubadmin-toggle{font-size:11px;border:none;border-radius:7px;padding:4px 10px;cursor:pointer;font-weight:700;}
+  .hubadmin-toggle.deactivate{background:var(--brass-wash);color:var(--brass-deep);}
+  .hubadmin-toggle.deactivate:hover{background:var(--status-critical);color:#fff;}
+  .hubadmin-toggle.activate{background:var(--surface-card-2);color:var(--ink-muted);border:1px solid var(--hairline);}
+  .hubadmin-toggle.activate:hover{color:var(--status-good);}
+  .hubadmin-form{display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:12px 14px;align-items:end;}
+  .hubadmin-form .filter-field input{width:100%;box-sizing:border-box;}
+  .hubadmin-form .hf-check{flex-direction:row;align-items:center;gap:6px;}
+  .hubadmin-form .hf-check label{margin:0;}
+  .hubadmin-submit{font-size:12px;border:none;border-radius:7px;padding:9px 16px;cursor:pointer;background:var(--brass-wash);color:var(--brass-deep);font-weight:700;}
+  .hubadmin-submit:hover{background:var(--brass-light);color:#fff8e8;}
 </style>
 </head>
 <body>
@@ -333,6 +351,7 @@
     <div class="nav-item"><span class="ic">&#128197;</span>Calendars</div>
 
     <div class="nav-group">Admin</div>
+    <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs</div>
     <div class="nav-item"><span class="ic">&#9881;</span>Integrations</div>
 
     <div class="sidebar-foot">
@@ -438,6 +457,8 @@
 
     <div class="view" id="view-reports"></div>
 
+    <div class="view" id="view-hubs"></div>
+
   </main>
 </div>
 </div>
@@ -463,7 +484,7 @@ const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here 
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
 const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries, CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
 // Lists that live on the CG_Time site rather than Concept_CSA
-const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments"]);
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
@@ -502,6 +523,7 @@ const VIEW_TITLES = {
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
+  "hubs": "HUBs",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
@@ -509,6 +531,7 @@ const VIEW_RENDERERS = {
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
+  "hubs": renderHubsView,
 };
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
@@ -614,20 +637,39 @@ async function resolveTimeSiteId(){
 
 /* ============================================================
    RESOURCE SOURCES — each HUB owns and manages its own Resources
-   list; CG Time only ever reads them, never writes. Add an entry
-   here when a HUB stands up its own {Hub}_Resources list — nothing
-   else in the app needs to change. Every source list MUST expose a
-   MatchEmail column using the same convention as CSA_Resources, or
-   cross-HUB matching (time entries, hub assignments) breaks for
-   that HUB's people.
-   Only CSA HUB has a Resources list today — PSP HUB and CG Training
-   HUB don't have one yet, and SLA HUB doesn't exist yet either.
+   list; CG Time only ever reads them, never writes. Which HUBs
+   exist, and where each one's Resources list lives, now comes from
+   the CG_Hubs list (managed in the HUBs admin view) instead of being
+   hardcoded here — onboarding a new HUB (e.g. SLA HUB) is "add a row
+   to CG_Hubs", not a code change. DEFAULT_RESOURCE_SOURCES below is
+   only a fallback for before CG_Hubs has been created in SharePoint,
+   so the app doesn't break in the meantime.
+   Every source list MUST expose a MatchEmail column using the same
+   convention as CSA_Resources, or cross-HUB matching (time entries,
+   hub assignments) breaks for that HUB's people.
    ============================================================ */
-const RESOURCE_SOURCES = [
+const DEFAULT_RESOURCE_SOURCES = [
   { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_Resources", siteHost: SITE_HOST, sitePath: SITE_PATH },
-  // { hub: "PSP_HUB", label: "PSP HUB", listName: "PSP_Resources", siteHost: SITE_HOST, sitePath: "/sites/PSP_HUB_SITE" },
-  // { hub: "TRAINING_HUB", label: "CG Training HUB", listName: "TRAINING_Resources", siteHost: SITE_HOST, sitePath: "/sites/training.admin" },
 ];
+
+// Builds the live list of resource sources from CG_Hubs: active hubs
+// that have a ResourcesListName on file. A hub with no ResourcesListName
+// yet (reserved but not wired up, e.g. SLA HUB before it has its own
+// list) is simply skipped here — it can still appear elsewhere (like
+// the HUB-assignment dropdown) without CG Time trying to fetch from it.
+function hubSources(){
+  const active = allHubs.filter(h => h.fields.IsActive !== false);
+  if(active.length === 0) return DEFAULT_RESOURCE_SOURCES;
+  return active
+    .filter(h => (h.fields.ResourcesListName || "").trim())
+    .map(h => ({
+      hub: h.fields.Title,
+      label: h.fields.Label || h.fields.Title,
+      listName: h.fields.ResourcesListName.trim(),
+      siteHost: (h.fields.SiteHost || SITE_HOST).trim(),
+      sitePath: (h.fields.SitePath || "").trim(),
+    }));
+}
 
 // Resolved site IDs, keyed by "host:path", so multiple resource
 // sources on the same site only resolve that site once.
@@ -657,7 +699,7 @@ async function fetchListItemsFromSite(siteId, listName, extraQuery=""){
 // warning instead of breaking the whole dashboard — most HUBs don't
 // have a Resources list of their own yet.
 async function fetchAllResources(){
-  const results = await Promise.all(RESOURCE_SOURCES.map(async src => {
+  const results = await Promise.all(hubSources().map(async src => {
     try{
       const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
       const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
@@ -678,6 +720,7 @@ let allActiveEntities = [];
 let allResources = [];
 let allExceptions = [];
 let allHubAssignments = [];
+let allHubs = [];
 
 async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
@@ -698,6 +741,15 @@ async function startApp(){
 async function refreshAllData(){
   const banner = document.getElementById("dataBanner");
   try{
+    // Fetched first, and on its own — fetchAllResources() below needs allHubs
+    // populated to know which HUBs' Resources lists to pull from. CG_Hubs
+    // not existing yet (not created in SharePoint) is not fatal: fall back
+    // to the built-in default HUB list rather than breaking the dashboard.
+    allHubs = await fetchAllListItems("CG_Hubs").catch(err => {
+      console.warn("CG_Hubs list not available yet — falling back to the built-in HUB list.", err);
+      return [];
+    });
+
     [allTimeEntries, allActiveEntities, allResources, allExceptions, allHubAssignments] = await Promise.all([
       fetchAllListItems("CSA_TimeEntries"),
       fetchAllListItems("CSA_ActiveEntities"),
@@ -926,26 +978,25 @@ function renderStatTiles(){
 function renderHubChart(){
   // CSA_TimeEntries has no Source column yet, and CSA HUB is the only
   // writer into these shared lists today — so this genuinely can't be
-  // split by HUB until Source is added and PSP HUB / CG Training HUB
-  // start logging time here too (see CG Time design proposal, §2.2/§4.1).
+  // split by HUB until Source is added and every HUB in CG_Hubs starts
+  // logging time here too (see CG Time design proposal, §2.2/§4.1).
+  // The row list itself is data-driven from CG_Hubs though, so a newly
+  // added HUB shows up here (at 0.0 until it has data) with no code change.
   const total = allTimeEntries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  document.getElementById("hubBarChart").innerHTML = `
+  const seriesColors = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
+  const keys = hubKeys();
+  document.getElementById("hubBarChart").innerHTML = keys.map((key, i) => {
+    const color = seriesColors[i % seriesColors.length];
+    const isPrimary = key === "CSA_HUB" || (i === 0 && !keys.includes("CSA_HUB"));
+    const val = isPrimary ? total : 0;
+    return `
     <div class="bar-row">
-      <div class="name"><span class="dot" style="background:var(--series-1)"></span>CSA HUB</div>
-      <div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--series-1)"></div></div>
-      <div class="val">${total.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
-    </div>
-    <div class="bar-row">
-      <div class="name"><span class="dot" style="background:var(--series-2)"></span>PSP HUB</div>
-      <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--series-2)"></div></div>
-      <div class="val">0.0</div>
-    </div>
-    <div class="bar-row">
-      <div class="name"><span class="dot" style="background:var(--series-3)"></span>CG Training</div>
-      <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--series-3)"></div></div>
-      <div class="val">0.0</div>
+      <div class="name"><span class="dot" style="background:${color}"></span>${esc(hubLabelFor(key))}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${isPrimary?100:0}%;background:${color}"></div></div>
+      <div class="val">${val.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
     </div>
   `;
+  }).join("");
   document.getElementById("hubChartSub").textContent =
     "All-time total · only CSA HUB writes to these lists today — no Source column yet, so this can't split by HUB until one's added.";
 }
@@ -1164,7 +1215,20 @@ function renderCalendarHeat(){
    a soft-delete (IsActive: false), consistent with the IsActive
    pattern already used elsewhere rather than a hard delete.
    ============================================================ */
-const ALL_HUBS = ["CSA_HUB", "PSP_HUB", "TRAINING_HUB"];
+// Fallback only, for before CG_Hubs has been created in SharePoint.
+const DEFAULT_HUB_KEYS = ["CSA_HUB", "PSP_HUB", "TRAINING_HUB"];
+
+// The list of HUB keys someone can be assigned to, straight from
+// CG_Hubs — add a row there (e.g. for SLA HUB) and it shows up here
+// with no code change.
+function hubKeys(){
+  const active = allHubs.filter(h => h.fields.IsActive !== false);
+  return active.length ? active.map(h => h.fields.Title).filter(Boolean) : DEFAULT_HUB_KEYS;
+}
+function hubLabelFor(hubKey){
+  const h = allHubs.find(x => x.fields.Title === hubKey);
+  return h ? (h.fields.Label || h.fields.Title) : hubKey;
+}
 
 function assignmentsForResource(resource){
   const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
@@ -1187,12 +1251,12 @@ function renderResourcesView(){
     const assignments = assignmentsForResource(r);
     const assignedHubs = new Set(assignments.map(a=>a.fields.Hub));
     const chips = assignments.map(a => `
-      <span class="hub-chip">${esc(a.fields.Hub)}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
+      <span class="hub-chip">${esc(hubLabelFor(a.fields.Hub))}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
     `).join("");
     // Exclude the HUB this person's own Resources list already puts them
     // in — that's their home HUB, implicit from the source list, not
     // something CG_ResourceHubAssignments needs to restate.
-    const available = ALL_HUBS.filter(h => !assignedHubs.has(h) && h !== r._sourceHub);
+    const available = hubKeys().filter(h => !assignedHubs.has(h) && h !== r._sourceHub);
     // No MatchEmail means there's no reliable key to write CG_ResourceHubAssignments
     // against (or to match it back to this person later) — so there's nothing
     // actionable to show here rather than a control that can only ever fail.
@@ -1205,7 +1269,7 @@ function renderResourcesView(){
       addControl = `
         <span class="hub-add">
           <select class="hub-select" data-name="${esc(r.fields.Title||"")}" data-email="${esc(email)}">
-            ${available.map(h=>`<option value="${h}">${h}</option>`).join("")}
+            ${available.map(h=>`<option value="${esc(h)}">${esc(hubLabelFor(h))}</option>`).join("")}
           </select>
           <button class="hub-add-btn">+ Add</button>
         </span>
@@ -1283,6 +1347,112 @@ async function removeHubAssignment(itemId, msgEl){
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't remove that assignment — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   HUBs VIEW — manage CG_Hubs, the one list CG Time actually owns
+   and writes to for its own configuration (as opposed to reading
+   from a HUB's own lists). This is what makes onboarding a new HUB
+   (e.g. SLA HUB) an "add a row" instead of a code change: HubKey +
+   Label are used everywhere a HUB name shows up in the UI, and
+   ResourcesListName/SiteHost/SitePath (if filled in) tell
+   fetchAllResources() where that HUB's own {Hub}_Resources list
+   lives. Deactivating a HUB (rather than deleting it) is the same
+   soft-delete convention used for CG_ResourceHubAssignments.
+   ============================================================ */
+function renderHubsView(){
+  const container = document.getElementById("view-hubs");
+  const sorted = allHubs.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const rows = sorted.map(h => {
+    const f = h.fields;
+    const active = f.IsActive !== false;
+    const site = (f.SiteHost || f.SitePath) ? `${esc(f.SiteHost||"—")}${esc(f.SitePath||"")}` : "—";
+    return `
+      <div class="hubadmin-row">
+        <div class="hubadmin-key">${esc(f.Title||"—")}</div>
+        <div>${esc(f.Label||"—")}</div>
+        <div>${esc(f.ResourcesListName || "not wired up yet")}</div>
+        <div class="hubadmin-site">${site}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div><button class="hubadmin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(h.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
+      </div>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#127760;</span>HUBs</h3>
+      <div class="panel-sub">Which HUBs CG Time knows about, and where each one's own Resources list lives. Only CSA HUB has a Resources list today &mdash; add a row here (no code change, no redeploy) whenever a new HUB, like SLA HUB, is ready to be onboarded. Writes straight to CG_Hubs, the one list CG Time owns for its own configuration.</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="hubadmin-row head"><div>Hub key</div><div>Label</div><div>Resources list</div><div>Site</div><div>Status</div><div></div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No HUBs on file yet in CG_Hubs &mdash; CG Time is running on its built-in default (CSA HUB only) until at least one is added below.</div>`}
+    </div>
+    <div class="panel">
+      <h3><span>&#10010;</span>Add a HUB</h3>
+      <div class="panel-sub" style="margin-bottom:12px;">Hub key must match what's used as the Hub value on CG_ResourceHubAssignments and as the value in the new HUB's own {Hub}_Resources list, e.g. <code>SLA_HUB</code>. Resources list / Site fields can be left blank to reserve the HUB now and wire up its feed later.</div>
+      <div class="hubadmin-form">
+        <div class="filter-field"><label>Hub key</label><input type="text" id="hubNewKey" placeholder="e.g. SLA_HUB"></div>
+        <div class="filter-field"><label>Label</label><input type="text" id="hubNewLabel" placeholder="e.g. SLA HUB"></div>
+        <div class="filter-field"><label>Resources list</label><input type="text" id="hubNewListName" placeholder="e.g. SLA_Resources"></div>
+        <div class="filter-field"><label>Site host</label><input type="text" id="hubNewSiteHost" placeholder="conceptcompg.sharepoint.com"></div>
+        <div class="filter-field"><label>Site path</label><input type="text" id="hubNewSitePath" placeholder="/sites/SLA_HUB_SITE"></div>
+        <div><button class="hubadmin-submit" id="hubAddBtn">+ Add HUB</button></div>
+      </div>
+      <div id="hubAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+  `;
+  container.querySelectorAll(".hubadmin-toggle[data-toggle-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      toggleHubActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
+    });
+  });
+  document.getElementById("hubAddBtn").addEventListener("click", addHub);
+}
+
+async function addHub(){
+  const msgEl = document.getElementById("hubAddMsg");
+  const key = document.getElementById("hubNewKey").value.trim();
+  const label = document.getElementById("hubNewLabel").value.trim();
+  const listName = document.getElementById("hubNewListName").value.trim();
+  const siteHost = document.getElementById("hubNewSiteHost").value.trim();
+  const sitePath = document.getElementById("hubNewSitePath").value.trim();
+  if(!key){
+    reportRowMsg(msgEl, "Hub key is required — e.g. SLA_HUB.", true);
+    return;
+  }
+  if(allHubs.some(h => (h.fields.Title||"").toLowerCase() === key.toLowerCase())){
+    reportRowMsg(msgEl, `A HUB with key "${key}" already exists.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_Hubs", {
+      Title: key,
+      Label: label || key,
+      ResourcesListName: listName,
+      SiteHost: siteHost,
+      SitePath: sitePath,
+      IsActive: true
+    });
+    allHubs = await fetchAllListItems("CG_Hubs");
+    renderHubsView();
+    renderStatTiles();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that HUB — ${err.message}`, true);
+  }
+}
+
+async function toggleHubActive(itemId, nextActive){
+  const msgEl = document.getElementById("hubAddMsg");
+  try{
+    await graphUpdateItem("CG_Hubs", itemId, { IsActive: nextActive });
+    allHubs = await fetchAllListItems("CG_Hubs");
+    renderHubsView();
+    renderStatTiles();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't update that HUB — ${err.message}`, true);
   }
 }
 
