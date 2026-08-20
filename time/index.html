@@ -788,6 +788,21 @@ function toDateStr(d){
   return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
 }
 function todayStr(){ return toDateStr(new Date()); }
+// Neither the Timer widget nor CSA HUB's manual entry form writes a
+// clock-time field onto CSA_TimeEntries/SLA_TimeEntries — WorkDate is
+// just the calendar date the work applies to. SharePoint's own
+// createdDateTime on the list item (returned by Graph automatically,
+// no schema change needed) is what actually tells you when an entry
+// was logged, so that's what this formats.
+function fmtTimeOfDay(isoStr){
+  if(!isoStr) return "—";
+  const d = new Date(isoStr);
+  if(isNaN(d.getTime())) return "—";
+  let h = d.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12; if(h === 0) h = 12;
+  return h + ":" + String(d.getMinutes()).padStart(2,"0") + " " + ampm;
+}
 function monthStartStr(offsetMonths=0){
   const d = new Date();
   d.setMonth(d.getMonth()+offsetMonths, 1);
@@ -1493,7 +1508,15 @@ function filteredTimeEntries(){
       if(!name.includes(needle) && !csa.includes(needle)) return false;
     }
     return true;
-  }).sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||""));
+  }).sort((a,b)=> {
+    // Most recent work day first; within the same work day, most
+    // recently logged first (by SharePoint's createdDateTime) — a
+    // back-dated manual entry stays grouped under the day it's for,
+    // not sorted as if it happened "now".
+    const dateCompare = (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||"");
+    if(dateCompare !== 0) return dateCompare;
+    return (b.createdDateTime||"").localeCompare(a.createdDateTime||"");
+  });
 }
 
 function renderTimeEntriesView(){
@@ -1526,7 +1549,7 @@ function renderTimeEntriesView(){
     <div class="panel">
       <table>
         <thead>
-          <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
+          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
         </thead>
         <tbody id="teResultsBody"></tbody>
       </table>
@@ -1554,7 +1577,7 @@ function renderTimeEntriesResults(){
     ? `showing first ${TIME_ENTRIES_ROW_CAP} of ${filtered.length} — narrow the filters to see more`
     : `${filtered.length} entr${filtered.length===1?"y":"ies"}`;
   if(shown.length === 0){
-    body.innerHTML = `<tr><td colspan="7">No entries match these filters.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">No entries match these filters.</td></tr>`;
     return;
   }
   body.innerHTML = shown.map(t=>{
@@ -1565,6 +1588,7 @@ function renderTimeEntriesResults(){
     return `
       <tr>
         <td>${esc(f.WorkDate || "—")}</td>
+        <td>${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
