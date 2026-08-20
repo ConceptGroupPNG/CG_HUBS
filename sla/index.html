@@ -461,6 +461,7 @@ async function init(){
 
     await loadCoreData();
     await reconcileExceptions();
+    await reconcileTicketActiveEntities();
     navigate("dashboard");
   }catch(e){
     console.error(e);
@@ -546,6 +547,30 @@ async function reconcileExceptions(){
         }catch(e){ console.warn("Failed to auto-create exception for ticket", ticket.id, e); }
       }
     }
+  }
+}
+
+// Catch-up pass for the widget's active-entity list: a ticket only syncs
+// itself into CSA_ActiveEntities on create or status-change, so a ticket
+// created/edited before this sync existed (or any ticket whose Short
+// Description was changed directly in SharePoint) needs a first pass here.
+// Diffs against what's already loaded rather than syncing unconditionally,
+// so this stays cheap once everything's caught up. Non-fatal — mirrors the
+// graceful-degradation already used for the rest of the cross-site read.
+async function reconcileTicketActiveEntities(){
+  if(!Array.isArray(state.crossActiveEntities)) return; // cross-site load didn't succeed this session
+  const outOfSync = state.tickets.filter(t => {
+    const title = activeEntityTitleFor("Ticket", t);
+    if(!title) return false;
+    const wantActive = isTicketActive(t);
+    const wantDesc = t.fields.ShortDescription || t.fields.Title || "";
+    const existing = state.crossActiveEntities.find(x =>
+      (x.fields.Title||"").trim() === title.trim() && x.fields.Source === "SLA_HUB");
+    if(!existing) return wantActive; // only needs creating if it should actually show
+    return !!existing.fields.IsActive !== wantActive || (existing.fields.Description||"") !== wantDesc;
+  });
+  for(const t of outOfSync){
+    await syncTicketActiveEntity(t);
   }
 }
 
