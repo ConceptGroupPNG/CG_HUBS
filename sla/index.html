@@ -1163,14 +1163,19 @@ async function submitLogTime(ticketId){
    Requires the signed-in user to have delegated access to HELPDESK_MAILBOX.
    ============================================================ */
 let inboxMessages = [];
+let emailDetailId = null;
+let emailDetailCache = {};
 
 async function renderEmail(){
+  emailDetailId = null;
+  emailDetailCache = {};
   document.getElementById("page-email").innerHTML = `
     <div class="page-header">
       <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
       <button class="btn" onclick="renderEmail()">↻ Refresh</button>
     </div>
     <div id="emailListWrap"><div class="empty">Loading inbox…</div></div>
+    <div id="emailDetailWrap"></div>
   `;
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
@@ -1186,14 +1191,72 @@ async function renderEmail(){
     <div class="card" style="padding:0;">
       <table><thead><tr><th>Received</th><th>From</th><th>Subject</th><th></th></tr></thead>
       <tbody>${inboxMessages.map(m => `
-        <tr>
+        <tr class="clickable" onclick="openEmailDetail('${m.id}')">
           <td>${fmtDateTime(m.receivedDateTime)}</td>
           <td>${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")}</td>
           <td>${esc(m.subject||"(no subject)")}<br><span style="color:var(--ink-2);font-size:12px;">${esc((m.bodyPreview||"").slice(0,120))}</span></td>
-          <td><button class="btn btn-sm btn-accent" onclick="convertEmailToTicket('${m.id}')">Convert to ticket</button></td>
+          <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Convert to ticket</button></td>
         </tr>`).join("")}</tbody></table>
     </div>
   ` : `<div class="empty">No unconverted emails in the inbox.</div>`;
+}
+
+async function openEmailDetail(id){
+  emailDetailId = id;
+  renderEmailDetail();
+  document.getElementById("emailDetailWrap").scrollIntoView({behavior:"smooth"});
+  if(!emailDetailCache[id]){
+    try{
+      const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${id}`
+        + `?$select=subject,from,toRecipients,ccRecipients,receivedDateTime,body`);
+      emailDetailCache[id] = full;
+    }catch(e){
+      console.error(e);
+      emailDetailCache[id] = { _error: e.message };
+    }
+    renderEmailDetail();
+  }
+}
+
+function renderEmailDetail(){
+  const wrap = document.getElementById("emailDetailWrap");
+  if(!wrap) return;
+  if(!emailDetailId){ wrap.innerHTML = ""; return; }
+  const m = inboxMessages.find(x => x.id === emailDetailId);
+  if(!m){ wrap.innerHTML = ""; return; }
+  const full = emailDetailCache[emailDetailId];
+  const fromAddr = m.from?.emailAddress?.address || "";
+  const fromName = m.from?.emailAddress?.name || fromAddr;
+  const toLine = (full && !full._error) ? (full.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(", ") : "";
+  const ccLine = (full && !full._error) ? (full.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(", ") : "";
+
+  let bodyHtml;
+  if(!full){
+    bodyHtml = `<div class="empty">Loading message…</div>`;
+  } else if(full._error){
+    bodyHtml = `<div class="empty">Couldn't load the full message: ${esc(full._error)}<br>Showing the preview instead:<br><br>${esc(m.bodyPreview||"")}</div>`;
+  } else if(full.body?.contentType === "html"){
+    // Sandboxed, no scripts/same-origin — renders the email safely without letting it touch the app.
+    bodyHtml = `<iframe sandbox="allow-popups" style="width:100%;min-height:380px;border:1px solid var(--border);border-radius:8px;background:#fff;" srcdoc="${esc(full.body.content||"")}"></iframe>`;
+  } else {
+    bodyHtml = `<div style="white-space:pre-wrap;">${esc(full.body?.content || m.bodyPreview || "")}</div>`;
+  }
+
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="emailDetailId=null; renderEmailDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${esc(m.subject||"(no subject)")}</h3>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">
+        From ${esc(fromName)}${fromAddr?` (${esc(fromAddr)})`:""} · ${fmtDateTime(m.receivedDateTime)}
+        ${toLine?`<br>To: ${esc(toLine)}`:""}${ccLine?`<br>Cc: ${esc(ccLine)}`:""}
+      </div>
+      <div class="section-title">Message</div>
+      ${bodyHtml}
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+        <button class="btn btn-sm btn-accent" onclick="convertEmailToTicket('${m.id}')">Convert to ticket</button>
+      </div>
+    </div>
+  `;
 }
 
 async function convertEmailToTicket(messageId){
