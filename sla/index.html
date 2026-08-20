@@ -720,10 +720,24 @@ function endClientOptions(clientId, selected){
 // Time Tracking Widget's dropdown.
 function activeEntityTitleFor(type, entity){
   if(!entity) return null;
+  if(type === "Ticket")     return `${entity.fields.TicketNumber || ("SLA-"+entity.id)} — ${entity.fields.Title}`;
   if(type === "Agreement")  return `${entity.fields.AgreementNumber || ("AGR-"+entity.id)} — ${entity.fields.Title}`;
   if(type === "WorkOrder")  return `${entity.fields.WorkOrderNumber || ("WO-"+entity.id)} — ${entity.fields.Title}`;
   if(type === "AdHocClient") return `Ad Hoc — ${entity.fields.Title}`;
   return entity.fields.Title;
+}
+
+// Time-attribution rule: hours attach to the current (open) Ticket, and only
+// THEREFORE to its parent Agreement/Work Order — the parent is a rollup, not
+// something separately offered in CG Time's Time Tracking Widget. So only
+// Tickets get synced into CSA_ActiveEntities as directly-loggable rows;
+// Agreements/Work Orders/Ad Hoc clients no longer sync themselves (see the
+// now-deactivating calls at their own save/status-change sites below).
+function isTicketActive(t){
+  return !["Resolved","Closed"].includes(t.fields.Status);
+}
+function syncTicketActiveEntity(t){
+  syncActiveEntity("Ticket", activeEntityTitleFor("Ticket", t), t.fields.ShortDescription || t.fields.Title, isTicketActive(t));
 }
 
 // Keeps CG_Time's shared CSA_ActiveEntities in sync so the Time Tracking
@@ -796,37 +810,61 @@ function onOwningRefChange(){
 // All hours attributable to an Agreement or Work Order: tickets owned by it
 // (their SLA_TimeEntries rows), entries logged directly against it in SLA
 // HUB (no ticket), and entries logged externally via CG_Time's Time Tracking
-// Widget (matched cross-site by the synced CSA_ActiveEntities title).
+// Widget — matched cross-site by each OWNED TICKET's own synced active-entity
+// title (the widget logs against Tickets now, not Agreements/Work Orders —
+// see syncTicketActiveEntity()), rolled up here for reporting. Also still
+// matches the entity's own former active-entity title, so hours logged
+// against it before this change don't silently disappear from its total.
 function hoursForOwningEntity(type, entity){
-  const activeTitle = activeEntityTitleFor(type, entity);
+  const legacyTitle = activeEntityTitleFor(type, entity);
   const ownedTicketIds = new Set(
     state.tickets.filter(t => t.fields.OwningEntityType===type &&
       String(ticketLookupId(t, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id))
       .map(t => String(t.id))
   );
+  const ownedTickets = state.tickets.filter(t => ownedTicketIds.has(String(t.id)));
+  const ticketTitles = new Set(ownedTickets.map(t => activeEntityTitleFor("Ticket", t)));
   const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
   const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType===type &&
     String(ticketLookupId(e, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id));
-  const external = state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === activeTitle);
+  const external = state.crossTimeEntries.filter(e => {
+    const csa = (e.fields.CSA||"").trim();
+    return ticketTitles.has(csa) || csa === legacyTitle;
+  });
   return { ownedTicketIds, ticketTied, direct, external,
     total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
 }
 
 // Same idea for a Client's Ad Hoc Support — no formal Agreement/Work Order,
 // just AdHoc-type tickets against this Client plus any hours logged directly
-// or via the Widget against its synced "Ad Hoc — {Client}" active entity.
+// or via the Widget against one of those tickets (or, for backward
+// compatibility, the client's own former "Ad Hoc — {Client}" active entity).
 function hoursForAdHocClient(client){
-  const activeTitle = activeEntityTitleFor("AdHocClient", client);
+  const legacyTitle = activeEntityTitleFor("AdHocClient", client);
   const ownedTicketIds = new Set(
     state.tickets.filter(t => (t.fields.OwningEntityType||"AdHoc")==="AdHoc" &&
       String(ticketLookupId(t,"Client"))===String(client.id)).map(t => String(t.id))
   );
+  const ownedTickets = state.tickets.filter(t => ownedTicketIds.has(String(t.id)));
+  const ticketTitles = new Set(ownedTickets.map(t => activeEntityTitleFor("Ticket", t)));
   const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
   const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType==="AdHocClient" &&
     String(ticketLookupId(e,"OwningClient"))===String(client.id));
-  const external = state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === activeTitle);
+  const external = state.crossTimeEntries.filter(e => {
+    const csa = (e.fields.CSA||"").trim();
+    return ticketTitles.has(csa) || csa === legacyTitle;
+  });
   return { ownedTicketIds, ticketTied, direct, external,
     total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
+}
+
+// A specific ticket's own widget-logged hours (matched by its own synced
+// active-entity title) — used on the ticket detail page so hours logged via
+// the widget against THIS ticket show up there directly, not just rolled up
+// on its parent Agreement/Work Order.
+function externalHoursForTicket(t){
+  const title = activeEntityTitleFor("Ticket", t);
+  return state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === title);
 }
 
 function owningEntityLinkHtml(ticket){
@@ -864,6 +902,7 @@ function openTicketForm(){
     <div class="form-grid">
       <div class="field-divider"><span>Ticket details</span></div>
       <div class="field span2"><label>Title</label><input id="tf_title" type="text" placeholder="Short summary"></div>
+      <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown while this ticket is open, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" placeholder="e.g. DPM — Payroll variance investigation"></div>
       <div class="field"><label>Type</label><select id="tf_type">
         <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
       </select></div>
@@ -928,7 +967,12 @@ function renderTicketDetail(){
   const t = state.tickets.find(x => String(x.id)===String(ticketDetailId));
   if(!t){ wrap.innerHTML = ""; return; }
   const bs = breachStatus(t);
-  const myEntries = state.timeEntries.filter(e => String(e.fields.TicketId)===String(t.id));
+  const nativeEntries = state.timeEntries.filter(e => String(e.fields.TicketId)===String(t.id));
+  const widgetEntries = externalHoursForTicket(t);
+  const myEntries = [
+    ...nativeEntries.map(e => ({ fields: e.fields, _via: "SLA HUB" })),
+    ...widgetEntries.map(e => ({ fields: e.fields, _via: "CG Time widget" }))
+  ].sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
   const totalHours = myEntries.reduce((s,e)=> s + (Number(e.fields.Hours)||0), 0);
 
   wrap.innerHTML = `
@@ -952,16 +996,17 @@ function renderTicketDetail(){
         <b>Billable</b><div>${t.fields.Billable? "Yes":"No"}${t.fields.Billable?`
           · rate <input type="number" step="0.01" value="${resolveRate(t)}" style="width:80px;" onchange="updateTicketRate('${t.id}', this.value)">`:""}</div>
         <b>Opened</b><div>${fmtDateTime(t.fields.DateOpened)}</div>
+        <b>Short description</b><div><input type="text" maxlength="60" value="${esc(t.fields.ShortDescription||"")}" placeholder="${isTicketActive(t)?"shown in CG Time's widget dropdown while open":"ticket is closed — not shown in the widget"}" style="width:100%;" onchange="updateTicketShortDescription('${t.id}', this.value)"></div>
       </div>
 
       ${t.fields.Description ? `<div class="section-title">Description</div><div>${esc(t.fields.Description).replace(/\n/g,"<br>")}</div>` : ""}
 
-      <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs)</div>
+      <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs — SLA HUB and CG Time's widget combined)</div>
       ${myEntries.length ? `
-      <table><thead><tr><th>Date</th><th>User</th><th>Hours</th><th>Billable</th><th>Detail</th></tr></thead>
+      <table><thead><tr><th>Date</th><th>User</th><th>Hours</th><th>Billable</th><th>Via</th><th>Detail</th></tr></thead>
       <tbody>${myEntries.map(e=>`<tr>
         <td>${fmtDate(e.fields.WorkDate)}</td><td>${esc(e.fields.EntryUser)}</td><td>${e.fields.Hours}</td>
-        <td>${e.fields.Billable?"Yes":"No"}</td><td>${esc(e.fields.ActivityDetail||"")}</td>
+        <td>${e.fields.Billable?"Yes":"No"}</td><td>${esc(e._via)}</td><td>${esc(e.fields.ActivityDetail||"")}</td>
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No time logged yet.</div>`}
 
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
@@ -986,6 +1031,9 @@ async function updateTicketStatus(id, status){
     toast("Status updated");
     renderTicketDetail(); renderTicketsTable();
     await reconcileExceptions();
+    // Resolved/Closed drops the ticket out of CG Time's widget dropdown;
+    // reopening it (or any other status) brings it back.
+    syncTicketActiveEntity(t);
   }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
 }
 
@@ -998,6 +1046,18 @@ async function updateTicketRate(id, value){
     t.fields.RateOverride = rate;
     toast("Rate updated");
   }catch(e){ console.error(e); toast("Couldn't update rate: " + e.message, true); }
+}
+
+async function updateTicketShortDescription(id, value){
+  const t = state.tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  const shortDesc = (value||"").trim();
+  try{
+    await graphUpdateItem("SLA_Tickets", id, { ShortDescription: shortDesc });
+    t.fields.ShortDescription = shortDesc;
+    toast("Short description updated");
+    syncTicketActiveEntity(t);
+  }catch(e){ console.error(e); toast("Couldn't update short description: " + e.message, true); }
 }
 
 function openLogTimeForm(ticketId){
@@ -1090,6 +1150,7 @@ async function convertEmailToTicket(messageId){
     <div class="form-grid">
       <div class="field-divider"><span>Ticket details</span></div>
       <div class="field span2"><label>Title</label><input id="tf_title" type="text" value="${esc(m.subject||"")}"></div>
+      <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown while this ticket is open, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" value="${esc((m.subject||"").slice(0,60))}"></div>
       <div class="field"><label>Type</label><select id="tf_type">
         <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
       </select></div>
@@ -1190,6 +1251,7 @@ async function submitTicketFormCore(opts={}){
 
   const fields = {
     Title: title,
+    ShortDescription: (document.getElementById("tf_shortdesc")?.value || "").trim(),
     TicketType: document.getElementById("tf_type").value,
     Priority: priority,
     OwningEntityType: owningType,
@@ -1220,6 +1282,9 @@ async function submitTicketFormCore(opts={}){
     state.tickets.push(created);
     closeModal();
     toast(`Created ${ticketNumber}`);
+    // New tickets start "New" (open), so this makes the ticket itself
+    // immediately selectable in CG Time's Time Tracking Widget.
+    syncTicketActiveEntity(created);
   }catch(e){ console.error(e); toast("Couldn't create ticket: " + e.message, true); }
 }
 
@@ -1344,9 +1409,12 @@ async function submitClientForm(id){
       state.clients.push(clientObj);
     }
     closeModal(); toast("Client saved"); renderClients();
-    // Sync this client's Ad Hoc Support active entity so it shows up in
-    // CG Time's Time Tracking Widget as somewhere to log hours directly.
-    syncActiveEntity("AdHocClient", activeEntityTitleFor("AdHocClient", clientObj), clientObj.fields.Title, !!fields.Billable);
+    // Clients themselves are no longer directly loggable in CG Time's Time
+    // Tracking Widget — time attaches to the (open) Ticket, therefore to its
+    // parent Ad Hoc Client for rollup, not the other way around (see
+    // syncTicketActiveEntity()). This just self-heals a stale widget row
+    // left over from before that change, if one exists.
+    syncActiveEntity("AdHocClient", activeEntityTitleFor("AdHocClient", clientObj), clientObj.fields.Title, false);
   }catch(e){ console.error(e); toast("Couldn't save client: " + e.message, true); }
 }
 
@@ -1518,7 +1586,10 @@ async function updateAgreementStatus(id, status){
     await graphUpdateItem("SLA_Agreements", id, { Status: status });
     a.fields.Status = status;
     toast("Status updated"); renderAgreementsList(); agreementDetailId=id; renderAgreementDetail();
-    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, status==="Active");
+    // Agreements aren't directly loggable in the widget any more — time
+    // attaches to the Ticket, therefore to its parent Agreement (see
+    // syncTicketActiveEntity()). Self-heals a stale widget row if one exists.
+    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, false);
   }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
 }
 async function updateAgreementRate(id, value){
@@ -1597,7 +1668,7 @@ async function submitAgreementForm(id){
       state.agreements.push(a);
     }
     closeModal(); toast("Agreement saved"); renderAgreementsList();
-    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, status==="Active");
+    syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, false);
   }catch(e){ console.error(e); toast("Couldn't save agreement: " + e.message, true); }
 }
 
@@ -1686,7 +1757,10 @@ async function updateWorkOrderStatus(id, status){
     await graphUpdateItem("SLA_WorkOrders", id, { Status: status });
     w.fields.Status = status;
     toast("Status updated"); renderWorkOrdersList(); workOrderDetailId=id; renderWorkOrderDetail();
-    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, status==="Active");
+    // Work Orders aren't directly loggable in the widget any more — time
+    // attaches to the Ticket, therefore to its parent Work Order (see
+    // syncTicketActiveEntity()). Self-heals a stale widget row if one exists.
+    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, false);
   }catch(e){ console.error(e); toast("Couldn't update status: " + e.message, true); }
 }
 async function updateWorkOrderRate(id, value){
@@ -1764,7 +1838,7 @@ async function submitWorkOrderForm(id){
       state.workOrders.push(w);
     }
     closeModal(); toast("Work order saved"); renderWorkOrdersList();
-    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, status==="Active");
+    syncActiveEntity("WorkOrder", activeEntityTitleFor("WorkOrder", w), w.fields.Title, false);
   }catch(e){ console.error(e); toast("Couldn't save work order: " + e.message, true); }
 }
 
