@@ -659,23 +659,37 @@ const DEFAULT_RESOURCE_SOURCES = [
   { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_Resources", siteHost: SITE_HOST, sitePath: SITE_PATH },
 ];
 
-// Builds the live list of resource sources from CG_Hubs: active hubs
-// that have a ResourcesListName on file. A hub with no ResourcesListName
-// yet (reserved but not wired up, e.g. SLA HUB before it has its own
-// list) is simply skipped here — it can still appear elsewhere (like
-// the HUB-assignment dropdown) without CG Time trying to fetch from it.
+// Builds the live list of resource sources: starts from
+// DEFAULT_RESOURCE_SOURCES (CSA_HUB — the one HUB with real production
+// data, present whether or not CG_Hubs has been created at all) and
+// then layers CG_Hubs rows on top, keyed by HubKey. This is a MERGE,
+// not a replace — registering SLA_HUB (or any other HUB) in CG_Hubs
+// must never silently drop CSA_HUB from the list just because CG_Hubs
+// is no longer empty. A row with IsActive:false, or with no
+// ResourcesListName on file (reserved but not wired up yet), removes
+// that key from the merged result instead of adding to it — including
+// a default, if someone ever explicitly registers CSA_HUB in CG_Hubs
+// with different site details or deactivates it on purpose.
 function hubSources(){
-  const active = allHubs.filter(h => h.fields.IsActive !== false);
-  if(active.length === 0) return DEFAULT_RESOURCE_SOURCES;
-  return active
-    .filter(h => (h.fields.ResourcesListName || "").trim())
-    .map(h => ({
-      hub: h.fields.Title,
-      label: h.fields.Label || h.fields.Title,
-      listName: h.fields.ResourcesListName.trim(),
+  const merged = new Map();
+  DEFAULT_RESOURCE_SOURCES.forEach(src => merged.set(src.hub, src));
+  allHubs.forEach(h => {
+    const key = h.fields.Title;
+    if(!key) return;
+    const listName = (h.fields.ResourcesListName || "").trim();
+    if(h.fields.IsActive === false || !listName){
+      merged.delete(key);
+      return;
+    }
+    merged.set(key, {
+      hub: key,
+      label: h.fields.Label || key,
+      listName: listName,
       siteHost: (h.fields.SiteHost || SITE_HOST).trim(),
       sitePath: (h.fields.SitePath || "").trim(),
-    }));
+    });
+  });
+  return Array.from(merged.values());
 }
 
 // Resolved site IDs, keyed by "host:path", so multiple resource
@@ -815,6 +829,29 @@ function monthEndStr(offsetMonths=0){
 }
 function hasBillableChoice(t){
   return t.fields.Billable !== undefined && t.fields.Billable !== null;
+}
+// CSA_TimeEntries is still the one shared, cross-HUB log every
+// HUB's time-logging tool writes into (see renderHubChart's note on
+// why "Hours by HUB" can't split by HUB yet) — there's no Source/Hub
+// column on it yet, populated at entry-creation time, to say which
+// HUB a given row actually belongs to. Until that exists, this is a
+// best-effort GUESS at the source HUB from the "Logged against" text's
+// naming convention alone — NOT authoritative, and wrong if a naming
+// convention ever collides or changes. The real fix is a Source column
+// written by whatever tool creates the entry (the time-logging widget,
+// CSA HUB's own manual form, and eventually SLA HUB's) — that's outside
+// what CG Time can add unilaterally, since CG Time never writes to
+// CSA_TimeEntries.
+const HUB_PREFIX_HINTS = [
+  { prefix: "SLA-",  hub: "SLA_HUB" },
+  { prefix: "AGR-",  hub: "CSA_HUB" },
+  { prefix: "PROP-", hub: "CSA_HUB" },
+  { prefix: "CSA-",  hub: "CSA_HUB" },
+];
+function inferHubForEntry(csaText){
+  const text = (csaText || "").trim().toUpperCase();
+  const hit = HUB_PREFIX_HINTS.find(h => text.startsWith(h.prefix));
+  return hit ? hit.hub : null;
 }
 // Same name/email matching pattern csa-hub/index.html already relies on —
 // CSA_TimeEntries.ResourceRefLookupId isn't trustworthy for this (per that
@@ -998,29 +1035,38 @@ function renderStatTiles(){
 }
 
 function renderHubChart(){
-  // CSA_TimeEntries has no Source column yet, and CSA HUB is the only
-  // writer into these shared lists today — so this genuinely can't be
-  // split by HUB until Source is added and every HUB in CG_Hubs starts
-  // logging time here too (see CG Time design proposal, §2.2/§4.1).
-  // The row list itself is data-driven from CG_Hubs though, so a newly
-  // added HUB shows up here (at 0.0 until it has data) with no code change.
-  const total = allTimeEntries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  // CSA_TimeEntries still has no real Source column (see
+  // inferHubForEntry()'s note above) — so, same as the Time Entries
+  // table's "Source (inferred)" column, this buckets hours by a
+  // best-effort guess from the "Logged against" naming pattern rather
+  // than an authoritative field. An entry that doesn't match any known
+  // prefix falls back to CSA_HUB, since that's where every entry lived
+  // before other HUBs existed.
+  const totals = {};
+  allTimeEntries.forEach(t => {
+    const hub = inferHubForEntry(t.fields.CSA) || "CSA_HUB";
+    totals[hub] = (totals[hub] || 0) + (parseFloat(t.fields.Hours)||0);
+  });
   const seriesColors = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
   const keys = hubKeys();
+  // Make sure a HUB with hours always shows up, even if it isn't (yet)
+  // a configured/known HUB key.
+  Object.keys(totals).forEach(k => { if(!keys.includes(k)) keys.push(k); });
+  const maxVal = Math.max(1, ...Object.values(totals));
   document.getElementById("hubBarChart").innerHTML = keys.map((key, i) => {
     const color = seriesColors[i % seriesColors.length];
-    const isPrimary = key === "CSA_HUB" || (i === 0 && !keys.includes("CSA_HUB"));
-    const val = isPrimary ? total : 0;
+    const val = totals[key] || 0;
+    const widthPct = Math.round((val / maxVal) * 100);
     return `
     <div class="bar-row">
       <div class="name"><span class="dot" style="background:${color}"></span>${esc(hubLabelFor(key))}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${isPrimary?100:0}%;background:${color}"></div></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${widthPct}%;background:${color}"></div></div>
       <div class="val">${val.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
     </div>
   `;
   }).join("");
   document.getElementById("hubChartSub").textContent =
-    "All-time total · only CSA HUB writes to these lists today — no Source column yet, so this can't split by HUB until one's added.";
+    "All-time total · inferred per HUB from the \"Logged against\" naming pattern — no Source column on CSA_TimeEntries yet, so treat this as an estimate, not authoritative.";
 }
 
 function renderExceptions(){
@@ -1237,15 +1283,27 @@ function renderCalendarHeat(){
    a soft-delete (IsActive: false), consistent with the IsActive
    pattern already used elsewhere rather than a hard delete.
    ============================================================ */
-// Fallback only, for before CG_Hubs has been created in SharePoint.
+// Baseline HUB keys — CSA HUB, PSP HUB, and CG Training HUB were all
+// real HUBs in the business from day one (v0.1), even before any of
+// them had their own Resources list or a CG_Hubs row. Always present
+// unless a matching CG_Hubs row explicitly deactivates one.
 const DEFAULT_HUB_KEYS = ["CSA_HUB", "PSP_HUB", "TRAINING_HUB"];
 
-// The list of HUB keys someone can be assigned to, straight from
-// CG_Hubs — add a row there (e.g. for SLA HUB) and it shows up here
-// with no code change.
+// The list of HUB keys someone can be assigned to: DEFAULT_HUB_KEYS
+// merged with CG_Hubs — add a row there (e.g. for SLA HUB) and it
+// shows up here with no code change, WITHOUT dropping the baseline
+// HUBs just because CG_Hubs is no longer empty (see hubSources() for
+// the same merge pattern, applied there to resource-fetching).
 function hubKeys(){
-  const active = allHubs.filter(h => h.fields.IsActive !== false);
-  return active.length ? active.map(h => h.fields.Title).filter(Boolean) : DEFAULT_HUB_KEYS;
+  const merged = new Map();
+  DEFAULT_HUB_KEYS.forEach(k => merged.set(k, k));
+  allHubs.forEach(h => {
+    const key = h.fields.Title;
+    if(!key) return;
+    if(h.fields.IsActive === false){ merged.delete(key); return; }
+    merged.set(key, key);
+  });
+  return Array.from(merged.keys());
 }
 function hubLabelFor(hubKey){
   const h = allHubs.find(x => x.fields.Title === hubKey);
@@ -1549,7 +1607,7 @@ function renderTimeEntriesView(){
     <div class="panel">
       <table>
         <thead>
-          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
+          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th title="Guessed from the naming pattern of &quot;Logged against&quot; — CSA_TimeEntries has no Source column yet, so this isn't authoritative.">Source (inferred)</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
         </thead>
         <tbody id="teResultsBody"></tbody>
       </table>
@@ -1577,7 +1635,7 @@ function renderTimeEntriesResults(){
     ? `showing first ${TIME_ENTRIES_ROW_CAP} of ${filtered.length} — narrow the filters to see more`
     : `${filtered.length} entr${filtered.length===1?"y":"ies"}`;
   if(shown.length === 0){
-    body.innerHTML = `<tr><td colspan="8">No entries match these filters.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">No entries match these filters.</td></tr>`;
     return;
   }
   body.innerHTML = shown.map(t=>{
@@ -1585,12 +1643,15 @@ function renderTimeEntriesResults(){
     const resource = resourceForEntry(t);
     const name = resource ? resource.fields.Title : (f.EntryUser || "—");
     const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    const inferredHub = inferHubForEntry(f.CSA);
+    const sourceLabel = inferredHub ? hubLabelFor(inferredHub) : "—";
     return `
       <tr>
         <td>${esc(f.WorkDate || "—")}</td>
         <td>${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
+        <td style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — not stored data.">${esc(sourceLabel)}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
         <td>${esc(f.ActivityDetail || "—")}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
