@@ -1367,12 +1367,10 @@ function invoiceStatus(inv){
 function paymentStatus(p){
   const inv=(cache.invoices||[]).find(i=>(i.InvoiceNumber||i.Title)===(p.RemittanceRef||''));
   if(!inv) return 'Pending';
-  const total=+(inv.TotalAmount||0);
-  const paid=invoiceTotalPaid(inv); // sum of ALL payments against this invoice, not just this one
-  const bal=Math.max(0,total-paid);
-  if(bal<=0&&total>0) return 'Paid';
-  if(paid>0&&bal>0) return 'Partial';
-  return 'Pending';
+  // Delegate to invoiceStatus() rather than keeping a second copy of the same
+  // Paid/Partial/Pending logic - this is exactly the kind of duplication that
+  // silently drifts out of sync (as it just did with the GST-exemption fix).
+  return invoiceStatus(inv);
 }
 // Find attendee linked to an invoice via AttendeeName
 function attendeeForInvoice(inv){
