@@ -644,7 +644,7 @@ function renderTickets(){
 function filteredTickets(){
   return state.tickets.filter(t => {
     const f = t.fields;
-    if(ticketFilters.type && f.Type !== ticketFilters.type) return false;
+    if(ticketFilters.type && f.TicketType !== ticketFilters.type) return false;
     if(ticketFilters.priority && f.Priority !== ticketFilters.priority) return false;
     if(ticketFilters.status && f.Status !== ticketFilters.status) return false;
     if(ticketFilters.client && String(ticketLookupId(t,"Client")) !== String(ticketFilters.client)) return false;
@@ -666,7 +666,7 @@ function renderTicketsTable(){
         const bs = breachStatus(t);
         return `<tr class="clickable" onclick="openTicketDetail('${t.id}')">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${esc(t.fields.Type||"—")}</td>
+          <td>${esc(t.fields.TicketType||"—")}</td>
           <td>${esc(clientName(t))}</td>
           <td>${priorityBadge(t.fields.Priority)}</td>
           <td>${esc(t.fields.Status||"—")}</td>
@@ -935,7 +935,7 @@ function renderTicketDetail(){
     <div class="detail-panel" style="margin-top:16px;">
       <button class="close" onclick="ticketDetailId=null; renderTicketDetail();">✕</button>
       <h3 style="margin:0 0 4px;">${esc(t.fields.TicketNumber||t.id)} — ${esc(t.fields.Title||"")}</h3>
-      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(t.fields.Type||"")} · ${esc(clientName(t))}</div>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(t.fields.TicketType||"")} · ${esc(clientName(t))}</div>
 
       <div class="kv">
         <b>Priority</b><div>${priorityBadge(t.fields.Priority)}</div>
@@ -1190,7 +1190,7 @@ async function submitTicketFormCore(opts={}){
 
   const fields = {
     Title: title,
-    Type: document.getElementById("tf_type").value,
+    TicketType: document.getElementById("tf_type").value,
     Priority: priority,
     OwningEntityType: owningType,
     RequestedByName: document.getElementById("tf_reqname").value,
@@ -2160,7 +2160,7 @@ function printTicket(id){
     @media print{ .noprint{display:none;} }
   </style></head><body>
     <div class="hdr">
-      <div><h1>${esc(t.fields.TicketNumber)} — ${esc(t.fields.Title)}</h1><div class="meta">${esc(t.fields.Type)} · Printed ${fmtDateTime(new Date().toISOString())}</div></div>
+      <div><h1>${esc(t.fields.TicketNumber)} — ${esc(t.fields.Title)}</h1><div class="meta">${esc(t.fields.TicketType)} · Printed ${fmtDateTime(new Date().toISOString())}</div></div>
       <img src="data:image/png;base64,${LOGO_B64}">
     </div>
     <div class="kv">
