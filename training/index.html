@@ -824,8 +824,15 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2 id="rpt-count">Course & Attendee Financial Report</h2></div>
             <div class="table-wrap">
               <table><thead><tr>
-                <th>Course Name</th><th>Course Start Date</th><th>Trainer</th><th>Venue</th>
-                <th>Organisation</th><th>Attendee Name</th><th>Invoice #</th><th>Invoice Amount</th><th>Status</th>
+                <th class="sortable" onclick="sortReport('course')">Course Name <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('startDate')">Course Start Date <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('trainer')">Trainer <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('venue')">Venue <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('org')">Organisation <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('attendee')">Attendee Name <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('invoiceNum')">Invoice # <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('invoiceAmount')">Invoice Amount <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
+                <th class="sortable" onclick="sortReport('status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               </tr></thead>
               <tbody id="rpt-tbody"></tbody></table>
             </div>
@@ -4922,6 +4929,7 @@ function closeReportDetail(){
 async function buildCourseAttendeeFinancialReport(){
   const tbody = document.getElementById('rpt-tbody');
   tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+  _reportSortState = {key:null, dir:1};
   try{
     const [atts, runs, invs] = await Promise.all([
       cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
@@ -4964,6 +4972,38 @@ async function buildCourseAttendeeFinancialReport(){
 // render AND the export, so they can never show/export different rows from
 // each other (the exact kind of drift already found once in this app,
 // between paymentStatus() and invoiceStatus()).
+let _reportSortState = {key:null, dir:1};
+function sortReport(key){
+  if(!_reportsCache) return;
+  if(_reportSortState.key===key){
+    _reportSortState.dir *= -1;
+  } else {
+    _reportSortState.key = key;
+    _reportSortState.dir = 1;
+  }
+  const dir = _reportSortState.dir;
+  // Sorts the underlying cache, not just what's currently filtered, so the
+  // sort order is preserved correctly no matter what the search box or date
+  // range currently narrows it down to.
+  _reportsCache.sort((a,b)=>{
+    if(key==='invoiceAmount'){
+      const na = (a[key]===null||a[key]===undefined) ? null : +a[key];
+      const nb = (b[key]===null||b[key]===undefined) ? null : +b[key];
+      if(na===null && nb===null) return 0;
+      if(na===null) return 1;  // blanks always last, regardless of direction
+      if(nb===null) return -1;
+      return (na-nb)*dir;
+    }
+    const va = (a[key]||'').toString().toLowerCase();
+    const vb = (b[key]||'').toString().toLowerCase();
+    if(!va && !vb) return 0;
+    if(!va) return 1;
+    if(!vb) return -1;
+    return va.localeCompare(vb)*dir;
+  });
+  renderCourseAttendeeFinancialReport();
+}
+
 function getFilteredReportRows(){
   if(!_reportsCache) return [];
   const q = (document.getElementById('rpt-q')?.value||'').trim().toLowerCase();
