@@ -5032,9 +5032,20 @@ function exportReportToExcel(){
   if(!rows.length){ toast('No matching rows to export','error'); return; }
 
   ensureXLSXLoadedForReports(()=>{
+    // Build a real JS Date from the "YYYY-MM-DD" string using explicit local
+    // components - new Date(string) parses as UTC and can shift the date by
+    // a day in a positive-UTC-offset timezone like PNG's, the same issue
+    // already found and fixed elsewhere in this app (Course Runs calendar,
+    // weekend-scheduling check).
+    const toLocalDate = s => {
+      if(!s) return null;
+      const parts = s.split('-').map(Number);
+      if(parts.length!==3 || parts.some(isNaN)) return null;
+      return new Date(parts[0], parts[1]-1, parts[2]);
+    };
     const sheetData = rows.map(r=>({
       'Course Name': r.course,
-      'Course Start Date': r.startDate,
+      'Course Start Date': toLocalDate(r.startDate) || '',
       'Trainer': r.trainer,
       'Venue': r.venue,
       'Organisation': r.org,
@@ -5043,12 +5054,21 @@ function exportReportToExcel(){
       'Invoice Amount': r.invoiceAmount!==null ? r.invoiceAmount : '',
       'Status': r.status,
     }));
-    const ws = XLSX.utils.json_to_sheet(sheetData);
+    const ws = XLSX.utils.json_to_sheet(sheetData, {cellDates:true});
+    // json_to_sheet marks these cells as genuine dates but doesn't apply a
+    // specific display format - set dd/mm/yyyy explicitly on the Course
+    // Start Date column (index 1), skipping the header row.
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for(let row=range.s.r+1; row<=range.e.r; row++){
+      const cell = ws[XLSX.utils.encode_cell({r:row, c:1})];
+      if(cell && cell.t==='d') cell.z = 'dd/mm/yyyy';
+    }
     ws['!cols'] = [{wch:30},{wch:16},{wch:18},{wch:18},{wch:28},{wch:24},{wch:14},{wch:14},{wch:12}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
-    const today = new Date().toISOString().substring(0,10);
-    XLSX.writeFile(wb, `Course_Attendee_Financial_Report_${today}.xlsx`);
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    XLSX.writeFile(wb, `Course_Attendee_Financial_Report_${todayStr}.xlsx`);
     toast(`Exported ${rows.length} row${rows.length>1?'s':''} to Excel`);
   });
 }
