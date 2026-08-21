@@ -811,7 +811,13 @@ select:focus{border-color:var(--teal)}
           <button class="btn btn-outline btn-sm" onclick="closeReportDetail()" style="margin-bottom:12px"><i class="ti ti-arrow-left"></i> All Reports</button>
           <div class="filter-bar">
             <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search course, attendee, organisation, invoice..." id="rpt-q" oninput="renderCourseAttendeeFinancialReport()"></div>
-            <button class="btn btn-outline" onclick="document.getElementById('rpt-q').value='';renderCourseAttendeeFinancialReport()" title="Clear filter"><i class="ti ti-x"></i> Clear</button>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--g500)">
+              <span>Course Start Date</span>
+              <input type="date" id="rpt-date-from" onchange="renderCourseAttendeeFinancialReport()" style="padding:6px 8px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+              <span>to</span>
+              <input type="date" id="rpt-date-to" onchange="renderCourseAttendeeFinancialReport()" style="padding:6px 8px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+            </div>
+            <button class="btn btn-outline" onclick="resetReportFilters()" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
             <button class="btn btn-primary" onclick="exportReportToExcel()" style="margin-left:auto"><i class="ti ti-file-spreadsheet"></i> Export to Excel</button>
           </div>
           <div class="card">
@@ -4871,8 +4877,36 @@ async function openReport(reportId){
   document.getElementById('reports-landing').style.display = 'none';
   document.getElementById('reports-detail').style.display = '';
   if(reportId === 'courseAttendeeFinancial'){
+    setReportDateRangeToCurrentMonth();
     await buildCourseAttendeeFinancialReport();
   }
+}
+
+// Defaults the date range to the 1st and last day of the CURRENT month.
+// Built from local Y/M/D components rather than toISOString(), which
+// parses/re-serialises through UTC and can shift the date by a day in a
+// positive-UTC-offset timezone like PNG's - the exact bug found and fixed
+// elsewhere in this app (Course Runs calendar, weekend-scheduling check).
+function setReportDateRangeToCurrentMonth(){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m+1, 0);
+  const toStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fromEl = document.getElementById('rpt-date-from');
+  const toEl = document.getElementById('rpt-date-to');
+  if(fromEl) fromEl.value = toStr(first);
+  if(toEl) toEl.value = toStr(last);
+}
+
+// Clears the search text and resets the date range back to the current
+// month, rather than leaving the dates empty (which would show nothing
+// meaningful - "cleared" should mean "back to the sensible default").
+function resetReportFilters(){
+  const q = document.getElementById('rpt-q');
+  if(q) q.value = '';
+  setReportDateRangeToCurrentMonth();
+  renderCourseAttendeeFinancialReport();
 }
 
 function closeReportDetail(){
@@ -4925,13 +4959,28 @@ async function buildCourseAttendeeFinancialReport(){
   }
 }
 
+// Single source of truth for which rows are currently "in view" - applies
+// both the search text and the date range. Used by both the on-screen
+// render AND the export, so they can never show/export different rows from
+// each other (the exact kind of drift already found once in this app,
+// between paymentStatus() and invoiceStatus()).
+function getFilteredReportRows(){
+  if(!_reportsCache) return [];
+  const q = (document.getElementById('rpt-q')?.value||'').trim().toLowerCase();
+  const from = document.getElementById('rpt-date-from')?.value||'';
+  const to = document.getElementById('rpt-date-to')?.value||'';
+  return _reportsCache.filter(r=>{
+    if(q && !([r.course,r.trainer,r.venue,r.org,r.attendee,r.invoiceNum,r.status].some(v=>(v||'').toLowerCase().includes(q)))) return false;
+    if(from && (!r.startDate || r.startDate < from)) return false;
+    if(to && (!r.startDate || r.startDate > to)) return false;
+    return true;
+  });
+}
+
 function renderCourseAttendeeFinancialReport(){
   const tbody = document.getElementById('rpt-tbody');
   if(!_reportsCache) return;
-  const q = (document.getElementById('rpt-q')?.value||'').trim().toLowerCase();
-  const rows = q ? _reportsCache.filter(r=>
-    [r.course,r.trainer,r.venue,r.org,r.attendee,r.invoiceNum,r.status].some(v=>(v||'').toLowerCase().includes(q))
-  ) : _reportsCache;
+  const rows = getFilteredReportRows();
 
   document.getElementById('rpt-count').textContent = `Course & Attendee Financial Report (${rows.length})`;
   if(!rows.length){
@@ -4975,14 +5024,11 @@ function ensureXLSXLoadedForReports(onReady){
   document.head.appendChild(script);
 }
 
-// Exports exactly what's currently visible (respecting the active search
-// filter), not the full unfiltered dataset - what you see is what you get.
+// Exports exactly what's currently visible (respecting search + date range),
+// not the full unfiltered dataset - what you see is what you get.
 function exportReportToExcel(){
   if(!_reportsCache || !_reportsCache.length){ toast('Nothing to export','error'); return; }
-  const q = (document.getElementById('rpt-q')?.value||'').trim().toLowerCase();
-  const rows = q ? _reportsCache.filter(r=>
-    [r.course,r.trainer,r.venue,r.org,r.attendee,r.invoiceNum,r.status].some(v=>(v||'').toLowerCase().includes(q))
-  ) : _reportsCache;
+  const rows = getFilteredReportRows();
   if(!rows.length){ toast('No matching rows to export','error'); return; }
 
   ensureXLSXLoadedForReports(()=>{
