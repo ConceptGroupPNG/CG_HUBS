@@ -354,6 +354,17 @@
   .admin-submit{font-size:12px;border:none;border-radius:7px;padding:9px 16px;cursor:pointer;background:var(--brass-wash);color:var(--brass-deep);font-weight:700;}
   .admin-submit:hover{background:var(--brass-light);color:#fff8e8;}
 
+  /* ---------- click-to-edit rows (Employees roster) ---------- */
+  .emp-row{cursor:pointer;transition:background .12s ease;}
+  .emp-row:hover{background:var(--surface-card-2);}
+  .emp-edit-row{background:var(--surface-card-2);}
+  .emp-edit-row input[type="text"], .emp-edit-row input[type="number"], .emp-edit-row select{
+    font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:6px 8px;
+    background:var(--surface-card);color:var(--ink-primary);width:100%;box-sizing:border-box;font-family:inherit;
+  }
+  .emp-edit-row .emp-edit-save{background:var(--status-good);color:#fff;}
+  .emp-edit-row .emp-edit-save:hover{opacity:.9;}
+
   /* ---------- employee time entry grid ---------- */
   .te-table input[type="time"], .te-table input[type="number"]{
     font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 6px;
@@ -363,6 +374,8 @@
   .te-table tr.weekend td{background:var(--surface-card-2);}
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
   .te-save-bar{display:flex;align-items:center;gap:12px;margin-top:14px;}
+  .te-table td.te-day-name{white-space:nowrap;font-size:12.5px;}
+  .te-table .te-day-num{display:block;font-size:10.5px;color:var(--ink-muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 
   /* ---------- employee calendar tab ---------- */
   .cal-month{margin-bottom:18px;}
@@ -1897,19 +1910,47 @@ function renderEmployeesHub(){
    Employee Time Entry whenever Break Start/End is left blank for a
    day) since this varies per employee, not a single fixed rule.
    ============================================================ */
-function renderEmployeesTab(){
-  const container = document.getElementById("empTabContent");
-  const payGroupOptions = allPayGroups.slice()
+// Which Employee row (if any) is currently open for inline editing —
+// click a row to open it, click again / Cancel / Save to close it.
+// Only one row edits at a time.
+let editingEmployeeId = null;
+
+const EMP_ROW_COLS = "1fr 1.4fr .8fr 1fr .9fr .8fr .9fr";
+
+function payGroupOptionsHtml(selected){
+  return allPayGroups.slice()
     .filter(g => g.fields.IsActive !== false)
     .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
-    .map(g => `<option value="${esc(g.fields.Title)}">${esc(g.fields.Title)} — ${esc(g.fields.Label||g.fields.Title)}</option>`)
+    .map(g => `<option value="${esc(g.fields.Title)}" ${g.fields.Title===selected?"selected":""}>${esc(g.fields.Title)} — ${esc(g.fields.Label||g.fields.Title)}</option>`)
     .join("");
+}
+
+function renderEmployeesTab(){
+  const container = document.getElementById("empTabContent");
   const sorted = allEmployees.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   const rows = sorted.map(e => {
     const f = e.fields;
     const active = f.IsActive !== false;
+
+    if(e.id === editingEmployeeId){
+      return `
+        <div class="admin-row emp-edit-row" style="grid-template-columns:${EMP_ROW_COLS};" data-editing-id="${esc(e.id)}">
+          <div class="admin-key">${esc(f.EmployeeNumber||"—")}</div>
+          <div><input type="text" class="emp-edit-name" value="${esc(f.Title||"")}"></div>
+          <div><select class="emp-edit-paygroup">${payGroupOptionsHtml(f.PayGroup)}</select></div>
+          <div><input type="text" class="emp-edit-jobs" value="${esc(f.JobAssignments||"")}"></div>
+          <div><input type="number" class="emp-edit-break" min="0" step="5" value="${f.DefaultBreakMinutes!=null?esc(f.DefaultBreakMinutes):30}"></div>
+          <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="emp-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
+          <div style="display:flex;gap:6px;">
+            <button class="admin-submit emp-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
+            <button class="admin-toggle activate emp-edit-cancel" style="padding:5px 10px;">Cancel</button>
+          </div>
+        </div>
+      `;
+    }
+
     return `
-      <div class="admin-row" style="grid-template-columns:1fr 1.4fr .8fr 1fr .9fr .8fr .9fr;">
+      <div class="admin-row emp-row" style="grid-template-columns:${EMP_ROW_COLS};" data-edit-id="${esc(e.id)}">
         <div class="admin-key">${esc(f.EmployeeNumber||"—")}</div>
         <div>${esc(f.Title||"—")}</div>
         <div>${esc(f.PayGroup||"—")}</div>
@@ -1923,12 +1964,13 @@ function renderEmployeesTab(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128100;</span>Employees</h3>
-      <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''}</div>
+      <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''} Click a row to edit it.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:1fr 1.4fr .8fr 1fr .9fr .8fr .9fr;"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default break</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default break</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Employees on file yet in CG_Employees &mdash; add the first one below.</div>`}
     </div>
+    <div id="empEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add an Employee</h3>
       <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default break is applied automatically on any day Break Start/End is left blank in Time Entry.</div>
@@ -1936,7 +1978,7 @@ function renderEmployeesTab(){
         <div class="filter-field"><label>Employee #</label><input type="text" id="empNewNumber" placeholder="e.g. CSW0158"></div>
         <div class="filter-field"><label>Name</label><input type="text" id="empNewName" placeholder="e.g. Kila Ravi"></div>
         <div class="filter-field"><label>Pay Group</label>
-          <select id="empNewPayGroup"><option value="">Select…</option>${payGroupOptions}</select>
+          <select id="empNewPayGroup"><option value="">Select…</option>${payGroupOptionsHtml()}</select>
         </div>
         <div class="filter-field"><label>Job Assignment(s)</label><input type="text" id="empNewJobs" placeholder="e.g. 01"></div>
         <div class="filter-field"><label>Default break (min)</label><input type="number" id="empNewBreak" value="30" min="0" step="5"></div>
@@ -1945,12 +1987,64 @@ function renderEmployeesTab(){
       <div id="empAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
     </div>
   `;
+
+  // Row click opens edit mode — but not when the click landed on the
+  // Deactivate/Activate button, which has its own handler below.
+  container.querySelectorAll(".emp-row[data-edit-id]").forEach(row => {
+    row.addEventListener("click", (ev) => {
+      if(ev.target.closest(".admin-toggle")) return;
+      editingEmployeeId = row.getAttribute("data-edit-id");
+      renderEmployeesTab();
+    });
+  });
   container.querySelectorAll(".admin-toggle[data-toggle-id]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
       toggleEmployeeActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
     });
   });
+
+  // Edit-row Save/Cancel
+  const editRow = container.querySelector(".emp-edit-row");
+  if(editRow){
+    editRow.querySelector(".emp-edit-save").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      saveEmployeeEdit(editRow.getAttribute("data-editing-id"), editRow);
+    });
+    editRow.querySelector(".emp-edit-cancel").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      editingEmployeeId = null;
+      renderEmployeesTab();
+    });
+  }
+
   document.getElementById("empAddBtn").addEventListener("click", addEmployee);
+}
+
+async function saveEmployeeEdit(itemId, rowEl){
+  const msgEl = document.getElementById("empEditMsg");
+  const name = rowEl.querySelector(".emp-edit-name").value.trim();
+  const payGroup = rowEl.querySelector(".emp-edit-paygroup").value;
+  const jobs = rowEl.querySelector(".emp-edit-jobs").value.trim();
+  const breakMin = parseFloat(rowEl.querySelector(".emp-edit-break").value);
+  const active = rowEl.querySelector(".emp-edit-active").checked;
+  if(!name){
+    reportRowMsg(msgEl, "Name is required.", true);
+    return;
+  }
+  try{
+    await graphUpdateItem("CG_Employees", itemId, {
+      Title: name, PayGroup: payGroup, JobAssignments: jobs,
+      DefaultBreakMinutes: isNaN(breakMin) ? 30 : breakMin, IsActive: active,
+    });
+    allEmployees = await fetchAllListItems("CG_Employees");
+    editingEmployeeId = null;
+    renderEmployeesTab();
+    reportRowMsg(document.getElementById("empEditMsg"), "Saved.", false);
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
+  }
 }
 
 async function addEmployee(){
@@ -2060,19 +2154,63 @@ function findTimeRecord(employeeNumber, dateStr){
 
 let etFilters = { employeeNumber: "", payNumber: "" };
 
+// Which Time Entry mode is showing — "employee" is the original
+// one-employee/one-period grid; "day" is the bulk "everyone, one day"
+// spreadsheet-style entry a supervisor uses to key in the whole team's
+// times in one go at end of day.
+let etMode = "employee";
+let etDayFilters = { workDate: "" };
+
+function findPayPeriodForDate(dateStr){
+  if(!dateStr) return null;
+  return allPayPeriods.find(p => {
+    const start = (p.fields.PPEStart||"").slice(0,10);
+    const end = (p.fields.PPEEnd||"").slice(0,10);
+    return start && end && dateStr >= start && dateStr <= end;
+  }) || null;
+}
+
 function renderEmployeeTimeEntryTab(){
   const container = document.getElementById("empTabContent");
   const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
     .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
 
-  if(!etFilters.employeeNumber && activeEmployees.length) etFilters.employeeNumber = activeEmployees[0].fields.EmployeeNumber;
-  if(!etFilters.payNumber && periods.length) etFilters.payNumber = String(periods[0].fields.PayNumber);
+  container.innerHTML = `
+    <div class="subtabs" style="margin-bottom:14px;">
+      <div class="subtab ${etMode==='employee'?'active':''}" data-et-mode="employee">By Employee</div>
+      <div class="subtab ${etMode==='day'?'active':''}" data-et-mode="day">By Day &mdash; bulk entry</div>
+    </div>
+    <div id="teModeBody"></div>
+  `;
+  container.querySelectorAll("[data-et-mode]").forEach(el => {
+    el.addEventListener("click", () => {
+      etMode = el.getAttribute("data-et-mode");
+      renderEmployeeTimeEntryTab();
+    });
+  });
+
+  if(!activeEmployees.length){
+    document.getElementById("teModeBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No active Employees on file yet — add one under Employees first.</div></div>`;
+    return;
+  }
+  if(!periods.length){
+    document.getElementById("teModeBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
+    return;
+  }
+
+  if(etMode === "day"){
+    renderEmployeeTimeEntryByDayMode(activeEmployees, periods);
+    return;
+  }
+
+  if(!etFilters.employeeNumber) etFilters.employeeNumber = activeEmployees[0].fields.EmployeeNumber;
+  if(!etFilters.payNumber) etFilters.payNumber = String(periods[0].fields.PayNumber);
 
   const employeeOptions = activeEmployees.map(e => `<option value="${esc(e.fields.EmployeeNumber)}">${esc(e.fields.Title)} (${esc(e.fields.EmployeeNumber)})</option>`).join("");
   const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
 
-  container.innerHTML = `
+  document.getElementById("teModeBody").innerHTML = `
     <div class="filter-bar">
       <div class="filter-field"><label>Employee</label>
         <select id="teEmployee"><option value="">Select…</option>${employeeOptions}</select>
@@ -2083,10 +2221,6 @@ function renderEmployeeTimeEntryTab(){
     </div>
     <div id="teBody"></div>
   `;
-  if(!activeEmployees.length || !periods.length){
-    document.getElementById("teBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">${!activeEmployees.length ? "No active Employees on file yet — add one under Employees first." : "No Pay Periods on file yet — add one from the Calendar tab first."}</div></div>`;
-    return;
-  }
   document.getElementById("teEmployee").value = etFilters.employeeNumber;
   document.getElementById("tePeriod").value = etFilters.payNumber;
   document.getElementById("teEmployee").addEventListener("change", e => { etFilters.employeeNumber = e.target.value; renderEmployeeTimeEntryBody(); });
@@ -2173,6 +2307,30 @@ function renderEmployeeTimeEntryBody(){
   document.getElementById("teSaveBtn").addEventListener("click", () => saveEmployeeTimeEntries(employee, period, rows));
 }
 
+// Shared write path for a single Employee+day time record — used by both
+// the By Employee grid (one employee, many days) and the By Day bulk
+// entry grid (many employees, one day). Skips writing anything if the
+// row has no data at all and nothing already exists on file for it.
+async function saveOneTimeRecord(employeeNumber, dateStr, payNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy){
+  const existing = findTimeRecord(employeeNumber, dateStr);
+  const hasAnyData = timeIn || timeOut || bStart || bEnd || override !== "";
+  if(!hasAnyData && !existing) return; // nothing to write, nothing on file — skip
+  const fields = {
+    Title: `${employeeNumber} ${dateStr}`,
+    EmployeeNumber: employeeNumber,
+    WorkDate: new Date(dateStr + "T00:00:00Z").toISOString(),
+    PayNumber: parseFloat(payNumber),
+    TimeIn: timeIn, TimeOut: timeOut, BreakStart: bStart, BreakEnd: bEnd,
+    BreakMinutesOverride: override === "" ? null : parseFloat(override),
+    EntrySource: "Manual", EnteredBy: enteredBy,
+  };
+  if(existing){
+    await graphUpdateItem("CG_EmployeeTimeRecords", existing.id, fields);
+  }else{
+    await graphCreateItem("CG_EmployeeTimeRecords", fields);
+  }
+}
+
 async function saveEmployeeTimeEntries(employee, period, rows){
   const msgEl = document.getElementById("teSaveMsg");
   msgEl.style.color = "var(--ink-muted)";
@@ -2186,27 +2344,144 @@ async function saveEmployeeTimeEntries(employee, period, rows){
       const bStart = row.querySelector(".te-bstart").value;
       const bEnd = row.querySelector(".te-bend").value;
       const override = row.querySelector(".te-boverride").value;
-      const existing = findTimeRecord(employee.fields.EmployeeNumber, dateStr);
-      const hasAnyData = timeIn || timeOut || bStart || bEnd || override !== "";
-      if(!hasAnyData && !existing) continue; // nothing to write, nothing on file — skip
-      const fields = {
-        Title: `${employee.fields.EmployeeNumber} ${dateStr}`,
-        EmployeeNumber: employee.fields.EmployeeNumber,
-        WorkDate: new Date(dateStr + "T00:00:00Z").toISOString(),
-        PayNumber: parseFloat(period.fields.PayNumber),
-        TimeIn: timeIn, TimeOut: timeOut, BreakStart: bStart, BreakEnd: bEnd,
-        BreakMinutesOverride: override === "" ? null : parseFloat(override),
-        EntrySource: "Manual", EnteredBy: enteredBy,
-      };
-      if(existing){
-        await graphUpdateItem("CG_EmployeeTimeRecords", existing.id, fields);
-      }else{
-        await graphCreateItem("CG_EmployeeTimeRecords", fields);
-      }
+      await saveOneTimeRecord(employee.fields.EmployeeNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy);
     }
     allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
     renderEmployeeTimeEntryBody();
     reportRowMsg(document.getElementById("teSaveMsg"), "Saved.", false);
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
+  }
+}
+
+// ---- By Day bulk entry — every active Employee, one chosen day, one Save ----
+
+function renderEmployeeTimeEntryByDayMode(activeEmployees, periods){
+  const body = document.getElementById("teModeBody");
+  if(!body) return;
+  if(!etDayFilters.workDate){
+    // Default to today if a Pay Period actually covers it, otherwise the
+    // start of the most recent period on file — most likely to be useful.
+    const todayPeriod = findPayPeriodForDate(todayStr());
+    etDayFilters.workDate = todayPeriod ? todayStr() : (periods[0].fields.PPEStart||"").slice(0,10);
+  }
+  body.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Work Date</label><input type="date" id="teDayDate" value="${esc(etDayFilters.workDate)}"></div>
+    </div>
+    <div id="teDayGrid"></div>
+  `;
+  document.getElementById("teDayDate").addEventListener("change", e => {
+    etDayFilters.workDate = e.target.value;
+    renderEmployeeTimeEntryByDayGrid(activeEmployees);
+  });
+  renderEmployeeTimeEntryByDayGrid(activeEmployees);
+}
+
+function renderEmployeeTimeEntryByDayGrid(activeEmployees){
+  const grid = document.getElementById("teDayGrid");
+  if(!grid) return;
+  const dateStr = etDayFilters.workDate;
+  const period = findPayPeriodForDate(dateStr);
+  const d = dateStr ? new Date(dateStr + "T00:00:00") : null;
+  const WEEKDAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const dayLabel = d ? `${WEEKDAY[d.getDay()]} ${fmtDateDMY(dateStr)}` : "—";
+
+  if(!period){
+    grid.innerHTML = `
+      <div class="panel">
+        <div style="font-size:12px;color:var(--status-critical);">No Pay Period on file covers ${esc(dayLabel)} &mdash; add it from the Calendar tab first, then come back here.</div>
+      </div>
+    `;
+    return;
+  }
+
+  const rowsHtml = activeEmployees.map(emp => {
+    const rec = findTimeRecord(emp.fields.EmployeeNumber, dateStr);
+    const f = rec ? rec.fields : {};
+    return `
+      <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}">
+        <td class="te-day-name">${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
+        <td><input type="time" class="te-in" value="${esc(f.TimeIn||"")}"></td>
+        <td><input type="time" class="te-out" value="${esc(f.TimeOut||"")}"></td>
+        <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
+        <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
+        <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
+        <td class="computed te-total">0.00</td>
+        <td class="computed te-break">0.00</td>
+        <td class="computed te-pay">0.00</td>
+      </tr>
+    `;
+  }).join("");
+
+  grid.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128203;</span>${esc(dayLabel)}</h3>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
+    </div>
+    <div class="panel">
+      <div style="overflow-x:auto;">
+        <table class="te-table">
+          <thead><tr><th>Employee</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
+          <tbody id="teDayRows">${rowsHtml}</tbody>
+          <tfoot><tr class="te-total"><td colspan="6">Team total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="te-save-bar">
+        <button class="admin-submit" id="teDaySaveBtn">Save Day for All Employees</button>
+        <span id="teDaySaveMsg" style="font-size:11.5px;"></span>
+      </div>
+    </div>
+  `;
+
+  const rows = Array.from(document.querySelectorAll("#teDayRows tr"));
+  const recompute = () => {
+    let sumTotal = 0, sumBreak = 0, sumPay = 0;
+    rows.forEach(row => {
+      const empNumber = row.getAttribute("data-emp-number");
+      const employee = allEmployees.find(e => e.fields.EmployeeNumber === empNumber);
+      const timeIn = row.querySelector(".te-in").value;
+      const timeOut = row.querySelector(".te-out").value;
+      const bStart = row.querySelector(".te-bstart").value;
+      const bEnd = row.querySelector(".te-bend").value;
+      const override = row.querySelector(".te-boverride").value;
+      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override);
+      row.querySelector(".te-total").textContent = totalHours.toFixed(2);
+      row.querySelector(".te-break").textContent = breakHours.toFixed(2);
+      row.querySelector(".te-pay").textContent = hoursToPay.toFixed(2);
+      sumTotal += totalHours; sumBreak += breakHours; sumPay += hoursToPay;
+    });
+    document.querySelector(".te-foot-total").textContent = sumTotal.toFixed(2);
+    document.querySelector(".te-foot-break").textContent = sumBreak.toFixed(2);
+    document.querySelector(".te-foot-pay").textContent = sumPay.toFixed(2);
+  };
+  rows.forEach(row => {
+    row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
+  });
+  recompute();
+
+  document.getElementById("teDaySaveBtn").addEventListener("click", () => saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmployees));
+}
+
+async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmployees){
+  const msgEl = document.getElementById("teDaySaveMsg");
+  msgEl.style.color = "var(--ink-muted)";
+  msgEl.textContent = "Saving…";
+  const enteredBy = currentUserLabel();
+  try{
+    for(const row of rows){
+      const empNumber = row.getAttribute("data-emp-number");
+      const timeIn = row.querySelector(".te-in").value;
+      const timeOut = row.querySelector(".te-out").value;
+      const bStart = row.querySelector(".te-bstart").value;
+      const bEnd = row.querySelector(".te-bend").value;
+      const override = row.querySelector(".te-boverride").value;
+      await saveOneTimeRecord(empNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy);
+    }
+    allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
+    renderEmployeeTimeEntryByDayGrid(activeEmployees);
+    reportRowMsg(document.getElementById("teDaySaveMsg"), "Saved.", false);
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
