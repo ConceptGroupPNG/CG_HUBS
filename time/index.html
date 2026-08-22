@@ -332,6 +332,36 @@
   .hubadmin-form .hf-check label{margin:0;}
   .hubadmin-submit{font-size:12px;border:none;border-radius:7px;padding:9px 16px;cursor:pointer;background:var(--brass-wash);color:var(--brass-deep);font-weight:700;}
   .hubadmin-submit:hover{background:var(--brass-light);color:#fff8e8;}
+
+  /* ---------- generic admin CRUD (Pay Groups / Pay Periods / Employees) ----------
+     Same visual language as the HUBs admin table above, generalised so each
+     screen can set its own column count via an inline grid-template-columns
+     rather than duplicating a whole CSS block per list. */
+  .admin-row{display:grid;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
+  .admin-row:last-child{border-bottom:none;}
+  .admin-row.head{background:var(--surface-card-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);font-weight:600;padding:10px 18px;}
+  .admin-key{font-weight:600;color:var(--ink-primary);font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .admin-toggle{font-size:11px;border:none;border-radius:7px;padding:4px 10px;cursor:pointer;font-weight:700;}
+  .admin-toggle.deactivate{background:var(--brass-wash);color:var(--brass-deep);}
+  .admin-toggle.deactivate:hover{background:var(--status-critical);color:#fff;}
+  .admin-toggle.activate{background:var(--surface-card-2);color:var(--ink-muted);border:1px solid var(--hairline);}
+  .admin-toggle.activate:hover{color:var(--status-good);}
+  .admin-form{display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:12px 14px;align-items:end;}
+  .admin-form .filter-field input, .admin-form .filter-field select{width:100%;box-sizing:border-box;}
+  .admin-form .hf-check{flex-direction:row;align-items:center;gap:6px;}
+  .admin-form .hf-check label{margin:0;}
+  .admin-submit{font-size:12px;border:none;border-radius:7px;padding:9px 16px;cursor:pointer;background:var(--brass-wash);color:var(--brass-deep);font-weight:700;}
+  .admin-submit:hover{background:var(--brass-light);color:#fff8e8;}
+
+  /* ---------- employee time entry grid ---------- */
+  .te-table input[type="time"], .te-table input[type="number"]{
+    font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 6px;
+    background:var(--surface-card);color:var(--ink-primary);width:100%;box-sizing:border-box;font-family:inherit;
+  }
+  .te-table td.computed{color:var(--ink-muted);font-variant-numeric:tabular-nums;}
+  .te-table tr.weekend td{background:var(--surface-card-2);}
+  .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
+  .te-save-bar{display:flex;align-items:center;gap:12px;margin-top:14px;}
 </style>
 </head>
 <body>
@@ -365,12 +395,19 @@
     <div class="nav-group">Coordinate</div>
     <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
 
+    <div class="nav-group">Employees</div>
+    <div class="nav-item" data-view="employees"><span class="ic">&#128100;</span>Employees</div>
+    <div class="nav-item" data-view="employee-time-entry"><span class="ic">&#9200;</span>Time Entry</div>
+    <div class="nav-item" data-view="employee-payroll"><span class="ic">&#128176;</span>Payroll</div>
+
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
     <div class="nav-item"><span class="ic">&#128197;</span>Calendars</div>
 
     <div class="nav-group">Admin</div>
     <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs</div>
+    <div class="nav-item" data-view="pay-groups"><span class="ic">&#127970;</span>Pay Groups</div>
+    <div class="nav-item" data-view="pay-periods"><span class="ic">&#128198;</span>Pay Periods</div>
     <div class="nav-item"><span class="ic">&#9881;</span>Integrations</div>
 
     <div class="sidebar-foot">
@@ -469,6 +506,12 @@
 
     <div class="view" id="view-resources"></div>
 
+    <div class="view" id="view-employees"></div>
+
+    <div class="view" id="view-employee-time-entry"></div>
+
+    <div class="view" id="view-employee-payroll"></div>
+
     <div class="view" id="view-time-entries"></div>
 
     <div class="view" id="view-timesheets"></div>
@@ -476,6 +519,10 @@
     <div class="view" id="view-reports"></div>
 
     <div class="view" id="view-hubs"></div>
+
+    <div class="view" id="view-pay-groups"></div>
+
+    <div class="view" id="view-pay-periods"></div>
 
   </main>
 </div>
@@ -502,7 +549,7 @@ const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here 
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
 const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries, CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
 // Lists that live on the CG_Time site rather than Concept_CSA
-const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs"]);
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
@@ -537,17 +584,27 @@ document.getElementById("signoutBtn").addEventListener("click", ()=>{
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
   "resources": "Resources",
+  "employees": "Employees",
+  "employee-time-entry": "Employee Time Entry",
+  "employee-payroll": "Payroll",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
   "hubs": "HUBs",
+  "pay-groups": "Pay Groups",
+  "pay-periods": "Pay Periods",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
+  "employees": renderEmployeesView,
+  "employee-time-entry": renderEmployeeTimeEntryView,
+  "employee-payroll": renderEmployeePayrollView,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
   "hubs": renderHubsView,
+  "pay-groups": renderPayGroupsView,
+  "pay-periods": renderPayPeriodsView,
 };
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
@@ -751,6 +808,10 @@ let allResources = [];
 let allExceptions = [];
 let allHubAssignments = [];
 let allHubs = [];
+let allPayGroups = [];
+let allPayPeriods = [];
+let allEmployees = [];
+let allEmployeeTimeRecords = [];
 
 async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
@@ -787,6 +848,21 @@ async function refreshAllData(){
       fetchAllListItems("CG_ExceptionsQueue"),
       fetchAllListItems("CG_ResourceHubAssignments")
     ]);
+
+    // CG_PayGroups / CG_PayPeriods / CG_Employees / CG_EmployeeTimeRecords
+    // are CG Time's own new lists for Employees (Internal), same "CG Time
+    // owns and writes to these" status as CG_Hubs. Each is fetched with its
+    // own fallback to an empty array so a list that hasn't been created in
+    // SharePoint yet (see the Employees setup script) doesn't take down the
+    // rest of the dashboard — the Employees/Pay Groups/Pay Periods/Payroll
+    // views each show their own "not set up yet" message in that case.
+    [allPayGroups, allPayPeriods, allEmployees, allEmployeeTimeRecords] = await Promise.all([
+      fetchAllListItems("CG_PayGroups").catch(err => { console.warn("CG_PayGroups not available yet.", err); return []; }),
+      fetchAllListItems("CG_PayPeriods").catch(err => { console.warn("CG_PayPeriods not available yet.", err); return []; }),
+      fetchAllListItems("CG_Employees").catch(err => { console.warn("CG_Employees not available yet.", err); return []; }),
+      fetchAllListItems("CG_EmployeeTimeRecords").catch(err => { console.warn("CG_EmployeeTimeRecords not available yet.", err); return []; }),
+    ]);
+
     banner.style.display = "none";
 
     lastAutoResolveCount = await autoResolveExceptions();
@@ -1569,6 +1645,616 @@ async function toggleHubActive(itemId, nextActive){
 }
 
 /* ============================================================
+   PAY GROUPS VIEW — manage CG_PayGroups, an open admin-managed
+   list (same convention as CG_Hubs) rather than a hardcoded set.
+   A Pay Group is the legal entity an Employee is paid under
+   (e.g. IVA = Ivalisa Investment, CS = Concept Software,
+   DRW = Driftwood) — used on Employees and carried through to the
+   Payroll export, never interpreted further by CG Time itself.
+   ============================================================ */
+function renderPayGroupsView(){
+  const container = document.getElementById("view-pay-groups");
+  const sorted = allPayGroups.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const rows = sorted.map(g => {
+    const f = g.fields;
+    const active = f.IsActive !== false;
+    return `
+      <div class="admin-row" style="grid-template-columns:1fr 2fr .8fr .9fr;">
+        <div class="admin-key">${esc(f.Title||"—")}</div>
+        <div>${esc(f.Label||"—")}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(g.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
+      </div>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#127970;</span>Pay Groups</h3>
+      <div class="panel-sub">The legal entities Employees are paid under &mdash; e.g. IVA (Ivalisa Investment), CS (Concept Software), DRW (Driftwood). Add a row here whenever a new Pay Group is needed; no code change required. Writes straight to CG_PayGroups.</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="admin-row head" style="grid-template-columns:1fr 2fr .8fr .9fr;"><div>Code</div><div>Label</div><div>Status</div><div></div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Pay Groups on file yet in CG_PayGroups &mdash; add the first one below (e.g. IVA).</div>`}
+    </div>
+    <div class="panel">
+      <h3><span>&#10010;</span>Add a Pay Group</h3>
+      <div class="admin-form">
+        <div class="filter-field"><label>Code</label><input type="text" id="pgNewCode" placeholder="e.g. IVA"></div>
+        <div class="filter-field"><label>Label</label><input type="text" id="pgNewLabel" placeholder="e.g. Ivalisa Investment"></div>
+        <div><button class="admin-submit" id="pgAddBtn">+ Add Pay Group</button></div>
+      </div>
+      <div id="pgAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+  `;
+  container.querySelectorAll(".admin-toggle[data-toggle-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      togglePayGroupActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
+    });
+  });
+  document.getElementById("pgAddBtn").addEventListener("click", addPayGroup);
+}
+
+async function addPayGroup(){
+  const msgEl = document.getElementById("pgAddMsg");
+  const code = document.getElementById("pgNewCode").value.trim().toUpperCase();
+  const label = document.getElementById("pgNewLabel").value.trim();
+  if(!code){
+    reportRowMsg(msgEl, "Code is required — e.g. IVA.", true);
+    return;
+  }
+  if(allPayGroups.some(g => (g.fields.Title||"").toUpperCase() === code)){
+    reportRowMsg(msgEl, `A Pay Group with code "${code}" already exists.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_PayGroups", { Title: code, Label: label || code, IsActive: true });
+    allPayGroups = await fetchAllListItems("CG_PayGroups");
+    renderPayGroupsView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that Pay Group — ${err.message}`, true);
+  }
+}
+
+async function togglePayGroupActive(itemId, nextActive){
+  const msgEl = document.getElementById("pgAddMsg");
+  try{
+    await graphUpdateItem("CG_PayGroups", itemId, { IsActive: nextActive });
+    allPayGroups = await fetchAllListItems("CG_PayGroups");
+    renderPayGroupsView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't update that Pay Group — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   PAY PERIODS VIEW — manage CG_PayPeriods, the biweekly payroll
+   calendar (Pay# / PPE Start / PPE End / Pay Date) that used to be
+   hardcoded into each pay period's Excel workbook. Add periods one
+   at a time, or use "Generate next period" to add the next
+   fortnight off the latest one on file (PPE End + 14 days, Pay
+   Date = new PPE End + 3 days, matching the source workbook's own
+   PPE+3 convention).
+   ============================================================ */
+function renderPayPeriodsView(){
+  const container = document.getElementById("view-pay-periods");
+  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const rows = sorted.map(p => {
+    const f = p.fields;
+    return `
+      <div class="admin-row" style="grid-template-columns:.6fr 1fr 1fr 1fr;">
+        <div class="admin-key">#${esc(f.PayNumber||f.Title||"—")}</div>
+        <div>${esc((f.PPEStart||"").slice(0,10)) || "—"}</div>
+        <div>${esc((f.PPEEnd||"").slice(0,10)) || "—"}</div>
+        <div>${esc((f.PayDate||"").slice(0,10)) || "—"}</div>
+      </div>
+    `;
+  }).join("");
+  const latest = sorted[0];
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128198;</span>Pay Periods</h3>
+      <div class="panel-sub">The biweekly payroll calendar Employee Time Entry and Payroll are built around. Writes straight to CG_PayPeriods &mdash; add periods as far ahead as you like, no code change required.</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="admin-row head" style="grid-template-columns:.6fr 1fr 1fr 1fr;"><div>Pay #</div><div>PPE Start</div><div>PPE End</div><div>Pay Date</div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet in CG_PayPeriods &mdash; add the first one below.</div>`}
+    </div>
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#10010;</span>Add a Pay Period</h3>
+      <div class="admin-form">
+        <div class="filter-field"><label>Pay #</label><input type="number" id="ppNewNumber" placeholder="e.g. 18"></div>
+        <div class="filter-field"><label>PPE Start</label><input type="date" id="ppNewStart"></div>
+        <div class="filter-field"><label>PPE End</label><input type="date" id="ppNewEnd"></div>
+        <div class="filter-field"><label>Pay Date</label><input type="date" id="ppNewPayDate"></div>
+        <div><button class="admin-submit" id="ppAddBtn">+ Add Pay Period</button></div>
+      </div>
+      <div id="ppAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-sub" style="margin-bottom:10px;">${latest ? `Latest on file: Pay #${esc(latest.fields.PayNumber)}, PPE ending ${esc((latest.fields.PPEEnd||"").slice(0,10))}.` : "No periods on file yet — add the first one above before generating the next."}</div>
+      <button class="print-btn" id="ppGenerateBtn" ${latest ? "" : "disabled"}>Generate next period</button>
+    </div>
+  `;
+  document.getElementById("ppAddBtn").addEventListener("click", addPayPeriod);
+  const genBtn = document.getElementById("ppGenerateBtn");
+  if(genBtn) genBtn.addEventListener("click", generateNextPayPeriod);
+}
+
+async function addPayPeriod(){
+  const msgEl = document.getElementById("ppAddMsg");
+  const num = document.getElementById("ppNewNumber").value.trim();
+  const start = document.getElementById("ppNewStart").value;
+  const end = document.getElementById("ppNewEnd").value;
+  const payDate = document.getElementById("ppNewPayDate").value;
+  if(!num || !start || !end){
+    reportRowMsg(msgEl, "Pay #, PPE Start, and PPE End are required.", true);
+    return;
+  }
+  if(allPayPeriods.some(p => String(p.fields.PayNumber) === String(num))){
+    reportRowMsg(msgEl, `Pay #${num} already exists.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_PayPeriods", {
+      Title: String(num), PayNumber: parseFloat(num),
+      PPEStart: new Date(start + "T00:00:00Z").toISOString(),
+      PPEEnd: new Date(end + "T00:00:00Z").toISOString(),
+      PayDate: payDate ? new Date(payDate + "T00:00:00Z").toISOString() : null,
+    });
+    allPayPeriods = await fetchAllListItems("CG_PayPeriods");
+    renderPayPeriodsView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that Pay Period — ${err.message}`, true);
+  }
+}
+
+async function generateNextPayPeriod(){
+  const msgEl = document.getElementById("ppAddMsg");
+  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const latest = sorted[0];
+  if(!latest) return;
+  try{
+    const prevEnd = new Date(latest.fields.PPEEnd);
+    const nextEnd = new Date(prevEnd); nextEnd.setUTCDate(nextEnd.getUTCDate() + 14);
+    const nextStart = new Date(nextEnd); nextStart.setUTCDate(nextStart.getUTCDate() - 13);
+    const nextPayDate = new Date(nextEnd); nextPayDate.setUTCDate(nextPayDate.getUTCDate() + 3);
+    const nextNum = (parseFloat(latest.fields.PayNumber)||0) + 1;
+    await graphCreateItem("CG_PayPeriods", {
+      Title: String(nextNum), PayNumber: nextNum,
+      PPEStart: nextStart.toISOString(), PPEEnd: nextEnd.toISOString(), PayDate: nextPayDate.toISOString(),
+    });
+    allPayPeriods = await fetchAllListItems("CG_PayPeriods");
+    renderPayPeriodsView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't generate the next Pay Period — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   EMPLOYEES VIEW — manage CG_Employees, entirely separate from
+   CSA_Resources (a person can be both, but is set up independently
+   in each place — CG Time draws no link between them). Each
+   Employee carries their own default break deduction (used by
+   Employee Time Entry whenever Break Start/End is left blank for a
+   day) since this varies per employee, not a single fixed rule.
+   ============================================================ */
+function renderEmployeesView(){
+  const container = document.getElementById("view-employees");
+  const payGroupOptions = allPayGroups.slice()
+    .filter(g => g.fields.IsActive !== false)
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(g => `<option value="${esc(g.fields.Title)}">${esc(g.fields.Title)} — ${esc(g.fields.Label||g.fields.Title)}</option>`)
+    .join("");
+  const sorted = allEmployees.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const rows = sorted.map(e => {
+    const f = e.fields;
+    const active = f.IsActive !== false;
+    return `
+      <div class="admin-row" style="grid-template-columns:1fr 1.4fr .8fr 1fr .9fr .8fr .9fr;">
+        <div class="admin-key">${esc(f.EmployeeNumber||"—")}</div>
+        <div>${esc(f.Title||"—")}</div>
+        <div>${esc(f.PayGroup||"—")}</div>
+        <div>${esc(f.JobAssignments||"—")}</div>
+        <div>${f.DefaultBreakMinutes != null ? f.DefaultBreakMinutes+" min" : "30 min"}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(e.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
+      </div>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128100;</span>Employees</h3>
+      <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one under Admin &rarr; Pay Groups first.' : ''}</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="admin-row head" style="grid-template-columns:1fr 1.4fr .8fr 1fr .9fr .8fr .9fr;"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default break</div><div>Status</div><div></div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Employees on file yet in CG_Employees &mdash; add the first one below.</div>`}
+    </div>
+    <div class="panel">
+      <h3><span>&#10010;</span>Add an Employee</h3>
+      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default break is applied automatically on any day Break Start/End is left blank in Time Entry.</div>
+      <div class="admin-form">
+        <div class="filter-field"><label>Employee #</label><input type="text" id="empNewNumber" placeholder="e.g. CSW0158"></div>
+        <div class="filter-field"><label>Name</label><input type="text" id="empNewName" placeholder="e.g. Kila Ravi"></div>
+        <div class="filter-field"><label>Pay Group</label>
+          <select id="empNewPayGroup"><option value="">Select…</option>${payGroupOptions}</select>
+        </div>
+        <div class="filter-field"><label>Job Assignment(s)</label><input type="text" id="empNewJobs" placeholder="e.g. 01"></div>
+        <div class="filter-field"><label>Default break (min)</label><input type="number" id="empNewBreak" value="30" min="0" step="5"></div>
+        <div><button class="admin-submit" id="empAddBtn">+ Add Employee</button></div>
+      </div>
+      <div id="empAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+  `;
+  container.querySelectorAll(".admin-toggle[data-toggle-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      toggleEmployeeActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
+    });
+  });
+  document.getElementById("empAddBtn").addEventListener("click", addEmployee);
+}
+
+async function addEmployee(){
+  const msgEl = document.getElementById("empAddMsg");
+  const num = document.getElementById("empNewNumber").value.trim();
+  const name = document.getElementById("empNewName").value.trim();
+  const payGroup = document.getElementById("empNewPayGroup").value;
+  const jobs = document.getElementById("empNewJobs").value.trim();
+  const breakMin = parseFloat(document.getElementById("empNewBreak").value);
+  if(!num || !name){
+    reportRowMsg(msgEl, "Employee # and Name are required.", true);
+    return;
+  }
+  if(allEmployees.some(e => (e.fields.EmployeeNumber||"").toLowerCase() === num.toLowerCase())){
+    reportRowMsg(msgEl, `Employee # "${num}" already exists.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_Employees", {
+      Title: name, EmployeeNumber: num, PayGroup: payGroup, JobAssignments: jobs,
+      DefaultBreakMinutes: isNaN(breakMin) ? 30 : breakMin, IsActive: true,
+    });
+    allEmployees = await fetchAllListItems("CG_Employees");
+    renderEmployeesView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that Employee — ${err.message}`, true);
+  }
+}
+
+async function toggleEmployeeActive(itemId, nextActive){
+  const msgEl = document.getElementById("empAddMsg");
+  try{
+    await graphUpdateItem("CG_Employees", itemId, { IsActive: nextActive });
+    allEmployees = await fetchAllListItems("CG_Employees");
+    renderEmployeesView();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't update that Employee — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   EMPLOYEE TIME ENTRY — daily clock in/out + break, entered by a
+   supervisor at the end of each day (not self-service), for a
+   chosen Employee and Pay Period. Mirrors the source workbook's
+   own Time Records rules — Total Hours = Out minus In, Break
+   deducted (either what's actually logged, or the employee's own
+   configurable default whenever Break Start/End is left blank),
+   Hours to Pay = Total minus Break, zero on any day with no clock
+   in/out at all. EntrySource is stamped "Manual" on every row
+   written here, leaving room for a future "Biometric" source once
+   the clock in/out device project lands, without a schema change.
+   ============================================================ */
+function currentUserLabel(){
+  const acc = msalInstance.getActiveAccount();
+  return acc ? (acc.name || acc.username || "") : "";
+}
+
+// Break minutes for one day: an explicit per-day override wins, then
+// whatever's actually logged in Break Start/End, then the employee's
+// own configurable default (30 min unless set otherwise) if neither
+// break time was logged at all.
+function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes){
+  if(overrideMinutes !== "" && overrideMinutes != null && !isNaN(parseFloat(overrideMinutes))){
+    return Math.max(0, parseFloat(overrideMinutes));
+  }
+  if(breakStart && breakEnd){
+    const [sh,sm] = breakStart.split(":").map(Number);
+    const [eh,em] = breakEnd.split(":").map(Number);
+    const mins = (eh*60+em) - (sh*60+sm);
+    return mins > 0 ? mins : 0;
+  }
+  const def = employee && employee.fields.DefaultBreakMinutes != null ? parseFloat(employee.fields.DefaultBreakMinutes) : 30;
+  return isNaN(def) ? 30 : def;
+}
+
+function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, overrideMinutes){
+  if(!timeIn || !timeOut) return { totalHours: 0, breakHours: 0, hoursToPay: 0 };
+  const [ih,im] = timeIn.split(":").map(Number);
+  const [oh,om] = timeOut.split(":").map(Number);
+  let totalMins = (oh*60+om) - (ih*60+im);
+  if(totalMins < 0) totalMins = 0;
+  const breakMins = computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes);
+  const totalHours = totalMins/60;
+  const breakHours = breakMins/60;
+  const hoursToPay = Math.max(0, totalHours - breakHours);
+  return { totalHours, breakHours, hoursToPay };
+}
+
+// Finds the existing CG_EmployeeTimeRecords row (if any) for one
+// employee + date, so Time Entry pre-fills already-saved days and
+// Save knows whether to PATCH or POST.
+function findTimeRecord(employeeNumber, dateStr){
+  return allEmployeeTimeRecords.find(r => {
+    const f = r.fields;
+    return (f.EmployeeNumber||"").toLowerCase() === (employeeNumber||"").toLowerCase()
+      && (f.WorkDate||"").slice(0,10) === dateStr;
+  }) || null;
+}
+
+let etFilters = { employeeNumber: "", payNumber: "" };
+
+function renderEmployeeTimeEntryView(){
+  const container = document.getElementById("view-employee-time-entry");
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+
+  if(!etFilters.employeeNumber && activeEmployees.length) etFilters.employeeNumber = activeEmployees[0].fields.EmployeeNumber;
+  if(!etFilters.payNumber && periods.length) etFilters.payNumber = String(periods[0].fields.PayNumber);
+
+  const employeeOptions = activeEmployees.map(e => `<option value="${esc(e.fields.EmployeeNumber)}">${esc(e.fields.Title)} (${esc(e.fields.EmployeeNumber)})</option>`).join("");
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Employee</label>
+        <select id="teEmployee"><option value="">Select…</option>${employeeOptions}</select>
+      </div>
+      <div class="filter-field"><label>Pay Period</label>
+        <select id="tePeriod"><option value="">Select…</option>${periodOptions}</select>
+      </div>
+    </div>
+    <div id="teBody"></div>
+  `;
+  if(!activeEmployees.length || !periods.length){
+    document.getElementById("teBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">${!activeEmployees.length ? "No active Employees on file yet — add one under Employees first." : "No Pay Periods on file yet — add one under Admin &rarr; Pay Periods first."}</div></div>`;
+    return;
+  }
+  document.getElementById("teEmployee").value = etFilters.employeeNumber;
+  document.getElementById("tePeriod").value = etFilters.payNumber;
+  document.getElementById("teEmployee").addEventListener("change", e => { etFilters.employeeNumber = e.target.value; renderEmployeeTimeEntryBody(); });
+  document.getElementById("tePeriod").addEventListener("change", e => { etFilters.payNumber = e.target.value; renderEmployeeTimeEntryBody(); });
+
+  renderEmployeeTimeEntryBody();
+}
+
+function renderEmployeeTimeEntryBody(){
+  const body = document.getElementById("teBody");
+  if(!body) return;
+  const employee = allEmployees.find(e => e.fields.EmployeeNumber === etFilters.employeeNumber);
+  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(etFilters.payNumber));
+  if(!employee || !period){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select an employee and a pay period.</div></div>`;
+    return;
+  }
+  const days = dateRangeArray((period.fields.PPEStart||"").slice(0,10), (period.fields.PPEEnd||"").slice(0,10));
+  const WEEKDAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const rowsHtml = days.map(dateStr => {
+    const rec = findTimeRecord(employee.fields.EmployeeNumber, dateStr);
+    const f = rec ? rec.fields : {};
+    const d = new Date(dateStr + "T00:00:00");
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    return `
+      <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}">
+        <td>${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
+        <td><input type="time" class="te-in" value="${esc(f.TimeIn||"")}"></td>
+        <td><input type="time" class="te-out" value="${esc(f.TimeOut||"")}"></td>
+        <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
+        <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
+        <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
+        <td class="computed te-total">0.00</td>
+        <td class="computed te-break">0.00</td>
+        <td class="computed te-pay">0.00</td>
+      </tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; default break ${esc(employee.fields.DefaultBreakMinutes!=null?employee.fields.DefaultBreakMinutes:30)} min &mdash; entered by a supervisor, per Employee, per day.</div>
+    </div>
+    <div class="panel">
+      <div style="overflow-x:auto;">
+        <table class="te-table">
+          <thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
+          <tbody id="teRows">${rowsHtml}</tbody>
+          <tfoot><tr class="te-total"><td colspan="6">Period total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="te-save-bar">
+        <button class="admin-submit" id="teSaveBtn">Save Timesheet</button>
+        <span id="teSaveMsg" style="font-size:11.5px;"></span>
+      </div>
+    </div>
+  `;
+
+  const rows = Array.from(document.querySelectorAll("#teRows tr"));
+  const recompute = () => {
+    let sumTotal = 0, sumBreak = 0, sumPay = 0;
+    rows.forEach(row => {
+      const timeIn = row.querySelector(".te-in").value;
+      const timeOut = row.querySelector(".te-out").value;
+      const bStart = row.querySelector(".te-bstart").value;
+      const bEnd = row.querySelector(".te-bend").value;
+      const override = row.querySelector(".te-boverride").value;
+      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override);
+      row.querySelector(".te-total").textContent = totalHours.toFixed(2);
+      row.querySelector(".te-break").textContent = breakHours.toFixed(2);
+      row.querySelector(".te-pay").textContent = hoursToPay.toFixed(2);
+      sumTotal += totalHours; sumBreak += breakHours; sumPay += hoursToPay;
+    });
+    document.querySelector(".te-foot-total").textContent = sumTotal.toFixed(2);
+    document.querySelector(".te-foot-break").textContent = sumBreak.toFixed(2);
+    document.querySelector(".te-foot-pay").textContent = sumPay.toFixed(2);
+  };
+  rows.forEach(row => {
+    row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
+  });
+  recompute();
+
+  document.getElementById("teSaveBtn").addEventListener("click", () => saveEmployeeTimeEntries(employee, period, rows));
+}
+
+async function saveEmployeeTimeEntries(employee, period, rows){
+  const msgEl = document.getElementById("teSaveMsg");
+  msgEl.style.color = "var(--ink-muted)";
+  msgEl.textContent = "Saving…";
+  const enteredBy = currentUserLabel();
+  try{
+    for(const row of rows){
+      const dateStr = row.getAttribute("data-date");
+      const timeIn = row.querySelector(".te-in").value;
+      const timeOut = row.querySelector(".te-out").value;
+      const bStart = row.querySelector(".te-bstart").value;
+      const bEnd = row.querySelector(".te-bend").value;
+      const override = row.querySelector(".te-boverride").value;
+      const existing = findTimeRecord(employee.fields.EmployeeNumber, dateStr);
+      const hasAnyData = timeIn || timeOut || bStart || bEnd || override !== "";
+      if(!hasAnyData && !existing) continue; // nothing to write, nothing on file — skip
+      const fields = {
+        Title: `${employee.fields.EmployeeNumber} ${dateStr}`,
+        EmployeeNumber: employee.fields.EmployeeNumber,
+        WorkDate: new Date(dateStr + "T00:00:00Z").toISOString(),
+        PayNumber: parseFloat(period.fields.PayNumber),
+        TimeIn: timeIn, TimeOut: timeOut, BreakStart: bStart, BreakEnd: bEnd,
+        BreakMinutesOverride: override === "" ? null : parseFloat(override),
+        EntrySource: "Manual", EnteredBy: enteredBy,
+      };
+      if(existing){
+        await graphUpdateItem("CG_EmployeeTimeRecords", existing.id, fields);
+      }else{
+        await graphCreateItem("CG_EmployeeTimeRecords", fields);
+      }
+    }
+    allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
+    renderEmployeeTimeEntryBody();
+    reportRowMsg(document.getElementById("teSaveMsg"), "Saved.", false);
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   EMPLOYEE PAYROLL VIEW — the Summary + export half of Employees.
+   Totals every Employee's Hours to Pay for a chosen Pay Period
+   (same shape as the source workbook's Summary_Hours sheet), with
+   a printable summary and a CSV export reproducing the workbook's
+   Upload File layout for Ascender aPay. Job# on the export uses
+   the employee's first Job Assignment when more than one is on
+   file — CG Time doesn't interpret which assignment a given day's
+   hours belong to, so this is a simplification worth checking with
+   Payroll before relying on it for someone who holds more than one.
+   ============================================================ */
+let payFilters = { payNumber: "" };
+
+function payrollSummaryForPeriod(payNumber){
+  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(payNumber));
+  if(!period) return { period: null, rows: [], grandTotal: 0 };
+  const records = allEmployeeTimeRecords.filter(r => String(r.fields.PayNumber) === String(payNumber));
+  const rows = allEmployees.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||"")).map(emp => {
+    const empRecords = records.filter(r => (r.fields.EmployeeNumber||"").toLowerCase() === (emp.fields.EmployeeNumber||"").toLowerCase());
+    let hours = 0;
+    const days = [];
+    empRecords.forEach(r => {
+      const f = r.fields;
+      const { hoursToPay } = computeHoursForDay(emp, f.TimeIn, f.TimeOut, f.BreakStart, f.BreakEnd, f.BreakMinutesOverride);
+      hours += hoursToPay;
+      if(hoursToPay > 0) days.push({ date: (f.WorkDate||"").slice(0,10), hours: hoursToPay });
+    });
+    return { employee: emp, hours, days };
+  });
+  const grandTotal = rows.reduce((s,r)=>s+r.hours, 0);
+  return { period, rows, grandTotal };
+}
+
+function renderEmployeePayrollView(){
+  const container = document.getElementById("view-employee-payroll");
+  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  if(!payFilters.payNumber && periods.length) payFilters.payNumber = String(periods[0].fields.PayNumber);
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Pay Period</label>
+        <select id="payPeriod"><option value="">Select…</option>${periodOptions}</select>
+      </div>
+      <div class="filter-field"><label>Batch # (for export)</label><input type="text" id="payBatch" placeholder="e.g. TS121025"></div>
+      <button class="print-btn" id="payReportBtn">Open printable summary</button>
+      <button class="print-btn" id="payCsvBtn">Download Payroll CSV</button>
+    </div>
+    <div id="payBody"></div>
+  `;
+  if(!periods.length){
+    document.getElementById("payBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one under Admin &rarr; Pay Periods first.</div></div>`;
+    return;
+  }
+  document.getElementById("payPeriod").value = payFilters.payNumber;
+  document.getElementById("payPeriod").addEventListener("change", e => { payFilters.payNumber = e.target.value; renderEmployeePayrollBody(); });
+  document.getElementById("payReportBtn").addEventListener("click", () => {
+    const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.payNumber);
+    if(!period) return;
+    openDocInNewTab(buildPayrollSummaryDocHtml(period, rows, grandTotal));
+  });
+  document.getElementById("payCsvBtn").addEventListener("click", () => {
+    const { period, rows } = payrollSummaryForPeriod(payFilters.payNumber);
+    if(!period) return;
+    const batch = document.getElementById("payBatch").value.trim();
+    if(!batch){ alert("Please enter a Batch # before exporting — Payroll uses this to identify the upload."); return; }
+    downloadPayrollCsv(period, rows, batch);
+  });
+
+  renderEmployeePayrollBody();
+}
+
+function renderEmployeePayrollBody(){
+  const body = document.getElementById("payBody");
+  if(!body) return;
+  const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.payNumber);
+  if(!period){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a pay period.</div></div>`;
+    return;
+  }
+  const bodyRows = rows.map(r => `
+    <tr>
+      <td>${esc(r.employee.fields.EmployeeNumber||"—")}</td>
+      <td>${esc(r.employee.fields.Title||"—")}</td>
+      <td>${esc(r.employee.fields.PayGroup||"—")}</td>
+      <td class="hrs">${r.hours.toFixed(2)}</td>
+    </tr>
+  `).join("");
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128176;</span>Pay #${esc(period.fields.PayNumber)}</h3>
+      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${rows.length} employee${rows.length===1?"":"s"} &middot; ${grandTotal.toFixed(2)} total hours to pay</div>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Employee #</th><th>Name</th><th>Pay Group</th><th>Hours to Pay</th></tr></thead>
+        <tbody>${bodyRows || '<tr><td colspan="4">No Employees on file.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ============================================================
    TIME ENTRIES VIEW — a filterable, browsable log of every
    CSA_TimeEntries row. Read-only, same as the rest of CG Time —
    entries themselves are only ever created or edited from CSA
@@ -2240,6 +2926,89 @@ function downloadExceptionsCsv(exceptions){
   const a = document.createElement("a");
   a.href = url;
   a.download = `CG_Time_Exceptions_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   PAYROLL SUMMARY & UPLOAD CSV — the "reproduce the Upload File
+   sheet" half of Employee Payroll. Same printable-document pattern
+   as the other report builders, plus a CSV shaped exactly like the
+   source workbook's Upload File tab: Batch#/Employee#/Job#/
+   Workdate/Paycode=SAL/Unit=hours, one line per employee per day
+   worked, only for days with hours > 0 — matching that sheet's own
+   FILTER()-out-zero-hour-days behaviour. Everything except the
+   first six columns is left blank, exactly as the source file does.
+   ============================================================ */
+function buildPayrollSummaryDocHtml(period, rows, grandTotal){
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>
+      <td>${esc(r.employee.fields.EmployeeNumber) || "—"}</td>
+      <td>${esc(r.employee.fields.Title) || "—"}</td>
+      <td>${esc(r.employee.fields.PayGroup) || "—"}</td>
+      <td style="text-align:right">${r.hours.toFixed(2)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" style="text-align:center;color:#666;">No Employees on file.</td></tr>`;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Payroll Summary — Pay #${esc(period.fields.PayNumber)}</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Payroll Summary</div>
+<div class="doc-sub">Pay #${esc(period.fields.PayNumber)}</div>
+
+<div class="meta-row">
+  <div><b>Pay Period:</b> ${esc(fmtDateDMY((period.fields.PPEStart||"").slice(0,10)))} to ${esc(fmtDateDMY((period.fields.PPEEnd||"").slice(0,10)))}</div>
+  <div><b>Pay Date:</b> ${esc(fmtDateDMY((period.fields.PayDate||"").slice(0,10))) || "—"}</div>
+  <div><b>Employees:</b> ${rows.length}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Employee #</th><th>Name</th><th>Pay Group</th><th style="text-align:right">Hours to Pay</th></tr>
+  </thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+
+<div class="summary-row">
+  <div><b>Total Hours to Pay:</b> ${grandTotal.toFixed(2)}</div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+
+</body>
+</html>
+`;
+}
+
+function downloadPayrollCsv(period, rows, batchNumber){
+  const headers = ["Batch#","Employee#","Job#","Workdate","Duty_Type","Paycode","Fund_ID","Hour_Minute","Unit","One_off_flag","Ts_Reason","Award","Class","Step","Rate","Confirm_date","GL_Override","Userid","Amt","Manual_pay_flag","Payrun","xx"];
+  const lines = [headers.join(",")];
+  rows.forEach(r => {
+    const jobFirst = (r.employee.fields.JobAssignments||"").split(",")[0].trim();
+    r.days.forEach(day => {
+      const line = [
+        batchNumber, r.employee.fields.EmployeeNumber||"", jobFirst, day.date,
+        "", "SAL", "", "", day.hours.toFixed(2), "", "", "", "", "", "", "", "", "", "", "", "", "",
+      ];
+      lines.push(line.map(csvEscape).join(","));
+    });
+  });
+  const csv = lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `CG_Time_Payroll_Pay${period.fields.PayNumber}_${todayStr()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
