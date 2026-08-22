@@ -362,6 +362,21 @@
   .te-table tr.weekend td{background:var(--surface-card-2);}
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
   .te-save-bar{display:flex;align-items:center;gap:12px;margin-top:14px;}
+
+  /* ---------- employee calendar tab ---------- */
+  .cal-month{margin-bottom:18px;}
+  .cal-month:last-child{margin-bottom:0;}
+  .cal-month-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);margin-bottom:8px;}
+  .cal-month-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:10px;}
+  .cal-card{
+    border:1px solid var(--hairline);border-radius:var(--radius);background:var(--surface-card);
+    padding:12px 14px;
+  }
+  .cal-card.current{border-color:#b4934f;background:var(--brass-wash);}
+  .cal-card-num{font-weight:700;font-size:13px;color:var(--ink-primary);margin-bottom:4px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .cal-card-range{font-size:11.5px;color:var(--ink-secondary);}
+  .cal-card-pay{font-size:11px;color:var(--ink-muted);margin-top:3px;}
+  .cal-badge{background:#b4934f;color:#fff8e8;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;border-radius:8px;padding:1px 6px;}
 </style>
 </head>
 <body>
@@ -397,8 +412,6 @@
 
     <div class="nav-group">Employees</div>
     <div class="nav-item" data-view="employees"><span class="ic">&#128100;</span>Employees</div>
-    <div class="nav-item" data-view="employee-time-entry"><span class="ic">&#9200;</span>Time Entry</div>
-    <div class="nav-item" data-view="employee-payroll"><span class="ic">&#128176;</span>Payroll</div>
 
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
@@ -407,7 +420,6 @@
     <div class="nav-group">Admin</div>
     <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs</div>
     <div class="nav-item" data-view="pay-groups"><span class="ic">&#127970;</span>Pay Groups</div>
-    <div class="nav-item" data-view="pay-periods"><span class="ic">&#128198;</span>Pay Periods</div>
     <div class="nav-item"><span class="ic">&#9881;</span>Integrations</div>
 
     <div class="sidebar-foot">
@@ -508,10 +520,6 @@
 
     <div class="view" id="view-employees"></div>
 
-    <div class="view" id="view-employee-time-entry"></div>
-
-    <div class="view" id="view-employee-payroll"></div>
-
     <div class="view" id="view-time-entries"></div>
 
     <div class="view" id="view-timesheets"></div>
@@ -521,8 +529,6 @@
     <div class="view" id="view-hubs"></div>
 
     <div class="view" id="view-pay-groups"></div>
-
-    <div class="view" id="view-pay-periods"></div>
 
   </main>
 </div>
@@ -585,26 +591,20 @@ const VIEW_TITLES = {
   "dashboard": "Dashboard",
   "resources": "Resources",
   "employees": "Employees",
-  "employee-time-entry": "Employee Time Entry",
-  "employee-payroll": "Payroll",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
   "hubs": "HUBs",
   "pay-groups": "Pay Groups",
-  "pay-periods": "Pay Periods",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
-  "employees": renderEmployeesView,
-  "employee-time-entry": renderEmployeeTimeEntryView,
-  "employee-payroll": renderEmployeePayrollView,
+  "employees": renderEmployeesHub,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
   "hubs": renderHubsView,
   "pay-groups": renderPayGroupsView,
-  "pay-periods": renderPayPeriodsView,
 };
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
@@ -1729,37 +1729,63 @@ async function togglePayGroupActive(itemId, nextActive){
 }
 
 /* ============================================================
-   PAY PERIODS VIEW — manage CG_PayPeriods, the biweekly payroll
-   calendar (Pay# / PPE Start / PPE End / Pay Date) that used to be
-   hardcoded into each pay period's Excel workbook. Add periods one
-   at a time, or use "Generate next period" to add the next
-   fortnight off the latest one on file (PPE End + 14 days, Pay
-   Date = new PPE End + 3 days, matching the source workbook's own
-   PPE+3 convention).
+   CALENDAR TAB (within Employees) — CG_PayPeriods, the biweekly
+   payroll calendar (Pay# / PPE Start / PPE End / Pay Date) that
+   used to be hardcoded into each pay period's Excel workbook,
+   shown here as a visual calendar of periods (grouped by month,
+   today's period highlighted) rather than a plain admin table.
+   Add periods one at a time, or use "Generate next period" to add
+   the next fortnight off the latest one on file (PPE End + 14
+   days, Pay Date = new PPE End + 3 days, matching the source
+   workbook's own PPE+3 convention).
    ============================================================ */
-function renderPayPeriodsView(){
-  const container = document.getElementById("view-pay-periods");
-  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
-  const rows = sorted.map(p => {
-    const f = p.fields;
-    return `
-      <div class="admin-row" style="grid-template-columns:.6fr 1fr 1fr 1fr;">
-        <div class="admin-key">#${esc(f.PayNumber||f.Title||"—")}</div>
-        <div>${esc((f.PPEStart||"").slice(0,10)) || "—"}</div>
-        <div>${esc((f.PPEEnd||"").slice(0,10)) || "—"}</div>
-        <div>${esc((f.PayDate||"").slice(0,10)) || "—"}</div>
-      </div>
-    `;
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function renderEmployeeCalendarTab(){
+  const container = document.getElementById("empTabContent");
+  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(a.fields.PayNumber)||0) - (parseFloat(b.fields.PayNumber)||0));
+  const today = todayStr();
+
+  // Group into month buckets keyed off PPE Start, in chronological order.
+  const groups = [];
+  const groupIndex = {};
+  sorted.forEach(p => {
+    const start = (p.fields.PPEStart||"").slice(0,10);
+    if(!start) return;
+    const key = start.slice(0,7); // YYYY-MM
+    if(!(key in groupIndex)){
+      groupIndex[key] = groups.length;
+      const [y,m] = key.split("-").map(Number);
+      groups.push({ key, label: `${MONTH_NAMES[m-1]} ${y}`, periods: [] });
+    }
+    groups[groupIndex[key]].periods.push(p);
+  });
+
+  const monthsHtml = groups.map(g => {
+    const cards = g.periods.map(p => {
+      const f = p.fields;
+      const start = (f.PPEStart||"").slice(0,10);
+      const end = (f.PPEEnd||"").slice(0,10);
+      const isCurrent = start && end && today >= start && today <= end;
+      return `
+        <div class="cal-card ${isCurrent?'current':''}">
+          <div class="cal-card-num">Pay #${esc(f.PayNumber||f.Title||"—")}${isCurrent?' <span class="cal-badge">Current</span>':''}</div>
+          <div class="cal-card-range">${esc(fmtDateDMY(start))} – ${esc(fmtDateDMY(end))}</div>
+          <div class="cal-card-pay">Pay date: ${esc(fmtDateDMY((f.PayDate||"").slice(0,10))) || "—"}</div>
+        </div>
+      `;
+    }).join("");
+    return `<div class="cal-month"><div class="cal-month-label">${esc(g.label)}</div><div class="cal-month-grid">${cards}</div></div>`;
   }).join("");
-  const latest = sorted[0];
+
+  const latest = sorted[sorted.length-1];
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#128198;</span>Pay Periods</h3>
+      <h3><span>&#128198;</span>Calendar</h3>
       <div class="panel-sub">The biweekly payroll calendar Employee Time Entry and Payroll are built around. Writes straight to CG_PayPeriods &mdash; add periods as far ahead as you like, no code change required.</div>
     </div>
-    <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:.6fr 1fr 1fr 1fr;"><div>Pay #</div><div>PPE Start</div><div>PPE End</div><div>Pay Date</div></div>
-      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet in CG_PayPeriods &mdash; add the first one below.</div>`}
+    <div class="panel" style="margin-bottom:16px;">
+      ${monthsHtml || `<div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet &mdash; add the first one below.</div>`}
     </div>
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#10010;</span>Add a Pay Period</h3>
@@ -1804,7 +1830,7 @@ async function addPayPeriod(){
       PayDate: payDate ? new Date(payDate + "T00:00:00Z").toISOString() : null,
     });
     allPayPeriods = await fetchAllListItems("CG_PayPeriods");
-    renderPayPeriodsView();
+    renderEmployeeCalendarTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't add that Pay Period — ${err.message}`, true);
@@ -1827,7 +1853,7 @@ async function generateNextPayPeriod(){
       PPEStart: nextStart.toISOString(), PPEEnd: nextEnd.toISOString(), PayDate: nextPayDate.toISOString(),
     });
     allPayPeriods = await fetchAllListItems("CG_PayPeriods");
-    renderPayPeriodsView();
+    renderEmployeeCalendarTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't generate the next Pay Period — ${err.message}`, true);
@@ -1835,15 +1861,48 @@ async function generateNextPayPeriod(){
 }
 
 /* ============================================================
-   EMPLOYEES VIEW — manage CG_Employees, entirely separate from
+   EMPLOYEES HUB — the single "Employees" Nav Bar item, hosting
+   four tabs: Employees (roster), Time Entry, Payroll, and Calendar
+   (the payroll calendar, formerly its own Admin screen). Same
+   tab-bar delegation pattern as Timesheets/Exceptions.
+   ============================================================ */
+let employeesActiveTab = "employees"; // "employees" | "time-entry" | "payroll" | "calendar"
+
+const EMPLOYEES_TABS = [
+  { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
+  { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
+  { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
+  { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
+];
+
+function renderEmployeesHub(){
+  const container = document.getElementById("view-employees");
+  container.innerHTML = `
+    <div class="subtabs">
+      ${EMPLOYEES_TABS.map(t => `<button class="subtab ${employeesActiveTab===t.key?'active':''}" data-emp-tab="${t.key}">${esc(t.label)}</button>`).join("")}
+    </div>
+    <div id="empTabContent"></div>
+  `;
+  container.querySelectorAll("[data-emp-tab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      employeesActiveTab = btn.getAttribute("data-emp-tab");
+      renderEmployeesHub();
+    });
+  });
+  const active = EMPLOYEES_TABS.find(t => t.key === employeesActiveTab) || EMPLOYEES_TABS[0];
+  active.render();
+}
+
+/* ============================================================
+   EMPLOYEES TAB — manage CG_Employees, entirely separate from
    CSA_Resources (a person can be both, but is set up independently
    in each place — CG Time draws no link between them). Each
    Employee carries their own default break deduction (used by
    Employee Time Entry whenever Break Start/End is left blank for a
    day) since this varies per employee, not a single fixed rule.
    ============================================================ */
-function renderEmployeesView(){
-  const container = document.getElementById("view-employees");
+function renderEmployeesTab(){
+  const container = document.getElementById("empTabContent");
   const payGroupOptions = allPayGroups.slice()
     .filter(g => g.fields.IsActive !== false)
     .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
@@ -1919,7 +1978,7 @@ async function addEmployee(){
       DefaultBreakMinutes: isNaN(breakMin) ? 30 : breakMin, IsActive: true,
     });
     allEmployees = await fetchAllListItems("CG_Employees");
-    renderEmployeesView();
+    renderEmployeesTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't add that Employee — ${err.message}`, true);
@@ -1931,7 +1990,7 @@ async function toggleEmployeeActive(itemId, nextActive){
   try{
     await graphUpdateItem("CG_Employees", itemId, { IsActive: nextActive });
     allEmployees = await fetchAllListItems("CG_Employees");
-    renderEmployeesView();
+    renderEmployeesTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't update that Employee — ${err.message}`, true);
@@ -1999,8 +2058,8 @@ function findTimeRecord(employeeNumber, dateStr){
 
 let etFilters = { employeeNumber: "", payNumber: "" };
 
-function renderEmployeeTimeEntryView(){
-  const container = document.getElementById("view-employee-time-entry");
+function renderEmployeeTimeEntryTab(){
+  const container = document.getElementById("empTabContent");
   const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
     .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
@@ -2023,7 +2082,7 @@ function renderEmployeeTimeEntryView(){
     <div id="teBody"></div>
   `;
   if(!activeEmployees.length || !periods.length){
-    document.getElementById("teBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">${!activeEmployees.length ? "No active Employees on file yet — add one under Employees first." : "No Pay Periods on file yet — add one under Admin &rarr; Pay Periods first."}</div></div>`;
+    document.getElementById("teBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">${!activeEmployees.length ? "No active Employees on file yet — add one under Employees first." : "No Pay Periods on file yet — add one from the Calendar tab first."}</div></div>`;
     return;
   }
   document.getElementById("teEmployee").value = etFilters.employeeNumber;
@@ -2185,8 +2244,8 @@ function payrollSummaryForPeriod(payNumber){
   return { period, rows, grandTotal };
 }
 
-function renderEmployeePayrollView(){
-  const container = document.getElementById("view-employee-payroll");
+function renderEmployeePayrollTab(){
+  const container = document.getElementById("empTabContent");
   const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
   if(!payFilters.payNumber && periods.length) payFilters.payNumber = String(periods[0].fields.PayNumber);
   const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
@@ -2203,7 +2262,7 @@ function renderEmployeePayrollView(){
     <div id="payBody"></div>
   `;
   if(!periods.length){
-    document.getElementById("payBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one under Admin &rarr; Pay Periods first.</div></div>`;
+    document.getElementById("payBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
     return;
   }
   document.getElementById("payPeriod").value = payFilters.payNumber;
