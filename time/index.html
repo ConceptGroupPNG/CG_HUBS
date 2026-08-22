@@ -267,8 +267,21 @@
   }
   .print-btn:hover{background:var(--surface-card-2);}
 
+  .subtabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--hairline);}
+  .subtab{
+    background:transparent;border:none;border-bottom:2px solid transparent;
+    padding:9px 4px;margin-right:22px;font-size:13px;font-weight:600;color:var(--ink-muted);
+    cursor:pointer;display:flex;align-items:center;gap:7px;font-family:inherit;
+  }
+  .subtab:hover{color:var(--ink-primary);}
+  .subtab.active{color:var(--ink-primary);border-bottom-color:#b4934f;}
+  .subtab .badge-count{
+    background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;
+    border-radius:10px;padding:1px 6px;
+  }
+
   @media print{
-    .sidebar, .topbar, .signout-link, .data-banner, .filter-bar, .print-btn{ display:none !important; }
+    .sidebar, .topbar, .signout-link, .data-banner, .filter-bar, .print-btn, .subtabs{ display:none !important; }
     .main{ padding:0; }
     body{ background:#fff; }
     .panel, .ts-stat, .res-table-wrap{ box-shadow:none; border:1px solid #ccc; }
@@ -347,11 +360,10 @@
 
     <div class="nav-group">Collect</div>
     <div class="nav-item" data-view="time-entries"><span class="ic">&#9998;</span>Time Entries</div>
-    <div class="nav-item" data-view="timesheets"><span class="ic">&#128337;</span>Timesheets</div>
+    <div class="nav-item" data-view="timesheets"><span class="ic">&#128337;</span>Timesheets <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
     <div class="nav-group">Coordinate</div>
     <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
-    <div class="nav-item" data-view="exceptions"><span class="ic">&#8987;</span>Exceptions <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
@@ -456,7 +468,6 @@
     </div>
 
     <div class="view" id="view-resources"></div>
-    <div class="view" id="view-exceptions"></div>
 
     <div class="view" id="view-time-entries"></div>
 
@@ -526,7 +537,6 @@ document.getElementById("signoutBtn").addEventListener("click", ()=>{
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
   "resources": "Resources",
-  "exceptions": "Exceptions",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
@@ -534,7 +544,6 @@ const VIEW_TITLES = {
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
-  "exceptions": renderExceptionsView,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
@@ -1102,13 +1111,16 @@ function renderExceptions(){
 }
 
 /* ============================================================
-   EXCEPTIONS VIEW — the full CG_ExceptionsQueue, filterable.
-   Read-only here too: an exception raised against CSA_TimeEntries
-   resolves itself once the source HUB fixes the underlying entry
-   (see autoResolveExceptions above) — there's no manual "Resolve"
-   action in CG Time itself, on purpose.
+   EXCEPTIONS TAB (within Timesheets) — the full CG_ExceptionsQueue,
+   filterable, reportable, and exportable. Read-only, on purpose: an
+   exception raised against CSA_TimeEntries resolves itself once the
+   source HUB fixes the underlying entry (see autoResolveExceptions
+   above) — there's no manual "Resolve" action in CG Time, and no
+   Billable/Not-Billable decision made here either. That decision is
+   entirely the raising HUB's to make; CG Time only reviews, reports,
+   and extracts what the HUBs have already recorded.
    ============================================================ */
-let exFilters = { status: "open", type: "all", search: "" };
+let exFilters = { status: "open", type: "all", search: "", from: "", to: "" };
 
 function filteredExceptions(){
   return allExceptions.filter(e => {
@@ -1116,6 +1128,9 @@ function filteredExceptions(){
     if(exFilters.status === "open" && f.Status !== "Open") return false;
     if(exFilters.status === "resolved" && f.Status !== "Resolved") return false;
     if(exFilters.type !== "all" && (f.ExceptionType || "Other") !== exFilters.type) return false;
+    const raised = (f.RaisedDate || "").slice(0,10);
+    if(exFilters.from && raised && raised < exFilters.from) return false;
+    if(exFilters.to && raised && raised > exFilters.to) return false;
     if(exFilters.search){
       const needle = exFilters.search.toLowerCase();
       const hay = `${f.Title||""} ${f.ExceptionType||""} ${f.SourceList||""}`.toLowerCase();
@@ -1125,8 +1140,9 @@ function filteredExceptions(){
   });
 }
 
-function renderExceptionsView(){
-  const container = document.getElementById("view-exceptions");
+function renderTimesheetExceptionsTab(){
+  const container = document.getElementById("tsTabContent");
+  if(!container) return;
   const types = [...new Set(allExceptions.map(e => e.fields.ExceptionType || "Other"))].sort();
   container.innerHTML = `
     <div class="filter-bar">
@@ -1143,11 +1159,19 @@ function renderExceptionsView(){
           ${types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
         </select>
       </div>
+      <div class="filter-field"><label>Raised from</label><input type="date" id="exFrom" value="${esc(exFilters.from)}"></div>
+      <div class="filter-field"><label>Raised to</label><input type="date" id="exTo" value="${esc(exFilters.to)}"></div>
       <div class="filter-field"><label>Search</label><input type="search" id="exSearch" placeholder="title, type, source…" value="${esc(exFilters.search)}"></div>
       <div class="filter-count" id="exCount"></div>
     </div>
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-sub" style="margin-bottom:10px;">From CG_ExceptionsQueue &middot; resolves itself once the underlying record is fixed in the HUB that owns it &mdash; review, report and extract only, no actions taken here.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="print-btn" id="exReportBtn">Open printable report</button>
+        <button class="print-btn" id="exCsvBtn">Download CSV</button>
+      </div>
+    </div>
     <div class="panel">
-      <div class="panel-sub" style="margin-bottom:10px;">From CG_ExceptionsQueue &middot; resolves itself once the underlying record is fixed in the HUB that owns it &mdash; there's no manual resolve action here.</div>
       <div class="ex-list" id="exceptionsFullList"></div>
     </div>
   `;
@@ -1156,7 +1180,15 @@ function renderExceptionsView(){
 
   document.getElementById("exStatus").addEventListener("change", e => { exFilters.status = e.target.value; renderExceptionsResults(); });
   document.getElementById("exType").addEventListener("change", e => { exFilters.type = e.target.value; renderExceptionsResults(); });
+  document.getElementById("exFrom").addEventListener("change", e => { exFilters.from = e.target.value; renderExceptionsResults(); });
+  document.getElementById("exTo").addEventListener("change", e => { exFilters.to = e.target.value; renderExceptionsResults(); });
   document.getElementById("exSearch").addEventListener("input", e => { exFilters.search = e.target.value; renderExceptionsResults(); });
+  document.getElementById("exReportBtn").addEventListener("click", () => {
+    openDocInNewTab(buildExceptionsReportDocHtml(filteredExceptions()));
+  });
+  document.getElementById("exCsvBtn").addEventListener("click", () => {
+    downloadExceptionsCsv(filteredExceptions());
+  });
 
   renderExceptionsResults();
 }
@@ -1662,12 +1694,17 @@ function renderTimeEntriesResults(){
 }
 
 /* ============================================================
-   TIMESHEETS VIEW — one resource's time for a chosen period,
-   grouped by what it was logged against, with a Print action
-   for a clean document via the browser's own print dialog.
-   Read-only, same as everywhere else in CG Time.
+   TIMESHEETS VIEW — a tab bar hosting two tabs:
+     - Timesheet: one resource's time for a chosen period, grouped
+       by what it was logged against, with a Print action for a
+       clean document via the browser's own print dialog.
+     - Exceptions: the full CG_ExceptionsQueue (see below), moved
+       in here from its own Nav Bar item — review/report/extract
+       only, no actions taken. Both tabs are read-only, same as
+       everywhere else in CG Time.
    ============================================================ */
 let tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) };
+let tsActiveTab = "timesheet"; // "timesheet" | "exceptions"
 
 function entriesForResourceAndPeriod(resource, start, end){
   const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
@@ -1683,6 +1720,23 @@ function entriesForResourceAndPeriod(resource, start, end){
 
 function renderTimesheetsView(){
   const container = document.getElementById("view-timesheets");
+  const openExCount = allExceptions.filter(e => e.fields.Status !== "Resolved").length;
+  container.innerHTML = `
+    <div class="subtabs">
+      <button class="subtab ${tsActiveTab==="timesheet"?"active":""}" id="tsTabBtnTimesheet">Timesheet</button>
+      <button class="subtab ${tsActiveTab==="exceptions"?"active":""}" id="tsTabBtnExceptions">Exceptions${openExCount ? ` <span class="badge-count">${openExCount}</span>` : ""}</button>
+    </div>
+    <div id="tsTabContent"></div>
+  `;
+  document.getElementById("tsTabBtnTimesheet").addEventListener("click", () => { tsActiveTab = "timesheet"; renderTimesheetsView(); });
+  document.getElementById("tsTabBtnExceptions").addEventListener("click", () => { tsActiveTab = "exceptions"; renderTimesheetsView(); });
+
+  if(tsActiveTab === "exceptions") renderTimesheetExceptionsTab();
+  else renderTimesheetTab();
+}
+
+function renderTimesheetTab(){
+  const container = document.getElementById("tsTabContent");
   const resourceOptions = allResources.slice()
     .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
     .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
@@ -2066,6 +2120,130 @@ ${csaLabels.length ? `
 </body>
 </html>
 `;
+}
+
+/* ============================================================
+   EXCEPTIONS REPORT & CSV EXPORT — the "report and extract"
+   half of the Exceptions tab. Same printable-document pattern as
+   buildTimeEntriesReportDocHtml above, plus a client-side CSV
+   download (Blob + temporary <a download> link, no server round
+   trip). Both are read-only views of CG_ExceptionsQueue — neither
+   writes anything back anywhere.
+   ============================================================ */
+function buildExceptionsReportDocHtml(exceptions){
+  const list = exceptions.slice().sort((a,b)=> (b.fields.RaisedDate||"").localeCompare(a.fields.RaisedDate||""));
+  const openCount = list.filter(e => e.fields.Status !== "Resolved").length;
+  const resolvedCount = list.length - openCount;
+
+  const byType = {};
+  list.forEach(e => {
+    const label = e.fields.ExceptionType || "Other";
+    byType[label] = (byType[label] || 0) + 1;
+  });
+  const typeLabels = Object.keys(byType).sort();
+
+  const filterDescParts = [];
+  if(exFilters.status !== "all") filterDescParts.push(exFilters.status === "open" ? "Open only" : "Resolved only");
+  if(exFilters.type !== "all") filterDescParts.push(exFilters.type);
+  if(exFilters.from) filterDescParts.push(`raised from ${fmtDateDMY(exFilters.from)}`);
+  if(exFilters.to) filterDescParts.push(`raised to ${fmtDateDMY(exFilters.to)}`);
+  if(exFilters.search) filterDescParts.push(`search "${exFilters.search}"`);
+  const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All exceptions";
+
+  const rowsHtml = list.length ? list.map(e => {
+    const f = e.fields;
+    const resolved = f.Status === "Resolved";
+    return `
+    <tr>
+      <td>${fmtDateDMY((f.RaisedDate||"").slice(0,10)) || "—"}</td>
+      <td>${esc(f.Title) || "—"}</td>
+      <td>${esc(f.ExceptionType) || "Other"}</td>
+      <td>${esc(f.SourceList) || "—"}</td>
+      <td>${resolved ? "Resolved" : "Open"}</td>
+      <td>${resolved && f.ResolvedDate ? (fmtDateDMY(f.ResolvedDate.slice(0,10)) || "—") : "—"}</td>
+    </tr>
+  `;
+  }).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No exceptions match this filter.</td></tr>`;
+
+  const subtotalsHtml = typeLabels.map(label => `
+    <tr><td>${esc(label)}</td><td style="text-align:right">${byType[label]}</td></tr>
+  `).join("");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Exceptions Report — CG Time</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Exceptions Report</div>
+<div class="doc-sub">CG Time &middot; aggregated view for review only</div>
+
+<div class="meta-row">
+  <div><b>Filter:</b> ${esc(filterDesc)}</div>
+  <div><b>Exceptions:</b> ${list.length}</div>
+  <div><b>Open:</b> ${openCount} &middot; <b>Resolved:</b> ${resolvedCount}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Raised</th><th>Title</th><th>Type</th><th>Source</th><th>Status</th><th>Resolved</th></tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+
+${typeLabels.length ? `
+<table class="subtotal-table">
+  <tbody>
+    ${subtotalsHtml}
+    <tr><td>Total</td><td style="text-align:right">${list.length}</td></tr>
+  </tbody>
+</table>
+` : ""}
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time &middot; exceptions are owned and resolved by the HUB that raised them — this report is read-only.</div>
+
+</body>
+</html>
+`;
+}
+
+function csvEscape(val){
+  const s = (val == null ? "" : String(val));
+  if(/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
+}
+
+function downloadExceptionsCsv(exceptions){
+  const list = exceptions.slice().sort((a,b)=> (b.fields.RaisedDate||"").localeCompare(a.fields.RaisedDate||""));
+  const headers = ["RaisedDate","Title","ExceptionType","SourceList","Status","ResolvedDate","ResolvedBy"];
+  const lines = [headers.join(",")];
+  list.forEach(e => {
+    const f = e.fields;
+    lines.push([
+      (f.RaisedDate||"").slice(0,10),
+      f.Title||"",
+      f.ExceptionType||"Other",
+      f.SourceList||"",
+      f.Status||"",
+      f.Status==="Resolved" ? (f.ResolvedDate||"").slice(0,10) : "",
+      f.Status==="Resolved" ? (f.ResolvedBy||"") : "",
+    ].map(csvEscape).join(","));
+  });
+  const csv = lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `CG_Time_Exceptions_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /* ============================================================
