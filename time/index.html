@@ -415,11 +415,9 @@
 
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
-    <div class="nav-item"><span class="ic">&#128197;</span>Calendars</div>
 
     <div class="nav-group">Admin</div>
     <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs</div>
-    <div class="nav-item" data-view="pay-groups"><span class="ic">&#127970;</span>Pay Groups</div>
     <div class="nav-item"><span class="ic">&#9881;</span>Integrations</div>
 
     <div class="sidebar-foot">
@@ -528,8 +526,6 @@
 
     <div class="view" id="view-hubs"></div>
 
-    <div class="view" id="view-pay-groups"></div>
-
   </main>
 </div>
 </div>
@@ -595,7 +591,6 @@ const VIEW_TITLES = {
   "timesheets": "Timesheets",
   "reports": "Reports",
   "hubs": "HUBs",
-  "pay-groups": "Pay Groups",
 };
 const VIEW_RENDERERS = {
   "resources": renderResourcesView,
@@ -604,7 +599,6 @@ const VIEW_RENDERERS = {
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
   "hubs": renderHubsView,
-  "pay-groups": renderPayGroupsView,
 };
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
@@ -1652,8 +1646,8 @@ async function toggleHubActive(itemId, nextActive){
    DRW = Driftwood) — used on Employees and carried through to the
    Payroll export, never interpreted further by CG Time itself.
    ============================================================ */
-function renderPayGroupsView(){
-  const container = document.getElementById("view-pay-groups");
+function renderPayGroupsTab(){
+  const container = document.getElementById("empTabContent");
   const sorted = allPayGroups.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   const rows = sorted.map(g => {
     const f = g.fields;
@@ -1709,7 +1703,7 @@ async function addPayGroup(){
   try{
     await graphCreateItem("CG_PayGroups", { Title: code, Label: label || code, IsActive: true });
     allPayGroups = await fetchAllListItems("CG_PayGroups");
-    renderPayGroupsView();
+    renderPayGroupsTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't add that Pay Group — ${err.message}`, true);
@@ -1721,7 +1715,7 @@ async function togglePayGroupActive(itemId, nextActive){
   try{
     await graphUpdateItem("CG_PayGroups", itemId, { IsActive: nextActive });
     allPayGroups = await fetchAllListItems("CG_PayGroups");
-    renderPayGroupsView();
+    renderPayGroupsTab();
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't update that Pay Group — ${err.message}`, true);
@@ -1873,6 +1867,7 @@ const EMPLOYEES_TABS = [
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
   { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
   { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
+  { key: "pay-groups", label: "Pay Groups", render: () => renderPayGroupsTab() },
 ];
 
 function renderEmployeesHub(){
@@ -1927,7 +1922,7 @@ function renderEmployeesTab(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128100;</span>Employees</h3>
-      <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one under Admin &rarr; Pay Groups first.' : ''}</div>
+      <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''}</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
       <div class="admin-row head" style="grid-template-columns:1fr 1.4fr .8fr 1fr .9fr .8fr .9fr;"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default break</div><div>Status</div><div></div></div>
@@ -2025,7 +2020,8 @@ function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes){
   if(breakStart && breakEnd){
     const [sh,sm] = breakStart.split(":").map(Number);
     const [eh,em] = breakEnd.split(":").map(Number);
-    const mins = (eh*60+em) - (sh*60+sm);
+    let mins = (eh*60+em) - (sh*60+sm);
+    if(mins < 0) mins += 24*60; // break crossing midnight, same overnight convention as Time In/Out
     return mins > 0 ? mins : 0;
   }
   const def = employee && employee.fields.DefaultBreakMinutes != null ? parseFloat(employee.fields.DefaultBreakMinutes) : 30;
@@ -2037,7 +2033,12 @@ function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, ove
   const [ih,im] = timeIn.split(":").map(Number);
   const [oh,om] = timeOut.split(":").map(Number);
   let totalMins = (oh*60+om) - (ih*60+im);
-  if(totalMins < 0) totalMins = 0;
+  // Time Out earlier than Time In (by clock value) means the shift ran
+  // past midnight into the next day — e.g. 17:00 in, 08:00 out is a
+  // 15-hour overnight shift, not a negative one. Add 24h rather than
+  // clamping to zero, matching how the source workbook's own date-time
+  // arithmetic naturally handled the same overnight shifts.
+  if(totalMins < 0) totalMins += 24*60;
   const breakMins = computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes);
   const totalHours = totalMins/60;
   const breakHours = breakMins/60;
@@ -2127,7 +2128,7 @@ function renderEmployeeTimeEntryBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; default break ${esc(employee.fields.DefaultBreakMinutes!=null?employee.fields.DefaultBreakMinutes:30)} min &mdash; entered by a supervisor, per Employee, per day.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; default break ${esc(employee.fields.DefaultBreakMinutes!=null?employee.fields.DefaultBreakMinutes:30)} min &mdash; entered by a supervisor, per Employee, per day. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
       <div style="overflow-x:auto;">
