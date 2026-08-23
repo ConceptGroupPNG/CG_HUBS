@@ -366,7 +366,7 @@
   .emp-edit-row .emp-edit-save:hover{opacity:.9;}
 
   /* ---------- employee time entry grid ---------- */
-  .te-table input[type="time"], .te-table input[type="number"]{
+  .te-table input[type="time"], .te-table input[type="number"], .te-table select{
     font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 6px;
     background:var(--surface-card);color:var(--ink-primary);width:100%;box-sizing:border-box;font-family:inherit;
   }
@@ -565,7 +565,7 @@ const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here 
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
 const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries, CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
 // Lists that live on the CG_Time site rather than Concept_CSA
-const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords"]);
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
@@ -820,6 +820,7 @@ let allPayGroups = [];
 let allPayPeriods = [];
 let allEmployees = [];
 let allEmployeeTimeRecords = [];
+let allShifts = [];
 
 async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
@@ -864,11 +865,12 @@ async function refreshAllData(){
     // SharePoint yet (see the Employees setup script) doesn't take down the
     // rest of the dashboard — the Employees/Pay Groups/Pay Periods/Payroll
     // views each show their own "not set up yet" message in that case.
-    [allPayGroups, allPayPeriods, allEmployees, allEmployeeTimeRecords] = await Promise.all([
+    [allPayGroups, allPayPeriods, allEmployees, allEmployeeTimeRecords, allShifts] = await Promise.all([
       fetchAllListItems("CG_PayGroups").catch(err => { console.warn("CG_PayGroups not available yet.", err); return []; }),
       fetchAllListItems("CG_PayPeriods").catch(err => { console.warn("CG_PayPeriods not available yet.", err); return []; }),
       fetchAllListItems("CG_Employees").catch(err => { console.warn("CG_Employees not available yet.", err); return []; }),
       fetchAllListItems("CG_EmployeeTimeRecords").catch(err => { console.warn("CG_EmployeeTimeRecords not available yet.", err); return []; }),
+      fetchAllListItems("CG_Shifts").catch(err => { console.warn("CG_Shifts not available yet.", err); return []; }),
     ]);
 
     banner.style.display = "none";
@@ -1737,6 +1739,105 @@ async function togglePayGroupActive(itemId, nextActive){
 }
 
 /* ============================================================
+   SHIFTS TAB — manage CG_Shifts, an open admin-managed list of
+   Shift templates (e.g. Normal 08:00–17:00, Guard_Day 06:00–18:00,
+   Guard_Night 18:00–06:00). A Shift owns its own Break Length —
+   picking a Shift for a day fills that day's Time In/Out from it
+   (still editable afterward) and its Break Length is what's used
+   in Hours to Pay, ahead of the Employee's own default break, which
+   now only applies as a fallback on days with no Shift picked at
+   all (including historic records saved before Shifts existed).
+   ============================================================ */
+const SHIFT_ROW_COLS = "1.2fr .9fr .9fr .8fr .8fr .9fr";
+
+function renderShiftsTab(){
+  const container = document.getElementById("empTabContent");
+  const sorted = allShifts.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const rows = sorted.map(s => {
+    const f = s.fields;
+    const active = f.IsActive !== false;
+    return `
+      <div class="admin-row" style="grid-template-columns:${SHIFT_ROW_COLS};">
+        <div class="admin-key">${esc(f.Title||"—")}</div>
+        <div>${esc(f.StartTime||"—")}</div>
+        <div>${esc(f.EndTime||"—")}</div>
+        <div>${f.BreakMinutes!=null?esc(f.BreakMinutes)+" min":"—"}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(s.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
+      </div>
+    `;
+  }).join("");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9200;</span>Shifts</h3>
+      <div class="panel-sub">Shift templates for Time In/Out and Break Length &mdash; e.g. Normal 08:00&ndash;17:00, Guard_Day 06:00&ndash;18:00, Guard_Night 18:00&ndash;06:00. Assign a Default Shift to an Employee (from the Employees tab) to pre-fill their days in Time Entry, and pick a Shift on any individual day to fill that day from it instead. Writes straight to CG_Shifts.</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="admin-row head" style="grid-template-columns:${SHIFT_ROW_COLS};"><div>Name</div><div>Start</div><div>End</div><div>Break</div><div>Status</div><div></div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Shifts on file yet in CG_Shifts &mdash; add the first one below.</div>`}
+    </div>
+    <div class="panel">
+      <h3><span>&#10010;</span>Add a Shift</h3>
+      <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses.</div>
+      <div class="admin-form">
+        <div class="filter-field"><label>Name</label><input type="text" id="shNewName" placeholder="e.g. Guard_Night"></div>
+        <div class="filter-field"><label>Start (24hr)</label><input type="time" id="shNewStart"></div>
+        <div class="filter-field"><label>End (24hr)</label><input type="time" id="shNewEnd"></div>
+        <div class="filter-field"><label>Break (min)</label><input type="number" id="shNewBreak" value="30" min="0" step="5"></div>
+        <div><button class="admin-submit" id="shAddBtn">+ Add Shift</button></div>
+      </div>
+      <div id="shAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+  `;
+  container.querySelectorAll(".admin-toggle[data-toggle-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      toggleShiftActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
+    });
+  });
+  document.getElementById("shAddBtn").addEventListener("click", addShift);
+}
+
+async function addShift(){
+  const msgEl = document.getElementById("shAddMsg");
+  const name = document.getElementById("shNewName").value.trim();
+  const start = document.getElementById("shNewStart").value;
+  const end = document.getElementById("shNewEnd").value;
+  const brk = parseFloat(document.getElementById("shNewBreak").value);
+  if(!name){
+    reportRowMsg(msgEl, "Name is required — e.g. Guard_Night.", true);
+    return;
+  }
+  if(!start || !end){
+    reportRowMsg(msgEl, "Start and End times are both required.", true);
+    return;
+  }
+  if(allShifts.some(s => (s.fields.Title||"").toLowerCase() === name.toLowerCase())){
+    reportRowMsg(msgEl, `A Shift named "${name}" already exists.`, true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_Shifts", { Title: name, StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk, IsActive: true });
+    allShifts = await fetchAllListItems("CG_Shifts");
+    renderShiftsTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that Shift — ${err.message}`, true);
+  }
+}
+
+async function toggleShiftActive(itemId, nextActive){
+  const msgEl = document.getElementById("shAddMsg");
+  try{
+    await graphUpdateItem("CG_Shifts", itemId, { IsActive: nextActive });
+    allShifts = await fetchAllListItems("CG_Shifts");
+    renderShiftsTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't update that Shift — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
    CALENDAR TAB (within Employees) — CG_PayPeriods, the biweekly
    payroll calendar (Pay# / PPE Start / PPE End / Pay Date) that
    used to be hardcoded into each pay period's Excel workbook,
@@ -1878,6 +1979,7 @@ let employeesActiveTab = "employees"; // "employees" | "time-entry" | "payroll" 
 
 const EMPLOYEES_TABS = [
   { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
+  { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
   { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
   { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
@@ -1906,22 +2008,38 @@ function renderEmployeesHub(){
    EMPLOYEES TAB — manage CG_Employees, entirely separate from
    CSA_Resources (a person can be both, but is set up independently
    in each place — CG Time draws no link between them). Each
-   Employee carries their own default break deduction (used by
-   Employee Time Entry whenever Break Start/End is left blank for a
-   day) since this varies per employee, not a single fixed rule.
+   Employee can carry a Default Shift (see the Shifts tab), which
+   pre-fills their days in Time Entry — Time In/Out and Break Length
+   all come from the Shift picked for a day. DefaultBreakMinutes
+   still exists on the record as a last-resort fallback for days
+   with no Shift at all (including records imported before Shifts
+   existed), but is no longer edited directly here.
    ============================================================ */
 // Which Employee row (if any) is currently open for inline editing —
 // click a row to open it, click again / Cancel / Save to close it.
 // Only one row edits at a time.
 let editingEmployeeId = null;
 
-const EMP_ROW_COLS = "1fr 1.4fr .8fr 1fr .9fr .8fr .9fr";
+const EMP_ROW_COLS = "1fr 1.3fr .8fr .9fr 1.1fr .8fr .9fr";
 
 function payGroupOptionsHtml(selected){
   return allPayGroups.slice()
     .filter(g => g.fields.IsActive !== false)
     .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
     .map(g => `<option value="${esc(g.fields.Title)}" ${g.fields.Title===selected?"selected":""}>${esc(g.fields.Title)} — ${esc(g.fields.Label||g.fields.Title)}</option>`)
+    .join("");
+}
+
+// Shared Shift <option> list — used both for an Employee's Default Shift
+// (blankLabel "— none —") and for a Shift picked on one specific Time
+// Entry day (blankLabel "— manual —", the default). Picking a Shift is
+// always a convenience fill-in, never a lock: times stay editable after.
+function shiftOptionsHtml(selected, blankLabel){
+  const blank = `<option value="">${esc(blankLabel != null ? blankLabel : "— manual —")}</option>`;
+  return blank + allShifts.slice()
+    .filter(s => s.fields.IsActive !== false)
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(s => `<option value="${esc(s.fields.Title)}" ${s.fields.Title===selected?"selected":""}>${esc(s.fields.Title)} (${esc(s.fields.StartTime||"?")}–${esc(s.fields.EndTime||"?")})</option>`)
     .join("");
 }
 
@@ -1939,7 +2057,7 @@ function renderEmployeesTab(){
           <div><input type="text" class="emp-edit-name" value="${esc(f.Title||"")}"></div>
           <div><select class="emp-edit-paygroup">${payGroupOptionsHtml(f.PayGroup)}</select></div>
           <div><input type="text" class="emp-edit-jobs" value="${esc(f.JobAssignments||"")}"></div>
-          <div><input type="number" class="emp-edit-break" min="0" step="5" value="${f.DefaultBreakMinutes!=null?esc(f.DefaultBreakMinutes):30}"></div>
+          <div><select class="emp-edit-shift">${shiftOptionsHtml(f.DefaultShift, "— none —")}</select></div>
           <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="emp-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
           <div style="display:flex;gap:6px;">
             <button class="admin-submit emp-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
@@ -1955,7 +2073,7 @@ function renderEmployeesTab(){
         <div>${esc(f.Title||"—")}</div>
         <div>${esc(f.PayGroup||"—")}</div>
         <div>${esc(f.JobAssignments||"—")}</div>
-        <div>${f.DefaultBreakMinutes != null ? f.DefaultBreakMinutes+" min" : "30 min"}</div>
+        <div>${f.DefaultShift ? esc(f.DefaultShift) : "—"}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(e.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
       </div>
@@ -1967,13 +2085,13 @@ function renderEmployeesTab(){
       <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''} Click a row to edit it.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default break</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default Shift</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Employees on file yet in CG_Employees &mdash; add the first one below.</div>`}
     </div>
     <div id="empEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add an Employee</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default break is applied automatically on any day Break Start/End is left blank in Time Entry.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default Shift pre-fills this Employee's days in Time Entry &mdash; add Shifts first from the Shifts tab if the list below is empty.</div>
       <div class="admin-form">
         <div class="filter-field"><label>Employee #</label><input type="text" id="empNewNumber" placeholder="e.g. CSW0158"></div>
         <div class="filter-field"><label>Name</label><input type="text" id="empNewName" placeholder="e.g. Kila Ravi"></div>
@@ -1981,7 +2099,9 @@ function renderEmployeesTab(){
           <select id="empNewPayGroup"><option value="">Select…</option>${payGroupOptionsHtml()}</select>
         </div>
         <div class="filter-field"><label>Job Assignment(s)</label><input type="text" id="empNewJobs" placeholder="e.g. 01"></div>
-        <div class="filter-field"><label>Default break (min)</label><input type="number" id="empNewBreak" value="30" min="0" step="5"></div>
+        <div class="filter-field"><label>Default Shift</label>
+          <select id="empNewShift">${shiftOptionsHtml("", "— none —")}</select>
+        </div>
         <div><button class="admin-submit" id="empAddBtn">+ Add Employee</button></div>
       </div>
       <div id="empAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
@@ -2026,7 +2146,7 @@ async function saveEmployeeEdit(itemId, rowEl){
   const name = rowEl.querySelector(".emp-edit-name").value.trim();
   const payGroup = rowEl.querySelector(".emp-edit-paygroup").value;
   const jobs = rowEl.querySelector(".emp-edit-jobs").value.trim();
-  const breakMin = parseFloat(rowEl.querySelector(".emp-edit-break").value);
+  const defaultShift = rowEl.querySelector(".emp-edit-shift").value;
   const active = rowEl.querySelector(".emp-edit-active").checked;
   if(!name){
     reportRowMsg(msgEl, "Name is required.", true);
@@ -2035,7 +2155,7 @@ async function saveEmployeeEdit(itemId, rowEl){
   try{
     await graphUpdateItem("CG_Employees", itemId, {
       Title: name, PayGroup: payGroup, JobAssignments: jobs,
-      DefaultBreakMinutes: isNaN(breakMin) ? 30 : breakMin, IsActive: active,
+      DefaultShift: defaultShift, IsActive: active,
     });
     allEmployees = await fetchAllListItems("CG_Employees");
     editingEmployeeId = null;
@@ -2053,7 +2173,7 @@ async function addEmployee(){
   const name = document.getElementById("empNewName").value.trim();
   const payGroup = document.getElementById("empNewPayGroup").value;
   const jobs = document.getElementById("empNewJobs").value.trim();
-  const breakMin = parseFloat(document.getElementById("empNewBreak").value);
+  const defaultShift = document.getElementById("empNewShift").value;
   if(!num || !name){
     reportRowMsg(msgEl, "Employee # and Name are required.", true);
     return;
@@ -2065,7 +2185,7 @@ async function addEmployee(){
   try{
     await graphCreateItem("CG_Employees", {
       Title: name, EmployeeNumber: num, PayGroup: payGroup, JobAssignments: jobs,
-      DefaultBreakMinutes: isNaN(breakMin) ? 30 : breakMin, IsActive: true,
+      DefaultShift: defaultShift, DefaultBreakMinutes: 30, IsActive: true,
     });
     allEmployees = await fetchAllListItems("CG_Employees");
     renderEmployeesTab();
@@ -2104,11 +2224,24 @@ function currentUserLabel(){
   return acc ? (acc.name || acc.username || "") : "";
 }
 
-// Break minutes for one day: an explicit per-day override wins, then
-// whatever's actually logged in Break Start/End, then the employee's
-// own configurable default (30 min unless set otherwise) if neither
-// break time was logged at all.
-function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes){
+// Finds a Shift definition (CG_Shifts) by name, case-insensitively.
+// Returns null for blank/unknown names — callers treat that as
+// "no Shift picked for this day, fall back to the Employee's own default."
+function findShiftByName(name){
+  if(!name) return null;
+  return allShifts.find(s => (s.fields.Title||"").toLowerCase() === String(name).toLowerCase()) || null;
+}
+
+// Break minutes for one day, in priority order: an explicit per-day
+// override wins outright (the most specific, hand-entered figure for
+// that exact day); then whatever's actually logged in Break Start/End
+// for that day; then the Shift picked for that day (a Shift owns its
+// own Break Length, e.g. Guard_Day's 12hr shift needs a different break
+// than Normal's 9hr one); then the Employee's own configurable default
+// (30 min unless set otherwise) as a last-resort fallback for days with
+// no Shift picked at all — including historic records imported before
+// Shifts existed.
+function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes, shift){
   if(overrideMinutes !== "" && overrideMinutes != null && !isNaN(parseFloat(overrideMinutes))){
     return Math.max(0, parseFloat(overrideMinutes));
   }
@@ -2119,11 +2252,14 @@ function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes){
     if(mins < 0) mins += 24*60; // break crossing midnight, same overnight convention as Time In/Out
     return mins > 0 ? mins : 0;
   }
+  if(shift && shift.fields.BreakMinutes != null && !isNaN(parseFloat(shift.fields.BreakMinutes))){
+    return Math.max(0, parseFloat(shift.fields.BreakMinutes));
+  }
   const def = employee && employee.fields.DefaultBreakMinutes != null ? parseFloat(employee.fields.DefaultBreakMinutes) : 30;
   return isNaN(def) ? 30 : def;
 }
 
-function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, overrideMinutes){
+function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, overrideMinutes, shift){
   if(!timeIn || !timeOut) return { totalHours: 0, breakHours: 0, hoursToPay: 0 };
   const [ih,im] = timeIn.split(":").map(Number);
   const [oh,om] = timeOut.split(":").map(Number);
@@ -2134,7 +2270,7 @@ function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, ove
   // clamping to zero, matching how the source workbook's own date-time
   // arithmetic naturally handled the same overnight shifts.
   if(totalMins < 0) totalMins += 24*60;
-  const breakMins = computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes);
+  const breakMins = computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes, shift);
   const totalHours = totalMins/60;
   const breakHours = breakMins/60;
   const hoursToPay = Math.max(0, totalHours - breakHours);
@@ -2240,16 +2376,26 @@ function renderEmployeeTimeEntryBody(){
   }
   const days = dateRangeArray((period.fields.PPEStart||"").slice(0,10), (period.fields.PPEEnd||"").slice(0,10));
   const WEEKDAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const empDefaultShift = findShiftByName(employee.fields.DefaultShift);
   const rowsHtml = days.map(dateStr => {
     const rec = findTimeRecord(employee.fields.EmployeeNumber, dateStr);
     const f = rec ? rec.fields : {};
+    // A day with nothing on file yet starts from the Employee's own
+    // Default Shift (if set) — both which Shift is picked and the
+    // Time In/Out that come with it. A day that's already saved always
+    // shows exactly what's on file, never overwritten by a default.
+    const shiftName = rec ? (f.ShiftName || "") : (empDefaultShift ? empDefaultShift.fields.Title : "");
+    const shift = findShiftByName(shiftName);
+    const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
+    const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
     const d = new Date(dateStr + "T00:00:00");
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
     return `
       <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}">
         <td>${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
-        <td><input type="time" class="te-in" value="${esc(f.TimeIn||"")}"></td>
-        <td><input type="time" class="te-out" value="${esc(f.TimeOut||"")}"></td>
+        <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
+        <td><input type="time" class="te-in" value="${esc(initialIn)}"></td>
+        <td><input type="time" class="te-out" value="${esc(initialOut)}"></td>
         <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
         <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
         <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
@@ -2263,14 +2409,14 @@ function renderEmployeeTimeEntryBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; default break ${esc(employee.fields.DefaultBreakMinutes!=null?employee.fields.DefaultBreakMinutes:30)} min &mdash; entered by a supervisor, per Employee, per day. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
       <div style="overflow-x:auto;">
         <table class="te-table">
-          <thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
+          <thead><tr><th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
           <tbody id="teRows">${rowsHtml}</tbody>
-          <tfoot><tr class="te-total"><td colspan="6">Period total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
+          <tfoot><tr class="te-total"><td colspan="7">Period total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
         </table>
       </div>
       <div class="te-save-bar">
@@ -2289,7 +2435,8 @@ function renderEmployeeTimeEntryBody(){
       const bStart = row.querySelector(".te-bstart").value;
       const bEnd = row.querySelector(".te-bend").value;
       const override = row.querySelector(".te-boverride").value;
-      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override);
+      const shift = findShiftByName(row.querySelector(".te-shift").value);
+      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override, shift);
       row.querySelector(".te-total").textContent = totalHours.toFixed(2);
       row.querySelector(".te-break").textContent = breakHours.toFixed(2);
       row.querySelector(".te-pay").textContent = hoursToPay.toFixed(2);
@@ -2300,6 +2447,14 @@ function renderEmployeeTimeEntryBody(){
     document.querySelector(".te-foot-pay").textContent = sumPay.toFixed(2);
   };
   rows.forEach(row => {
+    row.querySelector(".te-shift").addEventListener("change", () => {
+      const shift = findShiftByName(row.querySelector(".te-shift").value);
+      if(shift){
+        row.querySelector(".te-in").value = shift.fields.StartTime || "";
+        row.querySelector(".te-out").value = shift.fields.EndTime || "";
+      }
+      recompute();
+    });
     row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
   });
   recompute();
@@ -2311,9 +2466,9 @@ function renderEmployeeTimeEntryBody(){
 // the By Employee grid (one employee, many days) and the By Day bulk
 // entry grid (many employees, one day). Skips writing anything if the
 // row has no data at all and nothing already exists on file for it.
-async function saveOneTimeRecord(employeeNumber, dateStr, payNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy){
+async function saveOneTimeRecord(employeeNumber, dateStr, payNumber, timeIn, timeOut, bStart, bEnd, override, shiftName, enteredBy){
   const existing = findTimeRecord(employeeNumber, dateStr);
-  const hasAnyData = timeIn || timeOut || bStart || bEnd || override !== "";
+  const hasAnyData = timeIn || timeOut || bStart || bEnd || override !== "" || shiftName;
   if(!hasAnyData && !existing) return; // nothing to write, nothing on file — skip
   const fields = {
     Title: `${employeeNumber} ${dateStr}`,
@@ -2322,6 +2477,7 @@ async function saveOneTimeRecord(employeeNumber, dateStr, payNumber, timeIn, tim
     PayNumber: parseFloat(payNumber),
     TimeIn: timeIn, TimeOut: timeOut, BreakStart: bStart, BreakEnd: bEnd,
     BreakMinutesOverride: override === "" ? null : parseFloat(override),
+    ShiftName: shiftName || null,
     EntrySource: "Manual", EnteredBy: enteredBy,
   };
   if(existing){
@@ -2344,7 +2500,8 @@ async function saveEmployeeTimeEntries(employee, period, rows){
       const bStart = row.querySelector(".te-bstart").value;
       const bEnd = row.querySelector(".te-bend").value;
       const override = row.querySelector(".te-boverride").value;
-      await saveOneTimeRecord(employee.fields.EmployeeNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy);
+      const shiftName = row.querySelector(".te-shift").value;
+      await saveOneTimeRecord(employee.fields.EmployeeNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, shiftName, enteredBy);
     }
     allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
     renderEmployeeTimeEntryBody();
@@ -2400,11 +2557,20 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
   const rowsHtml = activeEmployees.map(emp => {
     const rec = findTimeRecord(emp.fields.EmployeeNumber, dateStr);
     const f = rec ? rec.fields : {};
+    // Same "blank day starts from the Employee's Default Shift" rule as
+    // the By Employee grid — an already-saved day always shows what's on
+    // file, never overwritten by a default.
+    const empDefaultShift = findShiftByName(emp.fields.DefaultShift);
+    const shiftName = rec ? (f.ShiftName || "") : (empDefaultShift ? empDefaultShift.fields.Title : "");
+    const shift = findShiftByName(shiftName);
+    const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
+    const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
     return `
       <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}">
         <td class="te-day-name">${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
-        <td><input type="time" class="te-in" value="${esc(f.TimeIn||"")}"></td>
-        <td><input type="time" class="te-out" value="${esc(f.TimeOut||"")}"></td>
+        <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
+        <td><input type="time" class="te-in" value="${esc(initialIn)}"></td>
+        <td><input type="time" class="te-out" value="${esc(initialOut)}"></td>
         <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
         <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
         <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
@@ -2418,14 +2584,14 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
   grid.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>${esc(dayLabel)}</h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set, still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
     </div>
     <div class="panel">
       <div style="overflow-x:auto;">
         <table class="te-table">
-          <thead><tr><th>Employee</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
           <tbody id="teDayRows">${rowsHtml}</tbody>
-          <tfoot><tr class="te-total"><td colspan="6">Team total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
+          <tfoot><tr class="te-total"><td colspan="7">Team total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
         </table>
       </div>
       <div class="te-save-bar">
@@ -2446,7 +2612,8 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
       const bStart = row.querySelector(".te-bstart").value;
       const bEnd = row.querySelector(".te-bend").value;
       const override = row.querySelector(".te-boverride").value;
-      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override);
+      const shift = findShiftByName(row.querySelector(".te-shift").value);
+      const { totalHours, breakHours, hoursToPay } = computeHoursForDay(employee, timeIn, timeOut, bStart, bEnd, override, shift);
       row.querySelector(".te-total").textContent = totalHours.toFixed(2);
       row.querySelector(".te-break").textContent = breakHours.toFixed(2);
       row.querySelector(".te-pay").textContent = hoursToPay.toFixed(2);
@@ -2457,6 +2624,14 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     document.querySelector(".te-foot-pay").textContent = sumPay.toFixed(2);
   };
   rows.forEach(row => {
+    row.querySelector(".te-shift").addEventListener("change", () => {
+      const shift = findShiftByName(row.querySelector(".te-shift").value);
+      if(shift){
+        row.querySelector(".te-in").value = shift.fields.StartTime || "";
+        row.querySelector(".te-out").value = shift.fields.EndTime || "";
+      }
+      recompute();
+    });
     row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
   });
   recompute();
@@ -2477,7 +2652,8 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
       const bStart = row.querySelector(".te-bstart").value;
       const bEnd = row.querySelector(".te-bend").value;
       const override = row.querySelector(".te-boverride").value;
-      await saveOneTimeRecord(empNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, enteredBy);
+      const shiftName = row.querySelector(".te-shift").value;
+      await saveOneTimeRecord(empNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, shiftName, enteredBy);
     }
     allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
     renderEmployeeTimeEntryByDayGrid(activeEmployees);
@@ -2511,7 +2687,8 @@ function payrollSummaryForPeriod(payNumber){
     const days = [];
     empRecords.forEach(r => {
       const f = r.fields;
-      const { hoursToPay } = computeHoursForDay(emp, f.TimeIn, f.TimeOut, f.BreakStart, f.BreakEnd, f.BreakMinutesOverride);
+      const shift = findShiftByName(f.ShiftName);
+      const { hoursToPay } = computeHoursForDay(emp, f.TimeIn, f.TimeOut, f.BreakStart, f.BreakEnd, f.BreakMinutesOverride, shift);
       hours += hoursToPay;
       if(hoursToPay > 0) days.push({ date: (f.WorkDate||"").slice(0,10), hours: hoursToPay });
     });
