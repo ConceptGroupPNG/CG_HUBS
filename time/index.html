@@ -366,10 +366,13 @@
   .emp-edit-row .emp-edit-save:hover{opacity:.9;}
 
   /* ---------- employee time entry grid ---------- */
-  .te-table input[type="time"], .te-table input[type="number"], .te-table select{
+  .te-table input[type="text"], .te-table input[type="number"], .te-table select{
     font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 6px;
     background:var(--surface-card);color:var(--ink-primary);width:100%;box-sizing:border-box;font-family:inherit;
   }
+  .time-field{font-variant-numeric:tabular-nums;}
+  .te-table input.time-field{text-align:center;}
+  .time-field.time-invalid{border-color:var(--status-critical);background:color-mix(in srgb, var(--status-critical) 10%, var(--surface-card));}
   .te-table td.computed{color:var(--ink-muted);font-variant-numeric:tabular-nums;}
   .te-table tr.weekend td{background:var(--surface-card-2);}
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
@@ -892,6 +895,39 @@ async function refreshAllData(){
 /* ---------- small helpers ---------- */
 function esc(s){
   return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// Every clock-time field in CG Time (Shifts Start/End, Time In/Out,
+// Break Start/End) is a plain "HH:MM" 24-hour text field rather than
+// the browser's native <input type="time"> — that native control turns
+// out to render in 12-hour AM/PM form on a 12-hour-locale Windows
+// machine with no reliable way to force 24-hour from the page, and a
+// half-filled AM/PM segment silently reports an empty value. A plain
+// text field with this shared validator sidesteps that entirely and
+// matches the format already stored everywhere.
+const TIME_HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+function isValidTimeStr(v){
+  return v === "" || TIME_HHMM_RE.test(v);
+}
+// Wires live red-border feedback onto a .time-field input — doesn't
+// block typing, just flags an incomplete/invalid value as the user
+// goes, clearing automatically once it reads as a valid "HH:MM".
+function attachTimeFieldValidation(input){
+  const check = () => input.classList.toggle("time-invalid", !isValidTimeStr(input.value.trim()));
+  input.addEventListener("input", check);
+  check();
+}
+// Scans a set of Time Entry <tr> rows for any .time-field with a
+// non-empty value that isn't a valid 24-hour "HH:MM" — returns a short
+// label (via rowLabelFn) for the first offending row, or null if every
+// row is clean. Save uses this to refuse writing bad data rather than
+// silently computing NaN hours.
+function firstInvalidTimeFieldLabel(rows, rowLabelFn){
+  for(const row of rows){
+    const bad = Array.from(row.querySelectorAll(".time-field")).some(inp => !isValidTimeStr(inp.value.trim()));
+    if(bad) return rowLabelFn(row);
+  }
+  return null;
 }
 function toDateStr(d){
   return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
@@ -1781,8 +1817,8 @@ function renderShiftsTab(){
       <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses.</div>
       <div class="admin-form">
         <div class="filter-field"><label>Name</label><input type="text" id="shNewName" placeholder="e.g. Guard_Night"></div>
-        <div class="filter-field"><label>Start (24hr)</label><input type="time" id="shNewStart"></div>
-        <div class="filter-field"><label>End (24hr)</label><input type="time" id="shNewEnd"></div>
+        <div class="filter-field"><label>Start (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewStart"></div>
+        <div class="filter-field"><label>End (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewEnd"></div>
         <div class="filter-field"><label>Break (min)</label><input type="number" id="shNewBreak" value="30" min="0" step="5"></div>
         <div><button class="admin-submit" id="shAddBtn">+ Add Shift</button></div>
       </div>
@@ -1795,13 +1831,14 @@ function renderShiftsTab(){
     });
   });
   document.getElementById("shAddBtn").addEventListener("click", addShift);
+  container.querySelectorAll(".time-field").forEach(attachTimeFieldValidation);
 }
 
 async function addShift(){
   const msgEl = document.getElementById("shAddMsg");
   const name = document.getElementById("shNewName").value.trim();
-  const start = document.getElementById("shNewStart").value;
-  const end = document.getElementById("shNewEnd").value;
+  const start = document.getElementById("shNewStart").value.trim();
+  const end = document.getElementById("shNewEnd").value.trim();
   const brk = parseFloat(document.getElementById("shNewBreak").value);
   if(!name){
     reportRowMsg(msgEl, "Name is required — e.g. Guard_Night.", true);
@@ -1809,6 +1846,10 @@ async function addShift(){
   }
   if(!start || !end){
     reportRowMsg(msgEl, "Start and End times are both required.", true);
+    return;
+  }
+  if(!isValidTimeStr(start) || !isValidTimeStr(end)){
+    reportRowMsg(msgEl, "Start and End must be a 24-hour HH:MM time, e.g. 08:00 or 18:00.", true);
     return;
   }
   if(allShifts.some(s => (s.fields.Title||"").toLowerCase() === name.toLowerCase())){
@@ -2394,10 +2435,10 @@ function renderEmployeeTimeEntryBody(){
       <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}">
         <td>${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
-        <td><input type="time" class="te-in" value="${esc(initialIn)}"></td>
-        <td><input type="time" class="te-out" value="${esc(initialOut)}"></td>
-        <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
-        <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
+        <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
+        <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
+        <td><input type="text" class="te-bstart time-field" placeholder="HH:MM" maxlength="5" value="${esc(f.BreakStart||"")}"></td>
+        <td><input type="text" class="te-bend time-field" placeholder="HH:MM" maxlength="5" value="${esc(f.BreakEnd||"")}"></td>
         <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
         <td class="computed te-total">0.00</td>
         <td class="computed te-break">0.00</td>
@@ -2456,6 +2497,7 @@ function renderEmployeeTimeEntryBody(){
       recompute();
     });
     row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
+    row.querySelectorAll(".time-field").forEach(attachTimeFieldValidation);
   });
   recompute();
 
@@ -2489,6 +2531,11 @@ async function saveOneTimeRecord(employeeNumber, dateStr, payNumber, timeIn, tim
 
 async function saveEmployeeTimeEntries(employee, period, rows){
   const msgEl = document.getElementById("teSaveMsg");
+  const badRow = firstInvalidTimeFieldLabel(rows, row => fmtDateDMY(row.getAttribute("data-date")));
+  if(badRow){
+    reportRowMsg(msgEl, `${badRow} has an incomplete or invalid time (expected 24-hour HH:MM, e.g. 08:00) — fix it before saving.`, true);
+    return;
+  }
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
@@ -2569,10 +2616,10 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
       <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}">
         <td class="te-day-name">${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
-        <td><input type="time" class="te-in" value="${esc(initialIn)}"></td>
-        <td><input type="time" class="te-out" value="${esc(initialOut)}"></td>
-        <td><input type="time" class="te-bstart" value="${esc(f.BreakStart||"")}"></td>
-        <td><input type="time" class="te-bend" value="${esc(f.BreakEnd||"")}"></td>
+        <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
+        <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
+        <td><input type="text" class="te-bstart time-field" placeholder="HH:MM" maxlength="5" value="${esc(f.BreakStart||"")}"></td>
+        <td><input type="text" class="te-bend time-field" placeholder="HH:MM" maxlength="5" value="${esc(f.BreakEnd||"")}"></td>
         <td><input type="number" class="te-boverride" min="0" step="5" placeholder="auto" value="${f.BreakMinutesOverride!=null?esc(f.BreakMinutesOverride):''}"></td>
         <td class="computed te-total">0.00</td>
         <td class="computed te-break">0.00</td>
@@ -2633,6 +2680,7 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
       recompute();
     });
     row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", recompute));
+    row.querySelectorAll(".time-field").forEach(attachTimeFieldValidation);
   });
   recompute();
 
@@ -2641,6 +2689,15 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
 
 async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmployees){
   const msgEl = document.getElementById("teDaySaveMsg");
+  const badRow = firstInvalidTimeFieldLabel(rows, row => {
+    const empNumber = row.getAttribute("data-emp-number");
+    const emp = allEmployees.find(e => e.fields.EmployeeNumber === empNumber);
+    return emp ? emp.fields.Title : empNumber;
+  });
+  if(badRow){
+    reportRowMsg(msgEl, `${badRow} has an incomplete or invalid time (expected 24-hour HH:MM, e.g. 08:00) — fix it before saving.`, true);
+    return;
+  }
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
