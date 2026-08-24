@@ -658,7 +658,7 @@ function renderDashboard(){
       ${watchList.length ? `
       <table><thead><tr><th>Ticket</th><th>Client</th><th>Priority</th><th>Response</th><th>Resolution</th><th>Assigned</th></tr></thead>
       <tbody>${watchList.map(({t,bs}) => `
-        <tr class="clickable" onclick="openTicketDetail('${t.id}')">
+        <tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
           <td>${esc(clientName(t))}</td>
           <td>${priorityBadge(t.fields.Priority)}</td>
@@ -673,7 +673,7 @@ function renderDashboard(){
       ${myTickets.length ? `
       <table><thead><tr><th>Ticket</th><th>Client</th><th>Priority</th><th>Status</th><th>Response</th><th>Resolution</th></tr></thead>
       <tbody>${myTickets.map(({t,bs}) => `
-        <tr class="clickable" onclick="openTicketDetail('${t.id}')">
+        <tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
           <td>${esc(clientName(t))}</td>
           <td>${priorityBadge(t.fields.Priority)}</td>
