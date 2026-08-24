@@ -360,6 +360,7 @@ let state = {
   tickets: [], clients: [], endClients: [], resources: [], timeEntries: [],
   priorityDefaults: [], exceptions: [], invoices: [],
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
+  ticketAssignments: [],
   me: null
 };
 
@@ -428,6 +429,10 @@ function statusBadge(state_){
 function priorityBadge(p){
   const map = { Critical:"badge-critical", High:"badge-serious", Normal:"badge-good", Low:"badge-neutral" };
   return `<span class="badge ${map[p]||"badge-neutral"}">${esc(p||"—")}</span>`;
+}
+function assignedBadge(t){
+  const name = t.fields.AssignedToName;
+  return name ? esc(name) : `<span class="badge badge-warning">Unassigned</span>`;
 }
 
 /* ============================================================
@@ -507,6 +512,13 @@ async function loadCoreData(){
     state.crossTimeEntries = crossTimeEntries;
   }catch(e){
     console.warn("Couldn't load CG_Time cross-site data (Active Entities / Time Entries):", e);
+  }
+  // Assignment history — separate, non-fatal try/catch so the rest of SLA HUB
+  // still works if Add-SLAHub-TicketAssignmentHistory.ps1 hasn't been run yet.
+  try{
+    state.ticketAssignments = await fetchAllListItems("SLA_TicketAssignments");
+  }catch(e){
+    console.warn("Couldn't load SLA_TicketAssignments (run Add-SLAHub-TicketAssignmentHistory.ps1 if this list doesn't exist yet):", e);
   }
 }
 
@@ -652,7 +664,7 @@ function renderDashboard(){
           <td>${priorityBadge(t.fields.Priority)}</td>
           <td>${statusBadge(bs.response)}</td>
           <td>${statusBadge(bs.resolution)}</td>
-          <td>${esc(t.fields.AssignedToName||"Unassigned")}</td>
+          <td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>
       ` : `<div class="empty">Nothing at risk or breached right now.</div>`}
     </div>
@@ -739,7 +751,7 @@ function renderTicketsTable(){
   document.getElementById("ticketsTableWrap").innerHTML = `
     <div class="card" style="padding:0;">
       ${rows.length ? `
-      <table><thead><tr><th>Ticket</th><th>Type</th><th>Client</th><th>Priority</th><th>Status</th><th>Response</th><th>Resolution</th><th>Opened</th></tr></thead>
+      <table><thead><tr><th>Ticket</th><th>Type</th><th>Client</th><th>Priority</th><th>Status</th><th>Response</th><th>Resolution</th><th>Assigned</th><th>Opened</th></tr></thead>
       <tbody>${rows.map(t => {
         const bs = breachStatus(t);
         return `<tr class="clickable" onclick="openTicketDetail('${t.id}')">
@@ -750,6 +762,7 @@ function renderTicketsTable(){
           <td>${esc(t.fields.Status||"—")}</td>
           <td>${statusBadge(bs.response)}</td>
           <td>${statusBadge(bs.resolution)}</td>
+          <td>${assignedBadge(t)}</td>
           <td>${fmtDate(t.fields.DateOpened)}</td>
         </tr>`;
       }).join("")}</tbody></table>
@@ -1070,7 +1083,8 @@ function renderTicketDetail(){
         <b>Resolution SLA</b><div>${statusBadge(bs.resolution)} due ${fmtDateTime(t.fields.ResolutionDueAt)}</div>
         <b>Owning entity</b><div>${owningEntityLinkHtml(t)}</div>
         <b>Requested by</b><div>${esc(t.fields.RequestedByName||"—")} ${t.fields.RequestedByEmail?`(${esc(t.fields.RequestedByEmail)})`:""}</div>
-        <b>Assigned to</b><div>${esc(t.fields.AssignedToName||"Unassigned")}</div>
+        <b>Assigned to</b><div>${assignedBadge(t)}${t.fields.AssignedToEmail?` <span style="color:var(--ink-2);">(${esc(t.fields.AssignedToEmail)})</span>`:""}
+          <button class="btn btn-sm" style="margin-left:8px;padding:3px 10px;" onclick="openReassignForm('${t.id}')">${t.fields.AssignedToName?"Reassign":"Assign"}</button></div>
         <b>Billable</b><div>${t.fields.Billable? "Yes":"No"}${t.fields.Billable?`
           · rate <input type="number" step="0.01" value="${resolveRate(t)}" style="width:80px;" onchange="updateTicketRate('${t.id}', this.value)">`:""}</div>
         <b>Opened</b><div>${fmtDateTime(t.fields.DateOpened)}</div>
@@ -1086,6 +1100,16 @@ function renderTicketDetail(){
         <td>${fmtDate(e.fields.WorkDate)}</td><td>${esc(e.fields.EntryUser)}</td><td>${e.fields.Hours}</td>
         <td>${e.fields.Billable?"Yes":"No"}</td><td>${esc(e._via)}</td><td>${esc(e.fields.ActivityDetail||"")}</td>
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No time logged yet.</div>`}
+
+      <div class="section-title">Assignment history</div>
+      ${(() => { const hist = ticketAssignmentHistory(t.id); return hist.length ? `
+      <table><thead><tr><th>Date</th><th>Changed by</th><th>From</th><th>To</th></tr></thead>
+      <tbody>${hist.map(a=>`<tr>
+        <td>${fmtDateTime(a.fields.ChangedAt)}</td>
+        <td>${esc(a.fields.ChangedByName||a.fields.ChangedByEmail||"—")}</td>
+        <td>${a.fields.FromName ? esc(a.fields.FromName) : `<span class="badge badge-neutral">Unassigned</span>`}</td>
+        <td>${a.fields.ToName ? esc(a.fields.ToName) : `<span class="badge badge-warning">Unassigned</span>`}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="empty">No assignment changes recorded yet.</div>`; })()}
 
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
         <button class="btn btn-sm" onclick="openLogTimeForm('${t.id}')">+ Log time</button>
@@ -1136,6 +1160,75 @@ async function updateTicketShortDescription(id, value){
     toast("Short description updated");
     syncTicketActiveEntity(t);
   }catch(e){ console.error(e); toast("Couldn't update short description: " + e.message, true); }
+}
+
+/* ---------- Assignment (with a full audit trail in SLA_TicketAssignments) ---------- */
+function ticketAssignmentHistory(ticketId){
+  return state.ticketAssignments
+    .filter(a => String(a.fields.TicketId)===String(ticketId))
+    .sort((a,b)=> new Date(b.fields.ChangedAt||0) - new Date(a.fields.ChangedAt||0));
+}
+
+// Writes one row to SLA_TicketAssignments and updates local state — called
+// any time AssignedTo changes, including the very first assignment at
+// ticket creation, so the full history is captured from day one.
+async function logTicketAssignmentChange(ticketId, fromName, fromEmail, toName, toEmail){
+  const fields = {
+    Title: "Assignment change",
+    TicketId: Number(ticketId),
+    FromName: fromName || "",
+    FromEmail: fromEmail || "",
+    ToName: toName || "",
+    ToEmail: toEmail || "",
+    ChangedByName: currentAccount?.name || currentAccount?.username || "",
+    ChangedByEmail: (currentAccount?.username || "").toLowerCase().trim(),
+    ChangedAt: nowIso()
+  };
+  try{
+    const created = await graphCreateItem("SLA_TicketAssignments", fields);
+    state.ticketAssignments.push(created);
+  }catch(e){
+    // Non-fatal: the reassignment itself already succeeded on the ticket.
+    // Most likely cause is SLA_TicketAssignments not provisioned yet.
+    console.warn("Couldn't log assignment history (run Add-SLAHub-TicketAssignmentHistory.ps1 if SLA_TicketAssignments doesn't exist yet):", e);
+  }
+}
+
+function openReassignForm(ticketId){
+  const t = state.tickets.find(x=>String(x.id)===String(ticketId));
+  if(!t) return;
+  openModal(`
+    <h3>👤 ${t.fields.AssignedToName ? "Reassign" : "Assign"} ticket</h3>
+    <p class="modal-sub">${esc(t.fields.TicketNumber||t.id)} — ${esc(t.fields.Title||"")}</p>
+    <div class="form-grid">
+      <div class="field"><label>Assigned to (name)</label><input id="ra_name" type="text" value="${esc(t.fields.AssignedToName||"")}"></div>
+      <div class="field"><label>Assigned to (email)</label><input id="ra_email" type="text" value="${esc(t.fields.AssignedToEmail||"")}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      ${t.fields.AssignedToName ? `<button class="btn" onclick="submitReassignTicket('${t.id}', true)">Unassign</button>` : ""}
+      <button class="btn btn-accent" onclick="submitReassignTicket('${t.id}', false)">Save</button>
+    </div>
+  `);
+}
+
+async function submitReassignTicket(ticketId, unassign){
+  const t = state.tickets.find(x=>String(x.id)===String(ticketId));
+  if(!t) return;
+  const fromName = t.fields.AssignedToName || "";
+  const fromEmail = t.fields.AssignedToEmail || "";
+  const toName = unassign ? "" : (document.getElementById("ra_name").value||"").trim();
+  const toEmail = unassign ? "" : (document.getElementById("ra_email").value||"").trim();
+  if(fromName===toName && fromEmail===toEmail){ closeModal(); return; }
+  try{
+    await graphUpdateItem("SLA_Tickets", t.id, { AssignedToName: toName, AssignedToEmail: toEmail });
+    t.fields.AssignedToName = toName;
+    t.fields.AssignedToEmail = toEmail;
+    await logTicketAssignmentChange(t.id, fromName, fromEmail, toName, toEmail);
+    closeModal();
+    toast(toName ? "Ticket assigned" : "Ticket unassigned");
+    renderTicketDetail(); renderTicketsTable();
+  }catch(e){ console.error(e); toast("Couldn't update assignment: " + e.message, true); }
 }
 
 function openLogTimeForm(ticketId){
@@ -1426,6 +1519,12 @@ async function submitTicketFormCore(opts={}){
     // New tickets start "New" (open), so this makes the ticket itself
     // immediately selectable in CG Time's Time Tracking Widget.
     syncTicketActiveEntity(created);
+    // Record the ticket's starting assignment (even "unassigned") as the
+    // first entry in its assignment history, so the trail is complete from
+    // creation, not just from the first reassignment.
+    if(fields.AssignedToName || fields.AssignedToEmail){
+      logTicketAssignmentChange(created.id, "", "", fields.AssignedToName, fields.AssignedToEmail);
+    }
   }catch(e){ console.error(e); toast("Couldn't create ticket: " + e.message, true); }
 }
 
@@ -1703,10 +1802,10 @@ function renderAgreementDetail(){
       ${a.fields.Notes ? `<div class="section-title">Notes</div><div>${esc(a.fields.Notes).replace(/\n/g,"<br>")}</div>` : ""}
 
       <div class="section-title">Tickets under this agreement</div>
-      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this agreement yet.</div>`}
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
@@ -1874,10 +1973,10 @@ function renderWorkOrderDetail(){
       ${w.fields.Notes ? `<div class="section-title">Notes</div><div>${esc(w.fields.Notes).replace(/\n/g,"<br>")}</div>` : ""}
 
       <div class="section-title">Tickets under this work order</div>
-      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this work order yet.</div>`}
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
@@ -2024,10 +2123,10 @@ function renderAdHocDetail(){
       <div class="kv"><b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div></div>
 
       <div class="section-title">Ad Hoc tickets for this client</div>
-      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th></tr></thead>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No Ad Hoc tickets for this client yet.</div>`}
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
