@@ -4912,7 +4912,10 @@ function setReportDateRangeToCurrentMonth(){
 function resetReportFilters(){
   const q = document.getElementById('rpt-q');
   if(q) q.value = '';
-  setReportDateRangeToCurrentMonth();
+  const fromEl = document.getElementById('rpt-date-from');
+  const toEl = document.getElementById('rpt-date-to');
+  if(fromEl) fromEl.value = '';
+  if(toEl) toEl.value = '';
   renderCourseAttendeeFinancialReport();
 }
 
