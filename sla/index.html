@@ -443,6 +443,12 @@ let currentPage = "dashboard";
 
 function navigate(page){
   currentPage = page;
+  // A fresh nav into Tickets always starts with no detail panel open. This is
+  // deliberately NOT done inside renderTickets() itself — scheduleRefresh's
+  // background refresh calls the page renderer directly (not navigate()) so
+  // an already-open ticket detail survives a silent background reload
+  // instead of being wiped out from under the user a few hundred ms later.
+  if(page === "tickets") ticketDetailId = null;
   PAGES.forEach(p=>{
     document.getElementById("page-"+p).classList.toggle("active", p===page);
     document.querySelector(`.nav-item[data-page="${p}"]`).classList.toggle("active", p===page);
@@ -700,7 +706,6 @@ let ticketFilters = { type:"", priority:"", status:"", client:"", q:"" };
 let ticketDetailId = null;
 
 function renderTickets(){
-  ticketDetailId = null;
   document.getElementById("page-tickets").innerHTML = `
     <div class="page-header">
       <div><h2>Tickets</h2><div class="sub">Support Requests, Custom Work Orders, and Ad Hoc Billable Support</div></div>
@@ -729,6 +734,10 @@ function renderTickets(){
     <div id="ticketDetailWrap"></div>
   `;
   renderTicketsTable();
+  // Re-draw whatever ticket detail was already open (no-op if none is) —
+  // page-tickets' innerHTML was just rebuilt from scratch above, which
+  // wiped ticketDetailWrap back to empty.
+  renderTicketDetail();
 }
 
 function filteredTickets(){
