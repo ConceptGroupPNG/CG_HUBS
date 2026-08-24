@@ -1072,6 +1072,11 @@ function renderTicketDetail(){
       <h3 style="margin:0 0 4px;">${esc(t.fields.TicketNumber||t.id)} — ${esc(t.fields.Title||"")}</h3>
       <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(t.fields.TicketType||"")} · ${esc(clientName(t))}</div>
 
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button class="btn btn-sm" onclick="openLogTimeForm('${t.id}')">+ Log time</button>
+        <button class="btn btn-sm" onclick="printTicket('${t.id}')">🖨 Print</button>
+      </div>
+
       <div class="kv">
         <b>Priority</b><div>${priorityBadge(t.fields.Priority)}</div>
         <b>Status</b><div>
@@ -1110,11 +1115,6 @@ function renderTicketDetail(){
         <td>${a.fields.FromName ? esc(a.fields.FromName) : `<span class="badge badge-neutral">Unassigned</span>`}</td>
         <td>${a.fields.ToName ? esc(a.fields.ToName) : `<span class="badge badge-warning">Unassigned</span>`}</td>
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No assignment changes recorded yet.</div>`; })()}
-
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
-        <button class="btn btn-sm" onclick="openLogTimeForm('${t.id}')">+ Log time</button>
-        <button class="btn btn-sm" onclick="printTicket('${t.id}')">🖨 Print</button>
-      </div>
     </div>
   `;
 }
