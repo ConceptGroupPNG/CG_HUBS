@@ -1600,16 +1600,15 @@ function renderResources(){
   const rows = state.resources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
   document.getElementById("resourcesTableWrap").innerHTML = rows.length ? `
     <div class="card" style="padding:0;">
-      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Status</th></tr></thead>
       <tbody>${rows.map(r=>{
         const active = r.fields.IsActive !== false;
-        return `<tr>
+        return `<tr class="clickable" onclick="openResourceForm('${r.id}')">
           <td><b>${esc(r.fields.Title)}</b></td>
           <td>${esc(r.fields.ResourceType||"—")}</td>
           <td>${esc(r.fields.BusinessUnit||"—")}</td>
           <td>${esc(r.fields.MatchEmail||"—")}</td>
           <td>${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}</td>
-          <td><button class="btn btn-sm" onclick="openResourceForm('${r.id}')">Edit</button></td>
         </tr>`;
       }).join("")}</tbody></table>
     </div>
