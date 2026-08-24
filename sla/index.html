@@ -1559,24 +1559,22 @@ function renderClients(){
   if(clientsTab === "clients"){
     wrap.innerHTML = state.clients.length ? `
       <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Currency</th><th></th></tr></thead>
-        <tbody>${state.clients.map(c=>`<tr>
+        <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Currency</th></tr></thead>
+        <tbody>${state.clients.map(c=>`<tr class="clickable" onclick="openClientForm('${c.id}')">
           <td>${esc(c.fields.Title)}</td><td>${esc(c.fields.ClientInvoiceName||"—")}</td>
           <td>${c.fields.Billable?"Yes":"No"}</td>
           <td>${esc(c.fields.Currency||"—")}</td>
-          <td><button class="btn btn-sm" onclick="openClientForm('${c.id}')">Edit</button></td>
         </tr>`).join("")}</tbody></table>
       </div>` : `<div class="empty">No clients yet.</div>`;
   } else {
     wrap.innerHTML = state.endClients.length ? `
       <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th><th></th></tr></thead>
+        <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th></tr></thead>
         <tbody>${state.endClients.map(ec=>{
           const parent = state.clients.find(c=>String(c.id)===String(ec.fields.ParentClientLookupId));
-          return `<tr>
+          return `<tr class="clickable" onclick="openEndClientForm('${ec.id}')">
           <td>${esc(ec.fields.Title)}</td><td>${esc(parent?parent.fields.Title:"—")}</td>
           <td>${esc(ec.fields.TrackingOption1||"—")}</td>
-          <td><button class="btn btn-sm" onclick="openEndClientForm('${ec.id}')">Edit</button></td>
         </tr>`;}).join("")}</tbody></table>
       </div>` : `<div class="empty">No end clients yet.</div>`;
   }
