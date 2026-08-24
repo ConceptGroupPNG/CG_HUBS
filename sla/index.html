@@ -1303,9 +1303,16 @@ async function renderEmail(){
   `;
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
-      + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,categories`;
+      + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId`;
     const res = await callGraph(url);
-    inboxMessages = (res.value||[]).filter(m => !(m.categories||[]).includes("SLA-Converted"));
+    // "Already converted" is tracked by matching internetMessageId against every
+    // ticket's own SourceMessageId (in SLA_Tickets, already loaded in state) —
+    // not by writing a category back onto the shared mailbox message. Reading
+    // the mailbox only needs delegated read access; earlier this wrote a
+    // "SLA-Converted" category back onto the message, which needs write access
+    // to the shared mailbox and was failing with a 403 for some signed-in users.
+    const convertedIds = new Set(state.tickets.map(t => t.fields.SourceMessageId).filter(Boolean));
+    inboxMessages = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId));
   }catch(e){
     console.error(e);
     document.getElementById("emailListWrap").innerHTML = `<div class="empty">Couldn't load the shared mailbox: ${esc(e.message)}<br>Check that your account has delegated access to ${esc(HELPDESK_MAILBOX)}.</div>`;
@@ -1445,15 +1452,12 @@ function matchClientByEmail(email){
 
 async function submitEmailTicketForm(messageId){
   const m = inboxMessages.find(x => x.id === messageId);
+  // The ticket's SourceMessageId (set below) is what keeps this email from
+  // showing up again in Email Intake — see renderEmail(). No write back to
+  // the shared mailbox is needed, so this can't 403 on a delegated-read-only
+  // account the way the old "tag the email as converted" approach could.
   await submitTicketFormCore({ sourceMessageId: m?.internetMessageId || messageId, source: "Email" });
   if(m){
-    try{
-      const cats = new Set(m.categories||[]);
-      cats.add("SLA-Converted");
-      await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${messageId}`, {
-        method: "PATCH", body: JSON.stringify({ categories: Array.from(cats) })
-      });
-    }catch(e){ console.warn("Couldn't tag source email as converted:", e); }
     inboxMessages = inboxMessages.filter(x => x.id !== messageId);
     renderEmail();
   }
