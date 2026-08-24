@@ -159,6 +159,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div class="nav-item" data-page="invoices" onclick="navigate('invoices')">🧾 Invoices</div>
     <div class="nav-section">Setup</div>
     <div class="nav-item" data-page="clients" onclick="navigate('clients')">🏢 Clients</div>
+    <div class="nav-item" data-page="resources" onclick="navigate('resources')">👥 Resources</div>
     <div class="nav-item" data-page="admin" onclick="navigate('admin')">⚙️ Admin</div>
     <div class="sidebar-footer">
       <div class="who" id="whoAmI">—</div>
@@ -172,6 +173,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div id="page-agreements" class="page"></div>
     <div id="page-invoices" class="page"></div>
     <div id="page-clients" class="page"></div>
+    <div id="page-resources" class="page"></div>
     <div id="page-admin" class="page"></div>
   </div>
 </div>
@@ -438,7 +440,7 @@ function assignedBadge(t){
 /* ============================================================
    NAVIGATION / RENDER ENGINE
    ============================================================ */
-const PAGES = ["dashboard","tickets","email","agreements","invoices","clients","admin"];
+const PAGES = ["dashboard","tickets","email","agreements","invoices","clients","resources","admin"];
 let currentPage = "dashboard";
 
 function navigate(page){
@@ -455,7 +457,7 @@ function navigate(page){
   });
   const renderers = {
     dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
-    agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, admin: renderAdmin
+    agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, resources: renderResources, admin: renderAdmin
   };
   renderers[page](); // render instantly from current state — snappy nav, no wait
   scheduleRefresh(); // then reload from SharePoint shortly after, so a nav change always ends up fresh
@@ -618,7 +620,7 @@ function scheduleRefresh(){
     }catch(e){ console.warn("Background refresh failed:", e); }
     const renderers = {
       dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
-      agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, admin: renderAdmin
+      agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, resources: renderResources, admin: renderAdmin
     };
     if(renderers[currentPage]) renderers[currentPage]();
   }, 400);
@@ -1026,8 +1028,7 @@ function openTicketForm(){
       <div class="field-divider"><span>People</span></div>
       <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
-      <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
-      <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
+      ${assignPickerHtml("tf")}
 
       <div class="field-divider"><span>Billing</span></div>
       <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
@@ -1210,8 +1211,7 @@ function openReassignForm(ticketId){
     <h3>👤 ${t.fields.AssignedToName ? "Reassign" : "Assign"} ticket</h3>
     <p class="modal-sub">${esc(t.fields.TicketNumber||t.id)} — ${esc(t.fields.Title||"")}</p>
     <div class="form-grid">
-      <div class="field"><label>Assigned to (name)</label><input id="ra_name" type="text" value="${esc(t.fields.AssignedToName||"")}"></div>
-      <div class="field"><label>Assigned to (email)</label><input id="ra_email" type="text" value="${esc(t.fields.AssignedToEmail||"")}"></div>
+      ${assignPickerHtml("ra", t.fields.AssignedToEmail)}
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -1226,8 +1226,9 @@ async function submitReassignTicket(ticketId, unassign){
   if(!t) return;
   const fromName = t.fields.AssignedToName || "";
   const fromEmail = t.fields.AssignedToEmail || "";
-  const toName = unassign ? "" : (document.getElementById("ra_name").value||"").trim();
-  const toEmail = unassign ? "" : (document.getElementById("ra_email").value||"").trim();
+  const picked = unassign ? { name:"", email:"" } : resolveAssignPicker("ra");
+  const toName = picked.name;
+  const toEmail = picked.email;
   if(fromName===toName && fromEmail===toEmail){ closeModal(); return; }
   try{
     await graphUpdateItem("SLA_Tickets", t.id, { AssignedToName: toName, AssignedToEmail: toEmail });
@@ -1417,8 +1418,7 @@ async function convertEmailToTicket(messageId){
       <div class="field-divider"><span>People</span></div>
       <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
       <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
-      <div class="field"><label>Assigned to (name)</label><input id="tf_assignname" type="text"></div>
-      <div class="field"><label>Assigned to (email)</label><input id="tf_assignemail" type="text"></div>
+      ${assignPickerHtml("tf")}
 
       <div class="field-divider"><span>Billing</span></div>
       <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
@@ -1491,6 +1491,7 @@ async function submitTicketFormCore(opts={}){
   }
 
   const targets = resolveTargetsFor(priority, clientId, endClientId, owningAgreement?.id);
+  const assignee = resolveAssignPicker("tf");
 
   const fields = {
     Title: title,
@@ -1500,8 +1501,8 @@ async function submitTicketFormCore(opts={}){
     OwningEntityType: owningType,
     RequestedByName: document.getElementById("tf_reqname").value,
     RequestedByEmail: document.getElementById("tf_reqemail").value,
-    AssignedToName: document.getElementById("tf_assignname").value,
-    AssignedToEmail: document.getElementById("tf_assignemail").value,
+    AssignedToName: assignee.name,
+    AssignedToEmail: assignee.email,
     Billable: document.getElementById("tf_billable").value === "true",
     RateOverride: document.getElementById("tf_rate") ? (Number(document.getElementById("tf_rate").value)||0) : 0,
     Source: opts.source || document.getElementById("tf_source").value,
@@ -1579,6 +1580,124 @@ function renderClients(){
         </tr>`;}).join("")}</tbody></table>
       </div>` : `<div class="empty">No end clients yet.</div>`;
   }
+}
+
+/* ============================================================
+   RESOURCES — SLA HUB's own roster (SLA_Resources), federated per the
+   CG Time contract: MatchEmail on every row, read-only from CG Time's side.
+   Powers the "Assigned to" picker on tickets (see resourceOptions() below)
+   as well as being what CG Time pulls in once SLA_HUB is registered in
+   its CG_Hubs admin screen (ResourcesListName = SLA_Resources).
+   ============================================================ */
+function renderResources(){
+  document.getElementById("page-resources").innerHTML = `
+    <div class="page-header">
+      <div><h2>Resources</h2><div class="sub">Support staff and contractors — who tickets can be assigned to</div></div>
+      <button class="btn btn-accent" onclick="openResourceForm()">+ New resource</button>
+    </div>
+    <div id="resourcesTableWrap"></div>
+  `;
+  const rows = state.resources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+  document.getElementById("resourcesTableWrap").innerHTML = rows.length ? `
+    <div class="card" style="padding:0;">
+      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows.map(r=>{
+        const active = r.fields.IsActive !== false;
+        return `<tr>
+          <td><b>${esc(r.fields.Title)}</b></td>
+          <td>${esc(r.fields.ResourceType||"—")}</td>
+          <td>${esc(r.fields.BusinessUnit||"—")}</td>
+          <td>${esc(r.fields.MatchEmail||"—")}</td>
+          <td>${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}</td>
+          <td><button class="btn btn-sm" onclick="openResourceForm('${r.id}')">Edit</button></td>
+        </tr>`;
+      }).join("")}</tbody></table>
+    </div>
+  ` : `<div class="empty">No resources yet. Click "+ New resource" to add support staff or contractors — they'll then show up in every "Assigned to" picker.</div>`;
+}
+
+function openResourceForm(id){
+  const r = id ? state.resources.find(x=>String(x.id)===String(id)) : null;
+  const f = r?.fields || {};
+  openModal(`
+    <h3>👤 ${r?"Edit":"New"} resource</h3>
+    <p class="modal-sub">${r?"":"Match email is what lets CG Time and the other HUBs recognize this person as the same person."}</p>
+    <div class="form-grid">
+      <div class="field span2"><label>Name</label><input id="rf_title" value="${esc(f.Title||"")}" placeholder="e.g. Marcus Scully"></div>
+      <div class="field"><label>Type</label><select id="rf_type">
+        <option ${f.ResourceType==="Staff"||!f.ResourceType?"selected":""}>Staff</option>
+        <option ${f.ResourceType==="Contractor"?"selected":""}>Contractor</option>
+      </select></div>
+      <div class="field"><label>Business unit</label><input id="rf_bu" value="${esc(f.BusinessUnit||"")}" placeholder="e.g. Technical / IT"></div>
+      <div class="field span2"><label>Match email <span style="text-transform:none;font-weight:400;">— used to match this person across SLA HUB, CG Time, and the other HUBs</span></label><input id="rf_email" value="${esc(f.MatchEmail||"")}" placeholder="name@concept.com.pg"></div>
+      <div class="field"><label>Status</label><select id="rf_active">
+        <option value="true" ${f.IsActive!==false?"selected":""}>Active</option>
+        <option value="false" ${f.IsActive===false?"selected":""}>Inactive</option>
+      </select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="submitResourceForm('${id||""}')">Save</button>
+    </div>
+  `);
+}
+
+async function submitResourceForm(id){
+  const title = document.getElementById("rf_title").value.trim();
+  if(!title){ toast("Name is required", true); return; }
+  const fields = {
+    Title: title,
+    ResourceType: document.getElementById("rf_type").value,
+    BusinessUnit: document.getElementById("rf_bu").value.trim(),
+    MatchEmail: document.getElementById("rf_email").value.trim().toLowerCase(),
+    IsActive: document.getElementById("rf_active").value === "true"
+  };
+  try{
+    if(id){
+      await graphUpdateItem("SLA_Resources", id, fields);
+      const r = state.resources.find(x=>String(x.id)===String(id));
+      Object.assign(r.fields, fields);
+    } else {
+      const created = await graphCreateItem("SLA_Resources", fields);
+      state.resources.push(created);
+    }
+    closeModal();
+    toast("Resource saved");
+    renderResources();
+  }catch(e){ console.error(e); toast("Couldn't save resource: " + e.message, true); }
+}
+
+// Shared "Assigned to" picker, used on ticket creation and Assign/Reassign —
+// active resources only, sorted alphabetically. Selecting one resolves to a
+// plain Name + MatchEmail pair, same as the AssignedToName/AssignedToEmail
+// fields already on SLA_Tickets — no schema change, just a cleaner source.
+function resourceOptions(selectedEmail){
+  const email = (selectedEmail||"").toLowerCase().trim();
+  return state.resources
+    .filter(r => r.fields.IsActive !== false)
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${r.id}" ${(r.fields.MatchEmail||"").toLowerCase().trim()===email && email ? "selected":""}>${esc(r.fields.Title)}${r.fields.ResourceType?` (${esc(r.fields.ResourceType)})`:""}</option>`)
+    .join("");
+}
+function assignPickerHtml(idPrefix, selectedEmail){
+  return `
+    <div class="field span2"><label>Assigned to</label>
+      <select id="${idPrefix}_assign">
+        <option value="">— Unassigned —</option>
+        ${resourceOptions(selectedEmail)}
+      </select>
+      ${state.resources.length ? "" : `<div style="font-size:11.5px;color:var(--ink-2);margin-top:4px;">No resources yet — add one under Resources in the sidebar first.</div>`}
+    </div>
+  `;
+}
+// Resolves the selected <select id="{idPrefix}_assign"> option back to a
+// {name, email} pair for writing to AssignedToName/AssignedToEmail.
+function resolveAssignPicker(idPrefix){
+  const el = document.getElementById(idPrefix+"_assign");
+  const resourceId = el ? el.value : "";
+  if(!resourceId) return { name:"", email:"" };
+  const r = state.resources.find(x=>String(x.id)===String(resourceId));
+  return r ? { name: r.fields.Title||"", email: r.fields.MatchEmail||"" } : { name:"", email:"" };
 }
 
 function priorityOverrideFields(prefix, existing){
