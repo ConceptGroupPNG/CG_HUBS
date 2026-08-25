@@ -317,7 +317,7 @@
   .hub-add button:hover{background:var(--brass-light);color:#fff8e8;}
 
   /* ---------- hubs admin view ---------- */
-  .hubadmin-row{display:grid;grid-template-columns:1.1fr 1.2fr 1.3fr 1.6fr .7fr .9fr;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
+  .hubadmin-row{display:grid;grid-template-columns:1fr 1.1fr 1.1fr 1.1fr 1.4fr .7fr .9fr;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hairline-soft);}
   .hubadmin-row:last-child{border-bottom:none;}
   .hubadmin-row.head{background:var(--surface-card-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);font-weight:600;padding:10px 18px;}
   .hubadmin-key{font-weight:600;color:var(--ink-primary);font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
@@ -500,7 +500,7 @@
     <!-- recent activity -->
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9998;</span>Recent activity</h3>
-      <div class="panel-sub">Most recent CSA_TimeEntries rows, by work date</div>
+      <div class="panel-sub">Most recent time entries across every federated HUB, by work date</div>
       <table>
         <thead>
           <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr>
@@ -566,7 +566,7 @@ const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
 const SITE_HOST = "conceptcompg.sharepoint.com";
 const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here (per v0.3 decision)
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
-const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries, CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
+const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries (CSA HUB's own), CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
 // Lists that live on the CG_Time site rather than Concept_CSA
 const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts"]);
 
@@ -811,6 +811,74 @@ async function fetchAllResources(){
 }
 
 /* ============================================================
+   TIMEENTRIES SOURCES — the same federation pattern as Resources
+   above, applied to time entries. Each HUB owns and writes to its
+   own TimeEntries list; CG Time only ever reads them. CSA HUB's
+   CSA_TimeEntries happens to live on the CG_Time site itself
+   (a historical artifact of CG Time originally being built inside
+   CSA HUB's own data model), so it's still the built-in default —
+   but SLA HUB logs its own hours into its own SLA_TimeEntries list
+   on its own Helpdesk site, and does NOT write into CSA_TimeEntries.
+   Onboarding SLA HUB's feed (or any future HUB's) is a CG_Hubs row
+   with TimeEntriesListName filled in, not a code change — same
+   convention as ResourcesListName above.
+   ============================================================ */
+const DEFAULT_TIMEENTRIES_SOURCES = [
+  { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_TimeEntries", siteHost: TIME_SITE_HOST, sitePath: TIME_SITE_PATH },
+];
+
+// Merge rules identical to hubSources(): CG_Hubs rows layer on top of
+// the built-in default, keyed by HubKey. A row with IsActive:false or
+// no TimeEntriesListName on file removes that key instead of adding
+// to it — including CSA_HUB itself, if it's ever explicitly
+// re-registered with different site details.
+function timeEntriesSources(){
+  const merged = new Map();
+  DEFAULT_TIMEENTRIES_SOURCES.forEach(src => merged.set(src.hub, src));
+  allHubs.forEach(h => {
+    const key = h.fields.Title;
+    if(!key) return;
+    const listName = (h.fields.TimeEntriesListName || "").trim();
+    if(h.fields.IsActive === false || !listName){
+      merged.delete(key);
+      return;
+    }
+    merged.set(key, {
+      hub: key,
+      label: h.fields.Label || key,
+      listName: listName,
+      siteHost: (h.fields.SiteHost || SITE_HOST).trim(),
+      sitePath: (h.fields.SitePath || "").trim(),
+    });
+  });
+  return Array.from(merged.values());
+}
+
+// Fetches every configured HUB's own TimeEntries list and merges
+// them, tagging each row with which HUB (_sourceHub/_sourceHubLabel)
+// AND which underlying SharePoint list (_sourceList) it came from.
+// _sourceList matters beyond just labeling: a SharePoint item ID is
+// only unique WITHIN one list, so once entries are merged from two
+// different lists (CSA_TimeEntries and SLA_TimeEntries), the
+// Exceptions Queue logic below needs id + _sourceList together to
+// safely tell entries apart. A source that fails (list not created
+// yet, site unreachable) is skipped with a console warning, same as
+// fetchAllResources().
+async function fetchAllTimeEntries(){
+  const results = await Promise.all(timeEntriesSources().map(async src => {
+    try{
+      const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
+      const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
+      return items.map(item => ({ ...item, _sourceHub: src.hub, _sourceHubLabel: src.label, _sourceList: src.listName }));
+    }catch(err){
+      console.warn(`TimeEntries source ${src.listName} (${src.hub}) unavailable — skipping.`, err);
+      return [];
+    }
+  }));
+  return results.flat();
+}
+
+/* ============================================================
    APP STATE
    ============================================================ */
 let allTimeEntries = [];
@@ -854,7 +922,7 @@ async function refreshAllData(){
     });
 
     [allTimeEntries, allActiveEntities, allResources, allExceptions, allHubAssignments] = await Promise.all([
-      fetchAllListItems("CSA_TimeEntries"),
+      fetchAllTimeEntries(),
       fetchAllListItems("CSA_ActiveEntities"),
       fetchAllResources(),
       fetchAllListItems("CG_ExceptionsQueue"),
@@ -961,18 +1029,9 @@ function monthEndStr(offsetMonths=0){
 function hasBillableChoice(t){
   return t.fields.Billable !== undefined && t.fields.Billable !== null;
 }
-// CSA_TimeEntries is still the one shared, cross-HUB log every
-// HUB's time-logging tool writes into (see renderHubChart's note on
-// why "Hours by HUB" can't split by HUB yet) — there's no Source/Hub
-// column on it yet, populated at entry-creation time, to say which
-// HUB a given row actually belongs to. Until that exists, this is a
-// best-effort GUESS at the source HUB from the "Logged against" text's
-// naming convention alone — NOT authoritative, and wrong if a naming
-// convention ever collides or changes. The real fix is a Source column
-// written by whatever tool creates the entry (the time-logging widget,
-// CSA HUB's own manual form, and eventually SLA HUB's) — that's outside
-// what CG Time can add unilaterally, since CG Time never writes to
-// CSA_TimeEntries.
+// Naming-pattern fallback for entries that predate both federation
+// (_sourceHub, see fetchAllTimeEntries above) and the Source column
+// on CSA_TimeEntries — kept only as a last resort for old rows.
 const HUB_PREFIX_HINTS = [
   { prefix: "SLA-",  hub: "SLA_HUB" },
   { prefix: "AGR-",  hub: "CSA_HUB" },
@@ -983,6 +1042,22 @@ function inferHubForEntry(csaText){
   const text = (csaText || "").trim().toUpperCase();
   const hit = HUB_PREFIX_HINTS.find(h => text.startsWith(h.prefix));
   return hit ? hit.hub : null;
+}
+// Three ways to know which HUB an entry belongs to, in order of
+// authority: (1) _sourceHub — set by fetchAllTimeEntries() itself,
+// since federated entries were fetched FROM that HUB's own list, so
+// this is always correct and is the only signal SLA HUB's entries
+// need; (2) the Source column on CSA_TimeEntries — written at
+// create time by CSA HUB's own manual form (the separate CSA Time
+// widget doesn't set it as of this writing), for entries that live
+// on the shared CSA_TimeEntries list rather than a federated one of
+// their own; (3) the old naming-pattern guess, for rows that predate
+// both.
+function hubForEntry(entry){
+  if(entry._sourceHub) return entry._sourceHub;
+  const f = entry.fields;
+  if(f.Source) return f.Source;
+  return inferHubForEntry(f.CSA);
 }
 // Same name/email matching pattern csa-hub/index.html already relies on —
 // CSA_TimeEntries.ResourceRefLookupId isn't trustworthy for this (per that
@@ -1000,23 +1075,28 @@ function resourceForEntry(entry){
 
 /* ============================================================
    EXCEPTIONS QUEUE — auto-seed from the Billable-not-set backlog
-   Per the CG Time design proposal (§3.5/§5): every CSA_TimeEntries
-   row with Billable left blank and EntryMethod not "Manual" (i.e.
-   logged via the CSA Time Widget, not CSA HUB's own UI) becomes an
-   open BillableNotSet exception. This runs automatically on every
-   dashboard load — the widget's own code never sets Billable, so
-   new candidates keep appearing over time, not just historically.
+   Per the CG Time design proposal (§3.5/§5): every time entry with
+   Billable left blank and EntryMethod not "Manual" (i.e. logged via
+   a time-logging widget, not a HUB's own UI) becomes an open
+   BillableNotSet exception. This runs automatically on every
+   dashboard load — a widget's own code never sets Billable, so new
+   candidates keep appearing over time, not just historically.
    Safe to run repeatedly — already-seeded entries are skipped by
    matching RelatedTimeEntryId + SourceList + ExceptionType against
-   what's already in CG_ExceptionsQueue.
+   what's already in CG_ExceptionsQueue. SourceList (the entry's
+   _sourceList — e.g. "CSA_TimeEntries" or "SLA_TimeEntries") has to
+   be part of that match, not just the entry's own id: now that
+   entries are federated from more than one SharePoint list, a
+   SharePoint item id is only unique WITHIN its own list, so id
+   alone could collide between two different HUBs' lists.
    ============================================================ */
 let lastAutoSeedCount = 0;
 let lastAutoResolveCount = 0;
 
-function alreadySeeded(entryId){
+function alreadySeeded(entryId, sourceList){
   return allExceptions.some(e =>
     e.fields.RelatedTimeEntryId === entryId &&
-    e.fields.SourceList === "CSA_TimeEntries" &&
+    e.fields.SourceList === sourceList &&
     e.fields.ExceptionType === "BillableNotSet"
   );
 }
@@ -1025,7 +1105,7 @@ function computeSeedCandidates(){
   return allTimeEntries.filter(t =>
     !hasBillableChoice(t) &&
     (t.fields.EntryMethod || "").trim() !== "Manual" &&
-    !alreadySeeded(t.id)
+    !alreadySeeded(t.id, t._sourceList)
   );
 }
 
@@ -1042,7 +1122,7 @@ async function autoSeedExceptions(){
       await graphCreateItem("CG_ExceptionsQueue", {
         Title: summary,
         RelatedTimeEntryId: t.id,
-        SourceList: "CSA_TimeEntries",
+        SourceList: t._sourceList || "CSA_TimeEntries",
         ExceptionType: "BillableNotSet",
         Status: "Open",
         RaisedDate: new Date().toISOString()
@@ -1056,24 +1136,27 @@ async function autoSeedExceptions(){
 }
 
 // The fix for a BillableNotSet exception is setting Billable on the
-// entry itself — that only ever happens inside CSA HUB, since CG Time
-// doesn't write to CSA_TimeEntries. So instead of a "Resolve" action
-// here, CG Time just re-checks the source entry on every load: once
-// Billable is actually set in CSA HUB, the exception closes itself.
-// Also closes out an exception if its source entry has been deleted
-// entirely, so the queue doesn't accumulate orphaned rows.
+// entry itself — that only ever happens inside the owning HUB, since
+// CG Time never writes to any federated TimeEntries list. So instead
+// of a "Resolve" action here, CG Time just re-checks the source entry
+// on every load: once Billable is actually set in the owning HUB, the
+// exception closes itself. Also closes out an exception if its source
+// entry has been deleted entirely, so the queue doesn't accumulate
+// orphaned rows. Matches on RelatedTimeEntryId + SourceList together
+// (not id alone) for the same reason autoSeedExceptions does — a
+// SharePoint item id is only unique within its own list.
 async function autoResolveExceptions(){
   const openBillableExceptions = allExceptions.filter(e =>
     e.fields.Status === "Open" &&
-    e.fields.ExceptionType === "BillableNotSet" &&
-    e.fields.SourceList === "CSA_TimeEntries"
+    e.fields.ExceptionType === "BillableNotSet"
   );
   let resolved = 0;
   for(const exc of openBillableExceptions){
-    const entry = allTimeEntries.find(t => t.id === exc.fields.RelatedTimeEntryId);
+    const sourceList = exc.fields.SourceList || "CSA_TimeEntries";
+    const entry = allTimeEntries.find(t => t.id === exc.fields.RelatedTimeEntryId && (t._sourceList || "CSA_TimeEntries") === sourceList);
     let reason = null;
-    if(!entry) reason = "Auto-resolved — source entry no longer found in CSA_TimeEntries";
-    else if(hasBillableChoice(entry)) reason = "Auto-resolved — Billable is now set in CSA HUB";
+    if(!entry) reason = `Auto-resolved — source entry no longer found in ${sourceList}`;
+    else if(hasBillableChoice(entry)) reason = "Auto-resolved — Billable is now set in the source HUB";
     if(!reason) continue;
     try{
       await graphUpdateItem("CG_ExceptionsQueue", exc.id, {
@@ -1166,16 +1249,14 @@ function renderStatTiles(){
 }
 
 function renderHubChart(){
-  // CSA_TimeEntries still has no real Source column (see
-  // inferHubForEntry()'s note above) — so, same as the Time Entries
-  // table's "Source (inferred)" column, this buckets hours by a
-  // best-effort guess from the "Logged against" naming pattern rather
-  // than an authoritative field. An entry that doesn't match any known
-  // prefix falls back to CSA_HUB, since that's where every entry lived
-  // before other HUBs existed.
+  // Uses the real Source column where an entry has one (see hubForEntry's
+  // note above), falling back to the old naming-pattern guess only for
+  // entries that predate it. An entry that still can't be attributed
+  // either way falls back to CSA_HUB, since that's where every entry
+  // lived before other HUBs existed.
   const totals = {};
   allTimeEntries.forEach(t => {
-    const hub = inferHubForEntry(t.fields.CSA) || "CSA_HUB";
+    const hub = hubForEntry(t) || "CSA_HUB";
     totals[hub] = (totals[hub] || 0) + (parseFloat(t.fields.Hours)||0);
   });
   const seriesColors = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
@@ -1197,7 +1278,7 @@ function renderHubChart(){
   `;
   }).join("");
   document.getElementById("hubChartSub").textContent =
-    "All-time total · inferred per HUB from the \"Logged against\" naming pattern — no Source column on CSA_TimeEntries yet, so treat this as an estimate, not authoritative.";
+    "All-time total · split by which HUB's own TimeEntries list an entry was read from, or the Source column for entries still on the shared CSA_TimeEntries list; older entries (or from a writer not yet updated to set Source) fall back to a naming-pattern guess.";
 }
 
 function renderExceptions(){
@@ -1235,8 +1316,8 @@ function renderExceptions(){
 /* ============================================================
    EXCEPTIONS TAB (within Timesheets) — the full CG_ExceptionsQueue,
    filterable, reportable, and exportable. Read-only, on purpose: an
-   exception raised against CSA_TimeEntries resolves itself once the
-   source HUB fixes the underlying entry (see autoResolveExceptions
+   exception raised against a federated TimeEntries entry resolves
+   itself once the source HUB fixes the underlying entry (see autoResolveExceptions
    above) — there's no manual "Resolve" action in CG Time, and no
    Billable/Not-Billable decision made here either. That decision is
    entirely the raising HUB's to make; CG Time only reviews, reports,
@@ -1590,10 +1671,11 @@ async function removeHubAssignment(itemId, msgEl){
    from a HUB's own lists). This is what makes onboarding a new HUB
    (e.g. SLA HUB) an "add a row" instead of a code change: HubKey +
    Label are used everywhere a HUB name shows up in the UI, and
-   ResourcesListName/SiteHost/SitePath (if filled in) tell
-   fetchAllResources() where that HUB's own {Hub}_Resources list
-   lives. Deactivating a HUB (rather than deleting it) is the same
-   soft-delete convention used for CG_ResourceHubAssignments.
+   ResourcesListName / TimeEntriesListName / SiteHost / SitePath
+   (if filled in) tell fetchAllResources() / fetchAllTimeEntries()
+   where that HUB's own lists live. Deactivating a HUB (rather than
+   deleting it) is the same soft-delete convention used for
+   CG_ResourceHubAssignments.
    ============================================================ */
 function renderHubsView(){
   const container = document.getElementById("view-hubs");
@@ -1607,6 +1689,7 @@ function renderHubsView(){
         <div class="hubadmin-key">${esc(f.Title||"—")}</div>
         <div>${esc(f.Label||"—")}</div>
         <div>${esc(f.ResourcesListName || "not wired up yet")}</div>
+        <div>${esc(f.TimeEntriesListName || "not wired up yet")}</div>
         <div class="hubadmin-site">${site}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="hubadmin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(h.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
@@ -1616,19 +1699,20 @@ function renderHubsView(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#127760;</span>HUBs</h3>
-      <div class="panel-sub">Which HUBs CG Time knows about, and where each one's own Resources list lives. Only CSA HUB has a Resources list today &mdash; add a row here (no code change, no redeploy) whenever a new HUB, like SLA HUB, is ready to be onboarded. Writes straight to CG_Hubs, the one list CG Time owns for its own configuration.</div>
+      <div class="panel-sub">Which HUBs CG Time knows about, and where each one's own Resources and TimeEntries lists live. Add a row here (no code change, no redeploy) whenever a new HUB, like SLA HUB, is ready to be onboarded. Writes straight to CG_Hubs, the one list CG Time owns for its own configuration.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="hubadmin-row head"><div>Hub key</div><div>Label</div><div>Resources list</div><div>Site</div><div>Status</div><div></div></div>
+      <div class="hubadmin-row head"><div>Hub key</div><div>Label</div><div>Resources list</div><div>TimeEntries list</div><div>Site</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No HUBs on file yet in CG_Hubs &mdash; CG Time is running on its built-in default (CSA HUB only) until at least one is added below.</div>`}
     </div>
     <div class="panel">
       <h3><span>&#10010;</span>Add a HUB</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">Hub key must match what's used as the Hub value on CG_ResourceHubAssignments and as the value in the new HUB's own {Hub}_Resources list, e.g. <code>SLA_HUB</code>. Resources list / Site fields can be left blank to reserve the HUB now and wire up its feed later.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">Hub key must match what's used as the Hub value on CG_ResourceHubAssignments and as the Source value the new HUB's own TimeEntries list writes, e.g. <code>SLA_HUB</code>. Resources list / TimeEntries list / Site fields can be left blank to reserve the HUB now and wire up its feeds later.</div>
       <div class="hubadmin-form">
         <div class="filter-field"><label>Hub key</label><input type="text" id="hubNewKey" placeholder="e.g. SLA_HUB"></div>
         <div class="filter-field"><label>Label</label><input type="text" id="hubNewLabel" placeholder="e.g. SLA HUB"></div>
         <div class="filter-field"><label>Resources list</label><input type="text" id="hubNewListName" placeholder="e.g. SLA_Resources"></div>
+        <div class="filter-field"><label>TimeEntries list</label><input type="text" id="hubNewTimeEntriesListName" placeholder="e.g. SLA_TimeEntries"></div>
         <div class="filter-field"><label>Site host</label><input type="text" id="hubNewSiteHost" placeholder="conceptcompg.sharepoint.com"></div>
         <div class="filter-field"><label>Site path</label><input type="text" id="hubNewSitePath" placeholder="/sites/SLA_HUB_SITE"></div>
         <div><button class="hubadmin-submit" id="hubAddBtn">+ Add HUB</button></div>
@@ -1649,6 +1733,7 @@ async function addHub(){
   const key = document.getElementById("hubNewKey").value.trim();
   const label = document.getElementById("hubNewLabel").value.trim();
   const listName = document.getElementById("hubNewListName").value.trim();
+  const timeEntriesListName = document.getElementById("hubNewTimeEntriesListName").value.trim();
   const siteHost = document.getElementById("hubNewSiteHost").value.trim();
   const sitePath = document.getElementById("hubNewSitePath").value.trim();
   if(!key){
@@ -1664,6 +1749,7 @@ async function addHub(){
       Title: key,
       Label: label || key,
       ResourcesListName: listName,
+      TimeEntriesListName: timeEntriesListName,
       SiteHost: siteHost,
       SitePath: sitePath,
       IsActive: true
@@ -2825,10 +2911,12 @@ function renderEmployeePayrollBody(){
 }
 
 /* ============================================================
-   TIME ENTRIES VIEW — a filterable, browsable log of every
-   CSA_TimeEntries row. Read-only, same as the rest of CG Time —
-   entries themselves are only ever created or edited from CSA
-   HUB or the CSA Time Widget, never from here.
+   TIME ENTRIES VIEW — a filterable, browsable log of every time
+   entry federated in from each HUB's own TimeEntries list (see
+   fetchAllTimeEntries above). Read-only, same as the rest of CG
+   Time — entries themselves are only ever created or edited from
+   the owning HUB's own app (CSA HUB, SLA HUB, or CSA HUB's Time
+   Widget), never from here.
    ============================================================ */
 let teFilters = { from: "", to: "", resourceEmail: "", billable: "all", search: "" };
 const TIME_ENTRIES_ROW_CAP = 200;
@@ -2895,7 +2983,7 @@ function renderTimeEntriesView(){
     <div class="panel">
       <table>
         <thead>
-          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th title="Guessed from the naming pattern of &quot;Logged against&quot; — CSA_TimeEntries has no Source column yet, so this isn't authoritative.">Source (inferred)</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
+          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th title="The HUB that logged this entry — read from the Source column where it's set; an entry that predates that column (or came from a writer not yet updated to set it) falls back to a naming-pattern guess, shown in italics.">Source</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
         </thead>
         <tbody id="teResultsBody"></tbody>
       </table>
@@ -2931,15 +3019,16 @@ function renderTimeEntriesResults(){
     const resource = resourceForEntry(t);
     const name = resource ? resource.fields.Title : (f.EntryUser || "—");
     const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
-    const inferredHub = inferHubForEntry(f.CSA);
-    const sourceLabel = inferredHub ? hubLabelFor(inferredHub) : "—";
+    const hub = hubForEntry(t);
+    const sourceLabel = hub ? hubLabelFor(hub) : "—";
+    const sourceIsInferred = !t._sourceHub && !f.Source && !!hub;
     return `
       <tr>
         <td>${esc(f.WorkDate || "—")}</td>
         <td>${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
-        <td style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — not stored data.">${esc(sourceLabel)}</td>
+        <td ${sourceIsInferred ? 'style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — this entry predates the Source column (or came from a writer not yet updated to set it)."' : ''}>${esc(sourceLabel)}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
         <td>${esc(f.ActivityDetail || "—")}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
