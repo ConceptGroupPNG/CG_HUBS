@@ -1782,6 +1782,7 @@
             <option value="">All Statuses</option>
             <option>Draft</option>
             <option>Issued</option>
+            <option>Paid</option>
             <option>Voided</option>
           </select>
           <select id="filter-inv-month" onchange="renderInvoices()">
@@ -7538,7 +7539,7 @@ function renderInvoices() {
   }
 
   const statusBadgeInv = s => {
-    const cls = s==='Issued'?'finished':s==='Voided'?'delayed':'not-started';
+    const cls = s==='Paid'?'finished':s==='Issued'?'started':s==='Voided'?'delayed':'not-started';
     return `<span class="badge badge-${cls}">${s||'Issued'}</span>`;
   };
 
@@ -7636,6 +7637,7 @@ function editInvoiceStatus(id) {
       <select id="inv-status-sel">
         <option ${inv.Status==='Draft'?'selected':''}>Draft</option>
         <option ${inv.Status==='Issued'||!inv.Status?'selected':''}>Issued</option>
+        <option ${inv.Status==='Paid'?'selected':''}>Paid</option>
         <option ${inv.Status==='Voided'?'selected':''}>Voided</option>
       </select>
     </div>`;
