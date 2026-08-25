@@ -7,6 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CSA Hub — Concept Group</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 <style>
   :root{
     --navy:#1a2744;
@@ -1968,6 +1970,7 @@ function showProposalDetail(itemId){
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
         <div class="btn-row" style="margin-top:10px;justify-content:flex-end;flex-wrap:wrap;">
           ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalDocument('${p.id}')">Generate Document</button>` : ""}
+          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalWordDocument('${p.id}')">Download Word</button>` : ""}
           <button class="btn-secondary" onclick="cloneProposal('${p.id}')">Clone</button>
           ${canConvert && !f.ConvertedToCSA ? `<button class="btn-primary" onclick="convertProposalToCSA('${p.id}')">Convert to CSA</button>` : ""}
           <button class="btn-secondary" onclick="enterProposalEditMode('${p.id}')">Edit</button>
@@ -2686,6 +2689,106 @@ ${paymentTerms.length ? `
   win.document.close();
 }
 
+async function generateProposalWordDocument(proposalId){
+  const p = proposalMap[proposalId];
+  if(!p) return;
+  const f = p.fields;
+  const client = clientMap[f.ClientOrgLookupId] || {};
+  const clientName = client.Title || "Client";
+
+  const feeLines = allProposalFeeLineItems
+    .filter(x => x.fields.ParentProposalLookupId === p.id)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0));
+  const paymentTerms = allProposalPaymentTerms.filter(x => x.fields.ParentProposalLookupId === p.id);
+  const showBhcLogo = (f.BusinessUnit || "").trim() === "BHC";
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = "Generating…";
+  btn.disabled = true;
+
+  try{
+    if(typeof docx === "undefined" || typeof saveAs === "undefined"){
+      throw new Error("The Word generation library didn't load — check your internet connection and try again.");
+    }
+
+    const children = [];
+
+    if(showBhcLogo){
+      const imgBytes = await fetchImageBytes(BHC_ENTITY.logoUrl);
+      if(imgBytes){
+        try{
+          children.push(new docx.Paragraph({
+            alignment: docx.AlignmentType.CENTER,
+            spacing: { after: 240 },
+            children: [ new docx.ImageRun({ type: "png", data: imgBytes, transformation: { width: 180, height: 50 } }) ]
+          }));
+        }catch(imgErr){
+          console.warn("Could not embed logo image:", imgErr);
+        }
+      }
+    }
+
+    children.push(wdPara(fmtDateDMY(f.ProposalDate) || "", { after: 240 }));
+    children.push(wdPara(f.RecipientName || "", { after: 20 }));
+    children.push(wdPara(f.RecipientTitle || "", { after: 20 }));
+    children.push(wdPara(clientName.replace(/\s*\([^)]+\)\s*$/, ""), { after: 240 }));
+
+    children.push(wdPara(`Dear ${(f.RecipientName||"").split(" ")[0] || "Sir/Madam"},`, { after: 240 }));
+    children.push(wdPara(`Re: ${f.ProjectName || ""}`, { bold: true, after: 200 }));
+
+    children.push(wdPara("Thank you for the opportunity to submit this proposal. This proposal details the Scope of Works and Cost associated with our undertaking the following:", { align: docx.AlignmentType.JUSTIFIED, after: 200 }));
+
+    children.push(wdSubHeading("Scope of Works"));
+    (f.ScopeOfWorks || "").split("\n").forEach(line => {
+      if(line.trim()) children.push(wdPara(line.trim(), { align: docx.AlignmentType.JUSTIFIED, after: 100 }));
+    });
+
+    children.push(wdSubHeading("Our Professional Fees"));
+    feeLines.forEach(x => {
+      children.push(wdPara(`•  ${x.fields.LineDescription} – ${fmtCurrency(x.fields.Amount)} plus GST`, { after: 80 }));
+    });
+    children.push(wdPara(`Project Total ${fmtCurrency(f.TotalFeeExclGST)} plus GST`, { bold: true, before: 100, after: 240 }));
+
+    if(paymentTerms.length){
+      children.push(wdSubHeading("Payment Terms"));
+      paymentTerms.forEach(t => {
+        const pct = t.fields.Percentage ? `${t.fields.Percentage}% ` : "";
+        children.push(wdPara(`•  ${pct}${t.fields.MilestoneDescription}`, { after: 80 }));
+      });
+    }
+
+    children.push(wdPara("I trust this proposal meets with your expectations and approval. Please do not hesitate to contact us if you have any feedback or questions.", { align: docx.AlignmentType.JUSTIFIED, before: 200, after: 300 }));
+
+    children.push(wdPara("Yours sincerely,", { after: 200 }));
+    children.push(wdPara(BHC_ENTITY.name, { bold: true, after: 20 }));
+    children.push(wdPara("PNG Agent for Korn Ferry (Formerly the Hay Group).", { after: 400 }));
+    children.push(wdPara("Brendan Coombs", { bold: true, after: 20 }));
+    children.push(wdPara("Managing Director", { after: 400 }));
+
+    children.push(new docx.Paragraph({
+      border: { top: { style: docx.BorderStyle.SINGLE, size: 4, color: "999999" } },
+      spacing: { before: 200, after: 200 },
+      children: [ new docx.TextRun({ text: "Proposal:  Accepted   /   Not Accepted", bold: true, size: 22 }) ]
+    }));
+    children.push(...wdSigLine("Signed:"));
+    children.push(...wdSigLine("Name:"));
+    children.push(...wdSigLine("Designation:"));
+    children.push(...wdSigLine("Date:"));
+
+    const doc = new docx.Document({ sections: [{ properties: {}, children }] });
+    const blob = await docx.Packer.toBlob(doc);
+    saveAs(blob, `${f.Title} - ${clientName}.docx`);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't generate Word document: " + err.message);
+  }finally{
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
 /* ============================================================
    RENDER: RESOURCE DETAIL (READ-ONLY)
    ============================================================ */
@@ -3053,6 +3156,7 @@ function showAgreementDetail(itemId){
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
         <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
           <button class="btn-secondary" onclick="generateCsaDocument('${a.id}')">Generate Document</button>
+          <button class="btn-secondary" onclick="generateCsaWordDocument('${a.id}')">Download Word</button>
           <button class="btn-secondary" onclick="cloneAgreement('${a.id}')">Clone</button>
           <button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button>
         </div>
@@ -3418,6 +3522,271 @@ ${termsHtml}
 function fmtNumber(n){
   const num = parseFloat(n) || 0;
   return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* ============================================================
+   WORD DOCUMENT GENERATION (docx.js) — shared helpers
+   ============================================================ */
+
+// Fetches an image and returns it as bytes docx.js can embed, or null if
+// anything goes wrong — the document should still generate without a logo
+// rather than fail outright over a fetch hiccup.
+async function fetchImageBytes(url){
+  try{
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    return new Uint8Array(buf);
+  }catch(err){
+    console.warn("Could not fetch logo image for Word document:", err);
+    return null;
+  }
+}
+
+function wdPara(text, opts={}){
+  return new docx.Paragraph({
+    alignment: opts.align,
+    spacing: { before: opts.before || 0, after: opts.after !== undefined ? opts.after : 120 },
+    children: [ new docx.TextRun({ text: text || "", bold: !!opts.bold, italics: !!opts.italics, size: opts.size || 22 }) ]
+  });
+}
+
+function wdLabeledPara(label, value){
+  return new docx.Paragraph({
+    spacing: { after: 100 },
+    children: [
+      new docx.TextRun({ text: label + " ", bold: true, size: 22 }),
+      new docx.TextRun({ text: value || "", size: 22 })
+    ]
+  });
+}
+
+function wdSectionHeading(text){
+  return new docx.Paragraph({
+    alignment: docx.AlignmentType.CENTER,
+    spacing: { before: 300, after: 200 },
+    border: { bottom: { style: docx.BorderStyle.SINGLE, size: 6, color: "1a1a1a" } },
+    children: [ new docx.TextRun({ text: text.toUpperCase(), bold: true, size: 24 }) ]
+  });
+}
+
+function wdSubHeading(text){
+  return new docx.Paragraph({
+    spacing: { before: 200, after: 120 },
+    children: [ new docx.TextRun({ text: text.toUpperCase(), bold: true, size: 22 }) ]
+  });
+}
+
+function wdHeaderCell(text, widthPct, align){
+  return new docx.TableCell({
+    width: { size: widthPct, type: docx.WidthType.PERCENTAGE },
+    shading: { fill: "F2F2F2" },
+    children: [ new docx.Paragraph({ alignment: align || docx.AlignmentType.LEFT, children: [ new docx.TextRun({ text: text || "", bold: true, size: 18 }) ] }) ]
+  });
+}
+
+function wdCell(text, opts={}){
+  return new docx.TableCell({
+    width: opts.width ? { size: opts.width, type: docx.WidthType.PERCENTAGE } : undefined,
+    children: [ new docx.Paragraph({ alignment: opts.align || docx.AlignmentType.LEFT, children: [ new docx.TextRun({ text: text || "", bold: !!opts.bold, size: opts.size || 20 }) ] }) ]
+  });
+}
+
+// Returns [labelParagraph, blankUnderlinedLineParagraph] — spread into a
+// children array for a fill-in-and-sign field.
+function wdSigLine(label){
+  return [
+    new docx.Paragraph({ spacing: { before: 120, after: 40 }, children: [ new docx.TextRun({ text: label, bold: true, size: 21 }) ] }),
+    new docx.Paragraph({ border: { bottom: { style: docx.BorderStyle.SINGLE, size: 4, color: "1a1a1a" } }, spacing: { after: 80 }, children: [ new docx.TextRun({ text: " ", size: 21 }) ] })
+  ];
+}
+
+function wdSigCell(){
+  return new docx.TableCell({
+    width: { size: 50, type: docx.WidthType.PERCENTAGE },
+    children: [
+      ...wdSigLine("Signed:"),
+      ...wdSigLine("Name:"),
+      ...wdSigLine("Title:"),
+      ...wdSigLine("Date:")
+    ]
+  });
+}
+
+// Plain-text version of CSA_TERMS_TEMPLATE, split into structured clauses —
+// docx.js builds real Word paragraphs, so this can't reuse the HTML string.
+// Keep this in sync with CSA_TERMS_TEMPLATE if the wording ever changes.
+function csaTermsPlainText(clientAbbr){
+  const BHC = BHC_ENTITY.shortName;
+  return [
+    { num: 1, title: "Consulting Services", body: [
+      `${BHC} Consulting Services ("${BHC}"), will provide services ordered by ${clientAbbr} as specified in the Order Form under the terms and conditions of this Agreement. Unless agreed otherwise in writing any additional services acquired by ${clientAbbr} outside the dates specified overleaf shall be provided on the terms and conditions stated in this Agreement.`
+    ]},
+    { num: 2, title: "Travel and Expenses", body: [
+      `For any onsite service requested by ${clientAbbr}, ${clientAbbr} shall book and directly pay for air travel and accommodation charges. In addition, ${clientAbbr} agrees to reimburse ${BHC} for actual reasonable local travel and the consultant per diem. The consultant per diem covers all meals and incidentals. If ${clientAbbr} is unable to book and directly pay for air travel and accommodation, ${clientAbbr} agrees to reimburse ${BHC} for the actual expense plus twenty (20%) percent.`
+    ]},
+    { num: 3, title: "Invoicing and Payment", body: [
+      `Unless otherwise stated in the Order Form all fees, charges or other amounts payable under this Agreement shall be payable within seven (7) days of date of invoice. The T&M consulting fee daily rates specified in the Order Form are for Services provided averaging over the invoice period, an eight (8) hour professional day. A professional day is a normal business day, Monday to Friday during which ${BHC} staff average eight (8) work hours over the invoice period, and ${clientAbbr} agrees to pay for Services extending beyond the eight (8) hour average, invoiced at the pro rata hourly rate for the consultant.`,
+      `${clientAbbr} shall reimburse ${BHC} for any statutory charges such as taxes or levies, other than income tax, that are imposed on ${BHC} pursuant to this Agreement.`
+    ]},
+    { num: 4, title: "Limitation of Liability", body: [
+      `In no event shall either party be liable for any indirect, incidental, special or consequential damages, or loss of profits, revenue, data, or use, incurred by either party or any third party, whether in an action in contract or tort, even if the other party or any other person has been advised of the possibility of such damages. ${BHC}'s liability for damages hereunder shall in no event exceed the amount of fees paid by ${clientAbbr} under this Agreement.`
+    ]},
+    { num: 5, title: "General", body: [
+      `a) This Agreement constitutes the complete agreement between the parties and supersedes all previous agreements or representations, written or oral, with respect to the Services and Developments. It is expressly agreed that any terms and conditions of ${clientAbbr}'s purchase order shall be superseded by and/or be subject to the terms and conditions of this Agreement.`,
+      `b) The parties may have access to information that is confidential to one another ("Confidential Information"). Confidential Information shall be limited to ${BHC}'s software programs and documentation, Developments, and all information clearly marked as confidential or information, which is confidential by operation of law.`,
+      `c) ${clientAbbr} agrees not to employ any employee or former employee of ${BHC} who performed any services under this Agreement within a period of twelve (12) months or less of the provision of those services. In the event of breach of this condition, ${clientAbbr} will pay to ${BHC} as liquidated damages and not as a penalty, an amount equal to 30% of the annual earnings for the relevant employee.`
+    ]}
+  ];
+}
+
+async function generateCsaWordDocument(itemId){
+  const a = agreementMap[itemId];
+  if(!a) return;
+  const f = a.fields;
+  const client = clientMap[f.ClientOrgLookupId] || {};
+  const clientName = client.Title || "Client";
+  const clientAbbr = getClientAbbreviation(clientName);
+  const clientAddress = getClientAddress(client);
+
+  const feeLines = allFeeLineItems
+    .filter(x => x.fields.ParentCSALookupId === a.id)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0));
+  const milestones = allMilestones.filter(x => x.fields.ParentCSALookupId === a.id);
+  const showBhcLogo = (f.BusinessUnit || "").trim() === "BHC";
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = "Generating…";
+  btn.disabled = true;
+
+  try{
+    if(typeof docx === "undefined" || typeof saveAs === "undefined"){
+      throw new Error("The Word generation library didn't load — check your internet connection and try again.");
+    }
+
+    const children = [];
+
+    if(showBhcLogo){
+      const imgBytes = await fetchImageBytes(BHC_ENTITY.logoUrl);
+      if(imgBytes){
+        try{
+          children.push(new docx.Paragraph({
+            alignment: docx.AlignmentType.CENTER,
+            spacing: { after: 200 },
+            children: [ new docx.ImageRun({ type: "png", data: imgBytes, transformation: { width: 180, height: 50 } }) ]
+          }));
+        }catch(imgErr){
+          console.warn("Could not embed logo image:", imgErr);
+        }
+      }
+    }
+
+    children.push(new docx.Paragraph({
+      alignment: docx.AlignmentType.CENTER,
+      spacing: { after: 240 },
+      children: [ new docx.TextRun({ text: "Consulting Services Agreement", bold: true, size: 32 }) ]
+    }));
+
+    children.push(wdPara(`AGREEMENT No: ${f.Title} — ${clientAbbr}: ${f.ProjectName || ""}`, { size: 22, after: 160 }));
+    children.push(wdLabeledPara("BETWEEN:", `${BHC_ENTITY.name} ("${BHC_ENTITY.shortName}"), ${BHC_ENTITY.address}`));
+    children.push(wdLabeledPara("AND:", `${clientName.replace(/\s*\([^)]+\)\s*$/, "")} ("${clientAbbr}"), ${clientAddress}`));
+
+    children.push(new docx.Paragraph({
+      spacing: { before: 200, after: 200 },
+      alignment: docx.AlignmentType.JUSTIFIED,
+      children: [
+        new docx.TextRun({ text: "AGREEMENT: ", bold: true, size: 22 }),
+        new docx.TextRun({ text: `In consideration of payment by ${clientAbbr} of the fees indicated, ${BHC_ENTITY.shortName} agrees to provide ${clientAbbr} with services necessary to perform the Works identified in the Services Schedule. Unless expressly stated otherwise, times to perform works are estimates only. The parties acknowledge and agree that this Agreement shall be subject to the Terms and Conditions set out on the reverse of this page.`, size: 22 })
+      ]
+    }));
+
+    children.push(wdSectionHeading("Services Schedule"));
+    children.push(wdLabeledPara("PROJECT NAME:", f.ProjectName || ""));
+
+    children.push(new docx.Paragraph({ spacing: { before: 160, after: 60 }, children: [ new docx.TextRun({ text: `SCOPE OF WORKS — ${BHC_ENTITY.name.split(" ").slice(0,3).join(" ")}, will:`, bold: true, size: 22 }) ] }));
+    (f.ScopeOfWorks || "").split("\n").forEach(line => {
+      if(line.trim()) children.push(wdPara(line.trim(), { size: 21, after: 80 }));
+    });
+
+    if(f.Deliverables){
+      children.push(new docx.Paragraph({ spacing: { before: 160, after: 60 }, children: [ new docx.TextRun({ text: "DELIVERABLES:", bold: true, size: 22 }) ] }));
+      f.Deliverables.split("\n").forEach(line => {
+        if(line.trim()) children.push(wdPara(line.trim(), { size: 21, after: 80 }));
+      });
+    }
+
+    children.push(new docx.Paragraph({ spacing: { before: 160, after: 60 }, children: [ new docx.TextRun({ text: "OUR PROFESSIONAL FEES:", bold: true, size: 22 }) ] }));
+    feeLines.forEach((x,i) => {
+      children.push(wdPara(`${i+1}. ${x.fields.LineDescription}. Our Fee: ${fmtCurrency(x.fields.Amount)} plus GST`, { size: 21, after: 60 }));
+    });
+    children.push(wdPara(`The total fee would be ${fmtCurrency(f.TotalFeeExclGST)} plus GST.`, { bold: true, size: 21, after: 160 }));
+
+    children.push(wdPara(`Commencement Date: ${f.CommencementBasis || ""}${f.CommencementDate ? " (" + fmtDateDMY(f.CommencementDate) + ")" : ""}     Termination Date: ${fmtDateDMY(f.TerminationDate) || "Not Required"}`, { size: 21, after: 100 }));
+    children.push(wdPara(`FEE BASIS: ${f.FeeBasis || ""}`, { size: 21, after: 160 }));
+
+    const tableRows = [
+      new docx.TableRow({
+        tableHeader: true,
+        children: [
+          wdHeaderCell(`${f.FeeBasis || "Fixed Price"} Quote and Payment Schedule`, 40),
+          wdHeaderCell("Applicable Fee", 20, docx.AlignmentType.RIGHT),
+          wdHeaderCell("GST", 15, docx.AlignmentType.RIGHT),
+          wdHeaderCell("Delivery Date (Estimate)", 25)
+        ]
+      })
+    ];
+    milestones.forEach(m => {
+      tableRows.push(new docx.TableRow({
+        children: [
+          wdCell(m.fields.MilestoneDescription || "", { width: 40 }),
+          wdCell(`PNGK ${fmtNumber(m.fields.ApplicableFee)}`, { width: 20, align: docx.AlignmentType.RIGHT }),
+          wdCell(`K ${fmtNumber(m.fields.GST)}`, { width: 15, align: docx.AlignmentType.RIGHT }),
+          wdCell(m.fields.EstimatedDeliveryDate || "", { width: 25 })
+        ]
+      }));
+    });
+    tableRows.push(new docx.TableRow({
+      children: [
+        wdCell(`Total ${f.FeeBasis || "Fixed Price"}`, { width: 40, bold: true }),
+        wdCell(`PNGK ${fmtNumber(f.TotalFeeExclGST)}`, { width: 20, bold: true, align: docx.AlignmentType.RIGHT }),
+        wdCell(`K ${fmtNumber(f.GSTAmount)}`, { width: 15, bold: true, align: docx.AlignmentType.RIGHT }),
+        wdCell("", { width: 25 })
+      ]
+    }));
+    children.push(new docx.Table({ width: { size: 100, type: docx.WidthType.PERCENTAGE }, rows: tableRows }));
+
+    children.push(new docx.Paragraph({ spacing: { before: 400, after: 120 }, children: [ new docx.TextRun({ text: `Executed by ${clientAbbr}: (Authorised Signature)          Executed by ${BHC_ENTITY.shortName}: (Authorised Signature)`, bold: true, size: 21 }) ] }));
+    children.push(new docx.Table({
+      width: { size: 100, type: docx.WidthType.PERCENTAGE },
+      borders: {
+        top: { style: docx.BorderStyle.NONE }, bottom: { style: docx.BorderStyle.NONE },
+        left: { style: docx.BorderStyle.NONE }, right: { style: docx.BorderStyle.NONE },
+        insideHorizontal: { style: docx.BorderStyle.NONE }, insideVertical: { style: docx.BorderStyle.NONE }
+      },
+      rows: [ new docx.TableRow({ children: [ wdSigCell(), wdSigCell() ] }) ]
+    }));
+
+    children.push(new docx.Paragraph({ children: [], pageBreakBefore: true }));
+    children.push(new docx.Paragraph({ spacing: { after: 200 }, children: [ new docx.TextRun({ text: "Terms and Conditions", bold: true, size: 28 }) ] }));
+    csaTermsPlainText(clientAbbr).forEach(term => {
+      children.push(new docx.Paragraph({ spacing: { before: 160, after: 60 }, children: [ new docx.TextRun({ text: `${term.num}. ${term.title}`, bold: true, size: 22 }) ] }));
+      term.body.forEach(para => {
+        children.push(new docx.Paragraph({ alignment: docx.AlignmentType.JUSTIFIED, spacing: { after: 100 }, children: [ new docx.TextRun({ text: para, size: 20 }) ] }));
+      });
+    });
+
+    const doc = new docx.Document({ sections: [{ properties: {}, children }] });
+    const blob = await docx.Packer.toBlob(doc);
+    saveAs(blob, `${f.Title} - ${clientName}.docx`);
+
+  }catch(err){
+    console.error(err);
+    alert("Couldn't generate Word document: " + err.message);
+  }finally{
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
 }
 
 /* ============================================================
