@@ -787,7 +787,9 @@ async function loadAllData(){
   allBusinessUnits = bus;
   allFeeLineItems = feeLines;
   allMilestones = milestones;
-  allTimeEntries = timeEntries;
+  // CSA_TimeEntries is now a shared list on CG_Time — other systems write to it too,
+  // so only ever work with rows this app itself created.
+  allTimeEntries = timeEntries.filter(t => t.fields.Source === "CSA_HUB");
   allResources = resources;
   allRateOverrides = rateOverrides;
   allProposals = proposals;
@@ -1348,7 +1350,8 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
       EntryMethod: "Manual",
       EntryUser: resource.fields.Title,
       Billable: billable,
-      ActivityDetail: activityDetail
+      ActivityDetail: activityDetail,
+      Source: "CSA_HUB"
     });
     await loadAllData();
     renderTimesheetsTable();
