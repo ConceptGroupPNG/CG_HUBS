@@ -1203,6 +1203,8 @@ function activeResourceOptions(selected){
 // Combined selector for pickers where time could be logged against either a CSA
 // or a Proposal (e.g. work starting before a CSA is formally executed). Values are
 // prefixed "csa:" / "prop:" since item IDs aren't unique across the two lists.
+// Used by the Time Entries Report filter, which intentionally shows everything
+// (including inactive/completed items) since it's a historical review tool.
 function csaAndProposalSelectOptions(selectedValue){
   const csaOpts = allAgreements
     .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
@@ -1218,14 +1220,41 @@ function csaAndProposalSelectOptions(selectedValue){
   return html;
 }
 
+// Used specifically by Log Time — only Active items (things you'd realistically
+// be logging new hours against), labelled with the client name for clarity when
+// several active items share a similar project name.
+function activeCsaAndProposalSelectOptions(selectedValue){
+  const csaOpts = allAgreements
+    .filter(a => a.fields.IsActive === true)
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(a => {
+      const clientName = (clientMap[a.fields.ClientOrgLookupId] || {}).Title || "—";
+      return `<option value="csa:${a.id}" ${selectedValue===`csa:${a.id}`?"selected":""}>${esc(a.fields.Title)} - ${esc(clientName)} - ${esc(a.fields.ProjectName||"")}</option>`;
+    })
+    .join("");
+  const propOpts = allProposals
+    .filter(p => p.fields.IsActive === true)
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(p => {
+      const clientName = (clientMap[p.fields.ClientOrgLookupId] || {}).Title || "—";
+      return `<option value="prop:${p.id}" ${selectedValue===`prop:${p.id}`?"selected":""}>${esc(p.fields.Title)} - ${esc(clientName)} - ${esc(p.fields.ProjectName||"")}</option>`;
+    })
+    .join("");
+  let html = "";
+  if(csaOpts) html += `<optgroup label="Agreements">${csaOpts}</optgroup>`;
+  if(propOpts) html += `<optgroup label="Proposals">${propOpts}</optgroup>`;
+  return html;
+}
+
 function populateTimesheetDropdowns(){
   const resOpts = activeResourceOptions();
-  const combinedOpts = csaAndProposalSelectOptions();
+  const activeOpts = activeCsaAndProposalSelectOptions();
+  const allOpts = csaAndProposalSelectOptions();
   document.getElementById("logTimeResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
-  document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA or Proposal —</option>${combinedOpts}`;
+  document.getElementById("logTimeCSA").innerHTML = `<option value="">— Select CSA or Proposal —</option>${activeOpts}`;
   document.getElementById("genTimesheetResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
   document.getElementById("reportResource").innerHTML = `<option value="">— Select resource —</option>${resOpts}`;
-  document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs/Proposals</option>${combinedOpts}`;
+  document.getElementById("reportCSA").innerHTML = `<option value="">All CSAs/Proposals</option>${allOpts}`;
 }
 
 // Matches by name/email against EntryUser. Note: CSA_TimeEntries.ResourceRef now
@@ -3021,6 +3050,7 @@ function showAgreementDetail(itemId){
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
         <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
           <button class="btn-secondary" onclick="generateCsaDocument('${a.id}')">Generate Document</button>
+          <button class="btn-secondary" onclick="cloneAgreement('${a.id}')">Clone</button>
           <button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button>
         </div>
       </div>
@@ -3393,6 +3423,7 @@ function fmtNumber(n){
 let editAgreementId = null;   // null = creating a new agreement
 let editFeeLines = [];        // [{description, amount}]
 let editMilestones = [];      // [{description, percentage, fee, gst, deliveryDate, status}]
+let cloneSourceAgreementId = null;
 
 async function getNextCsaNumber(){
   const items = await fetchAllListItems("CSA_Counter");
@@ -3404,6 +3435,7 @@ async function getNextCsaNumber(){
 
 function enterEditMode(itemId){
   editAgreementId = itemId || null;
+  cloneSourceAgreementId = null;
 
   if(editAgreementId){
     const a = agreementMap[editAgreementId];
@@ -3432,6 +3464,33 @@ function enterEditMode(itemId){
   renderEditForm();
 }
 
+function cloneAgreement(itemId){
+  const source = agreementMap[itemId];
+  if(!source) return;
+  editAgreementId = null; // creating a new record
+  cloneSourceAgreementId = itemId;
+
+  editFeeLines = allFeeLineItems
+    .filter(x => x.fields.ParentCSALookupId === itemId)
+    .sort((x,y) => (parseFloat(x.fields.SortOrder)||0) - (parseFloat(y.fields.SortOrder)||0))
+    .map(x => ({ description: x.fields.LineDescription || "", amount: x.fields.Amount || 0 }));
+  editMilestones = allMilestones
+    .filter(x => x.fields.ParentCSALookupId === itemId)
+    .map(x => ({
+      description: x.fields.MilestoneDescription || "",
+      percentage: x.fields.Percentage || 0,
+      fee: x.fields.ApplicableFee || 0,
+      gst: x.fields.GST || 0,
+      deliveryDate: x.fields.EstimatedDeliveryDate || "",
+      status: "Pending"
+    }));
+
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-agreement-detail").classList.add("active");
+  renderEditForm();
+}
+
 function clientOptions(selectedId){
   return allClients
     .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
@@ -3450,14 +3509,14 @@ function choiceOptions(list, selected){
 
 function renderEditForm(){
   const isNew = !editAgreementId;
-  const a = isNew ? null : agreementMap[editAgreementId];
-  const f = isNew ? {} : a.fields;
+  const a = cloneSourceAgreementId ? agreementMap[cloneSourceAgreementId] : (isNew ? null : agreementMap[editAgreementId]);
+  const f = a ? a.fields : {};
 
   document.getElementById("agreementDetailContent").innerHTML = `
     <div class="detail-header">
       <div>
         <div class="detail-title-row">
-          <div class="detail-title">${isNew ? "New Agreement" : esc(f.Title)}</div>
+          <div class="detail-title">${isNew ? (cloneSourceAgreementId ? "Clone of " + esc(f.Title) : "New Agreement") : esc(f.Title)}</div>
         </div>
         <div class="detail-sub">${isNew ? "CSA number will be assigned automatically on save" : "Editing " + esc(f.Title)}</div>
       </div>
@@ -3645,6 +3704,8 @@ function recalcTotals(){
 function cancelEdit(){
   if(editAgreementId){
     showAgreementDetail(editAgreementId);
+  } else if(cloneSourceAgreementId){
+    showAgreementDetail(cloneSourceAgreementId);
   } else {
     document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
     document.getElementById("view-agreements").classList.add("active");
