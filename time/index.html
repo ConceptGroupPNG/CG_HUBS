@@ -1053,20 +1053,30 @@ function inferHubForEntry(csaText){
   return hit ? hit.hub : null;
 }
 // Three ways to know which HUB an entry belongs to, in order of
-// authority: (1) _sourceHub — set by fetchAllTimeEntries() itself,
-// since federated entries were fetched FROM that HUB's own list, so
-// this is always correct and is the only signal SLA HUB's entries
-// need; (2) the Source column on CSA_TimeEntries — written at
-// create time by CSA HUB's own manual form (the separate CSA Time
-// widget doesn't set it as of this writing), for entries that live
-// on the shared CSA_TimeEntries list rather than a federated one of
-// their own; (3) the old naming-pattern guess, for rows that predate
-// both.
+// authority: (1) the Source column — written per-ROW at create time
+// by whichever tool actually logged that entry (CSA HUB's own manual
+// form, and the CSA Time Widget, both set it — the Widget sets it to
+// whichever HUB the ticket/agreement being logged against belongs to,
+// e.g. "SLA_HUB" for an SLA- ticket even though the row still lands
+// in the shared CSA_TimeEntries list). This has to outrank _sourceHub
+// below: CSA_TimeEntries is a SHARED list written by more than one
+// HUB's tooling, so "which list did fetchAllTimeEntries() read this
+// FROM" is not the same question as "which HUB actually wrote this
+// particular row", and Source is the only field that answers the
+// second question. (2) the old naming-pattern guess, for rows that
+// predate the Source column. (3) _sourceHub — set by
+// fetchAllTimeEntries() itself from which configured source list an
+// entry was fetched from. This is only a reliable per-row signal for
+// a list that's genuinely owned by ONE HUB end-to-end (e.g. SLA HUB's
+// own SLA_TimeEntries, which never sets Source because every row in
+// that list is inherently SLA HUB's) — so it's deliberately the last
+// resort, not the first.
 function hubForEntry(entry){
-  if(entry._sourceHub) return entry._sourceHub;
   const f = entry.fields;
   if(f.Source) return f.Source;
-  return inferHubForEntry(f.CSA);
+  const inferred = inferHubForEntry(f.CSA);
+  if(inferred) return inferred;
+  return entry._sourceHub || null;
 }
 // Same name/email matching pattern csa-hub/index.html already relies on —
 // CSA_TimeEntries.ResourceRefLookupId isn't trustworthy for this (per that
@@ -3111,7 +3121,7 @@ function renderTimeEntriesResults(){
     const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
     const hub = hubForEntry(t);
     const sourceLabel = hub ? hubLabelFor(hub) : "—";
-    const sourceIsInferred = !t._sourceHub && !f.Source && !!hub;
+    const sourceIsInferred = !f.Source && !!inferHubForEntry(f.CSA);
     return `
       <tr>
         <td>${esc(f.WorkDate || "—")}</td>
