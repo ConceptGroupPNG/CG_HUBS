@@ -874,6 +874,34 @@ function fmtDateDMY(str){
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+// Displays a YYYY-MM-DD string as "25 August 2026" — the spelled-out form used
+// in formal letters (Proposals), as distinct from the numeric DD/MM/YYYY used
+// in tables and lists elsewhere.
+function fmtDateLong(str){
+  if(!str) return "";
+  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return str;
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const monthName = months[parseInt(m[2],10) - 1];
+  if(!monthName) return str;
+  return `${parseInt(m[3],10)} ${monthName} ${m[1]}`;
+}
+
+// Builds a proper business-letter greeting from a recipient name that may
+// include a title ("Mr Rex Kini") — uses the title (if recognised) plus the
+// surname, matching how these letters are actually addressed ("Dear Mr Kini,"),
+// not a first-name-only greeting.
+function greetingNameFrom(recipientName){
+  const words = (recipientName || "").trim().split(/\s+/).filter(Boolean);
+  if(words.length === 0) return "Sir/Madam";
+  const honorifics = ["Mr","Mrs","Ms","Miss","Dr","Prof"];
+  const honorificMatch = honorifics.find(h => h.toLowerCase() === words[0].replace(/\.$/,"").toLowerCase());
+  if(honorificMatch && words.length > 1){
+    return `${honorificMatch} ${words[words.length - 1]}`;
+  }
+  return words[words.length - 1];
+}
+
 // The CSA Time widget never writes Billable, so an entry it created simply has
 // no value for that field. Checking definedness directly (rather than inferring
 // from ResourceRef) stays correct even if ResourceRef can't be resolved to a match.
@@ -1994,6 +2022,13 @@ function showProposalDetail(itemId){
           </div>
         </div>
 
+        ${f.Introduction ? `
+        <div class="section-card card-details">
+          <h3>Introduction</h3>
+          <div class="prose-block">${esc(f.Introduction)}</div>
+        </div>
+        ` : ""}
+
         <div class="section-card card-scope">
           <h3>Scope of Works</h3>
           <div class="prose-block">${esc(f.ScopeOfWorks || "Not recorded.")}</div>
@@ -2211,6 +2246,13 @@ function renderProposalEditForm(){
           </div>
         </div>
 
+        <div class="section-card card-details">
+          <h3>Introduction <span style="text-transform:none;font-weight:400;">— optional context before Scope of Works, e.g. background, comparison rationale</span></h3>
+          <div class="form-field">
+            <textarea id="editProposalIntroduction" placeholder="Free text — appears as introductory paragraph(s) between the greeting and Scope of Works">${esc(f.Introduction)}</textarea>
+          </div>
+        </div>
+
         <div class="section-card card-scope">
           <h3>Scope of Works</h3>
           <div class="form-field">
@@ -2332,6 +2374,7 @@ async function saveProposal(){
       TotalFeeExclGST: parseFloat(document.getElementById("editProposalTotalFeeExclGST").value) || 0,
       GSTAmount: parseFloat(document.getElementById("editProposalGSTAmount").value) || 0,
       TotalInclGST: parseFloat(document.getElementById("editProposalTotalInclGST").value) || 0,
+      Introduction: document.getElementById("editProposalIntroduction").value,
       ScopeOfWorks: document.getElementById("editProposalScopeOfWorks").value
     };
 
@@ -2604,19 +2647,22 @@ function generateProposalDocument(proposalId){
 
 ${logoHtml}
 
-<div class="date-line">${esc(fmtDateDMY(f.ProposalDate) || "")}</div>
+<div class="date-line">${esc(fmtDateLong(f.ProposalDate) || "")}</div>
 
 <div class="recipient-block">
   <div>${esc(f.RecipientName || "")}</div>
   <div>${esc(f.RecipientTitle || "")}</div>
   <div>${esc(clientName.replace(/\s*\([^)]+\)\s*$/, ""))}</div>
+  ${client.Address ? `<div>${esc(client.Address)}</div>` : ""}
 </div>
 
-<div>Dear ${esc((f.RecipientName||"").split(" ")[0] || "Sir/Madam")},</div>
+<div>Dear ${esc(greetingNameFrom(f.RecipientName))},</div>
 <br>
 <div class="re-line">Re: ${esc(f.ProjectName || "")}</div>
 
 <p>Thank you for the opportunity to submit this proposal. This proposal details the Scope of Works and Cost associated with our undertaking the following:</p>
+
+${f.Introduction ? `<p>${esc(f.Introduction).replace(/\n/g, "<br>")}</p>` : ""}
 
 <h2>Scope of Works</h2>
 <p>${scopeHtml}</p>
@@ -2634,7 +2680,7 @@ ${paymentTerms.length ? `
 </ul>
 ` : ""}
 
-<p>I trust this proposal meets with your expectations and approval. Please do not hesitate to contact us if you have any feedback or questions.</p>
+<p>I trust this proposal meets with your expectations and approval. ${esc(BHC_ENTITY.contactLine)}</p>
 
 <div class="sig-block">
   <div>Yours sincerely,</div>
@@ -2729,15 +2775,24 @@ async function generateProposalWordDocument(proposalId){
       }
     }
 
-    children.push(wdPara(fmtDateDMY(f.ProposalDate) || "", { after: 240 }));
+    children.push(wdPara(fmtDateLong(f.ProposalDate) || "", { after: 240 }));
     children.push(wdPara(f.RecipientName || "", { after: 20 }));
     children.push(wdPara(f.RecipientTitle || "", { after: 20 }));
-    children.push(wdPara(clientName.replace(/\s*\([^)]+\)\s*$/, ""), { after: 240 }));
+    children.push(wdPara(clientName.replace(/\s*\([^)]+\)\s*$/, ""), { after: client.Address ? 20 : 240 }));
+    if(client.Address){
+      children.push(wdPara(client.Address, { after: 240 }));
+    }
 
-    children.push(wdPara(`Dear ${(f.RecipientName||"").split(" ")[0] || "Sir/Madam"},`, { after: 240 }));
+    children.push(wdPara(`Dear ${greetingNameFrom(f.RecipientName)},`, { after: 240 }));
     children.push(wdPara(`Re: ${f.ProjectName || ""}`, { bold: true, after: 200 }));
 
     children.push(wdPara("Thank you for the opportunity to submit this proposal. This proposal details the Scope of Works and Cost associated with our undertaking the following:", { align: docx.AlignmentType.JUSTIFIED, after: 200 }));
+
+    if(f.Introduction){
+      f.Introduction.split("\n").forEach(line => {
+        if(line.trim()) children.push(wdPara(line.trim(), { align: docx.AlignmentType.JUSTIFIED, after: 100 }));
+      });
+    }
 
     children.push(wdSubHeading("Scope of Works"));
     (f.ScopeOfWorks || "").split("\n").forEach(line => {
@@ -2758,7 +2813,7 @@ async function generateProposalWordDocument(proposalId){
       });
     }
 
-    children.push(wdPara("I trust this proposal meets with your expectations and approval. Please do not hesitate to contact us if you have any feedback or questions.", { align: docx.AlignmentType.JUSTIFIED, before: 200, after: 300 }));
+    children.push(wdPara(`I trust this proposal meets with your expectations and approval. ${BHC_ENTITY.contactLine}`, { align: docx.AlignmentType.JUSTIFIED, before: 200, after: 300 }));
 
     children.push(wdPara("Yours sincerely,", { after: 200 }));
     children.push(wdPara(BHC_ENTITY.name, { bold: true, after: 20 }));
@@ -3263,7 +3318,8 @@ const BHC_ENTITY = {
   name: "BRIAN HART CONSULTING LIMITED",
   shortName: "BHC",
   address: "PO Box 190, Waigani, NCD.",
-  logoUrl: "https://marcusappdev.github.io/CG_Training/csa-hub/assets/Brian_Hart_Logo_Large.png"
+  logoUrl: "https://marcusappdev.github.io/CG_Training/csa-hub/assets/Brian_Hart_Logo_Large.png",
+  contactLine: "Please do not hesitate to contact me (bcoombs@concept.com.pg) or Ms Pole Alova (palova@concept.com.pg) via email or by phoning 323 1920, if you have any feedback or questions."
 };
 
 function getClientAbbreviation(title){
