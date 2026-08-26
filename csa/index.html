@@ -1997,8 +1997,8 @@ function showProposalDetail(itemId){
         <div class="metric-label">Total (incl. GST)</div>
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
         <div class="btn-row" style="margin-top:10px;justify-content:flex-end;flex-wrap:wrap;">
-          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalDocument('${p.id}')">Generate Document</button>` : ""}
-          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalWordDocument('${p.id}')">Download Word</button>` : ""}
+          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalWordDocument('${p.id}')">Generate Document</button>` : ""}
+          ${isBhcProposal ? `<button class="btn-secondary" onclick="generateProposalDocument('${p.id}')">Print</button>` : ""}
           <button class="btn-secondary" onclick="cloneProposal('${p.id}')">Clone</button>
           ${canConvert && !f.ConvertedToCSA ? `<button class="btn-primary" onclick="convertProposalToCSA('${p.id}')">Convert to CSA</button>` : ""}
           <button class="btn-secondary" onclick="enterProposalEditMode('${p.id}')">Edit</button>
@@ -3205,8 +3205,8 @@ function showAgreementDetail(itemId){
         <div class="metric-label">Total (incl. GST)</div>
         <div class="amount">${fmtCurrency(f.TotalInclGST)}</div>
         <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
-          <button class="btn-secondary" onclick="generateCsaDocument('${a.id}')">Generate Document</button>
-          <button class="btn-secondary" onclick="generateCsaWordDocument('${a.id}')">Download Word</button>
+          <button class="btn-secondary" onclick="generateCsaWordDocument('${a.id}')">Generate Document</button>
+          <button class="btn-secondary" onclick="generateCsaDocument('${a.id}')">Print</button>
           <button class="btn-secondary" onclick="cloneAgreement('${a.id}')">Clone</button>
           <button class="btn-secondary" onclick="enterEditMode('${a.id}')">Edit</button>
         </div>
