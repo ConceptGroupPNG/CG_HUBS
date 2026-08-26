@@ -2823,7 +2823,7 @@ async function generateProposalWordDocument(proposalId){
     const sectionOptions = { properties: {}, children };
     if(headerFooter){
       sectionOptions.properties = { titlePage: true };
-      sectionOptions.headers = { default: headerFooter.header };
+      sectionOptions.headers = { default: headerFooter.defaultHeader, first: headerFooter.firstHeader };
       sectionOptions.footers = { first: headerFooter.firstPageFooter, default: headerFooter.defaultFooter };
     }
     const doc = new docx.Document({ sections: [sectionOptions] });
@@ -3612,38 +3612,50 @@ async function buildBrandedHeaderFooter(){
     fetchImageBytes(KORNFERRY_LOGO_URL)
   ]);
 
-  const header = new docx.Header({
-    children: [
-      new docx.Table({
-        width: { size: 100, type: docx.WidthType.PERCENTAGE },
-        borders: {
-          top: { style: docx.BorderStyle.NONE }, bottom: { style: docx.BorderStyle.NONE },
-          left: { style: docx.BorderStyle.NONE }, right: { style: docx.BorderStyle.NONE },
-          insideHorizontal: { style: docx.BorderStyle.NONE }, insideVertical: { style: docx.BorderStyle.NONE }
-        },
-        rows: [
-          new docx.TableRow({
-            children: [
-              new docx.TableCell({
-                width: { size: 50, type: docx.WidthType.PERCENTAGE },
-                children: [ new docx.Paragraph({
-                  alignment: docx.AlignmentType.LEFT,
-                  children: bhcBytes ? [ new docx.ImageRun({ type: "png", data: bhcBytes, transformation: { width: 149, height: 50 } }) ] : []
-                }) ]
-              }),
-              new docx.TableCell({
-                width: { size: 50, type: docx.WidthType.PERCENTAGE },
-                children: [ new docx.Paragraph({
-                  alignment: docx.AlignmentType.RIGHT,
-                  children: conceptBytes ? [ new docx.ImageRun({ type: "jpg", data: conceptBytes, transformation: { width: 132, height: 50 } }) ] : []
-                }) ]
-              })
-            ]
-          })
-        ]
-      })
-    ]
-  });
+  // Builds a fresh Header instance each call — needed because titlePage mode
+  // treats the first-page header as a separate slot that Word leaves blank
+  // unless explicitly supplied, even when a default header exists. Reusing
+  // the same object for both slots risks relationship-id collisions, so this
+  // is called once per slot to produce independent instances with identical
+  // content (logos left/right, plus a blank line gap beneath them).
+  function buildHeaderInstance(){
+    return new docx.Header({
+      children: [
+        new docx.Table({
+          width: { size: 100, type: docx.WidthType.PERCENTAGE },
+          borders: {
+            top: { style: docx.BorderStyle.NONE }, bottom: { style: docx.BorderStyle.NONE },
+            left: { style: docx.BorderStyle.NONE }, right: { style: docx.BorderStyle.NONE },
+            insideHorizontal: { style: docx.BorderStyle.NONE }, insideVertical: { style: docx.BorderStyle.NONE }
+          },
+          rows: [
+            new docx.TableRow({
+              children: [
+                new docx.TableCell({
+                  width: { size: 50, type: docx.WidthType.PERCENTAGE },
+                  children: [ new docx.Paragraph({
+                    alignment: docx.AlignmentType.LEFT,
+                    children: bhcBytes ? [ new docx.ImageRun({ type: "png", data: bhcBytes, transformation: { width: 149, height: 50 } }) ] : []
+                  }) ]
+                }),
+                new docx.TableCell({
+                  width: { size: 50, type: docx.WidthType.PERCENTAGE },
+                  children: [ new docx.Paragraph({
+                    alignment: docx.AlignmentType.RIGHT,
+                    children: conceptBytes ? [ new docx.ImageRun({ type: "jpg", data: conceptBytes, transformation: { width: 132, height: 50 } }) ] : []
+                  }) ]
+                })
+              ]
+            })
+          ]
+        }),
+        new docx.Paragraph({ text: "" }) // one-line gap beneath the logos
+      ]
+    });
+  }
+
+  const defaultHeader = buildHeaderInstance();
+  const firstHeader = buildHeaderInstance();
 
   const kfLogoPara = new docx.Paragraph({
     alignment: docx.AlignmentType.CENTER,
@@ -3680,7 +3692,7 @@ async function buildBrandedHeaderFooter(){
     ]
   });
 
-  return { header, firstPageFooter, defaultFooter };
+  return { defaultHeader, firstHeader, firstPageFooter, defaultFooter };
 }
 
 function wdPara(text, opts={}){
@@ -3908,7 +3920,7 @@ async function generateCsaWordDocument(itemId){
     const sectionOptions = { properties: {}, children };
     if(headerFooter){
       sectionOptions.properties = { titlePage: true };
-      sectionOptions.headers = { default: headerFooter.header };
+      sectionOptions.headers = { default: headerFooter.defaultHeader, first: headerFooter.firstHeader };
       sectionOptions.footers = { first: headerFooter.firstPageFooter, default: headerFooter.defaultFooter };
     }
     const doc = new docx.Document({ sections: [sectionOptions] });
