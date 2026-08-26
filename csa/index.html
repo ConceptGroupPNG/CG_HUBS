@@ -2822,8 +2822,9 @@ async function generateProposalWordDocument(proposalId){
 
     const sectionOptions = { properties: {}, children };
     if(headerFooter){
+      sectionOptions.properties = { titlePage: true };
       sectionOptions.headers = { default: headerFooter.header };
-      sectionOptions.footers = { default: headerFooter.footer };
+      sectionOptions.footers = { first: headerFooter.firstPageFooter, default: headerFooter.defaultFooter };
     }
     const doc = new docx.Document({ sections: [sectionOptions] });
     const blob = await docx.Packer.toBlob(doc);
@@ -3602,6 +3603,8 @@ async function fetchImageBytes(url){
 // both the CSA and Proposal Word document generators. Any logo that fails to
 // fetch is simply omitted rather than blocking the rest of the document —
 // same resilience approach as the old body-embedded logo.
+const HERO_BLUE = "0070C0";
+
 async function buildBrandedHeaderFooter(){
   const [bhcBytes, conceptBytes, kfBytes] = await Promise.all([
     fetchImageBytes(BHC_ENTITY.logoUrl),
@@ -3625,14 +3628,14 @@ async function buildBrandedHeaderFooter(){
                 width: { size: 50, type: docx.WidthType.PERCENTAGE },
                 children: [ new docx.Paragraph({
                   alignment: docx.AlignmentType.LEFT,
-                  children: bhcBytes ? [ new docx.ImageRun({ type: "png", data: bhcBytes, transformation: { width: 99, height: 33 } }) ] : []
+                  children: bhcBytes ? [ new docx.ImageRun({ type: "png", data: bhcBytes, transformation: { width: 149, height: 50 } }) ] : []
                 }) ]
               }),
               new docx.TableCell({
                 width: { size: 50, type: docx.WidthType.PERCENTAGE },
                 children: [ new docx.Paragraph({
                   alignment: docx.AlignmentType.RIGHT,
-                  children: conceptBytes ? [ new docx.ImageRun({ type: "jpg", data: conceptBytes, transformation: { width: 88, height: 33 } }) ] : []
+                  children: conceptBytes ? [ new docx.ImageRun({ type: "jpg", data: conceptBytes, transformation: { width: 132, height: 50 } }) ] : []
                 }) ]
               })
             ]
@@ -3642,16 +3645,42 @@ async function buildBrandedHeaderFooter(){
     ]
   });
 
-  const footer = new docx.Footer({
+  const kfLogoPara = new docx.Paragraph({
+    alignment: docx.AlignmentType.CENTER,
+    spacing: { before: 80 },
+    children: kfBytes ? [ new docx.ImageRun({ type: "png", data: kfBytes, transformation: { width: 118, height: 24 } }) ] : []
+  });
+
+  function footerTextPara(text, opts={}){
+    return new docx.Paragraph({
+      alignment: docx.AlignmentType.CENTER,
+      spacing: { after: opts.after !== undefined ? opts.after : 20 },
+      children: [ new docx.TextRun({ text, color: HERO_BLUE, bold: !!opts.bold, size: opts.size || 16 }) ]
+    });
+  }
+
+  const firstPageFooter = new docx.Footer({
     children: [
-      new docx.Paragraph({
-        alignment: docx.AlignmentType.CENTER,
-        children: kfBytes ? [ new docx.ImageRun({ type: "png", data: kfBytes, transformation: { width: 118, height: 24 } }) ] : []
-      })
+      footerTextPara("Brian Hart Consulting Limited", { bold: true, size: 18 }),
+      footerTextPara(" "),
+      footerTextPara("Lot 35, Section 51 Airvos Avenue, Port Moresby"),
+      footerTextPara("PO Box 190, Waigani"),
+      footerTextPara("Ph: (675) 323 1920  Fax: (675) 323 1574"),
+      footerTextPara("Email: bcoombs@concept.com.pg"),
+      footerTextPara("PNG Agents for"),
+      kfLogoPara
     ]
   });
 
-  return { header, footer };
+  const defaultFooter = new docx.Footer({
+    children: [
+      footerTextPara("Brian Hart Consulting Limited", { bold: true, size: 18 }),
+      footerTextPara("PNG Agents for"),
+      kfLogoPara
+    ]
+  });
+
+  return { header, firstPageFooter, defaultFooter };
 }
 
 function wdPara(text, opts={}){
@@ -3878,8 +3907,9 @@ async function generateCsaWordDocument(itemId){
 
     const sectionOptions = { properties: {}, children };
     if(headerFooter){
+      sectionOptions.properties = { titlePage: true };
       sectionOptions.headers = { default: headerFooter.header };
-      sectionOptions.footers = { default: headerFooter.footer };
+      sectionOptions.footers = { first: headerFooter.firstPageFooter, default: headerFooter.defaultFooter };
     }
     const doc = new docx.Document({ sections: [sectionOptions] });
     const blob = await docx.Packer.toBlob(doc);
