@@ -3673,6 +3673,7 @@ async function buildBrandedHeaderFooter(){
 
   const firstPageFooter = new docx.Footer({
     children: [
+      new docx.Paragraph({ text: "" }),
       footerTextPara("Brian Hart Consulting Limited", { bold: true, size: 18 }),
       footerTextPara(" "),
       footerTextPara("Lot 35, Section 51 Airvos Avenue, Port Moresby"),
@@ -3686,6 +3687,7 @@ async function buildBrandedHeaderFooter(){
 
   const defaultFooter = new docx.Footer({
     children: [
+      new docx.Paragraph({ text: "" }),
       footerTextPara("Brian Hart Consulting Limited", { bold: true, size: 18 }),
       footerTextPara("PNG Agents for"),
       kfLogoPara
