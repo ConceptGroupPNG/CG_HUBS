@@ -128,11 +128,16 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
    lays out side-by-side instead of one long single-column scroll. */
 .modal.wide{max-width:980px;}
 .form-sections{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-.form-sections .form-grid{gap:12px 16px;}
-.form-section{grid-column:span 1;border:2px solid var(--border);border-radius:12px;padding:14px 16px 16px;background:var(--page);}
+.form-sections .form-grid{gap:13px 18px;}
+.form-section{grid-column:span 1;border:2px solid var(--accent);border-radius:12px;padding:16px 18px 18px;background:#fff;}
 .form-section.full{grid-column:1/-1;}
-.form-section-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-dk);margin:0 0 12px;padding-bottom:9px;border-bottom:2px solid var(--accent);}
+.form-section-title{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.025em;color:var(--accent-dk);margin:0 0 13px;padding-bottom:9px;border-bottom:2px solid var(--accent);}
 .form-section-title::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--accent);display:inline-block;flex-shrink:0;}
+/* Crisper, more legible type inside these section cards specifically —
+   larger and a touch lighter than the app's default compact form styling,
+   which reads too small/heavy once fields are grouped this densely. */
+.form-sections .field label{font-size:12.5px;font-weight:600;letter-spacing:.01em;color:var(--ink-2);}
+.form-sections .field input,.form-sections .field select,.form-sections .field textarea{font-size:14.5px;padding:10px 12px;}
 @media (max-width: 720px){
   .form-sections{grid-template-columns:1fr;}
 }
@@ -1074,6 +1079,22 @@ function openTicketForm(){
     <h3>🎫 New ticket</h3>
     <p class="modal-sub">Log a Support Request, Custom Work Order, or Ad Hoc Billable Support ticket. Pick an Agreement or Work Order below to auto-fill its Client and Rate.</p>
     <div class="form-sections">
+      <div class="form-section full">
+        <div class="form-section-title">From &amp; assigned to</div>
+        <div class="form-grid">
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
+          ${assignPickerHtml("tf")}
+        </div>
+      </div>
+
+      <div class="form-section full">
+        <div class="form-section-title">Description</div>
+        <div class="form-grid full">
+          <div class="field"><textarea id="tf_desc" placeholder="What's going on — include anything the tech will need to triage this."></textarea></div>
+        </div>
+      </div>
+
       <div class="form-section">
         <div class="form-section-title">Ticket details</div>
         <div class="form-grid">
@@ -1089,7 +1110,7 @@ function openTicketForm(){
       </div>
 
       <div class="form-section">
-        <div class="form-section-title">Ownership</div>
+        <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
             <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
@@ -1102,31 +1123,9 @@ function openTicketForm(){
             ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
           <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <div class="form-section-title">People</div>
-        <div class="form-grid">
-          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
-          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
-          ${assignPickerHtml("tf")}
-        </div>
-      </div>
-
-      <div class="form-section">
-        <div class="form-section-title">Billing</div>
-        <div class="form-grid">
           <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
           <div class="field"><label>Source</label><select id="tf_source"><option>Manual</option><option>Email</option><option>Phone</option></select></div>
           <div class="field highlight span2" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
-        </div>
-      </div>
-
-      <div class="form-section full">
-        <div class="form-section-title">Description</div>
-        <div class="form-grid full">
-          <div class="field"><textarea id="tf_desc" placeholder="What's going on — include anything the tech will need to triage this."></textarea></div>
         </div>
       </div>
     </div>
@@ -1583,6 +1582,22 @@ async function convertEmailToTicket(messageId){
     <h3>✉️ Convert email to ticket</h3>
     <p class="modal-sub">From <b>${esc(fromName)}</b>${fromAddr?` (${esc(fromAddr)})`:""} — review and adjust before creating the ticket.</p>
     <div class="form-sections">
+      <div class="form-section full">
+        <div class="form-section-title">From &amp; assigned to</div>
+        <div class="form-grid">
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
+          ${assignPickerHtml("tf")}
+        </div>
+      </div>
+
+      <div class="form-section full">
+        <div class="form-section-title">Description</div>
+        <div class="form-grid full">
+          <div class="field"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
+        </div>
+      </div>
+
       <div class="form-section">
         <div class="form-section-title">Ticket details</div>
         <div class="form-grid">
@@ -1598,7 +1613,7 @@ async function convertEmailToTicket(messageId){
       </div>
 
       <div class="form-section">
-        <div class="form-section-title">Ownership</div>
+        <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
             <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
@@ -1611,31 +1626,9 @@ async function convertEmailToTicket(messageId){
             ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
           <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <div class="form-section-title">People</div>
-        <div class="form-grid">
-          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
-          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
-          ${assignPickerHtml("tf")}
-        </div>
-      </div>
-
-      <div class="form-section">
-        <div class="form-section-title">Billing</div>
-        <div class="form-grid">
           <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
           <div class="field highlight span2" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
           <input type="hidden" id="tf_source" value="Email">
-        </div>
-      </div>
-
-      <div class="form-section full">
-        <div class="form-section-title">Description</div>
-        <div class="form-grid full">
-          <div class="field"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
         </div>
       </div>
     </div>
