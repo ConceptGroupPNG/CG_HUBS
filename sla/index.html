@@ -1258,6 +1258,40 @@ async function notifyTicketAssigned(t, toName, toEmail){
   }
 }
 
+// Sends an acknowledgment to whoever raised the ticket (the "Requested by"
+// contact — works the same whether the ticket was typed in manually or came
+// from converting an email), confirming it was received and giving them the
+// ticket's tracking number. The number appears in the subject as "[SLA-42]";
+// most mail clients keep a subject line intact through Reply/Reply All, so
+// the tag survives on a follow-up — a useful hook for Email Intake to later
+// recognise and match a reply back to this ticket, though that matching
+// isn't built yet (today a reply still lands in Email Intake as its own
+// unconverted message). Best-effort only, same as the other notifications.
+async function sendTicketAcknowledgment(t){
+  const toEmail = (t.fields.RequestedByEmail || "").trim();
+  if(!toEmail) return;
+  const toName = t.fields.RequestedByName || toEmail;
+  const ticketNumber = t.fields.TicketNumber || t.id;
+  const subject = `[${ticketNumber}] We've received your request — ${t.fields.Title || ""}`;
+  const html = `
+    <p>Hi ${esc(toName)},</p>
+    <p>Thanks — we've logged your request. Your tracking number is <b>${esc(ticketNumber)}</b>.</p>
+    <p>Please quote this number in any follow-up correspondence about this request.</p>
+    <table cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
+      <tr><td style="color:#666;">Request</td><td><b>${esc(t.fields.Title || "")}</b></td></tr>
+      <tr><td style="color:#666;">Priority</td><td>${esc(t.fields.Priority || "—")}</td></tr>
+      ${t.fields.ShortDescription ? `<tr><td style="color:#666;">Summary</td><td>${esc(t.fields.ShortDescription)}</td></tr>` : ""}
+      <tr><td style="color:#666;">Target response</td><td>${fmtDateTime(t.fields.ResponseDueAt)}</td></tr>
+    </table>
+    <p>We'll be in touch as soon as it's picked up.</p>
+  `;
+  try{
+    await sendGraphMail(toEmail, toName, subject, html);
+  }catch(e){
+    console.warn("Couldn't send ticket acknowledgment email:", e);
+  }
+}
+
 function openReassignForm(ticketId){
   const t = state.tickets.find(x=>String(x.id)===String(ticketId));
   if(!t) return;
@@ -1590,6 +1624,9 @@ async function submitTicketFormCore(opts={}){
     // New tickets start "New" (open), so this makes the ticket itself
     // immediately selectable in CG Time's Time Tracking Widget.
     syncTicketActiveEntity(created);
+    // Let the person who raised it know it's been received, and give them
+    // the tracking number.
+    sendTicketAcknowledgment(created);
     // Record the ticket's starting assignment (even "unassigned") as the
     // first entry in its assignment history, so the trail is complete from
     // creation, not just from the first reassignment.
