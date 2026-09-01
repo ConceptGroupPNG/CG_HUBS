@@ -408,7 +408,7 @@ let state = {
   tickets: [], clients: [], endClients: [], resources: [], timeEntries: [],
   priorityDefaults: [], exceptions: [], invoices: [],
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
-  ticketAssignments: [],
+  ticketAssignments: [], dismissedEmails: [],
   me: null
 };
 
@@ -573,6 +573,14 @@ async function loadCoreData(){
     state.ticketAssignments = await fetchAllListItems("SLA_TicketAssignments");
   }catch(e){
     console.warn("Couldn't load SLA_TicketAssignments (run Add-SLAHub-TicketAssignmentHistory.ps1 if this list doesn't exist yet):", e);
+  }
+  // Emails dismissed from the Email Intake review queue — separate, non-fatal
+  // try/catch so the rest of SLA HUB still works if
+  // Add-SLAHub-DismissedEmails.ps1 hasn't been run yet.
+  try{
+    state.dismissedEmails = await fetchAllListItems("SLA_DismissedEmails");
+  }catch(e){
+    console.warn("Couldn't load SLA_DismissedEmails (run Add-SLAHub-DismissedEmails.ps1 if this list doesn't exist yet):", e);
   }
 }
 
@@ -1488,7 +1496,11 @@ async function renderEmail(){
     // "SLA-Converted" category back onto the message, which needs write access
     // to the shared mailbox and was failing with a 403 for some signed-in users.
     const convertedIds = new Set(state.tickets.map(t => t.fields.SourceMessageId).filter(Boolean));
-    inboxMessages = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId));
+    // "Deleted" from the queue works the same non-destructive way — see
+    // deleteEmailFromIntake(). The email itself is never touched or removed
+    // from the shared mailbox, it's just recorded here so it stops showing up.
+    const dismissedIds = new Set(state.dismissedEmails.map(d => d.fields.InternetMessageId).filter(Boolean));
+    inboxMessages = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId) && !dismissedIds.has(m.internetMessageId));
   }catch(e){
     console.error(e);
     // Only replace the list with the error state if there's nothing already
@@ -1509,7 +1521,7 @@ async function renderEmail(){
           <td>${fmtDateTime(m.receivedDateTime)}</td>
           <td>${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")}</td>
           <td>${esc(m.subject||"(no subject)")}<br><span style="color:var(--ink-2);font-size:12px;">${esc((m.bodyPreview||"").slice(0,120))}</span></td>
-          <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Convert to ticket</button></td>
+          <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Review</button></td>
         </tr>`).join("")}</tbody></table>
     </div>
   ` : `<div class="empty">No unconverted emails in the inbox.</div>`;
@@ -1567,7 +1579,7 @@ function renderEmailDetail(){
       <div class="section-title">Message</div>
       ${bodyHtml}
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
-        <button class="btn btn-sm btn-accent" onclick="convertEmailToTicket('${m.id}')">Convert to ticket</button>
+        <button class="btn btn-sm btn-accent" onclick="convertEmailToTicket('${m.id}')">Review</button>
       </div>
     </div>
   `;
@@ -1634,6 +1646,7 @@ async function convertEmailToTicket(messageId){
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="deleteEmailFromIntake('${messageId}')">Delete</button>
       <button class="btn btn-accent" onclick="submitEmailTicketForm('${messageId}')">Create ticket</button>
     </div>
   `, {wide:true});
@@ -1645,6 +1658,35 @@ function matchClientByEmail(email){
   const domain = email.split("@")[1] || "";
   const match = state.clients.find(c => (c.fields.EmailAddress||"").toLowerCase().includes(domain) && domain);
   return match ? match.id : "";
+}
+
+// "Delete" on the review screen clears the email out of Email Intake's queue
+// only — it does NOT touch the actual email in the shared mailbox. Nothing
+// is removed from Outlook; support@concept.com.pg keeps the message exactly
+// as it was, in case anyone needs to find it later. Recording the dismissal
+// here (instead of really deleting) also means this needs no extra
+// mailbox-write permission beyond what Email Intake already has.
+async function deleteEmailFromIntake(messageId){
+  const m = inboxMessages.find(x => x.id === messageId);
+  if(!m) return;
+  try{
+    const created = await graphCreateItem("SLA_DismissedEmails", {
+      Title: "Dismissed email",
+      InternetMessageId: m.internetMessageId || "",
+      Subject: m.subject || "",
+      DismissedByName: currentAccount?.name || currentAccount?.username || "",
+      DismissedByEmail: (currentAccount?.username || "").toLowerCase().trim(),
+      DismissedAt: nowIso()
+    });
+    state.dismissedEmails.push(created);
+    inboxMessages = inboxMessages.filter(x => x.id !== messageId);
+    closeModal();
+    toast("Removed from the review queue");
+    renderEmail();
+  }catch(e){
+    console.error(e);
+    toast("Couldn't remove this email: " + e.message, true);
+  }
 }
 
 async function submitEmailTicketForm(messageId){
