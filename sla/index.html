@@ -1228,14 +1228,12 @@ async function logTicketAssignmentChange(ticketId, fromName, fromEmail, toName, 
 }
 
 // Emails the new assignee to let them know a ticket has landed on them.
-// Skipped when there's no email to send to, or when the assignee is the
-// person who just made the change themselves (no need to notify yourself).
+// Skipped only when there's no email to send to — sends even when you've
+// assigned the ticket to yourself, which is handy for testing.
 // Best-effort only — a failed send is logged and otherwise ignored, it must
 // never block the assignment that triggered it.
 async function notifyTicketAssigned(t, toName, toEmail){
   if(!toEmail) return;
-  const me = (currentAccount?.username || "").toLowerCase().trim();
-  if(toEmail.toLowerCase().trim() === me) return;
   const ticketNumber = t.fields.TicketNumber || t.id;
   let clientLabel = "";
   try{ clientLabel = clientName(t) || ""; }catch(e){ clientLabel = ""; }
