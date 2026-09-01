@@ -123,6 +123,20 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .field.highlight label{color:var(--good);}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;padding-top:18px;border-top:1px solid var(--gridline);}
 
+/* Wider modal + a grid of bordered section cards, used by the ticket forms
+   (New ticket / Convert email to ticket) so a form with this many fields
+   lays out side-by-side instead of one long single-column scroll. */
+.modal.wide{max-width:980px;}
+.form-sections{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.form-sections .form-grid{gap:12px 16px;}
+.form-section{grid-column:span 1;border:2px solid var(--border);border-radius:12px;padding:14px 16px 16px;background:var(--page);}
+.form-section.full{grid-column:1/-1;}
+.form-section-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-dk);margin:0 0 12px;padding-bottom:9px;border-bottom:2px solid var(--accent);}
+.form-section-title::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--accent);display:inline-block;flex-shrink:0;}
+@media (max-width: 720px){
+  .form-sections{grid-template-columns:1fr;}
+}
+
 .toast-wrap{position:fixed;top:18px;right:18px;z-index:200;display:flex;flex-direction:column;gap:8px;}
 .toast{background:#1b1d24;color:#fff;padding:11px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,0.25);}
 .toast.err{background:var(--critical);}
@@ -343,7 +357,11 @@ function toast(msg, isErr){
   document.getElementById("toastWrap").appendChild(el);
   setTimeout(()=> el.remove(), 4500);
 }
-function openModal(html){ document.getElementById("modalBody").innerHTML = html; document.getElementById("modalOverlay").classList.add("active"); }
+function openModal(html, opts={}){
+  document.getElementById("modalBody").innerHTML = html;
+  document.querySelector(".modal").classList.toggle("wide", !!opts.wide);
+  document.getElementById("modalOverlay").classList.add("active");
+}
 function closeModal(){ document.getElementById("modalOverlay").classList.remove("active"); }
 
 /* ---------- Business-hours SLA math: Mon-Fri 8am-5pm, holidays ignored for v1 ---------- */
@@ -634,6 +652,7 @@ async function reconcileTicketActiveEntities(){
    actually in sync they stop writing, and the chain self-terminates. */
 let _refreshTimer = null;
 function scheduleRefresh(){
+  if(_batchDepth > 0){ _refreshPendingAfterBatch = true; return; }
   clearTimeout(_refreshTimer);
   _refreshTimer = setTimeout(async () => {
     try{
@@ -647,6 +666,33 @@ function scheduleRefresh(){
     };
     if(renderers[currentPage]) renderers[currentPage]();
   }, 400);
+}
+
+/* A single user action (creating a ticket, reassigning one) is often several
+   sequential Graph writes back to back — create, then a follow-up update,
+   then a cross-site sync, then an assignment-history log entry. Each of
+   those writes calls scheduleRefresh() on its own, and because real network
+   round-trips can easily take longer than the 400ms debounce window, those
+   calls don't collapse into one background refresh the way they do when
+   everything settles quickly — instead the page can visibly reload several
+   times in a row (each one wiping and refetching, e.g. Email Intake's
+   "Loading inbox…" state) before things finally go quiet. withBatchedRefresh
+   wraps a whole multi-write action so every scheduleRefresh() call inside it
+   is held, and only one real refresh — the normal debounced one — fires
+   after the action is completely done. */
+let _batchDepth = 0;
+let _refreshPendingAfterBatch = false;
+async function withBatchedRefresh(fn){
+  _batchDepth++;
+  try{
+    return await fn();
+  } finally {
+    _batchDepth--;
+    if(_batchDepth === 0 && _refreshPendingAfterBatch){
+      _refreshPendingAfterBatch = false;
+      scheduleRefresh();
+    }
+  }
 }
 
 window.addEventListener("load", init);
@@ -862,7 +908,10 @@ function isTicketActive(t){
   return !["Resolved","Closed"].includes(t.fields.Status);
 }
 function syncTicketActiveEntity(t){
-  syncActiveEntity("Ticket", activeEntityTitleFor("Ticket", t), t.fields.ShortDescription || t.fields.Title, isTicketActive(t));
+  // Returns the promise (rather than firing-and-forgetting) so callers that
+  // need the sync's writes to land before they finish a batched action can
+  // await it — see withBatchedRefresh usage in submitTicketFormCore.
+  return syncActiveEntity("Ticket", activeEntityTitleFor("Ticket", t), t.fields.ShortDescription || t.fields.Title, isTicketActive(t));
 }
 
 // Keeps CG_Time's shared CSA_ActiveEntities in sync so the Time Tracking
@@ -1024,48 +1073,68 @@ function openTicketForm(){
   openModal(`
     <h3>🎫 New ticket</h3>
     <p class="modal-sub">Log a Support Request, Custom Work Order, or Ad Hoc Billable Support ticket. Pick an Agreement or Work Order below to auto-fill its Client and Rate.</p>
-    <div class="form-grid">
-      <div class="field-divider"><span>Ticket details</span></div>
-      <div class="field span2"><label>Title</label><input id="tf_title" type="text" placeholder="Short summary"></div>
-      <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown while this ticket is open, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" placeholder="e.g. DPM — Payroll variance investigation"></div>
-      <div class="field"><label>Type</label><select id="tf_type">
-        <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
-      </select></div>
-      <div class="field"><label>Priority</label><select id="tf_priority">
-        <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
-      </select></div>
+    <div class="form-sections">
+      <div class="form-section">
+        <div class="form-section-title">Ticket details</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Title</label><input id="tf_title" type="text" placeholder="Short summary"></div>
+          <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" placeholder="e.g. DPM — Payroll variance investigation"></div>
+          <div class="field"><label>Type</label><select id="tf_type">
+            <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
+          </select></div>
+          <div class="field"><label>Priority</label><select id="tf_priority">
+            <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
+          </select></div>
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Ownership</span></div>
-      <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-        <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
-        <option value="Agreement">SLA Agreement</option>
-        <option value="WorkOrder">Custom Work Order</option>
-      </select></div>
-      <div class="field" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
-      <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
-        <option value="">— none (internal) —</option>
-        ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
-      </select></div>
-      <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+      <div class="form-section">
+        <div class="form-section-title">Ownership</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
+            <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+            <option value="Agreement">SLA Agreement</option>
+            <option value="WorkOrder">Custom Work Order</option>
+          </select></div>
+          <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
+          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+            <option value="">— none (internal) —</option>
+            ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+        </div>
+      </div>
 
-      <div class="field-divider"><span>People</span></div>
-      <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
-      <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
-      ${assignPickerHtml("tf")}
+      <div class="form-section">
+        <div class="form-section-title">People</div>
+        <div class="form-grid">
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text"></div>
+          ${assignPickerHtml("tf")}
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Billing</span></div>
-      <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field highlight" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
-      <div class="field"><label>Source</label><select id="tf_source"><option>Manual</option><option>Email</option><option>Phone</option></select></div>
+      <div class="form-section">
+        <div class="form-section-title">Billing</div>
+        <div class="form-grid">
+          <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
+          <div class="field"><label>Source</label><select id="tf_source"><option>Manual</option><option>Email</option><option>Phone</option></select></div>
+          <div class="field highlight span2" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Description</span></div>
-      <div class="field span2"><textarea id="tf_desc" placeholder="What's going on — include anything the tech will need to triage this."></textarea></div>
+      <div class="form-section full">
+        <div class="form-section-title">Description</div>
+        <div class="form-grid full">
+          <div class="field"><textarea id="tf_desc" placeholder="What's going on — include anything the tech will need to triage this."></textarea></div>
+        </div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-accent" onclick="submitTicketForm()">Create ticket</button>
     </div>
-  `);
+  `, {wide:true});
 }
 
 async function submitTicketForm(){
@@ -1319,13 +1388,18 @@ async function submitReassignTicket(ticketId, unassign){
   const toEmail = picked.email;
   if(fromName===toName && fromEmail===toEmail){ closeModal(); return; }
   try{
-    await graphUpdateItem("SLA_Tickets", t.id, { AssignedToName: toName, AssignedToEmail: toEmail });
-    t.fields.AssignedToName = toName;
-    t.fields.AssignedToEmail = toEmail;
-    await logTicketAssignmentChange(t.id, fromName, fromEmail, toName, toEmail);
-    if(!unassign && toEmail && toEmail !== fromEmail){
-      notifyTicketAssigned(t, toName, toEmail);
-    }
+    // Batched for the same reason as ticket creation — the update plus the
+    // assignment-history write are two separate Graph calls that shouldn't
+    // each trigger their own background refresh.
+    await withBatchedRefresh(async () => {
+      await graphUpdateItem("SLA_Tickets", t.id, { AssignedToName: toName, AssignedToEmail: toEmail });
+      t.fields.AssignedToName = toName;
+      t.fields.AssignedToEmail = toEmail;
+      await logTicketAssignmentChange(t.id, fromName, fromEmail, toName, toEmail);
+      if(!unassign && toEmail && toEmail !== fromEmail){
+        notifyTicketAssigned(t, toName, toEmail);
+      }
+    });
     closeModal();
     toast(toName ? "Ticket assigned" : "Ticket unassigned");
     renderTicketDetail(); renderTicketsTable();
@@ -1382,16 +1456,28 @@ let emailDetailId = null;
 let emailDetailCache = {};
 
 async function renderEmail(){
-  emailDetailId = null;
-  emailDetailCache = {};
-  document.getElementById("page-email").innerHTML = `
-    <div class="page-header">
-      <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
-      <button class="btn" onclick="renderEmail()">↻ Refresh</button>
-    </div>
-    <div id="emailListWrap"><div class="empty">Loading inbox…</div></div>
-    <div id="emailDetailWrap"></div>
-  `;
+  // The page shell (header + the two wraps below) is only built once, the
+  // first time this page is opened — not on every call. This function gets
+  // invoked repeatedly (the auto-refresh timer calls it directly whenever
+  // Email Intake is on screen, and a multi-write action like converting an
+  // email can trigger more than one of those in a row): rebuilding the whole
+  // page each time, including a "Loading inbox…" wipe, is what produced the
+  // visible flashing. Now a re-render just swaps the list's contents in
+  // place once the fresh data is in, leaving the existing table (and any
+  // open detail panel) on screen while that fetch is in flight.
+  const shellMissing = !document.getElementById("emailListWrap");
+  if(shellMissing){
+    emailDetailId = null;
+    emailDetailCache = {};
+    document.getElementById("page-email").innerHTML = `
+      <div class="page-header">
+        <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
+        <button class="btn" onclick="renderEmail()">↻ Refresh</button>
+      </div>
+      <div id="emailListWrap"><div class="empty">Loading inbox…</div></div>
+      <div id="emailDetailWrap"></div>
+    `;
+  }
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
       + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId`;
@@ -1406,7 +1492,14 @@ async function renderEmail(){
     inboxMessages = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId));
   }catch(e){
     console.error(e);
-    document.getElementById("emailListWrap").innerHTML = `<div class="empty">Couldn't load the shared mailbox: ${esc(e.message)}<br>Check that your account has delegated access to ${esc(HELPDESK_MAILBOX)}.</div>`;
+    // Only replace the list with the error state if there's nothing already
+    // showing — a background refresh that fails shouldn't blank out a list
+    // the user can already see.
+    if(shellMissing || !inboxMessages.length){
+      document.getElementById("emailListWrap").innerHTML = `<div class="empty">Couldn't load the shared mailbox: ${esc(e.message)}<br>Check that your account has delegated access to ${esc(HELPDESK_MAILBOX)}.</div>`;
+    }else{
+      console.warn("Email Intake background refresh failed, keeping the existing list on screen.");
+    }
     return;
   }
   document.getElementById("emailListWrap").innerHTML = inboxMessages.length ? `
@@ -1489,48 +1582,68 @@ async function convertEmailToTicket(messageId){
   openModal(`
     <h3>✉️ Convert email to ticket</h3>
     <p class="modal-sub">From <b>${esc(fromName)}</b>${fromAddr?` (${esc(fromAddr)})`:""} — review and adjust before creating the ticket.</p>
-    <div class="form-grid">
-      <div class="field-divider"><span>Ticket details</span></div>
-      <div class="field span2"><label>Title</label><input id="tf_title" type="text" value="${esc(m.subject||"")}"></div>
-      <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown while this ticket is open, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" value="${esc((m.subject||"").slice(0,60))}"></div>
-      <div class="field"><label>Type</label><select id="tf_type">
-        <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
-      </select></div>
-      <div class="field"><label>Priority</label><select id="tf_priority">
-        <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
-      </select></div>
+    <div class="form-sections">
+      <div class="form-section">
+        <div class="form-section-title">Ticket details</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Title</label><input id="tf_title" type="text" value="${esc(m.subject||"")}"></div>
+          <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" value="${esc((m.subject||"").slice(0,60))}"></div>
+          <div class="field"><label>Type</label><select id="tf_type">
+            <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
+          </select></div>
+          <div class="field"><label>Priority</label><select id="tf_priority">
+            <option>Critical</option><option>High</option><option selected>Normal</option><option>Low</option>
+          </select></div>
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Ownership</span></div>
-      <div class="field"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-        <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
-        <option value="Agreement">SLA Agreement</option>
-        <option value="WorkOrder">Custom Work Order</option>
-      </select></div>
-      <div class="field" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
-      <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
-        <option value="">— none (internal) —</option>
-        ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
-      </select></div>
-      <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+      <div class="form-section">
+        <div class="form-section-title">Ownership</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
+            <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+            <option value="Agreement">SLA Agreement</option>
+            <option value="WorkOrder">Custom Work Order</option>
+          </select></div>
+          <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
+          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+            <option value="">— none (internal) —</option>
+            ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
+        </div>
+      </div>
 
-      <div class="field-divider"><span>People</span></div>
-      <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
-      <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
-      ${assignPickerHtml("tf")}
+      <div class="form-section">
+        <div class="form-section-title">People</div>
+        <div class="form-grid">
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
+          ${assignPickerHtml("tf")}
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Billing</span></div>
-      <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field highlight" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
-      <input type="hidden" id="tf_source" value="Email">
+      <div class="form-section">
+        <div class="form-section-title">Billing</div>
+        <div class="form-grid">
+          <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
+          <div class="field highlight span2" id="tf_rate_wrap" style="display:none;"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" placeholder="0.00"></div>
+          <input type="hidden" id="tf_source" value="Email">
+        </div>
+      </div>
 
-      <div class="field-divider"><span>Description</span></div>
-      <div class="field span2"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
+      <div class="form-section full">
+        <div class="form-section-title">Description</div>
+        <div class="form-grid full">
+          <div class="field"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
+        </div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-accent" onclick="submitEmailTicketForm('${messageId}')">Create ticket</button>
     </div>
-  `);
+  `, {wide:true});
 }
 
 function matchClientByEmail(email){
@@ -1614,26 +1727,33 @@ async function submitTicketFormCore(opts={}){
   if(owningWorkOrder) fields.OwningWorkOrderLookupId = Number(owningWorkOrder.id);
 
   try{
-    const created = await graphCreateItem("SLA_Tickets", fields);
-    const ticketNumber = "SLA-" + created.id;
-    await graphUpdateItem("SLA_Tickets", created.id, { TicketNumber: ticketNumber });
-    created.fields.TicketNumber = ticketNumber;
-    state.tickets.push(created);
-    closeModal();
-    toast(`Created ${ticketNumber}`);
-    // New tickets start "New" (open), so this makes the ticket itself
-    // immediately selectable in CG Time's Time Tracking Widget.
-    syncTicketActiveEntity(created);
-    // Let the person who raised it know it's been received, and give them
-    // the tracking number.
-    sendTicketAcknowledgment(created);
-    // Record the ticket's starting assignment (even "unassigned") as the
-    // first entry in its assignment history, so the trail is complete from
-    // creation, not just from the first reassignment.
-    if(fields.AssignedToName || fields.AssignedToEmail){
-      logTicketAssignmentChange(created.id, "", "", fields.AssignedToName, fields.AssignedToEmail);
-      notifyTicketAssigned(created, fields.AssignedToName, fields.AssignedToEmail);
-    }
+    // Creating a ticket is several sequential writes (the ticket itself, its
+    // TicketNumber, a CSA_ActiveEntities sync, an assignment-history entry)
+    // plus a couple of notification emails. Batched so all of that collapses
+    // into a single background refresh afterwards instead of the page
+    // reloading itself repeatedly while these settle one by one.
+    await withBatchedRefresh(async () => {
+      const created = await graphCreateItem("SLA_Tickets", fields);
+      const ticketNumber = "SLA-" + created.id;
+      await graphUpdateItem("SLA_Tickets", created.id, { TicketNumber: ticketNumber });
+      created.fields.TicketNumber = ticketNumber;
+      state.tickets.push(created);
+      closeModal();
+      toast(`Created ${ticketNumber}`);
+      // New tickets start "New" (open), so this makes the ticket itself
+      // immediately selectable in CG Time's Time Tracking Widget.
+      await syncTicketActiveEntity(created);
+      // Let the person who raised it know it's been received, and give them
+      // the tracking number.
+      sendTicketAcknowledgment(created);
+      // Record the ticket's starting assignment (even "unassigned") as the
+      // first entry in its assignment history, so the trail is complete from
+      // creation, not just from the first reassignment.
+      if(fields.AssignedToName || fields.AssignedToEmail){
+        await logTicketAssignmentChange(created.id, "", "", fields.AssignedToName, fields.AssignedToEmail);
+        notifyTicketAssigned(created, fields.AssignedToName, fields.AssignedToEmail);
+      }
+    });
   }catch(e){ console.error(e); toast("Couldn't create ticket: " + e.message, true); }
 }
 
