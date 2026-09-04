@@ -386,6 +386,18 @@
   .admin-edit-row .admin-edit-save{background:var(--status-good);color:#fff;}
   .admin-edit-row .admin-edit-save:hover{opacity:.9;}
 
+  /* ---------- Shift Days Worked toggle (M T W T F S S) ---------- */
+  .shift-day-row{display:flex;gap:3px;flex-wrap:nowrap;}
+  .shift-day-row button, .shift-day-row span{
+    width:22px;height:22px;line-height:22px;text-align:center;font-size:11px;font-weight:700;
+    border-radius:5px;border:1px solid var(--hairline);background:var(--surface-card);color:var(--ink-muted);
+    font-family:inherit;padding:0;box-sizing:border-box;
+  }
+  .shift-day-row button{cursor:pointer;}
+  .shift-day-row button:hover{border-color:var(--brass-light);}
+  .shift-day-row button.on, .shift-day-row span.on{background:var(--brass-wash);color:var(--brass-deep);border-color:var(--brass-wash);}
+  .shift-day-row span{cursor:default;}
+
   /* ---------- employee time entry grid ---------- */
   .te-table input[type="text"], .te-table input[type="number"], .te-table select{
     font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 6px;
@@ -1982,27 +1994,61 @@ async function togglePayGroupActive(itemId, nextActive){
    now only applies as a fallback on days with no Shift picked at
    all (including historic records saved before Shifts existed).
    ============================================================ */
-const SHIFT_ROW_COLS = "1fr .8fr .8fr .7fr .6fr .9fr .8fr .9fr";
+const SHIFT_ROW_COLS = "1fr .8fr .8fr .7fr 1.6fr .9fr .8fr .9fr";
 
-// A Shift's "Days" is a nominated number, editable per Shift — how
-// many days its Total Hours figure should be spread across (e.g. a
-// normal 5-day-week office shift over a fortnight might nominate 10;
-// a weekend-only Guard shift might nominate 2 or 4). Defaults to 10
-// only as a starting suggestion, never a fixed rule. Falls back to 10
-// for a Shift saved before this field existed (blank/missing Days).
-const SHIFT_DEFAULT_DAYS = 10;
-function shiftDaysValue(f){
-  const d = parseFloat(f && f.Days);
-  return isNaN(d) ? SHIFT_DEFAULT_DAYS : d;
+// Which days of the week a Shift works — a Mon..Sun toggle (M T W T F
+// S S), stored on CG_Shifts.WorkDays as a comma-separated list of day
+// codes (e.g. "Mon,Tue,Wed,Thu,Fri"). Falls back to a Mon-Fri 5-day
+// week for a Shift saved before this field existed (blank/missing
+// WorkDays) or with nothing selected.
+const SHIFT_DAY_DEFS = [
+  { code: "Mon", letter: "M" }, { code: "Tue", letter: "T" }, { code: "Wed", letter: "W" },
+  { code: "Thu", letter: "T" }, { code: "Fri", letter: "F" }, { code: "Sat", letter: "S" }, { code: "Sun", letter: "S" },
+];
+const SHIFT_DEFAULT_WORKDAYS = ["Mon","Tue","Wed","Thu","Fri"];
+// Total Hours is figured per FORTNIGHT, matching CG Time's actual
+// fortnightly Pay Periods — each ticked weekday counts twice.
+const SHIFT_FORTNIGHT_WEEKS = 2;
+
+function shiftWorkDaysArray(f){
+  const raw = ((f && f.WorkDays) || "").trim();
+  if(!raw) return SHIFT_DEFAULT_WORKDAYS.slice();
+  const days = raw.split(",").map(s=>s.trim()).filter(Boolean);
+  return days.length ? days : SHIFT_DEFAULT_WORKDAYS.slice();
 }
+// Renders the M T W T F S S toggle strip. `interactive` false (the
+// read-only list row) renders plain non-clickable spans; true (the
+// Add form and edit-in-place row) renders real toggle buttons.
+function shiftDayTogglesHtml(selectedDays, cssClass, interactive){
+  return SHIFT_DAY_DEFS.map(d => {
+    const on = selectedDays.includes(d.code);
+    const tag = interactive ? "button" : "span";
+    const typeAttr = interactive ? ' type="button"' : "";
+    return `<${tag}${typeAttr} class="${cssClass} ${on?"on":""}" data-day="${d.code}" title="${d.code}${interactive?" — click to toggle":""}">${d.letter}</${tag}>`;
+  }).join("");
+}
+function wireShiftDayToggles(container, cssClass, onChange){
+  container.querySelectorAll(`.${cssClass}`).forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      btn.classList.toggle("on");
+      onChange();
+    });
+  });
+}
+function getToggledDays(container, cssClass){
+  return Array.from(container.querySelectorAll(`.${cssClass}.on`)).map(b => b.getAttribute("data-day"));
+}
+
 // Total Hours is not a stored field — it's daily worked hours (Start
 // to End minus Break, same overnight-wrap convention as
-// computeHoursForDay below) times the Shift's own nominated Days.
-// Purely informational — a quick sanity check on the Shift's own
-// definition — and always recomputed live from whatever Start/End/
-// Break/Days are currently showing (saved, or still being typed in
-// the Add/Edit form), never cached. Actual hours worked always come
-// from real Time Entry rows, not this.
+// computeHoursForDay below) times the number of ticked WorkDays,
+// times SHIFT_FORTNIGHT_WEEKS. Purely informational — a quick sanity
+// check on the Shift's own definition — and always recomputed live
+// from whatever Start/End/Break/WorkDays are currently showing
+// (saved, or still being toggled in the Add/Edit form), never cached.
+// Actual hours worked always come from real Time Entry rows, not this.
 function shiftDailyHours(startStr, endStr, breakMinutes){
   if(!startStr || !endStr || !isValidTimeStr(startStr) || !isValidTimeStr(endStr)) return null;
   const [ih,im] = startStr.split(":").map(Number);
@@ -2013,25 +2059,26 @@ function shiftDailyHours(startStr, endStr, breakMinutes){
   const breakMins = isNaN(brk) ? 0 : Math.max(0, brk);
   return Math.max(0, (totalMins - breakMins) / 60);
 }
-function shiftTotalHours(startStr, endStr, breakMinutes, days){
+function shiftTotalHours(startStr, endStr, breakMinutes, workDaysCount){
   const daily = shiftDailyHours(startStr, endStr, breakMinutes);
   if(daily == null) return null;
-  const d = parseFloat(days);
-  return daily * (isNaN(d) ? SHIFT_DEFAULT_DAYS : d);
+  return daily * workDaysCount * SHIFT_FORTNIGHT_WEEKS;
 }
 function fmtShiftHours(hours){
   return hours == null ? "—" : `${hours.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})} hrs`;
 }
-// Wires a Total Hours preview to live-recalculate as Start/End/Break/
-// Days are typed — used for both the Add Shift form (outEl is a
-// readonly <input>) and the edit-in-place row (outEl is a plain
-// <div>/<span>).
-function wireShiftTotalHoursLive(startEl, endEl, breakEl, daysEl, outEl){
+// Wires a Total Hours preview to live-recalculate as Start/End/Break
+// are typed or a day is toggled — used for both the Add Shift form
+// (outEl is a readonly <input>) and the edit-in-place row (outEl is a
+// plain <div>/<span>).
+function wireShiftTotalHoursLive(startEl, endEl, breakEl, dayContainer, dayClass, outEl){
   const update = () => {
-    const text = fmtShiftHours(shiftTotalHours(startEl.value.trim(), endEl.value.trim(), breakEl.value, daysEl.value));
+    const workDaysCount = getToggledDays(dayContainer, dayClass).length;
+    const text = fmtShiftHours(shiftTotalHours(startEl.value.trim(), endEl.value.trim(), breakEl.value, workDaysCount));
     if(outEl.tagName === "INPUT") outEl.value = text; else outEl.textContent = text;
   };
-  [startEl, endEl, breakEl, daysEl].forEach(el => el.addEventListener("input", update));
+  [startEl, endEl, breakEl].forEach(el => el.addEventListener("input", update));
+  wireShiftDayToggles(dayContainer, dayClass, update);
   update();
 }
 
@@ -2052,14 +2099,15 @@ function renderShiftsTab(){
     const active = f.IsActive !== false;
 
     if(s.id === editingShiftId){
+      const editSelectedDays = shiftWorkDaysArray(f);
       return `
         <div class="admin-row admin-edit-row" style="grid-template-columns:${SHIFT_ROW_COLS};" data-editing-id="${esc(s.id)}">
           <div class="admin-key">${esc(f.Title||"—")}</div>
           <div><input type="text" class="time-field sh-edit-start" placeholder="HH:MM" maxlength="5" value="${esc(f.StartTime||"")}"></div>
           <div><input type="text" class="time-field sh-edit-end" placeholder="HH:MM" maxlength="5" value="${esc(f.EndTime||"")}"></div>
           <div><input type="number" class="sh-edit-break" min="0" step="5" value="${f.BreakMinutes!=null?esc(f.BreakMinutes):30}"></div>
-          <div><input type="number" class="sh-edit-days" min="0" step="1" value="${shiftDaysValue(f)}"></div>
-          <div class="sh-edit-total" style="font-size:12px;color:var(--ink-muted);" title="Start to End, minus Break, times Days — recalculates as any of those change, informational only.">—</div>
+          <div class="shift-day-row sh-edit-days-wrap">${shiftDayTogglesHtml(editSelectedDays, "sh-edit-day-btn", true)}</div>
+          <div class="sh-edit-total" style="font-size:12px;color:var(--ink-muted);" title="Start to End, minus Break, times ticked days, times a fortnight — recalculates as any of those change, informational only.">—</div>
           <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="sh-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
           <div style="display:flex;gap:6px;">
             <button class="admin-submit admin-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
@@ -2069,14 +2117,15 @@ function renderShiftsTab(){
       `;
     }
 
+    const rowSelectedDays = shiftWorkDaysArray(f);
     return `
       <div class="admin-row clickable" style="grid-template-columns:${SHIFT_ROW_COLS};" data-edit-id="${esc(s.id)}">
         <div class="admin-key">${esc(f.Title||"—")}</div>
         <div>${esc(f.StartTime||"—")}</div>
         <div>${esc(f.EndTime||"—")}</div>
         <div>${f.BreakMinutes!=null?esc(f.BreakMinutes)+" min":"—"}</div>
-        <div>${shiftDaysValue(f)}</div>
-        <div title="Start to End, minus Break, times Days &mdash; informational only, not used elsewhere in CG Time.">${fmtShiftHours(shiftTotalHours(f.StartTime, f.EndTime, f.BreakMinutes, shiftDaysValue(f)))}</div>
+        <div class="shift-day-row" title="${esc(rowSelectedDays.join(", ")||"No days selected")}">${shiftDayTogglesHtml(rowSelectedDays, "shift-day-readout", false)}</div>
+        <div title="Start to End, minus Break, times ${rowSelectedDays.length} ticked day${rowSelectedDays.length===1?"":"s"}, times a fortnight &mdash; informational only, not used elsewhere in CG Time.">${fmtShiftHours(shiftTotalHours(f.StartTime, f.EndTime, f.BreakMinutes, rowSelectedDays.length))}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(s.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
       </div>
@@ -2085,22 +2134,22 @@ function renderShiftsTab(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>Shifts</h3>
-      <div class="panel-sub">Shift templates for Time In/Out and Break Length &mdash; e.g. Normal 08:00&ndash;17:00, Guard_Day 06:00&ndash;18:00, Guard_Night 18:00&ndash;06:00. Assign a Default Shift to an Employee (from the Employees tab) to pre-fill their days in Time Entry, and pick a Shift on any individual day to fill that day from it instead. Days is the number of days you nominate this Shift's Total Hrs should be spread across (e.g. 10 for a 5-day week over a fortnight) &mdash; edit it per Shift, it's not fixed. Click a row to edit it. Writes straight to CG_Shifts.</div>
+      <div class="panel-sub">Shift templates for Time In/Out and Break Length &mdash; e.g. Normal 08:00&ndash;17:00, Guard_Day 06:00&ndash;18:00, Guard_Night 18:00&ndash;06:00. Assign a Default Shift to an Employee (from the Employees tab) to pre-fill their days in Time Entry, and pick a Shift on any individual day to fill that day from it instead. Days Worked (M T W T F S S) is which weekdays this Shift runs on &mdash; toggle whichever apply, it's per Shift. Click a row to edit it. Writes straight to CG_Shifts.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:${SHIFT_ROW_COLS};"><div>Name</div><div>Start</div><div>End</div><div>Break</div><div>Days</div><div>Total Hrs</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${SHIFT_ROW_COLS};"><div>Name</div><div>Start</div><div>End</div><div>Break</div><div>Days Worked</div><div>Total Hrs</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Shifts on file yet in CG_Shifts &mdash; add the first one below.</div>`}
     </div>
     <div id="shEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add a Shift</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses. Days defaults to 10 (a 5-day week over a fortnight) as a starting suggestion only &mdash; nominate whatever's right for this Shift, e.g. fewer for a weekend-only roster.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses. Days Worked defaults to Mon&ndash;Fri as a starting suggestion only &mdash; toggle whatever's right for this Shift, e.g. just Sat/Sun for a weekend-only roster. Total Hrs is figured per fortnight (each ticked day counts twice), matching CG Time's Pay Periods.</div>
       <div class="admin-form">
         <div class="filter-field"><label>Name</label><input type="text" id="shNewName" placeholder="e.g. Guard_Night"></div>
         <div class="filter-field"><label>Start (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewStart"></div>
         <div class="filter-field"><label>End (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewEnd"></div>
         <div class="filter-field"><label>Break (min)</label><input type="number" id="shNewBreak" value="30" min="0" step="5"></div>
-        <div class="filter-field"><label>Days</label><input type="number" id="shNewDays" value="${SHIFT_DEFAULT_DAYS}" min="0" step="1"></div>
+        <div class="filter-field"><label>Days Worked</label><div class="shift-day-row" id="shNewDaysWrap">${shiftDayTogglesHtml(SHIFT_DEFAULT_WORKDAYS, "shNewDayBtn", true)}</div></div>
         <div class="filter-field"><label>Total Hrs</label><input type="text" id="shNewTotalHours" value="—" readonly style="background:var(--surface-card-2);color:var(--ink-muted);"></div>
         <div><button class="admin-submit" id="shAddBtn">+ Add Shift</button></div>
       </div>
@@ -2141,7 +2190,8 @@ function renderShiftsTab(){
       editRow.querySelector(".sh-edit-start"),
       editRow.querySelector(".sh-edit-end"),
       editRow.querySelector(".sh-edit-break"),
-      editRow.querySelector(".sh-edit-days"),
+      editRow.querySelector(".sh-edit-days-wrap"),
+      "sh-edit-day-btn",
       editRow.querySelector(".sh-edit-total")
     );
   }
@@ -2152,7 +2202,8 @@ function renderShiftsTab(){
     document.getElementById("shNewStart"),
     document.getElementById("shNewEnd"),
     document.getElementById("shNewBreak"),
-    document.getElementById("shNewDays"),
+    document.getElementById("shNewDaysWrap"),
+    "shNewDayBtn",
     document.getElementById("shNewTotalHours")
   );
 }
@@ -2162,7 +2213,7 @@ async function saveShiftEdit(itemId, rowEl){
   const start = rowEl.querySelector(".sh-edit-start").value.trim();
   const end = rowEl.querySelector(".sh-edit-end").value.trim();
   const brk = parseFloat(rowEl.querySelector(".sh-edit-break").value);
-  const days = parseFloat(rowEl.querySelector(".sh-edit-days").value);
+  const workDays = getToggledDays(rowEl.querySelector(".sh-edit-days-wrap"), "sh-edit-day-btn");
   const active = rowEl.querySelector(".sh-edit-active").checked;
   if(!start || !end){
     reportRowMsg(msgEl, "Start and End times are both required.", true);
@@ -2175,7 +2226,7 @@ async function saveShiftEdit(itemId, rowEl){
   try{
     await graphUpdateItem("CG_Shifts", itemId, {
       StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk,
-      Days: isNaN(days) ? SHIFT_DEFAULT_DAYS : days, IsActive: active,
+      WorkDays: workDays.join(","), IsActive: active,
     });
     allShifts = await fetchAllListItems("CG_Shifts");
     editingShiftId = null;
@@ -2192,7 +2243,7 @@ async function addShift(){
   const start = document.getElementById("shNewStart").value.trim();
   const end = document.getElementById("shNewEnd").value.trim();
   const brk = parseFloat(document.getElementById("shNewBreak").value);
-  const days = parseFloat(document.getElementById("shNewDays").value);
+  const workDays = getToggledDays(document.getElementById("shNewDaysWrap"), "shNewDayBtn");
   if(!name){
     reportRowMsg(msgEl, "Name is required — e.g. Guard_Night.", true);
     return;
@@ -2212,7 +2263,7 @@ async function addShift(){
   try{
     await graphCreateItem("CG_Shifts", {
       Title: name, StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk,
-      Days: isNaN(days) ? SHIFT_DEFAULT_DAYS : days, IsActive: true,
+      WorkDays: workDays.join(","), IsActive: true,
     });
     allShifts = await fetchAllListItems("CG_Shifts");
     renderShiftsTab();
