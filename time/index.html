@@ -427,6 +427,32 @@
   .cal-card-range{font-size:11.5px;color:var(--ink-secondary);}
   .cal-card-pay{font-size:11px;color:var(--ink-muted);margin-top:3px;}
   .cal-badge{background:#b4934f;color:#fff8e8;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;border-radius:8px;padding:1px 6px;}
+
+  /* ---------- attendance tab ---------- */
+  .att-legend{display:flex;align-items:center;gap:16px;margin-top:12px;font-size:11.5px;color:var(--ink-secondary);flex-wrap:wrap;}
+  .att-legend-item{display:flex;align-items:center;gap:6px;}
+  .att-swatch{width:11px;height:11px;border-radius:3px;display:inline-block;}
+  .att-swatch.att-present{background:var(--status-good);}
+  .att-swatch.att-late{background:var(--status-warning);}
+  .att-swatch.att-absent{background:var(--status-critical);}
+  table.att-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+  table.att-table th, table.att-table td{padding:6px 5px;text-align:center;border-bottom:1px solid var(--hairline-soft);white-space:nowrap;}
+  table.att-table thead th{
+    background:var(--surface-card-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--ink-muted);font-weight:700;border-bottom:1px solid var(--hairline);
+  }
+  table.att-table td.att-emp-name{text-align:left;font-weight:600;color:var(--ink-primary);}
+  table.att-table td.att-emp-name .att-emp-num{display:block;font-weight:400;font-size:10px;color:var(--ink-muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .att-day-num{display:block;font-size:8.5px;font-weight:400;color:var(--ink-muted);}
+  table.att-table td.att-cell{font-weight:700;color:var(--ink-muted);}
+  table.att-table td.att-present{color:var(--status-good);}
+  table.att-table td.att-late{color:var(--status-warning);}
+  table.att-table td.att-absent{color:var(--status-critical);background:color-mix(in srgb, var(--status-critical) 7%, transparent);}
+  table.att-table td.att-missed{text-decoration:underline dotted;}
+  table.att-table td.att-count{font-weight:700;border-left:1px solid var(--hairline);}
+  table.att-table td.att-count.att-present{color:var(--status-good);}
+  table.att-table td.att-count.att-late{color:var(--status-warning);}
+  table.att-table td.att-count.att-absent{color:var(--status-critical);}
 </style>
 </head>
 <body>
@@ -2010,11 +2036,35 @@ const SHIFT_DEFAULT_WORKDAYS = ["Mon","Tue","Wed","Thu","Fri"];
 // fortnightly Pay Periods — each ticked weekday counts twice.
 const SHIFT_FORTNIGHT_WEEKS = 2;
 
+// Canonical WorkDays parsing, shared by the Shifts tab above and the
+// Attendance tab below (see shiftRunsOn) — a Shift saved before this
+// field existed has WorkDays = null/undefined, not an empty string,
+// and is treated as Mon-Fri; an explicit empty string (every day
+// untoggled and saved) means a genuine zero-day Shift.
+const WORKDAY_KEYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const WORKDAY_INDEX = { Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Sun:0 }; // matches Date#getDay()
+
+function shiftWorkDaySet(shift){
+  if(!shift || shift.fields.WorkDays == null) return new Set([1,2,3,4,5]);
+  const raw = String(shift.fields.WorkDays).trim();
+  if(raw === "") return new Set();
+  return new Set(raw.split(",").map(k => WORKDAY_INDEX[k.trim()]).filter(n => n != null));
+}
+function formatWorkDaySet(daySet){
+  return WORKDAY_KEYS.filter(k => daySet.has(WORKDAY_INDEX[k])).join(",");
+}
+function shiftRunsOn(shift, dateStr){
+  if(!shift) return false;
+  return shiftWorkDaySet(shift).has(new Date(dateStr + "T00:00:00").getDay());
+}
+
+// Same day-code array shape the Shifts tab's own toggle UI already
+// works with (shiftDayTogglesHtml/getToggledDays) — delegates to
+// shiftWorkDaySet above so both tabs agree on the null-vs-empty-string
+// distinction instead of maintaining two divergent parsers.
 function shiftWorkDaysArray(f){
-  const raw = ((f && f.WorkDays) || "").trim();
-  if(!raw) return SHIFT_DEFAULT_WORKDAYS.slice();
-  const days = raw.split(",").map(s=>s.trim()).filter(Boolean);
-  return days.length ? days : SHIFT_DEFAULT_WORKDAYS.slice();
+  const set = shiftWorkDaySet({ fields: f || {} });
+  return WORKDAY_KEYS.filter(k => set.has(WORKDAY_INDEX[k]));
 }
 // Renders the M T W T F S S toggle strip. `interactive` false (the
 // read-only list row) renders plain non-clickable spans; true (the
@@ -2429,6 +2479,8 @@ const EMPLOYEES_TABS = [
   { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
   { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
+  { key: "daily-report", label: "Daily Report", render: () => renderDailyReportTab() },
+  { key: "attendance", label: "Attendance", render: () => renderAttendanceTab() },
   { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
   { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
   { key: "pay-groups", label: "Pay Groups", render: () => renderPayGroupsTab() },
@@ -3126,6 +3178,517 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
     console.error(err);
     reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
   }
+}
+
+/* ============================================================
+   DAILY REPORT TAB — every active Employee's Clock In / Break Out /
+   Break In / Clock Out and Total Hours for one chosen day, straight
+   from CG_EmployeeTimeRecords (biometric + manual), with the same
+   printable-report + CSV pattern as Payroll/Exceptions. Purely a
+   read-only view of what's already on file — corrections are made
+   from Time Entry, not here. Unlike Time Entry's "By Day" bulk-entry
+   mode, this doesn't require a Pay Period to cover the chosen date
+   (nothing here writes anything, so there's no PayNumber to assign).
+   ============================================================ */
+let dailyReportFilters = { workDate: "" };
+
+function dailyReportRowsForDate(dateStr){
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  return activeEmployees.map(emp => {
+    const rec = findTimeRecord(emp.fields.EmployeeNumber, dateStr);
+    const f = rec ? rec.fields : {};
+    const shift = findShiftByName(f.ShiftName || emp.fields.DefaultShift);
+    const { hoursToPay } = computeHoursForDay(emp, f.TimeIn||"", f.TimeOut||"", f.BreakStart||"", f.BreakEnd||"", f.BreakMinutesOverride, shift);
+    return {
+      employee: emp,
+      clockIn: f.TimeIn || "", breakOut: f.BreakStart || "", breakIn: f.BreakEnd || "", clockOut: f.TimeOut || "",
+      hours: hoursToPay, hasRecord: !!rec,
+    };
+  });
+}
+
+function renderDailyReportTab(){
+  const container = document.getElementById("empTabContent");
+  if(!dailyReportFilters.workDate) dailyReportFilters.workDate = todayStr();
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Date</label><input type="date" id="drDate" value="${esc(dailyReportFilters.workDate)}"></div>
+      <button class="print-btn" id="drReportBtn">Open printable report</button>
+      <button class="print-btn" id="drCsvBtn">Download CSV</button>
+    </div>
+    <div id="drBody"></div>
+  `;
+  document.getElementById("drDate").addEventListener("change", e => { dailyReportFilters.workDate = e.target.value; renderDailyReportBody(); });
+  document.getElementById("drReportBtn").addEventListener("click", () => {
+    if(!dailyReportFilters.workDate) return;
+    openDocInNewTab(buildDailyReportDocHtml(dailyReportFilters.workDate, dailyReportRowsForDate(dailyReportFilters.workDate)));
+  });
+  document.getElementById("drCsvBtn").addEventListener("click", () => {
+    if(!dailyReportFilters.workDate) return;
+    downloadDailyReportCsv(dailyReportFilters.workDate, dailyReportRowsForDate(dailyReportFilters.workDate));
+  });
+  renderDailyReportBody();
+}
+
+function renderDailyReportBody(){
+  const body = document.getElementById("drBody");
+  if(!body) return;
+  const dateStr = dailyReportFilters.workDate;
+  if(!dateStr){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Pick a date.</div></div>`;
+    return;
+  }
+  const rows = dailyReportRowsForDate(dateStr);
+  const WEEKDAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const dayLabel = `${WEEKDAY[new Date(dateStr + "T00:00:00").getDay()]} ${fmtDateDMY(dateStr)}`;
+  const totalHours = rows.reduce((s,r)=>s+r.hours,0);
+  const clockedInCount = rows.filter(r => r.clockIn).length;
+
+  const bodyRows = rows.map(r => `
+    <tr>
+      <td class="entity">${esc(r.employee.fields.Title)}<div style="font-size:10px;font-weight:400;color:var(--ink-muted);">${esc(r.employee.fields.EmployeeNumber)}</div></td>
+      <td>${esc(r.clockIn) || "—"}</td>
+      <td>${esc(r.breakOut) || "—"}</td>
+      <td>${esc(r.breakIn) || "—"}</td>
+      <td>${esc(r.clockOut) || "—"}</td>
+      <td class="hrs">${r.hours.toFixed(2)}</td>
+    </tr>
+  `).join("");
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128197;</span>Daily Time Report — ${esc(dayLabel)}</h3>
+      <div class="panel-sub">Every active Employee's Clock In / Break Out / Break In / Clock Out for this day, from CG_EmployeeTimeRecords (biometric + manual) — no record on file shows as "—" and 0.00 hours. Total Hours is net of break, the same figure Payroll pays on. Corrections are made from Time Entry, not here.</div>
+      <div class="panel-sub" style="margin-top:-6px;margin-bottom:0;">${clockedInCount} of ${rows.length} Employee${rows.length===1?"":"s"} clocked in &middot; ${totalHours.toFixed(2)} total hours</div>
+    </div>
+    <div class="panel">
+      <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
+        <table>
+          <thead><tr><th>Employee</th><th>Clock In</th><th>Break Out</th><th>Break In</th><th>Clock Out</th><th style="text-align:right;">Total Hours</th></tr></thead>
+          <tbody>${bodyRows || '<tr><td colspan="6">No active Employees on file.</td></tr>'}</tbody>
+          <tfoot><tr style="font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);"><td colspan="5" style="padding:9px 10px;">Total</td><td class="hrs" style="padding:9px 10px;">${totalHours.toFixed(2)}</td></tr></tfoot>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function buildDailyReportDocHtml(dateStr, rows){
+  const WEEKDAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const dayLabel = `${WEEKDAY[new Date(dateStr + "T00:00:00").getDay()]} ${fmtDateDMY(dateStr)}`;
+  const totalHours = rows.reduce((s,r)=>s+r.hours,0);
+  const clockedInCount = rows.filter(r => r.clockIn).length;
+
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>
+      <td>${esc(r.employee.fields.EmployeeNumber) || "—"}</td>
+      <td>${esc(r.employee.fields.Title) || "—"}</td>
+      <td>${esc(r.clockIn) || "—"}</td>
+      <td>${esc(r.breakOut) || "—"}</td>
+      <td>${esc(r.breakIn) || "—"}</td>
+      <td>${esc(r.clockOut) || "—"}</td>
+      <td style="text-align:right">${r.hours.toFixed(2)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="7" style="text-align:center;color:#666;">No active Employees on file.</td></tr>`;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Daily Time Report — ${esc(dayLabel)}</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Daily Time Report</div>
+<div class="doc-sub">${esc(dayLabel)}</div>
+
+<div class="meta-row">
+  <div><b>Employees:</b> ${rows.length}</div>
+  <div><b>Clocked in:</b> ${clockedInCount}</div>
+  <div><b>Total Hours:</b> ${totalHours.toFixed(2)}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Employee #</th><th>Name</th><th>Clock In</th><th>Break Out</th><th>Break In</th><th>Clock Out</th><th style="text-align:right">Total Hours</th></tr>
+  </thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+
+<div class="summary-row">
+  <div><b>Total Hours:</b> ${totalHours.toFixed(2)}</div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+
+</body>
+</html>
+`;
+}
+
+function downloadDailyReportCsv(dateStr, rows){
+  const headers = ["Date","EmployeeNumber","EmployeeName","ClockIn","BreakOut","BreakIn","ClockOut","TotalHours"];
+  const lines = [headers.join(",")];
+  rows.forEach(r => {
+    lines.push([
+      dateStr, r.employee.fields.EmployeeNumber||"", r.employee.fields.Title||"",
+      r.clockIn, r.breakOut, r.breakIn, r.clockOut, r.hours.toFixed(2),
+    ].map(csvEscape).join(","));
+  });
+  const csv = lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `CG_Time_DailyReport_${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   ATTENDANCE TAB — Present/Late/Absent computed fresh from
+   CG_EmployeeTimeRecords for every active Employee across a chosen
+   Pay Period, plus an Exceptions panel (Absent/Late/Missed
+   clock-out) in the same review/report/extract style as the
+   Timesheets Exceptions tab. Nothing here writes anything back —
+   it's a read-only lens on data Time Entry (manual) and the ZKTeco
+   bridge (biometric) already wrote. See shiftWorkDaySet/shiftRunsOn
+   above (Shifts tab) for how a day is judged "not scheduled" rather
+   than "absent".
+   ============================================================ */
+const ATT_LATE_GRACE_MINUTES = 30; // Concept Group's chosen grace period before a clock-in counts as Late
+
+// Attendance status for one Employee on one calendar date. Mirrors
+// the same "which Shift applies" rule Time Entry itself uses: the
+// day's own saved ShiftName if a record exists (falling back to the
+// Employee's Default Shift if that day was saved with Shift left as
+// "— manual —"), otherwise the Default Shift alone for a day with
+// nothing on file yet.
+function attendanceStatusForDay(employee, dateStr, record, todayD){
+  const f = record ? record.fields : null;
+  const effectiveShiftName = (f && f.ShiftName) ? f.ShiftName : (employee.fields.DefaultShift || "");
+  const shift = findShiftByName(effectiveShiftName);
+  const timeIn = f ? (f.TimeIn || "") : "";
+  const timeOut = f ? (f.TimeOut || "") : "";
+
+  if(timeIn){
+    let status = "present";
+    if(shift && shift.fields.StartTime && isValidTimeStr(timeIn) && isValidTimeStr(shift.fields.StartTime)){
+      const [sh,sm] = shift.fields.StartTime.split(":").map(Number);
+      const [ih,im] = timeIn.split(":").map(Number);
+      let diffMins = (ih*60+im) - (sh*60+sm);
+      // A shift starting late evening (e.g. Guard_Night 18:00) with a
+      // clock-in just after midnight reads as ~-1080 minutes "early" by
+      // clock value alone — same overnight convention computeHoursForDay
+      // uses elsewhere, not a genuinely early arrival.
+      if(diffMins < -12*60) diffMins += 24*60;
+      if(diffMins > ATT_LATE_GRACE_MINUTES) status = "late";
+    }
+    const missedClockOut = !timeOut && dateStr < todayD;
+    return { status, missedClockOut, shift, timeIn, timeOut };
+  }
+
+  if(dateStr > todayD) return { status: "future", missedClockOut: false, shift, timeIn: "", timeOut: "" };
+  if(!shift) return { status: "unscheduled", missedClockOut: false, shift: null, timeIn: "", timeOut: "" };
+  if(!shiftRunsOn(shift, dateStr)) return { status: "off", missedClockOut: false, shift, timeIn: "", timeOut: "" };
+  return { status: "absent", missedClockOut: false, shift, timeIn: "", timeOut: "" };
+}
+
+function computeAttendanceForPeriod(period){
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const days = dateRangeArray((period.fields.PPEStart||"").slice(0,10), (period.fields.PPEEnd||"").slice(0,10));
+  const todayD = todayStr();
+  const rows = activeEmployees.map(emp => {
+    const cells = days.map(dateStr => {
+      const rec = findTimeRecord(emp.fields.EmployeeNumber, dateStr);
+      return { dateStr, ...attendanceStatusForDay(emp, dateStr, rec, todayD) };
+    });
+    const counts = { present: 0, late: 0, absent: 0, missedClockOut: 0 };
+    cells.forEach(c => {
+      if(c.status === "present") counts.present++;
+      else if(c.status === "late") counts.late++;
+      else if(c.status === "absent") counts.absent++;
+      if(c.missedClockOut) counts.missedClockOut++;
+    });
+    return { employee: emp, cells, counts };
+  });
+  return { days, rows };
+}
+
+function attendanceExceptionsForPeriod(period){
+  const { rows } = computeAttendanceForPeriod(period);
+  const exceptions = [];
+  rows.forEach(r => {
+    r.cells.forEach(c => {
+      if(c.status === "absent"){
+        exceptions.push({
+          employee: r.employee, dateStr: c.dateStr, type: "Absent",
+          detail: c.shift ? `No punch recorded — expected ${c.shift.fields.Title} (${c.shift.fields.StartTime||"?"}–${c.shift.fields.EndTime||"?"})` : "No punch recorded",
+        });
+      }
+      if(c.status === "late"){
+        exceptions.push({
+          employee: r.employee, dateStr: c.dateStr, type: "Late",
+          detail: `Clocked in at ${c.timeIn}${c.shift ? `, shift starts ${c.shift.fields.StartTime}` : ""}`,
+        });
+      }
+      if(c.missedClockOut){
+        exceptions.push({
+          employee: r.employee, dateStr: c.dateStr, type: "Missed clock-out",
+          detail: `Clocked in at ${c.timeIn}, no Time Out on file`,
+        });
+      }
+    });
+  });
+  return exceptions.sort((a,b)=> b.dateStr === a.dateStr
+    ? (a.employee.fields.Title||"").localeCompare(b.employee.fields.Title||"")
+    : b.dateStr.localeCompare(a.dateStr));
+}
+
+let attFilters = { payNumber: "" };
+let attExFilter = "all"; // "all" | "Absent" | "Late" | "Missed clock-out"
+
+function renderAttendanceTab(){
+  const container = document.getElementById("empTabContent");
+  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  if(!periods.length){
+    container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
+    return;
+  }
+  const today = todayStr();
+  if(!attFilters.payNumber || !periods.some(p => String(p.fields.PayNumber) === String(attFilters.payNumber))){
+    const current = periods.find(p => (p.fields.PPEStart||"").slice(0,10) <= today && today <= (p.fields.PPEEnd||"").slice(0,10));
+    attFilters.payNumber = String((current || periods[0]).fields.PayNumber);
+  }
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Pay Period</label>
+        <select id="attPeriod">${periodOptions}</select>
+      </div>
+    </div>
+    <div id="attBody"></div>
+  `;
+  document.getElementById("attPeriod").value = attFilters.payNumber;
+  document.getElementById("attPeriod").addEventListener("change", e => { attFilters.payNumber = e.target.value; renderAttendanceBody(); });
+  renderAttendanceBody();
+}
+
+function renderAttendanceBody(){
+  const body = document.getElementById("attBody");
+  if(!body) return;
+  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(attFilters.payNumber));
+  if(!period){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a Pay Period.</div></div>`;
+    return;
+  }
+  const { days, rows } = computeAttendanceForPeriod(period);
+  if(!rows.length){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No active Employees on file yet — add one under Employees first.</div></div>`;
+    return;
+  }
+  const WEEKDAY1 = ["S","M","T","W","T","F","S"];
+  const headCells = days.map(d => {
+    const dd = new Date(d + "T00:00:00");
+    return `<th>${WEEKDAY1[dd.getDay()]}<span class="att-day-num">${String(dd.getDate()).padStart(2,"0")}</span></th>`;
+  }).join("");
+
+  const STATUS_LABEL = { present: "P", late: "L", absent: "A", off: "–", future: "", unscheduled: "?" };
+  const bodyRows = rows.map(r => {
+    const cells = r.cells.map(c => {
+      const label = STATUS_LABEL[c.status] != null ? STATUS_LABEL[c.status] : "";
+      const titleParts = [`${fmtDateDMY(c.dateStr)} — ${c.status}`];
+      if(c.timeIn) titleParts.push(`in ${c.timeIn}${c.timeOut ? `, out ${c.timeOut}` : ", no out on file"}`);
+      const cls = `att-cell att-${c.status}${c.missedClockOut ? ' att-missed' : ''}`;
+      return `<td class="${cls}" title="${esc(titleParts.join(" — "))}">${label}</td>`;
+    }).join("");
+    return `
+      <tr>
+        <td class="att-emp-name">${esc(r.employee.fields.Title)}<span class="att-emp-num">${esc(r.employee.fields.EmployeeNumber)}</span></td>
+        ${cells}
+        <td class="att-count att-present">${r.counts.present}</td>
+        <td class="att-count att-late">${r.counts.late}</td>
+        <td class="att-count att-absent">${r.counts.absent}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const totalPresent = rows.reduce((s,r)=>s+r.counts.present,0);
+  const totalLate = rows.reduce((s,r)=>s+r.counts.late,0);
+  const totalAbsent = rows.reduce((s,r)=>s+r.counts.absent,0);
+  const exceptions = attendanceExceptionsForPeriod(period);
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
+      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift. <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail.</div>
+      <div class="att-legend">
+        <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
+        <span class="att-legend-item"><span class="att-swatch att-late"></span>Late ${totalLate}</span>
+        <span class="att-legend-item"><span class="att-swatch att-absent"></span>Absent ${totalAbsent}</span>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
+        <table class="att-table">
+          <thead><tr><th style="text-align:left;">Employee</th>${headCells}<th>P</th><th>L</th><th>A</th></tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h3><span>&#9888;</span>Exceptions this period</h3>
+      <div class="panel-sub" style="margin-bottom:10px;">Absences, late arrivals, and missed clock-outs for Pay #${esc(period.fields.PayNumber)} &mdash; computed fresh from CG_EmployeeTimeRecords every time, nothing stored separately (unlike the Timesheets Exceptions tab's CG_ExceptionsQueue). Review and extract only.</div>
+      <div class="filter-bar" style="margin-bottom:12px;">
+        <div class="filter-field"><label>Type</label>
+          <select id="attExType">
+            <option value="all">All types</option>
+            <option value="Absent">Absent</option>
+            <option value="Late">Late</option>
+            <option value="Missed clock-out">Missed clock-out</option>
+          </select>
+        </div>
+        <div class="filter-count" id="attExCount"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="print-btn" id="attReportBtn">Open printable report</button>
+        <button class="print-btn" id="attCsvBtn">Download CSV</button>
+      </div>
+      <div class="ex-list" id="attExceptionsList"></div>
+    </div>
+  `;
+
+  document.getElementById("attExType").value = attExFilter;
+  document.getElementById("attExType").addEventListener("change", e => { attExFilter = e.target.value; renderAttendanceExceptionsList(exceptions); });
+  document.getElementById("attReportBtn").addEventListener("click", () => {
+    openDocInNewTab(buildAttendanceReportDocHtml(period, filterAttendanceExceptions(exceptions)));
+  });
+  document.getElementById("attCsvBtn").addEventListener("click", () => {
+    downloadAttendanceExceptionsCsv(period, filterAttendanceExceptions(exceptions));
+  });
+
+  renderAttendanceExceptionsList(exceptions);
+}
+
+function filterAttendanceExceptions(exceptions){
+  return attExFilter === "all" ? exceptions : exceptions.filter(x => x.type === attExFilter);
+}
+
+function renderAttendanceExceptionsList(exceptions){
+  const list = document.getElementById("attExceptionsList");
+  const countEl = document.getElementById("attExCount");
+  if(!list) return;
+  const filtered = filterAttendanceExceptions(exceptions);
+  if(countEl) countEl.textContent = `${filtered.length} exception${filtered.length===1?"":"s"}`;
+  if(!filtered.length){
+    list.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">No attendance exceptions for this period${attExFilter==="all"?"":` of type "${esc(attExFilter)}"`}.</div>`;
+    return;
+  }
+  const ICON = { "Absent": "&#10007;", "Late": "&#8987;", "Missed clock-out": "&#9888;" };
+  const COLOR = { "Absent": "var(--status-critical)", "Late": "var(--status-warning)", "Missed clock-out": "var(--status-serious)" };
+  list.innerHTML = filtered.map(x => `
+    <div class="ex-item">
+      <div class="ex-icon" style="color:${COLOR[x.type]||'var(--status-warning)'};">${ICON[x.type]||'&#8226;'}</div>
+      <div class="ex-body">
+        <div class="ex-title">${esc(x.employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(x.employee.fields.EmployeeNumber)})</span></div>
+        <div class="ex-meta">${esc(x.type)} &middot; ${esc(fmtDateDMY(x.dateStr))} &middot; ${esc(x.detail)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+/* ---- Attendance report (printable) + CSV export — same pattern as
+   buildExceptionsReportDocHtml/downloadExceptionsCsv below. ---- */
+function buildAttendanceReportDocHtml(period, exceptions){
+  const list = exceptions.slice().sort((a,b)=> b.dateStr.localeCompare(a.dateStr));
+  const byType = {};
+  list.forEach(x => { byType[x.type] = (byType[x.type]||0) + 1; });
+  const typeLabels = Object.keys(byType).sort();
+
+  const rowsHtml = list.length ? list.map(x => `
+    <tr>
+      <td>${esc(fmtDateDMY(x.dateStr))}</td>
+      <td>${esc(x.employee.fields.Title)} (${esc(x.employee.fields.EmployeeNumber)})</td>
+      <td>${esc(x.type)}</td>
+      <td>${esc(x.detail)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" style="text-align:center;color:#666;">No exceptions match this filter.</td></tr>`;
+
+  const subtotalsHtml = typeLabels.map(label => `
+    <tr><td>${esc(label)}</td><td style="text-align:right">${byType[label]}</td></tr>
+  `).join("");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Attendance Exceptions Report — CG Time</title>
+<style>${DOC_STYLE}</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+
+<div class="doc-header">Attendance Exceptions Report</div>
+<div class="doc-sub">CG Time &middot; Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))}</div>
+
+<div class="meta-row">
+  <div><b>Exceptions:</b> ${list.length}</div>
+</div>
+
+<table class="rpt-table">
+  <thead>
+    <tr><th>Date</th><th>Employee</th><th>Type</th><th>Detail</th></tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+
+${typeLabels.length ? `
+<table class="subtotal-table">
+  <tbody>
+    ${subtotalsHtml}
+    <tr><td>Total</td><td style="text-align:right">${list.length}</td></tr>
+  </tbody>
+</table>
+` : ""}
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time &middot; computed from CG_EmployeeTimeRecords against each Employee's Shift — review and extract only.</div>
+
+</body>
+</html>
+`;
+}
+
+function downloadAttendanceExceptionsCsv(period, exceptions){
+  const list = exceptions.slice().sort((a,b)=> b.dateStr.localeCompare(a.dateStr));
+  const headers = ["Date","EmployeeNumber","EmployeeName","Type","Detail"];
+  const lines = [headers.join(",")];
+  list.forEach(x => {
+    lines.push([
+      x.dateStr,
+      x.employee.fields.EmployeeNumber || "",
+      x.employee.fields.Title || "",
+      x.type,
+      x.detail,
+    ].map(csvEscape).join(","));
+  });
+  const csv = lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `CG_Time_Attendance_Pay${period.fields.PayNumber}_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /* ============================================================
