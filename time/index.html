@@ -1982,19 +1982,27 @@ async function togglePayGroupActive(itemId, nextActive){
    now only applies as a fallback on days with no Shift picked at
    all (including historic records saved before Shifts existed).
    ============================================================ */
-const SHIFT_ROW_COLS = "1fr .8fr .8fr .7fr .9fr .8fr .9fr";
+const SHIFT_ROW_COLS = "1fr .8fr .8fr .7fr .6fr .9fr .8fr .9fr";
 
-// A Shift's "Total Hours" is a per-fortnight reference figure, not a
-// stored field — daily worked hours (Start to End minus Break, same
-// overnight-wrap convention as computeHoursForDay below) times a
-// standard 10-working-day fortnight (a 5-day week x 2, matching CG
-// Time's fortnightly Pay Periods), e.g. Normal 08:00-17:00 with a
-// 60-minute break is 8.0 hrs/day x 10 = 80.0 hrs. Purely informational
-// — a quick sanity check on the Shift's own definition — and always
-// recomputed live from whatever Start/End/Break are currently showing
-// (saved, or still being typed in the Add/Edit form), never cached.
-// Actual hours worked always come from real Time Entry rows, not this.
-const SHIFT_PERIOD_WORKDAYS = 10;
+// A Shift's "Days" is a nominated number, editable per Shift — how
+// many days its Total Hours figure should be spread across (e.g. a
+// normal 5-day-week office shift over a fortnight might nominate 10;
+// a weekend-only Guard shift might nominate 2 or 4). Defaults to 10
+// only as a starting suggestion, never a fixed rule. Falls back to 10
+// for a Shift saved before this field existed (blank/missing Days).
+const SHIFT_DEFAULT_DAYS = 10;
+function shiftDaysValue(f){
+  const d = parseFloat(f && f.Days);
+  return isNaN(d) ? SHIFT_DEFAULT_DAYS : d;
+}
+// Total Hours is not a stored field — it's daily worked hours (Start
+// to End minus Break, same overnight-wrap convention as
+// computeHoursForDay below) times the Shift's own nominated Days.
+// Purely informational — a quick sanity check on the Shift's own
+// definition — and always recomputed live from whatever Start/End/
+// Break/Days are currently showing (saved, or still being typed in
+// the Add/Edit form), never cached. Actual hours worked always come
+// from real Time Entry rows, not this.
 function shiftDailyHours(startStr, endStr, breakMinutes){
   if(!startStr || !endStr || !isValidTimeStr(startStr) || !isValidTimeStr(endStr)) return null;
   const [ih,im] = startStr.split(":").map(Number);
@@ -2005,22 +2013,25 @@ function shiftDailyHours(startStr, endStr, breakMinutes){
   const breakMins = isNaN(brk) ? 0 : Math.max(0, brk);
   return Math.max(0, (totalMins - breakMins) / 60);
 }
-function shiftTotalHours(startStr, endStr, breakMinutes){
+function shiftTotalHours(startStr, endStr, breakMinutes, days){
   const daily = shiftDailyHours(startStr, endStr, breakMinutes);
-  return daily == null ? null : daily * SHIFT_PERIOD_WORKDAYS;
+  if(daily == null) return null;
+  const d = parseFloat(days);
+  return daily * (isNaN(d) ? SHIFT_DEFAULT_DAYS : d);
 }
 function fmtShiftHours(hours){
   return hours == null ? "—" : `${hours.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})} hrs`;
 }
-// Wires a Total Hours preview to live-recalculate as Start/End/Break
-// are typed — used for both the Add Shift form (outEl is a readonly
-// <input>) and the edit-in-place row (outEl is a plain <div>/<span>).
-function wireShiftTotalHoursLive(startEl, endEl, breakEl, outEl){
+// Wires a Total Hours preview to live-recalculate as Start/End/Break/
+// Days are typed — used for both the Add Shift form (outEl is a
+// readonly <input>) and the edit-in-place row (outEl is a plain
+// <div>/<span>).
+function wireShiftTotalHoursLive(startEl, endEl, breakEl, daysEl, outEl){
   const update = () => {
-    const text = fmtShiftHours(shiftTotalHours(startEl.value.trim(), endEl.value.trim(), breakEl.value));
+    const text = fmtShiftHours(shiftTotalHours(startEl.value.trim(), endEl.value.trim(), breakEl.value, daysEl.value));
     if(outEl.tagName === "INPUT") outEl.value = text; else outEl.textContent = text;
   };
-  [startEl, endEl, breakEl].forEach(el => el.addEventListener("input", update));
+  [startEl, endEl, breakEl, daysEl].forEach(el => el.addEventListener("input", update));
   update();
 }
 
@@ -2047,7 +2058,8 @@ function renderShiftsTab(){
           <div><input type="text" class="time-field sh-edit-start" placeholder="HH:MM" maxlength="5" value="${esc(f.StartTime||"")}"></div>
           <div><input type="text" class="time-field sh-edit-end" placeholder="HH:MM" maxlength="5" value="${esc(f.EndTime||"")}"></div>
           <div><input type="number" class="sh-edit-break" min="0" step="5" value="${f.BreakMinutes!=null?esc(f.BreakMinutes):30}"></div>
-          <div class="sh-edit-total" style="font-size:12px;color:var(--ink-muted);" title="Per ${SHIFT_PERIOD_WORKDAYS}-day fortnight — recalculates as Start/End/Break change, informational only.">—</div>
+          <div><input type="number" class="sh-edit-days" min="0" step="1" value="${shiftDaysValue(f)}"></div>
+          <div class="sh-edit-total" style="font-size:12px;color:var(--ink-muted);" title="Start to End, minus Break, times Days — recalculates as any of those change, informational only.">—</div>
           <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="sh-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
           <div style="display:flex;gap:6px;">
             <button class="admin-submit admin-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
@@ -2063,7 +2075,8 @@ function renderShiftsTab(){
         <div>${esc(f.StartTime||"—")}</div>
         <div>${esc(f.EndTime||"—")}</div>
         <div>${f.BreakMinutes!=null?esc(f.BreakMinutes)+" min":"—"}</div>
-        <div title="Per ${SHIFT_PERIOD_WORKDAYS}-day fortnight (Start to End, minus Break) — informational only, not used elsewhere in CG Time.">${fmtShiftHours(shiftTotalHours(f.StartTime, f.EndTime, f.BreakMinutes))}</div>
+        <div>${shiftDaysValue(f)}</div>
+        <div title="Start to End, minus Break, times Days &mdash; informational only, not used elsewhere in CG Time.">${fmtShiftHours(shiftTotalHours(f.StartTime, f.EndTime, f.BreakMinutes, shiftDaysValue(f)))}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(s.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
       </div>
@@ -2072,22 +2085,23 @@ function renderShiftsTab(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>Shifts</h3>
-      <div class="panel-sub">Shift templates for Time In/Out and Break Length &mdash; e.g. Normal 08:00&ndash;17:00, Guard_Day 06:00&ndash;18:00, Guard_Night 18:00&ndash;06:00. Assign a Default Shift to an Employee (from the Employees tab) to pre-fill their days in Time Entry, and pick a Shift on any individual day to fill that day from it instead. Total Hrs is a per-${SHIFT_PERIOD_WORKDAYS}-day-fortnight reference figure only. Click a row to edit it. Writes straight to CG_Shifts.</div>
+      <div class="panel-sub">Shift templates for Time In/Out and Break Length &mdash; e.g. Normal 08:00&ndash;17:00, Guard_Day 06:00&ndash;18:00, Guard_Night 18:00&ndash;06:00. Assign a Default Shift to an Employee (from the Employees tab) to pre-fill their days in Time Entry, and pick a Shift on any individual day to fill that day from it instead. Days is the number of days you nominate this Shift's Total Hrs should be spread across (e.g. 10 for a 5-day week over a fortnight) &mdash; edit it per Shift, it's not fixed. Click a row to edit it. Writes straight to CG_Shifts.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:${SHIFT_ROW_COLS};"><div>Name</div><div>Start</div><div>End</div><div>Break</div><div>Total Hrs</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${SHIFT_ROW_COLS};"><div>Name</div><div>Start</div><div>End</div><div>Break</div><div>Days</div><div>Total Hrs</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Shifts on file yet in CG_Shifts &mdash; add the first one below.</div>`}
     </div>
     <div id="shEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add a Shift</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. Guard_Night 18:00 &rarr; 06:00 is 12 hours), the same convention Time Entry uses. Days defaults to 10 (a 5-day week over a fortnight) as a starting suggestion only &mdash; nominate whatever's right for this Shift, e.g. fewer for a weekend-only roster.</div>
       <div class="admin-form">
         <div class="filter-field"><label>Name</label><input type="text" id="shNewName" placeholder="e.g. Guard_Night"></div>
         <div class="filter-field"><label>Start (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewStart"></div>
         <div class="filter-field"><label>End (24hr)</label><input type="text" class="time-field" placeholder="HH:MM" maxlength="5" id="shNewEnd"></div>
         <div class="filter-field"><label>Break (min)</label><input type="number" id="shNewBreak" value="30" min="0" step="5"></div>
-        <div class="filter-field"><label>Total Hrs (per fortnight)</label><input type="text" id="shNewTotalHours" value="—" readonly style="background:var(--surface-card-2);color:var(--ink-muted);"></div>
+        <div class="filter-field"><label>Days</label><input type="number" id="shNewDays" value="${SHIFT_DEFAULT_DAYS}" min="0" step="1"></div>
+        <div class="filter-field"><label>Total Hrs</label><input type="text" id="shNewTotalHours" value="—" readonly style="background:var(--surface-card-2);color:var(--ink-muted);"></div>
         <div><button class="admin-submit" id="shAddBtn">+ Add Shift</button></div>
       </div>
       <div id="shAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
@@ -2127,6 +2141,7 @@ function renderShiftsTab(){
       editRow.querySelector(".sh-edit-start"),
       editRow.querySelector(".sh-edit-end"),
       editRow.querySelector(".sh-edit-break"),
+      editRow.querySelector(".sh-edit-days"),
       editRow.querySelector(".sh-edit-total")
     );
   }
@@ -2137,6 +2152,7 @@ function renderShiftsTab(){
     document.getElementById("shNewStart"),
     document.getElementById("shNewEnd"),
     document.getElementById("shNewBreak"),
+    document.getElementById("shNewDays"),
     document.getElementById("shNewTotalHours")
   );
 }
@@ -2146,6 +2162,7 @@ async function saveShiftEdit(itemId, rowEl){
   const start = rowEl.querySelector(".sh-edit-start").value.trim();
   const end = rowEl.querySelector(".sh-edit-end").value.trim();
   const brk = parseFloat(rowEl.querySelector(".sh-edit-break").value);
+  const days = parseFloat(rowEl.querySelector(".sh-edit-days").value);
   const active = rowEl.querySelector(".sh-edit-active").checked;
   if(!start || !end){
     reportRowMsg(msgEl, "Start and End times are both required.", true);
@@ -2157,7 +2174,8 @@ async function saveShiftEdit(itemId, rowEl){
   }
   try{
     await graphUpdateItem("CG_Shifts", itemId, {
-      StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk, IsActive: active,
+      StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk,
+      Days: isNaN(days) ? SHIFT_DEFAULT_DAYS : days, IsActive: active,
     });
     allShifts = await fetchAllListItems("CG_Shifts");
     editingShiftId = null;
@@ -2174,6 +2192,7 @@ async function addShift(){
   const start = document.getElementById("shNewStart").value.trim();
   const end = document.getElementById("shNewEnd").value.trim();
   const brk = parseFloat(document.getElementById("shNewBreak").value);
+  const days = parseFloat(document.getElementById("shNewDays").value);
   if(!name){
     reportRowMsg(msgEl, "Name is required — e.g. Guard_Night.", true);
     return;
@@ -2191,7 +2210,10 @@ async function addShift(){
     return;
   }
   try{
-    await graphCreateItem("CG_Shifts", { Title: name, StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk, IsActive: true });
+    await graphCreateItem("CG_Shifts", {
+      Title: name, StartTime: start, EndTime: end, BreakMinutes: isNaN(brk) ? 30 : brk,
+      Days: isNaN(days) ? SHIFT_DEFAULT_DAYS : days, IsActive: true,
+    });
     allShifts = await fetchAllListItems("CG_Shifts");
     renderShiftsTab();
   }catch(err){
