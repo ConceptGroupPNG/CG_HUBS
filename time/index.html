@@ -409,7 +409,7 @@
   .te-table td.computed{color:var(--ink-muted);font-variant-numeric:tabular-nums;}
   .te-table tr.weekend td{background:var(--surface-card-2);}
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
-  .te-save-bar{display:flex;align-items:center;gap:12px;margin-top:14px;}
+  .te-save-bar{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
   .te-table td.te-day-name{white-space:nowrap;font-size:12.5px;}
   .te-table .te-day-num{display:block;font-size:10.5px;color:var(--ink-muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 
@@ -2912,16 +2912,16 @@ function renderEmployeeTimeEntryBody(){
       <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
+      <div class="te-save-bar">
+        <button class="admin-submit" id="teSaveBtn">Save Timesheet</button>
+        <span id="teSaveMsg" style="font-size:11.5px;"></span>
+      </div>
       <div style="overflow-x:auto;">
         <table class="te-table">
           <thead><tr><th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
           <tbody id="teRows">${rowsHtml}</tbody>
           <tfoot><tr class="te-total"><td colspan="7">Period total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
         </table>
-      </div>
-      <div class="te-save-bar">
-        <button class="admin-submit" id="teSaveBtn">Save Timesheet</button>
-        <span id="teSaveMsg" style="font-size:11.5px;"></span>
       </div>
     </div>
   `;
@@ -3093,16 +3093,16 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
       <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set, still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
     </div>
     <div class="panel">
+      <div class="te-save-bar">
+        <button class="admin-submit" id="teDaySaveBtn">Save Day for All Employees</button>
+        <span id="teDaySaveMsg" style="font-size:11.5px;"></span>
+      </div>
       <div style="overflow-x:auto;">
         <table class="te-table">
           <thead><tr><th>Employee</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Break Start</th><th>Break End</th><th>Break override (min)</th><th>Total Hrs</th><th>Break Hrs</th><th>Hours to Pay</th></tr></thead>
           <tbody id="teDayRows">${rowsHtml}</tbody>
           <tfoot><tr class="te-total"><td colspan="7">Team total</td><td class="te-foot-total">0.00</td><td class="te-foot-break">0.00</td><td class="te-foot-pay">0.00</td></tr></tfoot>
         </table>
-      </div>
-      <div class="te-save-bar">
-        <button class="admin-submit" id="teDaySaveBtn">Save Day for All Employees</button>
-        <span id="teDaySaveMsg" style="font-size:11.5px;"></span>
       </div>
     </div>
   `;
