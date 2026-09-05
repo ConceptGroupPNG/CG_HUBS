@@ -2512,6 +2512,85 @@ async function handleProposalFileUpload(proposalId, inputEl){
   }
 }
 
+/* ---------- CSA (Agreement) file upload ---------- */
+let csaDocsDriveId = null;
+async function getCsaDocsDriveId(){
+  if(csaDocsDriveId) return csaDocsDriveId;
+  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/CSA_Documents/drive`);
+  csaDocsDriveId = data.id;
+  return csaDocsDriveId;
+}
+
+async function uploadCsaDocument(file, csaNumber){
+  const driveId = await getCsaDocsDriveId();
+  const safeFileName = `${csaNumber} - ${file.name}`.replace(/[#%*:<>?/\\{|}]/g, "-");
+
+  if(file.size <= 4 * 1024 * 1024){
+    const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(safeFileName)}:/content`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/pdf" },
+      body: file
+    });
+    if(!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    const data = await res.json();
+    return { url: data.webUrl, name: data.name };
+  } else {
+    const sessionUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(safeFileName)}:/createUploadSession`;
+    const sessionRes = await fetch(sessionUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } })
+    });
+    if(!sessionRes.ok) throw new Error(`Couldn't start upload session: ${sessionRes.status}`);
+    const session = await sessionRes.json();
+    const uploadUrl = session.uploadUrl;
+
+    const chunkSize = 5 * 1024 * 1024; // must be a multiple of 320 KiB
+    let start = 0;
+    let lastResponseData = null;
+    while(start < file.size){
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Length": String(end - start),
+          "Content-Range": `bytes ${start}-${end-1}/${file.size}`
+        },
+        body: chunk
+      });
+      if(!res.ok && res.status !== 202) throw new Error(`Upload chunk failed: ${res.status}`);
+      if(res.status !== 202) lastResponseData = await res.json();
+      start = end;
+    }
+    return { url: lastResponseData ? lastResponseData.webUrl : "", name: safeFileName };
+  }
+}
+
+async function handleCsaFileUpload(agreementId, inputEl){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById(`uploadStatus_${agreementId}`);
+  const agreement = agreementMap[agreementId];
+  const csaNumber = agreement ? agreement.fields.Title : "CSA";
+
+  statusEl.textContent = "Uploading…";
+  try{
+    const result = await uploadCsaDocument(file, csaNumber);
+    await graphUpdateItem("CSA_List", agreementId, {
+      SignedDocumentURL: result.url,
+      SignedDocumentName: result.name
+    });
+    await loadAllData();
+    statusEl.textContent = "Uploaded successfully.";
+    showAgreementDetail(agreementId);
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = "Upload failed: " + err.message;
+  }
+}
+
 /* ---------- Convert to CSA ---------- */
 async function convertProposalToCSA(proposalId){
   if(!confirm("Convert this proposal into a live CSA? This will create a new agreement pre-filled from the proposal.")) return;
@@ -3171,6 +3250,14 @@ function showAgreementDetail(itemId){
     </table>
   ` : `<div class="empty-state">No fee line items recorded.</div>`;
 
+  const csaDocumentSectionHtml = f.SignedDocumentURL ? `
+    <div style="margin-bottom:12px;">
+      <a href="${esc(f.SignedDocumentURL)}" target="_blank" class="btn-secondary" style="text-decoration:none;display:inline-block;">
+        &#128196; ${esc(f.SignedDocumentName) || "View Document"}
+      </a>
+    </div>
+  ` : `<div class="empty-state" style="padding:20px;">No document uploaded yet.</div>`;
+
   const milestoneBadge = s => {
     const map = {"Pending":"badge-draft","Invoiced":"badge-sent","Paid":"badge-active"};
     return map[s] || "badge-draft";
@@ -3268,6 +3355,16 @@ function showAgreementDetail(itemId){
               ${f.BHCSignedDate ? `<div class="signatory-date">${fmtDateDMY(f.BHCSignedDate)}</div>` : ""}
             </div>
           </div>
+        </div>
+
+        <div class="section-card card-signatories">
+          <h3>Signed Document</h3>
+          ${csaDocumentSectionHtml}
+          <div class="form-field">
+            <label>Upload signed CSA or contract (PDF)</label>
+            <input type="file" id="agreementFileInput_${a.id}" accept="application/pdf" onchange="handleCsaFileUpload('${a.id}', this)">
+          </div>
+          <div id="uploadStatus_${a.id}" style="font-size:11.5px;color:var(--text-muted);margin-top:6px;"></div>
         </div>
 
         <div class="section-card card-time">
