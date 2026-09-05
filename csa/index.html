@@ -963,7 +963,13 @@ function renderDashboard(){
   const activeCsaCount = allAgreements.filter(a => a.fields.IsActive === true).length;
   const activeProposalCount = allProposals.filter(p => p.fields.IsActive === true).length;
   const activeProjectsCount = activeCsaCount + activeProposalCount;
-  const totalValue = allAgreements.reduce((sum,a)=> sum + (parseFloat(a.fields.TotalFeeExclGST)||0), 0);
+  const activeCsaValue = allAgreements
+    .filter(a => a.fields.IsActive === true)
+    .reduce((sum,a)=> sum + (parseFloat(a.fields.TotalFeeExclGST)||0), 0);
+  const activeProposalValue = allProposals
+    .filter(p => p.fields.IsActive === true)
+    .reduce((sum,p)=> sum + (parseFloat(p.fields.TotalFeeExclGST)||0), 0);
+  const activeContractsValue = activeCsaValue + activeProposalValue;
   const pendingSignature = allAgreements.filter(a => a.fields.Status === "Sent for Signature").length;
 
   document.getElementById("metricsRow").innerHTML = `
@@ -983,9 +989,9 @@ function renderDashboard(){
       <div class="metric-sub">client countersignature pending</div>
     </div>
     <div class="metric-card metric-accent-purple">
-      <div class="metric-label">Total Contract Value (excl. GST)</div>
-      <div class="metric-value">${fmtCurrency(totalValue)}</div>
-      <div class="metric-sub">excl. GST, all agreements</div>
+      <div class="metric-label">Active Contracts Value (excl. GST)</div>
+      <div class="metric-value">${fmtCurrency(activeContractsValue)}</div>
+      <div class="metric-sub">${fmtCurrency(activeCsaValue)} CSAs + ${fmtCurrency(activeProposalValue)} Proposals</div>
     </div>
   `;
 
