@@ -605,7 +605,7 @@ let state = {
   tickets: [], clients: [], endClients: [], resources: [], timeEntries: [],
   priorityDefaults: [], exceptions: [], invoices: [],
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
-  ticketAssignments: [], dismissedEmails: [], ticketConversations: [],
+  ticketAssignments: [], dismissedEmails: [], ticketConversations: [], ticketNotes: [],
   me: null
 };
 
@@ -786,6 +786,14 @@ async function loadCoreData(){
     state.ticketConversations = await fetchAllListItems("SLA_TicketConversations");
   }catch(e){
     console.warn("Couldn't load SLA_TicketConversations (run Add-SLAHub-TicketConversations.ps1 if this list doesn't exist yet):", e);
+  }
+  // Staff notes logged against a ticket as work progresses — separate,
+  // non-fatal try/catch so the rest of SLA HUB still works if
+  // Add-SLAHub-TicketNotes.ps1 hasn't been run yet.
+  try{
+    state.ticketNotes = await fetchAllListItems("SLA_TicketNotes");
+  }catch(e){
+    console.warn("Couldn't load SLA_TicketNotes (run Add-SLAHub-TicketNotes.ps1 if this list doesn't exist yet):", e);
   }
 }
 
@@ -1445,6 +1453,27 @@ function renderTicketDetail(){
 
       ${t.fields.Description ? `<div class="section-title">Description</div><div>${esc(t.fields.Description).replace(/\n/g,"<br>")}</div>` : ""}
 
+      <div class="section-title">Notes${(() => { const n = ticketNotes(t.id).length; return n ? ` (${n})` : ""; })()}</div>
+      <div class="field" style="margin-bottom:8px;">
+        <textarea id="noteInput_${t.id}" placeholder="Log an update on this ticket — visible to staff only, timestamped automatically…" style="min-height:56px;"></textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button id="noteAddBtn_${t.id}" class="btn btn-sm btn-accent" onclick="addTicketNote('${t.id}')">+ Add note</button>
+      </div>
+      ${(() => { const notes = ticketNotes(t.id); return notes.length ? `
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
+        ${notes.map(n => `
+          <div style="border:1px solid var(--gridline);border-radius:8px;padding:10px 12px;background:var(--page);">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">
+              <span><b style="color:var(--ink);">${esc(n.fields.AuthorName||n.fields.AuthorEmail||"—")}</b></span>
+              <span>${fmtDateTime(n.fields.CreatedAt)}</span>
+            </div>
+            <div style="white-space:pre-wrap;font-size:13px;">${esc(n.fields.Note||"")}</div>
+          </div>
+        `).join("")}
+      </div>
+      ` : `<div class="empty">No notes logged yet.</div>`; })()}
+
       <div class="section-title">Attachments${attachState.items.length ? ` (${attachState.items.length})` : ""}</div>
       <div class="attach-dropzone" id="attachZone_${t.id}" tabindex="0"
            ondragover="onAttachDragOver(event)" ondragleave="onAttachDragLeave(event)"
@@ -1683,6 +1712,37 @@ function ticketConversation(ticketId){
   return state.ticketConversations
     .filter(c => String(c.fields.TicketId)===String(ticketId))
     .sort((a,b)=> new Date(a.fields.MessageDate||0) - new Date(b.fields.MessageDate||0));
+}
+
+/* ---------- Notes (staff log entries as a ticket progresses) ---------- */
+function ticketNotes(ticketId){
+  return state.ticketNotes
+    .filter(n => String(n.fields.TicketId)===String(ticketId))
+    .sort((a,b)=> new Date(b.fields.CreatedAt||0) - new Date(a.fields.CreatedAt||0)); // newest first
+}
+
+async function addTicketNote(ticketId){
+  const ta = document.getElementById(`noteInput_${ticketId}`);
+  const text = (ta?.value || "").trim();
+  if(!text){ toast("Write something first.", true); return; }
+  const btn = document.getElementById(`noteAddBtn_${ticketId}`);
+  if(btn) btn.disabled = true;
+  try{
+    const created = await graphCreateItem("SLA_TicketNotes", {
+      Title: `Note on ticket ${ticketId}`,
+      TicketId: Number(ticketId), Note: text,
+      AuthorName: currentAccount?.name || currentAccount?.username || "",
+      AuthorEmail: (currentAccount?.username || "").toLowerCase().trim(),
+      CreatedAt: nowIso()
+    });
+    state.ticketNotes.push(created);
+    renderTicketDetail();
+  }catch(e){
+    console.error(e);
+    toast("Couldn't add note: " + e.message, true);
+  } finally {
+    if(btn) btn.disabled = false;
+  }
 }
 
 /* ---------- Assignment (with a full audit trail in SLA_TicketAssignments) ---------- */
