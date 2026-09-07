@@ -49,6 +49,10 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .sidebar-footer .who{color:#fff;font-weight:600;font-size:13px;}
 .sidebar-footer button{background:none;border:none;color:#9497a3;font-size:12px;padding:0;margin-top:6px;text-decoration:underline;}
 
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.refresh-indicator{position:fixed;top:16px;right:22px;display:flex;align-items:center;gap:7px;background:#fff;border:1.5px solid var(--border);border-radius:20px;padding:6px 13px 6px 10px;font-size:12px;font-weight:600;color:var(--ink-2);box-shadow:0 4px 16px rgba(10,12,18,0.14);z-index:60;}
+.refresh-indicator .gear{display:inline-block;font-size:14px;animation:spin 1.1s linear infinite;}
+
 .main{flex:1;overflow-y:auto;padding:28px 34px 60px;background-color:var(--page);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%232a78d6' stroke-width='1.6' stroke-opacity='0.16'%3E%3Cpath d='M10 10 H70 V50 H130'/%3E%3Cpath d='M130 50 V110 H190'/%3E%3Cpath d='M10 90 H50 V150 H10'/%3E%3Cpath d='M150 10 V70 H190'/%3E%3Cpath d='M70 130 V190'/%3E%3Cpath d='M110 150 H150 V190'/%3E%3Cpath d='M30 130 V190'/%3E%3Cpath d='M170 90 H130 V150'/%3E%3C/g%3E%3Cg fill='%232a78d6' fill-opacity='0.18'%3E%3Ccircle cx='10' cy='10' r='3'/%3E%3Ccircle cx='70' cy='10' r='3'/%3E%3Ccircle cx='70' cy='50' r='3'/%3E%3Ccircle cx='130' cy='50' r='3'/%3E%3Ccircle cx='130' cy='110' r='3'/%3E%3Ccircle cx='190' cy='110' r='3'/%3E%3Ccircle cx='10' cy='90' r='3'/%3E%3Ccircle cx='50' cy='90' r='3'/%3E%3Ccircle cx='50' cy='150' r='3'/%3E%3Ccircle cx='10' cy='150' r='3'/%3E%3Ccircle cx='150' cy='10' r='3'/%3E%3Ccircle cx='150' cy='70' r='3'/%3E%3Ccircle cx='190' cy='70' r='3'/%3E%3Ccircle cx='70' cy='130' r='3'/%3E%3Ccircle cx='70' cy='190' r='3'/%3E%3Ccircle cx='110' cy='150' r='3'/%3E%3Ccircle cx='150' cy='150' r='3'/%3E%3Ccircle cx='150' cy='190' r='3'/%3E%3Ccircle cx='30' cy='130' r='3'/%3E%3Ccircle cx='30' cy='190' r='3'/%3E%3Ccircle cx='170' cy='90' r='3'/%3E%3Ccircle cx='130' cy='90' r='3'/%3E%3Ccircle cx='170' cy='150' r='3'/%3E%3C/g%3E%3C/svg%3E");background-repeat:repeat;background-position:0 0;}
 .page{display:none;}
 .page.active{display:block;}
@@ -185,6 +189,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
       <button onclick="logout()">Sign out</button>
     </div>
   </div>
+  <div id="refreshIndicator" class="refresh-indicator" hidden><span class="gear">⚙️</span>Refreshing…</div>
   <div class="main">
     <div id="page-dashboard" class="page"></div>
     <div id="page-tickets" class="page"></div>
@@ -408,7 +413,7 @@ let state = {
   tickets: [], clients: [], endClients: [], resources: [], timeEntries: [],
   priorityDefaults: [], exceptions: [], invoices: [],
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
-  ticketAssignments: [], dismissedEmails: [],
+  ticketAssignments: [], dismissedEmails: [], ticketConversations: [],
   me: null
 };
 
@@ -582,6 +587,14 @@ async function loadCoreData(){
   }catch(e){
     console.warn("Couldn't load SLA_DismissedEmails (run Add-SLAHub-DismissedEmails.ps1 if this list doesn't exist yet):", e);
   }
+  // Reply emails captured onto a ticket's conversation — separate, non-fatal
+  // try/catch so the rest of SLA HUB still works if
+  // Add-SLAHub-TicketConversations.ps1 hasn't been run yet.
+  try{
+    state.ticketConversations = await fetchAllListItems("SLA_TicketConversations");
+  }catch(e){
+    console.warn("Couldn't load SLA_TicketConversations (run Add-SLAHub-TicketConversations.ps1 if this list doesn't exist yet):", e);
+  }
 }
 
 /* Auto-detect / auto-resolve SLA breaches into SLA_ExceptionsQueue.
@@ -668,6 +681,7 @@ function scheduleRefresh(){
   if(_batchDepth > 0){ _refreshPendingAfterBatch = true; return; }
   clearTimeout(_refreshTimer);
   _refreshTimer = setTimeout(async () => {
+    setRefreshSpinner(true);
     try{
       await loadCoreData();
       await reconcileExceptions();
@@ -677,8 +691,24 @@ function scheduleRefresh(){
       dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
       agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, resources: renderResources, admin: renderAdmin
     };
-    if(renderers[currentPage]) renderers[currentPage]();
+    // Awaited — several of these (renderEmail in particular, which can now
+    // also import reply emails as part of rendering) do real async work of
+    // their own. Without awaiting, the gear would stop spinning before that
+    // work was actually done.
+    try{
+      if(renderers[currentPage]) await renderers[currentPage]();
+    }catch(e){ console.warn("Background refresh's render step failed:", e); }
+    setRefreshSpinner(false);
   }, 400);
+}
+
+// The spinning gear in the sidebar — the only visible sign that "auto-refresh"
+// is actually doing anything. Toggled around the real work above (not just
+// while it's scheduled/debouncing), so it only spins while a reload is
+// genuinely in flight.
+function setRefreshSpinner(active){
+  const el = document.getElementById("refreshIndicator");
+  if(el) el.hidden = !active;
 }
 
 /* A single user action (creating a ticket, reassigning one) is often several
@@ -810,7 +840,7 @@ function renderTickets(){
       </select>
       <select onchange="ticketFilters.client=this.value; renderTicketsTable();">
         <option value="">All clients</option>
-        ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+        ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
       </select>
       <input type="text" placeholder="Search title / ticket #..." oninput="ticketFilters.q=this.value; renderTicketsTable();">
     </div>
@@ -884,7 +914,20 @@ function resolveTargetsFor(priority, clientId, endClientId, agreementId){
 function endClientOptions(clientId, selected){
   return state.endClients
     .filter(ec => !clientId || String(ec.fields.ParentClientLookupId) === String(clientId))
+    .slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""))
     .map(ec => `<option value="${ec.id}" ${String(ec.id)===String(selected)?"selected":""}>${esc(ec.fields.Title)}</option>`).join("");
+}
+
+// Every dropdown/list of Clients across the app should read alphabetically —
+// state.clients itself stays in whatever order SharePoint returned it in
+// (creation order), so callers sort a copy through this instead of sorting
+// state.clients directly (which every ticket/agreement/work-order table also
+// reads for lookups, and doesn't need re-sorted for that).
+function sortedClients(){
+  return state.clients.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+}
+function sortedEndClients(){
+  return state.endClients.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
 }
 
 /* ============================================================
@@ -952,11 +995,11 @@ async function syncActiveEntity(sourceType, title, description, isActive){
   }
 }
 
-function owningEntityOptionsHtml(type){
+function owningEntityOptionsHtml(type, selected){
   if(type === "Agreement") return state.agreements.filter(a => a.fields.Status==="Active")
-    .map(a => `<option value="${a.id}">${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</option>`).join("");
+    .map(a => `<option value="${a.id}" ${String(a.id)===String(selected)?"selected":""}>${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</option>`).join("");
   if(type === "WorkOrder") return state.workOrders.filter(w => ["Draft","Active"].includes(w.fields.Status))
-    .map(w => `<option value="${w.id}">${esc(w.fields.WorkOrderNumber||("WO-"+w.id))} — ${esc(w.fields.Title)}</option>`).join("");
+    .map(w => `<option value="${w.id}" ${String(w.id)===String(selected)?"selected":""}>${esc(w.fields.WorkOrderNumber||("WO-"+w.id))} — ${esc(w.fields.Title)}</option>`).join("");
   return "";
 }
 
@@ -1128,7 +1171,7 @@ function openTicketForm(){
           <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
           <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
             <option value="">— none (internal) —</option>
-            ${state.clients.map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+            ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
           <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
           <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
@@ -1182,6 +1225,7 @@ function renderTicketDetail(){
       <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(t.fields.TicketType||"")} · ${esc(clientName(t))}</div>
 
       <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button class="btn btn-sm" onclick="openEditTicketForm('${t.id}')">✏️ Edit</button>
         <button class="btn btn-sm" onclick="openLogTimeForm('${t.id}')">+ Log time</button>
         <button class="btn btn-sm" onclick="printTicket('${t.id}')">🖨 Print</button>
       </div>
@@ -1207,6 +1251,22 @@ function renderTicketDetail(){
 
       ${t.fields.Description ? `<div class="section-title">Description</div><div>${esc(t.fields.Description).replace(/\n/g,"<br>")}</div>` : ""}
 
+      <div class="section-title">Conversation${(() => { const n = ticketConversation(t.id).length; return n ? ` (${n})` : ""; })()}</div>
+      ${(() => { const convo = ticketConversation(t.id); return convo.length ? `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${convo.map(c => `
+          <div style="border:1px solid var(--gridline);border-radius:8px;padding:10px 12px;background:var(--page);">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">
+              <span><b style="color:var(--ink);">${esc(c.fields.FromName||c.fields.FromEmail||"—")}</b>${c.fields.FromEmail && c.fields.FromEmail!==c.fields.FromName?` (${esc(c.fields.FromEmail)})`:""}</span>
+              <span>${fmtDateTime(c.fields.MessageDate)}</span>
+            </div>
+            ${c.fields.Subject ? `<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">${esc(c.fields.Subject)}</div>` : ""}
+            <div style="white-space:pre-wrap;font-size:13px;">${esc(c.fields.Body||"")}</div>
+          </div>
+        `).join("")}
+      </div>
+      ` : `<div class="empty">No replies yet — a reply that quotes this ticket's number (${esc(t.fields.TicketNumber||("SLA-"+t.id))}) in its subject will show up here automatically.</div>`; })()}
+
       <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs — SLA HUB and CG Time's widget combined)</div>
       ${myEntries.length ? `
       <table><thead><tr><th>Date</th><th>User</th><th>Hours</th><th>Billable</th><th>Via</th><th>Detail</th></tr></thead>
@@ -1226,6 +1286,137 @@ function renderTicketDetail(){
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No assignment changes recorded yet.</div>`; })()}
     </div>
   `;
+}
+
+// Full edit of a ticket already created — reuses the same field ids ("tf_…")
+// and section-card layout as the New ticket / Convert email forms, so
+// onOwningTypeChange()/onOwningRefChange() work unchanged here too.
+// Deliberately leaves out Assigned to (use the Reassign button — that path
+// keeps the assignment-history audit trail) and Status (use the inline
+// status dropdown) — everything else about the ticket can be corrected here.
+function openEditTicketForm(ticketId){
+  const t = state.tickets.find(x => String(x.id)===String(ticketId));
+  if(!t) return;
+  const owningType = t.fields.OwningEntityType || "AdHoc";
+  const owningRefId = owningType === "Agreement" ? ticketLookupId(t,"OwningAgreement")
+    : owningType === "WorkOrder" ? ticketLookupId(t,"OwningWorkOrder") : "";
+  const clientId = ticketLookupId(t,"Client");
+  const endClientId = ticketLookupId(t,"EndClient");
+  openModal(`
+    <h3>✏️ Edit ${esc(t.fields.TicketNumber||t.id)}</h3>
+    <p class="modal-sub">${esc(t.fields.Title||"")} — Assigned to and Status are changed from the ticket detail screen, not here.</p>
+    <div class="form-sections">
+      <div class="form-section full">
+        <div class="form-section-title">Requested by</div>
+        <div class="form-grid">
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(t.fields.RequestedByName||"")}"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(t.fields.RequestedByEmail||"")}"></div>
+        </div>
+      </div>
+
+      <div class="form-section full">
+        <div class="form-section-title">Description</div>
+        <div class="form-grid full">
+          <div class="field"><textarea id="tf_desc">${esc(t.fields.Description||"")}</textarea></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Ticket details</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Title</label><input id="tf_title" type="text" value="${esc(t.fields.Title||"")}"></div>
+          <div class="field span2"><label>Short description <span style="text-transform:none;font-weight:400;">— shown in CG Time's Time Tracking Widget dropdown, keep it brief</span></label><input id="tf_shortdesc" type="text" maxlength="60" value="${esc(t.fields.ShortDescription||"")}"></div>
+          <div class="field"><label>Type</label><select id="tf_type">
+            ${["Support Request","Custom Work Order","Ad Hoc Billable Support"].map(o=>`<option ${o===t.fields.TicketType?"selected":""}>${o}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Priority</label><select id="tf_priority">
+            ${["Critical","High","Normal","Low"].map(o=>`<option ${o===t.fields.Priority?"selected":""}>${o}</option>`).join("")}
+          </select></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Ownership &amp; billing</div>
+        <div class="form-grid">
+          <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
+            <option value="AdHoc" ${owningType==="AdHoc"?"selected":""}>Ad Hoc (no formal agreement)</option>
+            <option value="Agreement" ${owningType==="Agreement"?"selected":""}>SLA Agreement</option>
+            <option value="WorkOrder" ${owningType==="WorkOrder"?"selected":""}>Custom Work Order</option>
+          </select></div>
+          <div class="field span2" id="tf_ownref_wrap" style="display:${owningType==="AdHoc"?"none":""};">
+            <label id="tf_ownref_label">${owningType==="WorkOrder"?"Work order":"Agreement"}</label>
+            <select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option>${owningEntityOptionsHtml(owningType, owningRefId)}</select>
+          </div>
+          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+            <option value="">— none (internal) —</option>
+            ${sortedClients().map(c=>`<option value="${c.id}" ${String(clientId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>End client</label><select id="tf_endclient">${endClientOptions(clientId, endClientId)}</select></div>
+          <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';">
+            <option value="false" ${!t.fields.Billable?"selected":""}>No</option>
+            <option value="true" ${t.fields.Billable?"selected":""}>Yes</option>
+          </select></div>
+          <div class="field highlight span2" id="tf_rate_wrap" style="display:${t.fields.Billable?"":"none"};"><label>Rate (this SLA / work order)</label><input id="tf_rate" type="number" step="0.01" value="${resolveRate(t)}"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="submitEditTicketForm('${t.id}')">Save changes</button>
+    </div>
+  `, {wide:true});
+}
+
+async function submitEditTicketForm(ticketId){
+  const t = state.tickets.find(x => String(x.id)===String(ticketId));
+  if(!t) return;
+  const title = document.getElementById("tf_title").value.trim();
+  if(!title){ toast("Title is required", true); return; }
+  let clientId = document.getElementById("tf_client").value;
+  let endClientId = document.getElementById("tf_endclient").value;
+  const owningType = document.getElementById("tf_owntype").value;
+  const owningRefId = document.getElementById("tf_ownref") ? document.getElementById("tf_ownref").value : "";
+  let owningAgreement = null, owningWorkOrder = null;
+  if(owningType === "Agreement" && owningRefId){
+    owningAgreement = state.agreements.find(a => String(a.id)===String(owningRefId));
+    if(owningAgreement){
+      clientId = ticketLookupId(owningAgreement,"Client") || clientId;
+      endClientId = ticketLookupId(owningAgreement,"EndClient") || endClientId;
+    }
+  } else if(owningType === "WorkOrder" && owningRefId){
+    owningWorkOrder = state.workOrders.find(w => String(w.id)===String(owningRefId));
+    if(owningWorkOrder){
+      clientId = ticketLookupId(owningWorkOrder,"Client") || clientId;
+      endClientId = ticketLookupId(owningWorkOrder,"EndClient") || endClientId;
+    }
+  }
+
+  const fields = {
+    Title: title,
+    ShortDescription: (document.getElementById("tf_shortdesc")?.value || "").trim(),
+    TicketType: document.getElementById("tf_type").value,
+    Priority: document.getElementById("tf_priority").value,
+    OwningEntityType: owningType,
+    RequestedByName: document.getElementById("tf_reqname").value,
+    RequestedByEmail: document.getElementById("tf_reqemail").value,
+    Billable: document.getElementById("tf_billable").value === "true",
+    RateOverride: document.getElementById("tf_rate") ? (Number(document.getElementById("tf_rate").value)||0) : 0,
+    Description: document.getElementById("tf_desc").value,
+    ClientLookupId: clientId ? Number(clientId) : null,
+    EndClientLookupId: endClientId ? Number(endClientId) : null,
+    OwningAgreementLookupId: owningAgreement ? Number(owningAgreement.id) : null,
+    OwningWorkOrderLookupId: owningWorkOrder ? Number(owningWorkOrder.id) : null
+  };
+
+  try{
+    await graphUpdateItem("SLA_Tickets", t.id, fields);
+    Object.assign(t.fields, fields);
+    closeModal();
+    toast("Ticket updated");
+    syncTicketActiveEntity(t);
+    renderTicketDetail();
+    if(document.getElementById("ticketsTableWrap")) renderTicketsTable();
+  }catch(e){ console.error(e); toast("Couldn't save changes: " + e.message, true); }
 }
 
 async function updateTicketStatus(id, status){
@@ -1269,6 +1460,13 @@ async function updateTicketShortDescription(id, value){
     toast("Short description updated");
     syncTicketActiveEntity(t);
   }catch(e){ console.error(e); toast("Couldn't update short description: " + e.message, true); }
+}
+
+/* ---------- Conversation (reply emails captured onto the ticket) ---------- */
+function ticketConversation(ticketId){
+  return state.ticketConversations
+    .filter(c => String(c.fields.TicketId)===String(ticketId))
+    .sort((a,b)=> new Date(a.fields.MessageDate||0) - new Date(b.fields.MessageDate||0));
 }
 
 /* ---------- Assignment (with a full audit trail in SLA_TicketAssignments) ---------- */
@@ -1462,6 +1660,58 @@ let inboxMessages = [];
 let emailDetailId = null;
 let emailDetailCache = {};
 
+// Every acknowledgment email SLA HUB sends embeds the ticket's tracking
+// number in the subject (see sendTicketAcknowledgment) — "[SLA-42] We've
+// received…". Most mail clients keep the subject line through Reply/Reply
+// All, so this is how a reply back to that number gets recognised.
+function extractTicketNumberFromSubject(subject){
+  const m = /\bSLA-(\d+)\b/i.exec(subject||"");
+  return m ? `SLA-${m[1]}` : null;
+}
+function findTicketByNumber(ticketNumber){
+  return state.tickets.find(t => (t.fields.TicketNumber||"").toLowerCase() === ticketNumber.toLowerCase());
+}
+// Turns HTML email content into plain text for storage/display — the div is
+// never attached to the document, so nothing in it (styles, scripts, images)
+// ever runs or loads; this only ever reads back .textContent.
+function stripHtml(html){
+  const div = document.createElement("div");
+  div.innerHTML = html || "";
+  return (div.textContent || div.innerText || "").trim();
+}
+
+// Captures one reply email onto its ticket's Conversation. Best-effort and
+// non-fatal — a failed import just leaves the email to be picked up again on
+// the next refresh rather than blocking Email Intake.
+async function importReplyIntoConversation(m, ticket){
+  let bodyText = m.bodyPreview || "";
+  try{
+    const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${m.id}?$select=body`);
+    if(full?.body?.content){
+      bodyText = full.body.contentType === "html" ? stripHtml(full.body.content) : full.body.content;
+    }
+  }catch(e){
+    console.warn("Couldn't fetch full body for a ticket reply, using the preview instead:", e);
+  }
+  try{
+    const created = await graphCreateItem("SLA_TicketConversations", {
+      Title: `Reply on ${ticket.fields.TicketNumber||ticket.id}`,
+      TicketId: Number(ticket.id),
+      Direction: "Inbound",
+      FromName: m.from?.emailAddress?.name || m.from?.emailAddress?.address || "",
+      FromEmail: m.from?.emailAddress?.address || "",
+      Subject: m.subject || "",
+      Body: bodyText.slice(0, 4000),
+      InternetMessageId: m.internetMessageId || "",
+      MessageDate: m.receivedDateTime || nowIso(),
+      LoggedAt: nowIso()
+    });
+    state.ticketConversations.push(created);
+  }catch(e){
+    console.warn("Couldn't log a reply email to SLA_TicketConversations (run Add-SLAHub-TicketConversations.ps1 if this list doesn't exist yet):", e);
+  }
+}
+
 async function renderEmail(){
   // The page shell (header + the two wraps below) is only built once, the
   // first time this page is opened — not on every call. This function gets
@@ -1500,7 +1750,29 @@ async function renderEmail(){
     // deleteEmailFromIntake(). The email itself is never touched or removed
     // from the shared mailbox, it's just recorded here so it stops showing up.
     const dismissedIds = new Set(state.dismissedEmails.map(d => d.fields.InternetMessageId).filter(Boolean));
-    inboxMessages = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId) && !dismissedIds.has(m.internetMessageId));
+    const candidates = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId) && !dismissedIds.has(m.internetMessageId));
+
+    // A reply to a ticket's tracking number (e.g. "Re: [SLA-42] …") gets
+    // captured straight onto that ticket's Conversation instead of sitting
+    // in the review queue as an unrelated new email — see
+    // importReplyIntoConversation(). Already-imported replies are recognised
+    // by InternetMessageId and stay hidden here too, they just don't need
+    // importing again.
+    const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
+    const stillNeedingReview = [];
+    for(const m of candidates){
+      const ticketNumber = extractTicketNumberFromSubject(m.subject);
+      const ticket = ticketNumber ? findTicketByNumber(ticketNumber) : null;
+      const fromHelpdesk = (m.from?.emailAddress?.address||"").toLowerCase().trim() === HELPDESK_MAILBOX.toLowerCase();
+      if(ticket && !fromHelpdesk){
+        if(!importedIds.has(m.internetMessageId)){
+          await importReplyIntoConversation(m, ticket);
+        }
+        continue; // belongs to the ticket's conversation now, not the review queue
+      }
+      stillNeedingReview.push(m);
+    }
+    inboxMessages = stillNeedingReview;
   }catch(e){
     console.error(e);
     // Only replace the list with the error state if there's nothing already
@@ -1635,7 +1907,7 @@ async function convertEmailToTicket(messageId){
           <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
           <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
             <option value="">— none (internal) —</option>
-            ${state.clients.map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+            ${sortedClients().map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
           <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
           <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
@@ -1814,7 +2086,7 @@ function renderClients(){
     wrap.innerHTML = state.clients.length ? `
       <div class="card" style="padding:0;">
         <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Currency</th></tr></thead>
-        <tbody>${state.clients.map(c=>`<tr class="clickable" onclick="openClientForm('${c.id}')">
+        <tbody>${sortedClients().map(c=>`<tr class="clickable" onclick="openClientForm('${c.id}')">
           <td>${esc(c.fields.Title)}</td><td>${esc(c.fields.ClientInvoiceName||"—")}</td>
           <td>${c.fields.Billable?"Yes":"No"}</td>
           <td>${esc(c.fields.Currency||"—")}</td>
@@ -1824,7 +2096,7 @@ function renderClients(){
     wrap.innerHTML = state.endClients.length ? `
       <div class="card" style="padding:0;">
         <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th></tr></thead>
-        <tbody>${state.endClients.map(ec=>{
+        <tbody>${sortedEndClients().map(ec=>{
           const parent = state.clients.find(c=>String(c.id)===String(ec.fields.ParentClientLookupId));
           return `<tr class="clickable" onclick="openEndClientForm('${ec.id}')">
           <td>${esc(ec.fields.Title)}</td><td>${esc(parent?parent.fields.Title:"—")}</td>
@@ -2047,7 +2319,7 @@ function openEndClientForm(id){
       <div class="field-divider"><span>End client</span></div>
       <div class="field"><label>Name</label><input id="ecf_title" value="${esc(f.Title||"")}"></div>
       <div class="field"><label>Parent client</label><select id="ecf_parent">
-        ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ParentClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+        ${sortedClients().map(c=>`<option value="${c.id}" ${String(f.ParentClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>Xero tracking option</label><input id="ecf_tracking" value="${esc(f.TrackingOption1||"")}" placeholder="e.g. ANZ PNG"></div>
       <div class="field"><label>Location</label><input id="ecf_location" value="${esc(f.Location||"")}"></div>
@@ -2232,7 +2504,7 @@ function openAgreementForm(id){
       <div class="field-divider"><span>Agreement</span></div>
       <div class="field span2"><label>Title</label><input id="agf_title" value="${esc(f.Title||"")}" placeholder="e.g. DayForce — ANZ PNG Support Agreement"></div>
       <div class="field"><label>Client</label><select id="agf_client" onchange="document.getElementById('agf_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
-        ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+        ${sortedClients().map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>End client</label><select id="agf_endclient"><option value="">—</option>${endClientOptions(f.ClientLookupId||(state.clients[0]&&state.clients[0].id), f.EndClientLookupId)}</select></div>
       <div class="field"><label>Status</label><select id="agf_status">
@@ -2403,7 +2675,7 @@ function openWorkOrderForm(id){
       <div class="field-divider"><span>Work order</span></div>
       <div class="field span2"><label>Title</label><input id="wof_title" value="${esc(f.Title||"")}" placeholder="e.g. Orica PNG — Server migration"></div>
       <div class="field"><label>Client</label><select id="wof_client" onchange="document.getElementById('wof_endclient').innerHTML='<option value=&quot;&quot;>—</option>'+endClientOptions(this.value)">
-        ${state.clients.map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+        ${sortedClients().map(c=>`<option value="${c.id}" ${String(f.ClientLookupId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
       </select></div>
       <div class="field"><label>End client</label><select id="wof_endclient"><option value="">—</option>${endClientOptions(f.ClientLookupId||(state.clients[0]&&state.clients[0].id), f.EndClientLookupId)}</select></div>
       <div class="field"><label>Status</label><select id="wof_status">
@@ -2464,7 +2736,7 @@ async function submitWorkOrderForm(id){
 /* ---------- Ad Hoc Support ---------- */
 function renderAdHocList(){
   const wrap = document.getElementById("agreementsBodyWrap");
-  const rows = state.clients.filter(c => c.fields.Billable);
+  const rows = sortedClients().filter(c => c.fields.Billable);
   wrap.innerHTML = `
     <div class="card" style="padding:0;">
       ${rows.length ? `
@@ -2656,7 +2928,7 @@ function renderGenerateInvoice(){
       <div class="form-grid">
         <div class="field"><label>Client</label><select id="gi_client" onchange="document.getElementById('gi_endclient').innerHTML=endClientOptions(this.value)+'<option value=&quot;&quot;>— all end clients —</option>'; invoiceDraftClientId=this.value;">
           <option value="">— select —</option>
-          ${state.clients.filter(c=>c.fields.Billable).map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+          ${sortedClients().filter(c=>c.fields.Billable).map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
         </select></div>
         <div class="field"><label>End client (optional filter)</label><select id="gi_endclient"><option value="">— all —</option></select></div>
       </div>
