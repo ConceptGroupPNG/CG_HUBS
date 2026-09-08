@@ -646,16 +646,27 @@ async function acquireToken(){
 /* ============================================================
    GRAPH HELPERS
    ============================================================ */
-async function graphGet(url){
+async function graphGet(url, _isRetry){
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if(!res.ok){
+    if(res.status === 401 && !_isRetry){
+      try{
+        await acquireToken();
+      }catch(refreshErr){
+        throw new Error("Your session has expired. Please refresh the page and sign in again.");
+      }
+      return graphGet(url, true);
+    }
+    if(res.status === 401){
+      throw new Error("Your session has expired. Please refresh the page and sign in again.");
+    }
     const body = await res.text();
     throw new Error(`Graph error ${res.status}: ${body}`);
   }
   return res.json();
 }
 
-async function graphWrite(method, url, body){
+async function graphWrite(method, url, body, _isRetry){
   const res = await fetch(url, {
     method,
     headers: {
@@ -665,6 +676,17 @@ async function graphWrite(method, url, body){
     body: body ? JSON.stringify(body) : undefined
   });
   if(!res.ok){
+    if(res.status === 401 && !_isRetry){
+      try{
+        await acquireToken();
+      }catch(refreshErr){
+        throw new Error("Your session has expired. Please refresh the page and sign in again.");
+      }
+      return graphWrite(method, url, body, true);
+    }
+    if(res.status === 401){
+      throw new Error("Your session has expired. Please refresh the page and sign in again.");
+    }
     const errBody = await res.text();
     throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
   }
