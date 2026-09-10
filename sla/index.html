@@ -84,6 +84,25 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .stat-tile.tone-warning .val{color:var(--warning);}
 .stat-tile.tone-good .val{color:var(--good);}
 
+/* ---------- Record cards — list rows shown as distinct, self-contained
+   cards instead of dense table rows. A colored left edge doubles as a
+   status indicator on ticket-related lists (see ticketSeverityClass()). */
+.record-list{display:flex;flex-direction:column;gap:10px;}
+.record-card{background:var(--surface-1);border:1.5px solid var(--gridline);border-left:4px solid var(--accent);border-radius:10px;padding:13px 16px;}
+.record-card.clickable{cursor:pointer;transition:box-shadow .15s ease,border-color .15s ease;}
+.record-card.clickable:hover{box-shadow:0 4px 14px rgba(10,12,18,0.10);}
+.record-card.clickable:active{transform:scale(0.997);}
+.record-card.sev-warning{border-left-color:var(--warning);}
+.record-card.sev-critical{border-left-color:var(--critical);}
+.record-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;}
+.record-card-title{font-size:14.5px;font-weight:700;color:var(--ink);}
+.record-card-title .num{color:var(--accent-dk);margin-right:7px;}
+.record-card-sub{font-size:12.5px;color:var(--ink-2);margin-top:3px;}
+.record-card-badges{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;align-items:center;}
+.record-card-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--gridline);font-size:12.5px;color:var(--ink-2);align-items:center;}
+.record-card-meta .m-label{color:var(--muted);margin-right:5px;}
+.record-card-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;}
+
 table{width:100%;border-collapse:collapse;}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--gridline);}
 td{padding:9px 10px;border-bottom:1px solid var(--gridline);font-size:13px;vertical-align:middle;}
@@ -701,6 +720,13 @@ function assignedBadge(t){
   const name = t.fields.AssignedToName;
   return name ? esc(name) : `<span class="badge badge-warning">Unassigned</span>`;
 }
+// Drives a ticket record-card's colored left edge — breached beats at-risk,
+// otherwise no class (falls back to the card's default neutral/accent edge).
+function ticketSeverityClass(bs){
+  if(bs.response==="breached" || bs.resolution==="breached") return "sev-critical";
+  if(bs.response==="atrisk" || bs.resolution==="atrisk") return "sev-warning";
+  return "";
+}
 
 /* ============================================================
    NAVIGATION / RENDER ENGINE
@@ -998,31 +1024,45 @@ function renderDashboard(){
     <div class="card">
       <div class="section-title" style="margin-top:0;">At risk / breached tickets</div>
       ${watchList.length ? `
-      <table><thead><tr><th>Ticket</th><th>Client</th><th>Priority</th><th>Response</th><th>Resolution</th><th>Assigned</th></tr></thead>
-      <tbody>${watchList.map(({t,bs}) => `
-        <tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
-          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${esc(clientName(t))}</td>
-          <td>${priorityBadge(t.fields.Priority)}</td>
-          <td>${statusBadge(bs.response)}</td>
-          <td>${statusBadge(bs.resolution)}</td>
-          <td>${assignedBadge(t)}</td>
-        </tr>`).join("")}</tbody></table>
+      <div class="record-list">
+        ${watchList.map(({t,bs}) => `
+        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
+              <div class="record-card-sub">${esc(clientName(t))}</div>
+            </div>
+            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+            <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
+          </div>
+        </div>`).join("")}
+      </div>
       ` : `<div class="empty">Nothing at risk or breached right now.</div>`}
     </div>
     <div class="card">
       <div class="section-title" style="margin-top:0;">My tickets</div>
       ${myTickets.length ? `
-      <table><thead><tr><th>Ticket</th><th>Client</th><th>Priority</th><th>Status</th><th>Response</th><th>Resolution</th></tr></thead>
-      <tbody>${myTickets.map(({t,bs}) => `
-        <tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
-          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${esc(clientName(t))}</td>
-          <td>${priorityBadge(t.fields.Priority)}</td>
-          <td>${esc(t.fields.Status||"—")}</td>
-          <td>${statusBadge(bs.response)}</td>
-          <td>${statusBadge(bs.resolution)}</td>
-        </tr>`).join("")}</tbody></table>
+      <div class="record-list">
+        ${myTickets.map(({t,bs}) => `
+        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
+              <div class="record-card-sub">${esc(clientName(t))}</div>
+            </div>
+            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+          </div>
+        </div>`).join("")}
+      </div>
       ` : `<div class="empty">${myEmail ? "No open tickets assigned to you right now." : "Sign in to see tickets assigned to you."}</div>`}
     </div>
   `;
@@ -1093,27 +1133,30 @@ function filteredTickets(){
 
 function renderTicketsTable(){
   const rows = filteredTickets();
-  document.getElementById("ticketsTableWrap").innerHTML = `
-    <div class="card" style="padding:0;">
-      ${rows.length ? `
-      <table><thead><tr><th>Ticket</th><th>Type</th><th>Client</th><th>Priority</th><th>Status</th><th>Response</th><th>Resolution</th><th>Assigned</th><th>Opened</th></tr></thead>
-      <tbody>${rows.map(t => {
+  document.getElementById("ticketsTableWrap").innerHTML = rows.length ? `
+    <div class="record-list">
+      ${rows.map(t => {
         const bs = breachStatus(t);
-        return `<tr class="clickable" onclick="openTicketDetail('${t.id}')">
-          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${esc(t.fields.TicketType||"—")}</td>
-          <td>${esc(clientName(t))}</td>
-          <td>${priorityBadge(t.fields.Priority)}</td>
-          <td>${esc(t.fields.Status||"—")}</td>
-          <td>${statusBadge(bs.response)}</td>
-          <td>${statusBadge(bs.resolution)}</td>
-          <td>${assignedBadge(t)}</td>
-          <td>${fmtDate(t.fields.DateOpened)}</td>
-        </tr>`;
-      }).join("")}</tbody></table>
-      ` : `<div class="empty">No tickets match these filters.</div>`}
+        return `
+        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="openTicketDetail('${t.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
+              <div class="record-card-sub">${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</div>
+            </div>
+            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+            <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
+            <span><span class="m-label">Opened</span>${fmtDate(t.fields.DateOpened)}</span>
+          </div>
+        </div>`;
+      }).join("")}
     </div>
-  `;
+  ` : `<div class="empty">No tickets match these filters.</div>`;
 }
 
 
@@ -2110,19 +2153,29 @@ async function renderEmail(){
   }
   const allSelected = inboxMessages.length>0 && inboxMessages.every(m => selectedEmailIds.has(m.id));
   document.getElementById("emailListWrap").innerHTML = inboxMessages.length ? `
-    <div class="card" style="padding:0;">
-      <table><thead><tr>
-        <th style="width:30px;"><input type="checkbox" ${allSelected?"checked":""} onclick="toggleAllEmailSelection(this)"></th>
-        <th>Received</th><th>From</th><th>Subject</th><th></th>
-      </tr></thead>
-      <tbody>${inboxMessages.map(m => `
-        <tr class="clickable" onclick="openEmailDetail('${m.id}')">
-          <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedEmailIds.has(m.id)?"checked":""} onchange="toggleEmailSelection('${m.id}', this.checked)"></td>
-          <td>${fmtDateTime(m.receivedDateTime)}</td>
-          <td>${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")}</td>
-          <td>${esc(m.subject||"(no subject)")}<br><span style="color:var(--ink-2);font-size:12px;">${esc((m.bodyPreview||"").slice(0,120))}</span></td>
-          <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Review</button></td>
-        </tr>`).join("")}</tbody></table>
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;font-size:12.5px;color:var(--ink-2);">
+      <input type="checkbox" id="emailSelectAllCb" ${allSelected?"checked":""} onclick="toggleAllEmailSelection(this)">
+      <label for="emailSelectAllCb" style="cursor:pointer;">Select all</label>
+    </div>
+    <div class="record-list">
+      ${inboxMessages.map(m => `
+      <div class="record-card clickable" onclick="openEmailDetail('${m.id}')">
+        <div class="record-card-top">
+          <div style="display:flex;gap:11px;align-items:flex-start;">
+            <input type="checkbox" onclick="event.stopPropagation()" ${selectedEmailIds.has(m.id)?"checked":""} onchange="toggleEmailSelection('${m.id}', this.checked)" style="margin-top:3px;">
+            <div>
+              <div class="record-card-title">${esc(m.subject||"(no subject)")}</div>
+              <div class="record-card-sub">${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")} · ${fmtDateTime(m.receivedDateTime)}</div>
+            </div>
+          </div>
+          <div class="record-card-actions">
+            <button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Review</button>
+          </div>
+        </div>
+        <div class="record-card-meta" style="border-top:none;padding-top:0;margin-top:9px;">
+          <span>${esc((m.bodyPreview||"").slice(0,140))}</span>
+        </div>
+      </div>`).join("")}
     </div>
   ` : `<div class="empty">No unconverted emails in the inbox.</div>`;
   updateEmailBulkBar();
@@ -2805,21 +2858,28 @@ function renderAgreementsList(){
   const wrap = document.getElementById("agreementsBodyWrap");
   const rows = state.agreements;
   wrap.innerHTML = `
-    <div class="card" style="padding:0;">
-      ${rows.length ? `
-      <table><thead><tr><th>Number</th><th>Title</th><th>Client</th><th>Status</th><th>Rate</th><th></th></tr></thead>
-      <tbody>${rows.map(a=>{
+    ${rows.length ? `
+    <div class="record-list">
+      ${rows.map(a=>{
         const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(a,"Client")));
-        return `<tr class="clickable" onclick="openAgreementDetail('${a.id}')">
-          <td><b>${esc(a.fields.AgreementNumber||("AGR-"+a.id))}</b></td>
-          <td>${esc(a.fields.Title)}</td>
-          <td>${esc(client?client.fields.Title:"—")}</td>
-          <td><span class="badge ${a.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(a.fields.Status||"—")}</span></td>
-          <td>${a.fields.Rate?fmtMoney(a.fields.Rate, client?.fields?.Currency):"—"}</td>
-          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openAgreementForm('${a.id}')">Edit</button></td>
-        </tr>`;
-      }).join("")}</tbody></table>` : `<div class="empty">No agreements yet.</div>`}
-    </div>
+        return `
+        <div class="record-card clickable" onclick="openAgreementDetail('${a.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(a.fields.AgreementNumber||("AGR-"+a.id))}</span>${esc(a.fields.Title)}</div>
+              <div class="record-card-sub">${esc(client?client.fields.Title:"—")}</div>
+            </div>
+            <div class="record-card-badges">
+              <span class="badge ${a.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(a.fields.Status||"—")}</span>
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openAgreementForm('${a.id}')">Edit</button>
+            </div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Rate</span>${a.fields.Rate?fmtMoney(a.fields.Rate, client?.fields?.Currency):"—"}</span>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="empty">No agreements yet.</div>`}
     <div id="agreementDetailWrap"></div>
   `;
   renderAgreementDetail();
@@ -2975,21 +3035,28 @@ function renderWorkOrdersList(){
   const wrap = document.getElementById("agreementsBodyWrap");
   const rows = state.workOrders;
   wrap.innerHTML = `
-    <div class="card" style="padding:0;">
-      ${rows.length ? `
-      <table><thead><tr><th>Number</th><th>Title</th><th>Client</th><th>Status</th><th>Rate</th><th></th></tr></thead>
-      <tbody>${rows.map(w=>{
+    ${rows.length ? `
+    <div class="record-list">
+      ${rows.map(w=>{
         const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(w,"Client")));
-        return `<tr class="clickable" onclick="openWorkOrderDetail('${w.id}')">
-          <td><b>${esc(w.fields.WorkOrderNumber||("WO-"+w.id))}</b></td>
-          <td>${esc(w.fields.Title)}</td>
-          <td>${esc(client?client.fields.Title:"—")}</td>
-          <td><span class="badge ${w.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(w.fields.Status||"—")}</span></td>
-          <td>${w.fields.Rate?fmtMoney(w.fields.Rate, client?.fields?.Currency):"—"}</td>
-          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openWorkOrderForm('${w.id}')">Edit</button></td>
-        </tr>`;
-      }).join("")}</tbody></table>` : `<div class="empty">No work orders yet.</div>`}
-    </div>
+        return `
+        <div class="record-card clickable" onclick="openWorkOrderDetail('${w.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(w.fields.WorkOrderNumber||("WO-"+w.id))}</span>${esc(w.fields.Title)}</div>
+              <div class="record-card-sub">${esc(client?client.fields.Title:"—")}</div>
+            </div>
+            <div class="record-card-badges">
+              <span class="badge ${w.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(w.fields.Status||"—")}</span>
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openWorkOrderForm('${w.id}')">Edit</button>
+            </div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Rate</span>${w.fields.Rate?fmtMoney(w.fields.Rate, client?.fields?.Currency):"—"}</span>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="empty">No work orders yet.</div>`}
     <div id="workOrderDetailWrap"></div>
   `;
   renderWorkOrderDetail();
@@ -3145,14 +3212,19 @@ function renderAdHocList(){
   const wrap = document.getElementById("agreementsBodyWrap");
   const rows = sortedClients().filter(c => c.fields.Billable);
   wrap.innerHTML = `
-    <div class="card" style="padding:0;">
-      ${rows.length ? `
-      <table><thead><tr><th>Client</th><th>Currency</th><th></th></tr></thead>
-      <tbody>${rows.map(c=>`<tr class="clickable" onclick="openAdHocClientDetail('${c.id}')">
-        <td><b>${esc(c.fields.Title)}</b></td><td>${esc(c.fields.Currency||"—")}</td>
-        <td><button class="btn btn-sm" onclick="event.stopPropagation(); openDirectLogTimeForm('AdHocClient','${c.id}')">+ Log time</button></td>
-      </tr>`).join("")}</tbody></table>` : `<div class="empty">No billable clients yet — add one under Clients first.</div>`}
-    </div>
+    ${rows.length ? `
+    <div class="record-list">
+      ${rows.map(c=>`
+      <div class="record-card clickable" onclick="openAdHocClientDetail('${c.id}')">
+        <div class="record-card-top">
+          <div class="record-card-title">${esc(c.fields.Title)}</div>
+          <div class="record-card-actions">
+            <span class="record-card-sub">${esc(c.fields.Currency||"—")}</span>
+            <button class="btn btn-sm" onclick="event.stopPropagation(); openDirectLogTimeForm('AdHocClient','${c.id}')">+ Log time</button>
+          </div>
+        </div>
+      </div>`).join("")}
+    </div>` : `<div class="empty">No billable clients yet — add one under Clients first.</div>`}
     <div id="adHocDetailWrap"></div>
   `;
   renderAdHocDetail();
