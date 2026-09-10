@@ -1801,11 +1801,17 @@ async function logTicketAssignmentChange(ticketId, fromName, fromEmail, toName, 
 
 // Emails the new assignee to let them know a ticket has landed on them.
 // Skipped only when there's no email to send to — sends even when you've
-// assigned the ticket to yourself, which is handy for testing.
-// Best-effort only — a failed send is logged and otherwise ignored, it must
-// never block the assignment that triggered it.
+// assigned the ticket to yourself, which is handy for testing. Returns the
+// sent email's conversationId (or null) — the caller saves it as the
+// ticket's AssignConversationId, so a reply to this email (e.g. the
+// assignee replying with a quick update) also gets matched back to the
+// ticket in Email Intake, same as a customer's reply to the acknowledgment
+// email. Overwritten on every reassignment, so only the most recent
+// assignment thread matches — a reply to a stale one (from before a
+// reassignment) won't. Best-effort only — a failed send is logged and
+// otherwise ignored, it must never block the assignment that triggered it.
 async function notifyTicketAssigned(t, toName, toEmail){
-  if(!toEmail) return;
+  if(!toEmail) return null;
   const ticketNumber = t.fields.TicketNumber || t.id;
   let clientLabel = "";
   try{ clientLabel = clientName(t) || ""; }catch(e){ clientLabel = ""; }
@@ -1824,9 +1830,10 @@ async function notifyTicketAssigned(t, toName, toEmail){
     <p>Open SLA HUB to view or action it: <a href="${APP_URL}">${APP_URL}</a></p>
   `;
   try{
-    await sendGraphMail(toEmail, toName, subject, html);
+    return await sendGraphMailTracked(toEmail, toName, subject, html);
   }catch(e){
     console.warn("Couldn't send assignment notification email:", e);
+    return null;
   }
 }
 
@@ -1900,7 +1907,13 @@ async function submitReassignTicket(ticketId, unassign){
       t.fields.AssignedToEmail = toEmail;
       await logTicketAssignmentChange(t.id, fromName, fromEmail, toName, toEmail);
       if(!unassign && toEmail && toEmail !== fromEmail){
-        notifyTicketAssigned(t, toName, toEmail);
+        const assignConversationId = await notifyTicketAssigned(t, toName, toEmail);
+        if(assignConversationId){
+          try{
+            await graphUpdateItem("SLA_Tickets", t.id, { AssignConversationId: assignConversationId });
+            t.fields.AssignConversationId = assignConversationId;
+          }catch(e){ console.warn("Couldn't save the assignment email's conversation id onto the ticket:", e); }
+        }
       }
     });
     closeModal();
@@ -2051,17 +2064,21 @@ async function renderEmail(){
     const candidates = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId) && !dismissedIds.has(m.internetMessageId));
 
     // A reply within the same email thread as a ticket's acknowledgment
-    // email gets captured straight onto that ticket's Conversation instead
-    // of sitting in the review queue as an unrelated new email — matched via
-    // Graph's own conversationId (see sendGraphMailTracked() and
-    // AckConversationId, saved on the ticket when the acknowledgment goes
-    // out). This is independent of the subject line, so it still works even
-    // if a reply drops or mangles the "[SLA-42]" tag. Already-imported
-    // replies are recognised by InternetMessageId and stay hidden here too,
-    // they just don't need importing again.
-    const ticketByConversationId = new Map(
-      state.tickets.filter(t => t.fields.AckConversationId).map(t => [t.fields.AckConversationId, t])
-    );
+    // email (sent to the requester) or its assignment notification (sent to
+    // the assignee) gets captured straight onto that ticket's Conversation
+    // instead of sitting in the review queue as an unrelated new email —
+    // matched via Graph's own conversationId (see sendGraphMailTracked(),
+    // AckConversationId and AssignConversationId, each saved on the ticket
+    // when the corresponding email goes out). This is independent of the
+    // subject line, so it still works even if a reply drops or mangles the
+    // "[SLA-42]" tag. Already-imported replies are recognised by
+    // InternetMessageId and stay hidden here too, they just don't need
+    // importing again.
+    const ticketByConversationId = new Map();
+    for(const t of state.tickets){
+      if(t.fields.AckConversationId) ticketByConversationId.set(t.fields.AckConversationId, t);
+      if(t.fields.AssignConversationId) ticketByConversationId.set(t.fields.AssignConversationId, t);
+    }
     const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
     const stillNeedingReview = [];
     for(const m of candidates){
@@ -2442,7 +2459,13 @@ async function submitTicketFormCore(opts={}){
       // creation, not just from the first reassignment.
       if(fields.AssignedToName || fields.AssignedToEmail){
         await logTicketAssignmentChange(created.id, "", "", fields.AssignedToName, fields.AssignedToEmail);
-        notifyTicketAssigned(created, fields.AssignedToName, fields.AssignedToEmail);
+        const assignConversationId = await notifyTicketAssigned(created, fields.AssignedToName, fields.AssignedToEmail);
+        if(assignConversationId){
+          try{
+            await graphUpdateItem("SLA_Tickets", created.id, { AssignConversationId: assignConversationId });
+            created.fields.AssignConversationId = assignConversationId;
+          }catch(e){ console.warn("Couldn't save the assignment email's conversation id onto the ticket:", e); }
+        }
       }
     });
   }catch(e){ console.error(e); toast("Couldn't create ticket: " + e.message, true); }
