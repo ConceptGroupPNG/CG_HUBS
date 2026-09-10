@@ -329,6 +329,28 @@ async function sendGraphMail(toEmail, toName, subject, htmlBody){
   await callGraph(url, { method: "POST", body: JSON.stringify(message) });
 }
 
+// Same as sendGraphMail, but sends via a created draft + an explicit "send"
+// call instead of the one-shot "sendMail" action, purely so the caller can
+// read back the sent message's conversationId ("sendMail" returns nothing).
+// Exchange assigns every message in a reply/reply-all thread the same
+// conversationId regardless of what happens to the subject line, so this
+// is what lets Email Intake recognise a customer's reply and match it back
+// to the right ticket automatically. Used only for the ticket
+// acknowledgment email — see sendTicketAcknowledgment().
+async function sendGraphMailTracked(toEmail, toName, subject, htmlBody){
+  if(!toEmail) return null;
+  const draft = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      subject,
+      body: { contentType: "HTML", content: htmlBody },
+      toRecipients: [{ emailAddress: { address: toEmail, name: toName || toEmail } }]
+    })
+  });
+  await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${draft.id}/send`, { method: "POST" });
+  return draft.conversationId || null;
+}
+
 async function resolveSiteId(){
   if(_siteId) return _siteId;
   const data = await callGraph(`${GRAPH}/sites/${SITE_HOST}:${SITE_PATH}`);
@@ -1510,7 +1532,7 @@ function renderTicketDetail(){
           </div>
         `).join("")}
       </div>
-      ` : `<div class="empty">No replies yet — a reply that quotes this ticket's number (${esc(t.fields.TicketNumber||("SLA-"+t.id))}) in its subject will show up here automatically.</div>`; })()}
+      ` : `<div class="empty">No replies yet — a reply to the acknowledgment email sent for this ticket will show up here automatically.</div>`; })()}
 
       <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs — SLA HUB and CG Time's widget combined)</div>
       ${myEntries.length ? `
@@ -1811,15 +1833,14 @@ async function notifyTicketAssigned(t, toName, toEmail){
 // Sends an acknowledgment to whoever raised the ticket (the "Requested by"
 // contact — works the same whether the ticket was typed in manually or came
 // from converting an email), confirming it was received and giving them the
-// ticket's tracking number. The number appears in the subject as "[SLA-42]";
-// most mail clients keep a subject line intact through Reply/Reply All, so
-// the tag survives on a follow-up — a useful hook for Email Intake to later
-// recognise and match a reply back to this ticket, though that matching
-// isn't built yet (today a reply still lands in Email Intake as its own
-// unconverted message). Best-effort only, same as the other notifications.
+// ticket's tracking number. Returns the sent email's conversationId (or null
+// if nothing was sent) — the caller saves that onto the ticket, which is
+// what lets a later reply be matched back automatically (see
+// sendGraphMailTracked() and renderEmail()'s conversationId matching).
+// Best-effort only, same as the other notifications.
 async function sendTicketAcknowledgment(t){
   const toEmail = (t.fields.RequestedByEmail || "").trim();
-  if(!toEmail) return;
+  if(!toEmail) return null;
   const toName = t.fields.RequestedByName || toEmail;
   const ticketNumber = t.fields.TicketNumber || t.id;
   const subject = `[${ticketNumber}] We've received your request — ${t.fields.Title || ""}`;
@@ -1836,9 +1857,10 @@ async function sendTicketAcknowledgment(t){
     <p>We'll be in touch as soon as it's picked up.</p>
   `;
   try{
-    await sendGraphMail(toEmail, toName, subject, html);
+    return await sendGraphMailTracked(toEmail, toName, subject, html);
   }catch(e){
     console.warn("Couldn't send ticket acknowledgment email:", e);
+    return null;
   }
 }
 
@@ -1935,18 +1957,12 @@ async function submitLogTime(ticketId){
 let inboxMessages = [];
 let emailDetailId = null;
 let emailDetailCache = {};
+let selectedEmailIds = new Set(); // for bulk "delete selected" in the review queue
 
 // Every acknowledgment email SLA HUB sends embeds the ticket's tracking
 // number in the subject (see sendTicketAcknowledgment) — "[SLA-42] We've
 // received…". Most mail clients keep the subject line through Reply/Reply
 // All, so this is how a reply back to that number gets recognised.
-function extractTicketNumberFromSubject(subject){
-  const m = /\bSLA-(\d+)\b/i.exec(subject||"");
-  return m ? `SLA-${m[1]}` : null;
-}
-function findTicketByNumber(ticketNumber){
-  return state.tickets.find(t => (t.fields.TicketNumber||"").toLowerCase() === ticketNumber.toLowerCase());
-}
 // Turns HTML email content into plain text for storage/display — the div is
 // never attached to the document, so nothing in it (styles, scripts, images)
 // ever runs or loads; this only ever reads back .textContent.
@@ -2002,10 +2018,16 @@ async function renderEmail(){
   if(shellMissing){
     emailDetailId = null;
     emailDetailCache = {};
+    selectedEmailIds = new Set();
     document.getElementById("page-email").innerHTML = `
       <div class="page-header">
         <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
         <button class="btn" onclick="renderEmail()">↻ Refresh</button>
+      </div>
+      <div id="emailBulkBar" class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;" hidden>
+        <span id="emailBulkCount" style="font-size:13px;color:var(--ink-2);align-self:center;margin-right:4px;"></span>
+        <button class="btn btn-sm" onclick="clearEmailSelection()">Clear selection</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmDeleteSelectedEmails(this)">Delete selected</button>
       </div>
       <div id="emailListWrap"><div class="empty">Loading inbox…</div></div>
       <div id="emailDetailWrap"></div>
@@ -2013,7 +2035,7 @@ async function renderEmail(){
   }
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
-      + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId`;
+      + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId,conversationId`;
     const res = await callGraph(url);
     // "Already converted" is tracked by matching internetMessageId against every
     // ticket's own SourceMessageId (in SLA_Tickets, already loaded in state) —
@@ -2028,17 +2050,22 @@ async function renderEmail(){
     const dismissedIds = new Set(state.dismissedEmails.map(d => d.fields.InternetMessageId).filter(Boolean));
     const candidates = (res.value||[]).filter(m => !convertedIds.has(m.internetMessageId) && !dismissedIds.has(m.internetMessageId));
 
-    // A reply to a ticket's tracking number (e.g. "Re: [SLA-42] …") gets
-    // captured straight onto that ticket's Conversation instead of sitting
-    // in the review queue as an unrelated new email — see
-    // importReplyIntoConversation(). Already-imported replies are recognised
-    // by InternetMessageId and stay hidden here too, they just don't need
-    // importing again.
+    // A reply within the same email thread as a ticket's acknowledgment
+    // email gets captured straight onto that ticket's Conversation instead
+    // of sitting in the review queue as an unrelated new email — matched via
+    // Graph's own conversationId (see sendGraphMailTracked() and
+    // AckConversationId, saved on the ticket when the acknowledgment goes
+    // out). This is independent of the subject line, so it still works even
+    // if a reply drops or mangles the "[SLA-42]" tag. Already-imported
+    // replies are recognised by InternetMessageId and stay hidden here too,
+    // they just don't need importing again.
+    const ticketByConversationId = new Map(
+      state.tickets.filter(t => t.fields.AckConversationId).map(t => [t.fields.AckConversationId, t])
+    );
     const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
     const stillNeedingReview = [];
     for(const m of candidates){
-      const ticketNumber = extractTicketNumberFromSubject(m.subject);
-      const ticket = ticketNumber ? findTicketByNumber(ticketNumber) : null;
+      const ticket = m.conversationId ? ticketByConversationId.get(m.conversationId) : null;
       const fromHelpdesk = (m.from?.emailAddress?.address||"").toLowerCase().trim() === HELPDESK_MAILBOX.toLowerCase();
       if(ticket && !fromHelpdesk){
         if(!importedIds.has(m.internetMessageId)){
@@ -2049,6 +2076,9 @@ async function renderEmail(){
       stillNeedingReview.push(m);
     }
     inboxMessages = stillNeedingReview;
+    // Drop any selection for emails that no longer appear in the queue
+    // (converted, dismissed, or just auto-matched to a ticket above).
+    selectedEmailIds = new Set(Array.from(selectedEmailIds).filter(id => inboxMessages.some(m => m.id === id)));
   }catch(e){
     console.error(e);
     // Only replace the list with the error state if there's nothing already
@@ -2061,11 +2091,16 @@ async function renderEmail(){
     }
     return;
   }
+  const allSelected = inboxMessages.length>0 && inboxMessages.every(m => selectedEmailIds.has(m.id));
   document.getElementById("emailListWrap").innerHTML = inboxMessages.length ? `
     <div class="card" style="padding:0;">
-      <table><thead><tr><th>Received</th><th>From</th><th>Subject</th><th></th></tr></thead>
+      <table><thead><tr>
+        <th style="width:30px;"><input type="checkbox" ${allSelected?"checked":""} onclick="toggleAllEmailSelection(this)"></th>
+        <th>Received</th><th>From</th><th>Subject</th><th></th>
+      </tr></thead>
       <tbody>${inboxMessages.map(m => `
         <tr class="clickable" onclick="openEmailDetail('${m.id}')">
+          <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedEmailIds.has(m.id)?"checked":""} onchange="toggleEmailSelection('${m.id}', this.checked)"></td>
           <td>${fmtDateTime(m.receivedDateTime)}</td>
           <td>${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")}</td>
           <td>${esc(m.subject||"(no subject)")}<br><span style="color:var(--ink-2);font-size:12px;">${esc((m.bodyPreview||"").slice(0,120))}</span></td>
@@ -2073,6 +2108,70 @@ async function renderEmail(){
         </tr>`).join("")}</tbody></table>
     </div>
   ` : `<div class="empty">No unconverted emails in the inbox.</div>`;
+  updateEmailBulkBar();
+}
+
+function toggleEmailSelection(messageId, checked){
+  if(checked) selectedEmailIds.add(messageId); else selectedEmailIds.delete(messageId);
+  updateEmailBulkBar();
+}
+function toggleAllEmailSelection(checkboxEl){
+  if(checkboxEl.checked) inboxMessages.forEach(m => selectedEmailIds.add(m.id));
+  else selectedEmailIds.clear();
+  renderEmail();
+}
+function clearEmailSelection(){
+  selectedEmailIds.clear();
+  renderEmail();
+}
+function updateEmailBulkBar(){
+  const bar = document.getElementById("emailBulkBar");
+  if(!bar) return;
+  const n = selectedEmailIds.size;
+  bar.hidden = n === 0;
+  const countEl = document.getElementById("emailBulkCount");
+  if(countEl) countEl.textContent = `${n} selected`;
+}
+
+// Two-click confirm on the button itself, same lightweight pattern used for
+// deleting a single attachment — SharePoint's own list still holds every
+// dismissal record in SLA_DismissedEmails if one needs undoing by hand.
+function confirmDeleteSelectedEmails(btn){
+  if(btn.dataset.armed === "1"){ deleteSelectedEmails(); return; }
+  btn.dataset.armed = "1";
+  const original = btn.textContent;
+  btn.textContent = "Confirm?";
+  setTimeout(() => { if(btn.isConnected){ btn.dataset.armed = "0"; btn.textContent = original; } }, 3000);
+}
+
+async function deleteSelectedEmails(){
+  const ids = Array.from(selectedEmailIds);
+  if(!ids.length) return;
+  await withBatchedRefresh(async () => {
+    for(const id of ids){
+      const m = inboxMessages.find(x => x.id === id);
+      if(!m) continue;
+      try{
+        const created = await graphCreateItem("SLA_DismissedEmails", {
+          Title: "Dismissed email",
+          InternetMessageId: m.internetMessageId || "",
+          Subject: m.subject || "",
+          DismissedByName: currentAccount?.name || currentAccount?.username || "",
+          DismissedByEmail: (currentAccount?.username || "").toLowerCase().trim(),
+          DismissedAt: nowIso()
+        });
+        state.dismissedEmails.push(created);
+      }catch(e){
+        console.error(e);
+        toast(`Couldn't remove "${m.subject||"an email"}": ${e.message}`, true);
+      }
+    }
+  });
+  inboxMessages = inboxMessages.filter(x => !selectedEmailIds.has(x.id));
+  const removedCount = ids.length;
+  selectedEmailIds.clear();
+  toast(`Removed ${removedCount} email${removedCount===1?"":"s"} from the review queue`);
+  renderEmail();
 }
 
 async function openEmailDetail(id){
@@ -2327,8 +2426,17 @@ async function submitTicketFormCore(opts={}){
       // immediately selectable in CG Time's Time Tracking Widget.
       await syncTicketActiveEntity(created);
       // Let the person who raised it know it's been received, and give them
-      // the tracking number.
-      sendTicketAcknowledgment(created);
+      // the tracking number. Awaited (unlike the other notification emails)
+      // because its conversationId needs saving onto the ticket before this
+      // batch's refresh — that's the hook Email Intake later uses to match a
+      // reply back to this ticket automatically.
+      const ackConversationId = await sendTicketAcknowledgment(created);
+      if(ackConversationId){
+        try{
+          await graphUpdateItem("SLA_Tickets", created.id, { AckConversationId: ackConversationId });
+          created.fields.AckConversationId = ackConversationId;
+        }catch(e){ console.warn("Couldn't save the acknowledgment email's conversation id onto the ticket:", e); }
+      }
       // Record the ticket's starting assignment (even "unassigned") as the
       // first entry in its assignment history, so the trail is complete from
       // creation, not just from the first reassignment.
