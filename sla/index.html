@@ -3117,6 +3117,7 @@ async function addSubtask(scopeItemId, agreementId){
     });
     state.agreementSubtasks.push(created);
     toast("Subtask added");
+    if(scopeUIState.addSubtaskOpenId === scopeItemId) scopeUIState.addSubtaskOpenId = null;
     renderAgreementDetail();
   }catch(e){ console.error(e); toast("Couldn't add subtask: " + e.message, true); }
 }
@@ -3386,6 +3387,7 @@ function renderAgreementsList(){
 
 function openAgreementDetail(id){
   agreementsTab = 'agreements'; agreementDetailId = id;
+  scopeUIState = { editingId: null, addSubtaskOpenId: null };
   navigate('agreements');
   document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
 }
@@ -3468,59 +3470,107 @@ function renderAgreementFeeSchedule(a){
         <tr><td colspan="3" style="text-align:right;font-weight:700;">Total Inc. GST</td><td colspan="2" style="font-weight:700;">${fmtMoney(totals.total, ccy)}</td></tr>
       </tfoot>
     </table>` : `<div class="empty">No fee lines yet.</div>`}
-    <div class="form-grid" style="margin-top:10px;">
-      <div class="field"><label>Service / role</label><input type="text" id="fl_role_${a.id}" placeholder="e.g. Project Manager"></div>
-      <div class="field"><label>Rate/day</label><input type="number" step="0.01" id="fl_rate_${a.id}" placeholder="0.00"></div>
-      <div class="field"><label>Estimated days</label><input type="number" step="1" id="fl_days_${a.id}" placeholder="0"></div>
-    </div>
-    <div class="modal-actions" style="justify-content:flex-start;margin-top:6px;">
-      <button class="btn btn-sm btn-accent" onclick="addFeeLine('${a.id}')">+ Add fee line</button>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+      <input type="text" id="fl_role_${a.id}" placeholder="Service / role" style="flex:2;min-width:0;">
+      <input type="number" step="0.01" id="fl_rate_${a.id}" placeholder="Rate/day" style="width:100px;flex-shrink:0;">
+      <input type="number" step="1" id="fl_days_${a.id}" placeholder="Days" style="width:70px;flex-shrink:0;">
+      <button class="btn btn-sm btn-accent" onclick="addFeeLine('${a.id}')" title="Add fee line" style="flex-shrink:0;">+ Add</button>
     </div>
   `;
 }
 
 // Scope of Work — the CSA's numbered Works items, now structured records
 // instead of free text. Each item can carry Subtasks; a ticket is raised
-// directly against a Subtask (or, via the section-level button below, the
-// Agreement itself) and assigned to someone from there.
+// directly against a Subtask and assigned to someone from there. Kept
+// compact: a scope item is a single line by default (icon actions on the
+// right), its "add subtask" row only appears when the + icon is clicked,
+// and clicking its title switches that one row into an inline edit field.
+let scopeUIState = { editingId: null, addSubtaskOpenId: null };
+
+function toggleAddSubtaskRow(scopeItemId, agreementId){
+  scopeUIState.addSubtaskOpenId = (scopeUIState.addSubtaskOpenId === scopeItemId) ? null : scopeItemId;
+  scopeUIState.editingId = null;
+  renderAgreementDetail();
+}
+function startEditScopeItem(scopeItemId, agreementId){
+  scopeUIState.editingId = scopeItemId;
+  scopeUIState.addSubtaskOpenId = null;
+  renderAgreementDetail();
+}
+function cancelEditScopeItem(agreementId){
+  scopeUIState.editingId = null;
+  renderAgreementDetail();
+}
+async function saveScopeItemEdit(scopeItemId, agreementId){
+  const ta = document.getElementById(`scope_edit_title_${scopeItemId}`);
+  const title = (ta?.value||"").trim();
+  if(!title){ toast("Scope item can't be blank", true); return; }
+  const s = state.agreementScopeItems.find(x=>String(x.id)===String(scopeItemId));
+  try{
+    await graphUpdateItem("SLA_AgreementScopeItems", scopeItemId, { Title: title });
+    if(s) s.fields.Title = title;
+    scopeUIState.editingId = null;
+    renderAgreementDetail();
+  }catch(e){ console.error(e); toast("Couldn't save scope item: " + e.message, true); }
+}
+
 function renderAgreementScopeOfWork(a){
   const items = agreementScopeItems(a.id);
   return `
     <div class="section-title">Scope of Work</div>
-    ${items.length ? items.map(s => {
-      const subtasks = scopeItemSubtasks(s.id);
-      return `
-      <div style="border:1px solid var(--gridline);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:var(--page);">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-          <div><b>${esc(s.fields.Title)}</b>${s.fields.Description ? `<div style="color:var(--ink-2);font-size:12.5px;margin-top:2px;">${esc(s.fields.Description)}</div>` : ""}</div>
-          <button class="btn btn-sm btn-danger" onclick="confirmDeleteScopeItem(this,'${s.id}')">🗑</button>
-        </div>
-        ${subtasks.length ? `
-        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
-          ${subtasks.map(st => `
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;background:var(--surface-1);border:1px solid var(--gridline);border-radius:6px;">
-              <div><span style="font-size:13px;">${esc(st.fields.Title)}</span>${st.fields.AssignedToName ? ` <span class="badge badge-neutral">${esc(st.fields.AssignedToName)}</span>` : ""}</div>
-              <div style="display:flex;gap:6px;flex-shrink:0;">
-                <button class="btn btn-sm" onclick="raiseTicketFromSubtask('${a.id}','${s.id}','${st.id}')">+ Raise ticket</button>
-                <button class="btn btn-sm btn-danger" onclick="confirmDeleteSubtask(this,'${st.id}')">🗑</button>
-              </div>
-            </div>
-          `).join("")}
-        </div>` : ""}
-        <div class="form-grid" style="margin-top:10px;">
-          <div class="field"><label>Subtask title</label><input type="text" id="subtask_new_${s.id}" placeholder="e.g. Configure GoPNG Payroll module"></div>
-          ${assignPickerHtml(`subtask_${s.id}`)}
-        </div>
-        <div class="modal-actions" style="justify-content:flex-start;margin-top:6px;">
-          <button class="btn btn-sm btn-accent" onclick="addSubtask('${s.id}','${a.id}')">+ Add subtask</button>
-        </div>
-      </div>`;
-    }).join("") : `<div class="empty">No scope items yet.</div>`}
-    <div class="form-grid">
-      <div class="field span2"><label>New scope item</label><input type="text" id="scope_new_${a.id}" placeholder="e.g. Leadership, training and assistance in day-to-day operation of GoPNG Payroll"></div>
+    ${items.length ? items.map((s,idx) => renderScopeItemRow(a, s, idx+1)).join("") : `<div class="empty">No scope items yet.</div>`}
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+      <input type="text" id="scope_new_${a.id}" placeholder="+ New scope item…" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter'){addScopeItem('${a.id}');}">
+      <button class="btn btn-sm btn-accent" onclick="addScopeItem('${a.id}')" title="Add scope item" style="flex-shrink:0;">+ Add</button>
     </div>
-    <div class="modal-actions" style="justify-content:flex-start;margin-top:6px;margin-bottom:4px;">
-      <button class="btn btn-sm btn-accent" onclick="addScopeItem('${a.id}')">+ Add scope item</button>
+  `;
+}
+
+function renderScopeItemRow(a, s, num){
+  const subtasks = scopeItemSubtasks(s.id);
+  const isEditing = scopeUIState.editingId === s.id;
+  const isAddingSubtask = scopeUIState.addSubtaskOpenId === s.id;
+  return `
+    <div style="border:1px solid var(--gridline);border-radius:8px;padding:7px 10px;margin-bottom:6px;background:var(--page);">
+      ${isEditing ? `
+      <div style="display:flex;gap:8px;align-items:flex-start;">
+        <textarea id="scope_edit_title_${s.id}" style="flex:1;min-height:40px;font-size:13px;">${esc(s.fields.Title)}</textarea>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm btn-accent" onclick="saveScopeItemEdit('${s.id}','${a.id}')" title="Save">💾</button>
+          <button class="btn btn-sm" onclick="cancelEditScopeItem('${a.id}')" title="Cancel">✕</button>
+        </div>
+      </div>
+      ` : `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="cursor:pointer;flex:1;min-width:0;font-size:13.5px;" onclick="startEditScopeItem('${s.id}','${a.id}')" title="Click to edit">
+          <span style="color:var(--muted);margin-right:6px;">${num}.</span>${esc(s.fields.Title)}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm" onclick="event.stopPropagation(); toggleAddSubtaskRow('${s.id}','${a.id}')" title="Add subtask">➕</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); confirmDeleteScopeItem(this,'${s.id}')" title="Delete">🗑</button>
+        </div>
+      </div>
+      `}
+      ${subtasks.length ? `
+      <div style="margin-top:7px;display:flex;flex-direction:column;gap:5px;">
+        ${subtasks.map(st => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 9px;background:var(--surface-1);border:1px solid var(--gridline);border-radius:6px;">
+            <div><span style="font-size:12.5px;">${esc(st.fields.Title)}</span>${st.fields.AssignedToName ? ` <span class="badge badge-neutral">${esc(st.fields.AssignedToName)}</span>` : ""}</div>
+            <div style="display:flex;gap:5px;flex-shrink:0;">
+              <button class="btn btn-sm" onclick="raiseTicketFromSubtask('${a.id}','${s.id}','${st.id}')" title="Raise ticket">🎫</button>
+              <button class="btn btn-sm btn-danger" onclick="confirmDeleteSubtask(this,'${st.id}')" title="Delete">🗑</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>` : ""}
+      ${isAddingSubtask ? `
+      <div style="display:flex;gap:6px;align-items:center;margin-top:7px;">
+        <input type="text" id="subtask_new_${s.id}" placeholder="Subtask title" style="flex:1;min-width:0;">
+        <select id="subtask_${s.id}_assign" style="max-width:170px;flex-shrink:0;"><option value="">— Unassigned —</option>${resourceOptions()}</select>
+        <button class="btn btn-sm btn-accent" onclick="addSubtask('${s.id}','${a.id}')" title="Add subtask" style="flex-shrink:0;">✓</button>
+        <button class="btn btn-sm" onclick="toggleAddSubtaskRow('${s.id}','${a.id}')" title="Cancel" style="flex-shrink:0;">✕</button>
+      </div>
+      ` : ""}
     </div>
   `;
 }
