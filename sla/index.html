@@ -104,6 +104,11 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .record-card-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--gridline);font-size:12.5px;color:var(--ink-2);align-items:center;}
 .record-card-meta .m-label{color:var(--muted);margin-right:5px;}
 .record-card-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;}
+/* One-line variant — client/description plus the response/resolution/assigned
+   badges share the card's second line instead of a separate bordered row
+   underneath, so a ticket summary card takes noticeably less vertical space. */
+.record-card-sub-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px 16px;margin-top:4px;font-size:12.5px;color:var(--ink-2);}
+.record-card-sub-row .m-label{color:var(--muted);margin-right:5px;}
 
 table{width:100%;border-collapse:collapse;}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--gridline);}
@@ -1055,14 +1060,14 @@ function renderDashboard(){
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub">${esc(clientName(t))}</div>
+              <div class="record-card-sub-row">
+                <span>${esc(clientName(t))}</span>
+                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+                <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
+              </div>
             </div>
             <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-          <div class="record-card-meta">
-            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
-            <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
           </div>
         </div>`).join("")}
       </div>
@@ -1077,14 +1082,14 @@ function renderDashboard(){
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub">${esc(clientName(t))}</div>
+              <div class="record-card-sub-row">
+                <span>${esc(clientName(t))}</span>
+                <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+              </div>
             </div>
             <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-          <div class="record-card-meta">
-            <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
-            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
           </div>
         </div>`).join("")}
       </div>
@@ -1167,16 +1172,16 @@ function renderTicketsTable(){
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub">${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</div>
+              <div class="record-card-sub-row">
+                <span>${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</span>
+                <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+                <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
+                <span><span class="m-label">Opened</span>${fmtDate(t.fields.DateOpened)}</span>
+              </div>
             </div>
             <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-          <div class="record-card-meta">
-            <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
-            <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-            <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
-            <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
-            <span><span class="m-label">Opened</span>${fmtDate(t.fields.DateOpened)}</span>
           </div>
         </div>`;
       }).join("")}
