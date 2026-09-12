@@ -223,6 +223,27 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .agr-section.c-fee th{padding:4px 6px;}
 .agr-section.c-fee td{padding:2px 6px;}
 .agr-section.c-fee td input[type=text],.agr-section.c-fee td input[type=number]{padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--page);}
+
+/* Ticket detail — each section (Description, Notes, Attachments,
+   Conversation, Time logged, Assignment history) gets a full colored border
+   all the way round, not just a left accent, so they read as distinct cards
+   on what is otherwise a long single-column page. Colors are deliberately
+   cool/neutral, not the SLA breach status colors (green/amber/rust/red) used
+   elsewhere on this same screen (Response/Resolution SLA badges above). */
+.tkt-section{border:2px solid var(--gridline);border-radius:10px;padding:14px 16px;margin:16px 0;background:var(--surface-1);}
+.tkt-section > .section-title{margin-top:0;border-left:none;padding-left:0;}
+.tkt-section.c-desc{border-color:var(--accent);}
+.tkt-section.c-desc > .section-title{color:var(--accent-dk);}
+.tkt-section.c-notes{border-color:var(--brand-gold);}
+.tkt-section.c-notes > .section-title{color:var(--brand-gold-dk);}
+.tkt-section.c-attach{border-color:#0f8b8d;}
+.tkt-section.c-attach > .section-title{color:#0f8b8d;}
+.tkt-section.c-convo{border-color:#6952c9;}
+.tkt-section.c-convo > .section-title{color:#6952c9;}
+.tkt-section.c-time{border-color:#4a5568;}
+.tkt-section.c-time > .section-title{color:#4a5568;}
+.tkt-section.c-hist{border-color:#a8574e;}
+.tkt-section.c-hist > .section-title{color:#a8574e;}
 </style>
 </head>
 <body>
@@ -1587,8 +1608,9 @@ function renderTicketDetail(){
         <b>Short description</b><div><input type="text" maxlength="60" value="${esc(t.fields.ShortDescription||"")}" placeholder="${isTicketActive(t)?"shown in CG Time's widget dropdown while open":"ticket is closed — not shown in the widget"}" style="width:100%;" onchange="updateTicketShortDescription('${t.id}', this.value)"></div>
       </div>
 
-      ${t.fields.Description ? `<div class="section-title">Description</div><div>${esc(t.fields.Description).replace(/\n/g,"<br>")}</div>` : ""}
+      ${t.fields.Description ? `<div class="tkt-section c-desc"><div class="section-title">Description</div><div>${esc(t.fields.Description).replace(/\n/g,"<br>")}</div></div>` : ""}
 
+      <div class="tkt-section c-notes">
       <div class="section-title">Notes${(() => { const n = ticketNotes(t.id).length; return n ? ` (${n})` : ""; })()}</div>
       <div class="field" style="margin-bottom:8px;">
         <textarea id="noteInput_${t.id}" placeholder="Log an update on this ticket — visible to staff only, timestamped automatically…" style="min-height:56px;"></textarea>
@@ -1609,7 +1631,9 @@ function renderTicketDetail(){
         `).join("")}
       </div>
       ` : `<div class="empty">No notes logged yet.</div>`; })()}
+      </div>
 
+      <div class="tkt-section c-attach">
       <div class="section-title">Attachments${attachState.items.length ? ` (${attachState.items.length})` : ""}</div>
       <div class="attach-dropzone" id="attachZone_${t.id}" tabindex="0"
            ondragover="onAttachDragOver(event)" ondragleave="onAttachDragLeave(event)"
@@ -1631,7 +1655,9 @@ function renderTicketDetail(){
           </div>
         `).join("")}
       </div>` : `<div class="empty">${attachState.status==="loading" ? "Loading attachments…" : "No attachments yet."}</div>`}
+      </div>
 
+      <div class="tkt-section c-convo">
       <div class="section-title">Conversation${(() => { const n = ticketConversation(t.id).length; return n ? ` (${n})` : ""; })()}</div>
       ${(() => { const convo = ticketConversation(t.id); return convo.length ? `
       <div style="display:flex;flex-direction:column;gap:10px;">
@@ -1647,7 +1673,9 @@ function renderTicketDetail(){
         `).join("")}
       </div>
       ` : `<div class="empty">No replies yet — a reply to the acknowledgment email sent for this ticket will show up here automatically.</div>`; })()}
+      </div>
 
+      <div class="tkt-section c-time">
       <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs — SLA HUB and CG Time's widget combined)</div>
       ${myEntries.length ? `
       <table><thead><tr><th>Date</th><th>User</th><th>Hours</th><th>Billable</th><th>Via</th><th>Detail</th></tr></thead>
@@ -1655,7 +1683,9 @@ function renderTicketDetail(){
         <td>${fmtDate(e.fields.WorkDate)}</td><td>${esc(e.fields.EntryUser)}</td><td>${e.fields.Hours}</td>
         <td>${e.fields.Billable?"Yes":"No"}</td><td>${esc(e._via)}</td><td>${esc(e.fields.ActivityDetail||"")}</td>
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No time logged yet.</div>`}
+      </div>
 
+      <div class="tkt-section c-hist">
       <div class="section-title">Assignment history</div>
       ${(() => { const hist = ticketAssignmentHistory(t.id); return hist.length ? `
       <table><thead><tr><th>Date</th><th>Changed by</th><th>From</th><th>To</th></tr></thead>
@@ -1665,6 +1695,7 @@ function renderTicketDetail(){
         <td>${a.fields.FromName ? esc(a.fields.FromName) : `<span class="badge badge-neutral">Unassigned</span>`}</td>
         <td>${a.fields.ToName ? esc(a.fields.ToName) : `<span class="badge badge-warning">Unassigned</span>`}</td>
       </tr>`).join("")}</tbody></table>` : `<div class="empty">No assignment changes recorded yet.</div>`; })()}
+      </div>
     </div>
   `;
 }
