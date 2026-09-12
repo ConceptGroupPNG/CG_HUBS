@@ -436,7 +436,9 @@
         return;
       }
       entitySourceMap = new Map(entities.map((e) => [e.code, e.source]));
-      entitySelect.innerHTML = entities.map((e) => `<option value="${e.code}">${e.code} — ${e.description}</option>`).join("");
+      // Show just the description in the picker — the code (e.g. CSA-1042)
+      // is still recorded on the time entry itself, just not shown here.
+      entitySelect.innerHTML = entities.map((e) => `<option value="${e.code}">${e.description || e.code}</option>`).join("");
       entitySelect.disabled = false;
       timerBtn.disabled = false;
       manualLogBtn.disabled = false;
