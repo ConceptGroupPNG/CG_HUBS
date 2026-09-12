@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>CG Time Attendance</title>
+<meta name="theme-color" content="#5e491f" />
+<meta name="description" content="Clock in and out for work, geofenced to the Concept Group office." />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="CG Time Attendance" />
+<meta name="mobile-web-app-capable" content="yes" />
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<style>
+  :root{
+    --page-bg:#ece1c8;
+    --surface-card:#f7f1e2;
+    --surface-card-2:#efe6cf;
+    --ink-primary:#241a10;
+    --ink-secondary:#5c4a34;
+    --ink-muted:#8a7860;
+    --brass:#86693a;
+    --brass-deep:#5e491f;
+    --brass-light:#b4934f;
+    --hairline:#ddd0ab;
+    --status-good:#0ca30c;
+    --status-warning:#b5790a;
+    --status-critical:#d03b3b;
+    --radius:14px;
+    --shadow:0 4px 16px rgba(94,73,31,0.16);
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+    background-color:var(--page-bg);
+    background-image:url("background.png");
+    background-position:center;
+    background-size:cover;
+    background-repeat:no-repeat;
+    color:var(--ink-primary);
+    min-height:100dvh;
+    overscroll-behavior:none;
+  }
+  #app{min-height:100dvh;display:flex;flex-direction:column;}
+  [hidden]{display:none!important;}
+
+  /* ---------- Sign-in screen ---------- */
+  .signin-screen{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(28px + var(--safe-top)) 24px calc(28px + var(--safe-bottom));
+  }
+  .signin-card{
+    width:100%;max-width:380px;background:var(--surface-card);border:1px solid var(--hairline);
+    border-radius:20px;box-shadow:var(--shadow);padding:36px 28px 32px;text-align:center;
+  }
+  .signin-logo{width:100%;max-width:220px;height:auto;display:block;margin:0 auto 18px;filter:drop-shadow(0 3px 7px rgba(0,0,0,0.25));}
+  .signin-tagline{margin:0 0 26px;font-size:14px;color:var(--ink-secondary);}
+  .btn-signin{
+    width:100%;border:none;border-radius:12px;padding:15px 18px;font-size:16px;font-weight:700;
+    background:linear-gradient(160deg,var(--brass-light),var(--brass-deep));color:#fff8e8;cursor:pointer;
+  }
+  .btn-signin:active{filter:brightness(0.95);}
+  .signin-error{margin-top:16px;font-size:13px;color:var(--status-critical);min-height:1em;}
+
+  /* ---------- Main app ---------- */
+  .topbar{
+    display:flex;align-items:center;gap:10px;padding:calc(12px + var(--safe-top)) 16px 12px;
+    background:var(--surface-card);border-bottom:1px solid var(--hairline);
+  }
+  .topbar-logo{height:34px;width:auto;flex:none;}
+  .topbar-title{font-size:15px;font-weight:700;color:var(--ink-primary);flex:1;letter-spacing:.01em;}
+  .user-chip{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+  .user-name{font-size:11.5px;color:var(--ink-muted);max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .signout-link{border:none;background:none;color:var(--brass);font-size:11.5px;font-weight:600;padding:0;cursor:pointer;}
+
+  .content{flex:1;padding:18px 18px calc(28px + var(--safe-bottom));display:flex;flex-direction:column;gap:16px;max-width:480px;width:100%;margin:0 auto;}
+
+  .status-card{
+    background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:26px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;
+  }
+  .status-headline{font-size:17px;font-weight:700;color:var(--ink-primary);}
+  .status-detail{font-size:13.5px;color:var(--ink-secondary);}
+  .status-detail b{color:var(--ink-primary);}
+
+  .location-pill{
+    display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-muted);
+    background:var(--surface-card-2);border:1px solid var(--hairline);border-radius:999px;padding:7px 14px;
+  }
+  .location-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ink-muted);}
+  .location-pill.in-range .location-dot{background:var(--status-good);}
+  .location-pill.out-of-range .location-dot{background:var(--status-critical);}
+  .location-pill.checking .location-dot{background:var(--status-warning);}
+
+  .btn-clock{
+    width:100%;max-width:260px;border:none;border-radius:999px;padding:20px 20px;font-size:18px;font-weight:700;
+    background:linear-gradient(160deg,var(--brass-light),var(--brass-deep));color:#fff8e8;cursor:pointer;
+  }
+  .btn-clock.out{background:linear-gradient(160deg,#d9704f,#a8402a);}
+  .btn-clock:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-clock:active:not(:disabled){filter:brightness(0.95);}
+
+  .retry-link{border:none;background:none;color:var(--brass);font-weight:700;font-size:13px;cursor:pointer;padding:4px;}
+
+  .error-banner{
+    background:rgba(208,59,59,0.12);border:1px solid rgba(208,59,59,0.35);color:#9c2c2c;
+    border-radius:10px;padding:10px 14px;font-size:13px;min-height:0;
+  }
+  .info-banner{
+    background:rgba(134,105,58,0.10);border:1px solid rgba(134,105,58,0.30);color:var(--brass-deep);
+    border-radius:10px;padding:10px 14px;font-size:13px;
+  }
+
+  .spacer{flex:1;}
+  .footnote{text-align:center;font-size:11px;color:var(--ink-muted);padding-top:4px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Sign-in screen -->
+  <div id="signinScreen" class="signin-screen">
+    <div class="signin-card">
+      <img class="signin-logo" src="logo.png" alt="CG Time" />
+      <p class="signin-tagline">Concept Group — employee clock in / out</p>
+      <button id="signInBtn" class="btn-signin">Sign in with Microsoft</button>
+      <div id="signinError" class="signin-error"></div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="mainScreen" hidden style="flex:1;display:flex;flex-direction:column;">
+    <div class="topbar">
+      <img class="topbar-logo" src="logo.png" alt="" />
+      <div class="topbar-title">CG Time Attendance</div>
+      <div class="user-chip">
+        <span id="userName" class="user-name"></span>
+        <button id="signOutBtn" class="signout-link">Sign out</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <div id="notLinkedBanner" class="error-banner" hidden>
+        Your sign-in isn't linked to an Employee record yet. Ask your
+        administrator to add your Concept Group email address to your
+        Employee record in CG Time, then try again.
+      </div>
+
+      <div id="statusArea" hidden>
+        <div class="status-card">
+          <div id="statusHeadline" class="status-headline">—</div>
+          <div id="statusDetail" class="status-detail"></div>
+          <div id="locationPill" class="location-pill checking">
+            <span class="location-dot"></span>
+            <span id="locationText">Checking your location…</span>
+          </div>
+          <button id="clockBtn" class="btn-clock" disabled>Clock In</button>
+          <button id="retryLocationBtn" class="retry-link" hidden>Check location again</button>
+        </div>
+      </div>
+
+      <div id="errorBanner" class="error-banner" hidden></div>
+
+      <div class="spacer"></div>
+      <div class="footnote">Concept Group · CG Time</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------
+  // Same tenant and SharePoint site as every other Hub. This app has its
+  // OWN dedicated Azure AD app registration (matching the pattern set by
+  // Concept Time Mobile) — see README.md "Azure AD setup" for the steps to
+  // create it and paste the client ID in below.
+  const CONFIG = {
+    tenantId: "ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
+    clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", // see README.md
+    siteHostname: "conceptcompg.sharepoint.com",
+    sitePath: "/sites/CG_Time",
+    employeesListName: "CG_Employees",
+    timeRecordsListName: "CG_EmployeeTimeRecords",
+    payPeriodsListName: "CG_PayPeriods",
+    scopes: ["Sites.ReadWrite.All", "User.Read"],
+  };
+
+  // Office geofence — 9°28'18.9"S 147°09'14.7"E, converted to decimal
+  // degrees. Adjust OFFICE_RADIUS_METERS here if 200m proves too tight or
+  // too loose in practice; no other change needed.
+  const OFFICE_LAT = -9.471917;
+  const OFFICE_LON = 147.154083;
+  const OFFICE_RADIUS_METERS = 200;
+
+  // Use the page's actual path as-is (GitHub Pages serves this folder with
+  // a trailing slash, and that's what must be registered in Azure AD too).
+  const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+  // ---------------------------------------------------------------------
+  // Elements
+  // ---------------------------------------------------------------------
+  const signinScreen = document.getElementById("signinScreen");
+  const mainScreen = document.getElementById("mainScreen");
+  const signInBtn = document.getElementById("signInBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const signinError = document.getElementById("signinError");
+  const userNameEl = document.getElementById("userName");
+
+  const notLinkedBanner = document.getElementById("notLinkedBanner");
+  const statusArea = document.getElementById("statusArea");
+  const statusHeadline = document.getElementById("statusHeadline");
+  const statusDetail = document.getElementById("statusDetail");
+  const locationPill = document.getElementById("locationPill");
+  const locationText = document.getElementById("locationText");
+  const clockBtn = document.getElementById("clockBtn");
+  const retryLocationBtn = document.getElementById("retryLocationBtn");
+  const errorBanner = document.getElementById("errorBanner");
+
+  // ---------------------------------------------------------------------
+  // Auth (MSAL Browser, PKCE + redirect — matches every other Hub)
+  // ---------------------------------------------------------------------
+  const msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CONFIG.clientId,
+      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+      redirectUri: REDIRECT_URI,
+    },
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+  });
+
+  async function getAccessToken() {
+    const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
+    if (!account) throw new Error("Not signed in");
+    try {
+      const result = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account });
+      return result.accessToken;
+    } catch (e) {
+      await msalInstance.acquireTokenRedirect({ scopes: CONFIG.scopes });
+      return new Promise(() => {}); // navigation is happening; nothing more to do here
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Graph calls against the CG_Time SharePoint site — same site and field
+  // names as the CG Time dashboard itself, so entries made here show up
+  // there exactly like a Manual or Biometric row would.
+  // ---------------------------------------------------------------------
+  const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+  let siteId = null, employeesListId = null, timeListId = null, payPeriodsListId = null;
+
+  async function graphFetch(path, options = {}) {
+    const token = await getAccessToken();
+    const res = await fetch(`${GRAPH_BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Graph API error ${res.status}: ${text}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function ensureSiteAndLists() {
+    if (siteId && employeesListId && timeListId && payPeriodsListId) return;
+    const site = await graphFetch(`/sites/${CONFIG.siteHostname}:${CONFIG.sitePath}`);
+    siteId = site.id;
+    const lists = await graphFetch(`/sites/${siteId}/lists?$select=id,displayName`);
+    const find = (name) => {
+      const l = lists.value.find((x) => x.displayName === name);
+      if (!l) throw new Error(`Could not find the "${name}" list on the site.`);
+      return l.id;
+    };
+    employeesListId = find(CONFIG.employeesListName);
+    timeListId = find(CONFIG.timeRecordsListName);
+    payPeriodsListId = find(CONFIG.payPeriodsListName);
+  }
+
+  async function getMe() {
+    return graphFetch("/me?$select=displayName,mail,userPrincipalName");
+  }
+
+  async function findEmployeeByEmail(email) {
+    await ensureSiteAndLists();
+    const result = await graphFetch(
+      `/sites/${siteId}/lists/${employeesListId}/items?expand=fields(select=Title,EmployeeNumber,Email,IsActive)&$top=500`
+    );
+    const target = (email || "").toLowerCase();
+    return (
+      result.value.find(
+        (item) =>
+          item.fields &&
+          item.fields.IsActive !== false &&
+          (item.fields.Email || "").toLowerCase() === target
+      ) || null
+    );
+  }
+
+  async function findCurrentPayPeriod(dateStr) {
+    await ensureSiteAndLists();
+    const result = await graphFetch(
+      `/sites/${siteId}/lists/${payPeriodsListId}/items?expand=fields(select=PayNumber,PPEStart,PPEEnd)&$top=500`
+    );
+    const match = result.value.find((item) => {
+      const f = item.fields || {};
+      const start = (f.PPEStart || "").slice(0, 10);
+      const end = (f.PPEEnd || "").slice(0, 10);
+      return start && end && dateStr >= start && dateStr <= end;
+    });
+    return match ? parseFloat(match.fields.PayNumber) : null;
+  }
+
+  async function findTodayRecord(employeeNumber, dateStr) {
+    await ensureSiteAndLists();
+    const result = await graphFetch(
+      `/sites/${siteId}/lists/${timeListId}/items?expand=fields(select=Title,EmployeeNumber,WorkDate,TimeIn,TimeOut,EntrySource)&$top=500`
+    );
+    return (
+      result.value.find((item) => {
+        const f = item.fields || {};
+        return (
+          (f.EmployeeNumber || "").toLowerCase() === (employeeNumber || "").toLowerCase() &&
+          (f.WorkDate || "").slice(0, 10) === dateStr
+        );
+      }) || null
+    );
+  }
+
+  async function createClockIn(employee, dateStr, timeStr) {
+    await ensureSiteAndLists();
+    const payNumber = await findCurrentPayPeriod(dateStr);
+    const fields = {
+      Title: `${employee.fields.EmployeeNumber} ${dateStr}`,
+      EmployeeNumber: employee.fields.EmployeeNumber,
+      WorkDate: new Date(dateStr + "T00:00:00Z").toISOString(),
+      PayNumber: payNumber,
+      TimeIn: timeStr,
+      TimeOut: "",
+      EntrySource: "Mobile",
+      EnteredBy: employee.fields.Title,
+    };
+    const created = await graphFetch(`/sites/${siteId}/lists/${timeListId}/items`, {
+      method: "POST",
+      body: JSON.stringify({ fields }),
+    });
+    return created.id;
+  }
+
+  async function setClockOut(itemId, timeStr) {
+    await ensureSiteAndLists();
+    await graphFetch(`/sites/${siteId}/lists/${timeListId}/items/${itemId}/fields`, {
+      method: "PATCH",
+      body: JSON.stringify({ TimeOut: timeStr }),
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Geofencing
+  // ---------------------------------------------------------------------
+  // Haversine distance between two lat/lon points, in metres.
+  function distanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      if (!("geolocation" in navigator)) {
+        reject(new Error("This browser doesn't support location services."));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // UI state
+  // ---------------------------------------------------------------------
+  let currentEmployee = null;
+  let todayRecord = null; // existing CG_EmployeeTimeRecords row for today, if any
+  let lastKnownDistance = null;
+  let withinFence = false;
+
+  function showError(message) {
+    if (message) {
+      errorBanner.textContent = message;
+      errorBanner.hidden = false;
+    } else {
+      errorBanner.hidden = true;
+      errorBanner.textContent = "";
+    }
+  }
+
+  function nowHHMM() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  // Local calendar components, never toISOString()/new Date(string) —
+  // avoids the UTC-shift bug in PNG's UTC+10 timezone.
+  function toLocalDateOnly(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function renderStatus() {
+    if (todayRecord && todayRecord.fields.TimeIn && todayRecord.fields.TimeOut) {
+      statusHeadline.textContent = "Today's attendance complete";
+      statusDetail.innerHTML = `In <b>${todayRecord.fields.TimeIn}</b> · Out <b>${todayRecord.fields.TimeOut}</b>`;
+      clockBtn.textContent = "Clock In";
+      clockBtn.classList.remove("out");
+      clockBtn.disabled = true;
+    } else if (todayRecord && todayRecord.fields.TimeIn) {
+      statusHeadline.textContent = "Clocked in";
+      statusDetail.innerHTML = `Since <b>${todayRecord.fields.TimeIn}</b>${todayRecord.fields.EntrySource && todayRecord.fields.EntrySource !== "Mobile" ? ` (${todayRecord.fields.EntrySource})` : ""}`;
+      clockBtn.textContent = "Clock Out";
+      clockBtn.classList.add("out");
+      clockBtn.disabled = !withinFence;
+    } else {
+      statusHeadline.textContent = "Not clocked in";
+      statusDetail.textContent = "Tap below when you arrive at the office.";
+      clockBtn.textContent = "Clock In";
+      clockBtn.classList.remove("out");
+      clockBtn.disabled = !withinFence;
+    }
+  }
+
+  function renderLocation(state, text) {
+    locationPill.classList.remove("in-range", "out-of-range", "checking");
+    locationPill.classList.add(state);
+    locationText.textContent = text;
+    retryLocationBtn.hidden = state === "checking";
+  }
+
+  async function checkLocationAndRefresh() {
+    renderLocation("checking", "Checking your location…");
+    withinFence = false;
+    renderStatus();
+    try {
+      const pos = await getCurrentPosition();
+      const dist = distanceMeters(
+        pos.coords.latitude,
+        pos.coords.longitude,
+        OFFICE_LAT,
+        OFFICE_LON
+      );
+      lastKnownDistance = Math.round(dist);
+      withinFence = dist <= OFFICE_RADIUS_METERS;
+      if (withinFence) {
+        renderLocation("in-range", `At the office (~${lastKnownDistance}m from centre)`);
+      } else {
+        renderLocation(
+          "out-of-range",
+          `Too far from the office — ~${lastKnownDistance}m away (need to be within ${OFFICE_RADIUS_METERS}m)`
+        );
+      }
+    } catch (e) {
+      withinFence = false;
+      const msg =
+        e.code === 1 /* PERMISSION_DENIED */
+          ? "Location permission is required to clock in/out. Please allow location access for this app."
+          : "Couldn't get your location. Check your GPS/location settings and try again.";
+      renderLocation("out-of-range", msg);
+    }
+    renderStatus();
+  }
+
+  retryLocationBtn.addEventListener("click", checkLocationAndRefresh);
+
+  async function refreshTodayRecord() {
+    const dateStr = toLocalDateOnly(new Date());
+    todayRecord = await findTodayRecord(currentEmployee.fields.EmployeeNumber, dateStr);
+    renderStatus();
+  }
+
+  clockBtn.addEventListener("click", async () => {
+    showError("");
+    clockBtn.disabled = true;
+    try {
+      // Re-check location fresh at the moment of the tap, not the page load.
+      await checkLocationAndRefresh();
+      if (!withinFence) {
+        clockBtn.disabled = false;
+        return;
+      }
+      const dateStr = toLocalDateOnly(new Date());
+      const timeStr = nowHHMM();
+      if (!todayRecord || !todayRecord.fields.TimeIn) {
+        await createClockIn(currentEmployee, dateStr, timeStr);
+      } else if (!todayRecord.fields.TimeOut) {
+        await setClockOut(todayRecord.id, timeStr);
+      }
+      await refreshTodayRecord();
+    } catch (e) {
+      showError(`Could not save: ${e.message}`);
+    } finally {
+      renderStatus();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------
+  async function showSignedIn(account) {
+    signinScreen.hidden = true;
+    mainScreen.hidden = false;
+    userNameEl.textContent = account.name || account.username || "";
+
+    try {
+      const me = await getMe();
+      const employee = (await findEmployeeByEmail(me.mail)) || (await findEmployeeByEmail(me.userPrincipalName));
+      if (!employee) {
+        notLinkedBanner.hidden = false;
+        statusArea.hidden = true;
+        return;
+      }
+      currentEmployee = employee;
+      notLinkedBanner.hidden = true;
+      statusArea.hidden = false;
+      await refreshTodayRecord();
+      await checkLocationAndRefresh();
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+  function showSignedOut() {
+    mainScreen.hidden = true;
+    signinScreen.hidden = false;
+  }
+
+  signInBtn.addEventListener("click", async () => {
+    signinError.textContent = "";
+    signInBtn.disabled = true;
+    signInBtn.textContent = "Signing in…";
+    try {
+      await msalInstance.loginRedirect({ scopes: CONFIG.scopes });
+    } catch (e) {
+      signinError.textContent = "Sign-in failed. Please try again.";
+      signInBtn.disabled = false;
+      signInBtn.textContent = "Sign in with Microsoft";
+    }
+  });
+
+  signOutBtn.addEventListener("click", () => {
+    const account = msalInstance.getActiveAccount();
+    msalInstance.logoutRedirect({ account });
+  });
+
+  (async function boot() {
+    try {
+      const resp = await msalInstance.handleRedirectPromise();
+      let account = (resp && resp.account) || msalInstance.getAllAccounts()[0];
+      if (account) {
+        msalInstance.setActiveAccount(account);
+        await showSignedIn(account);
+      } else {
+        showSignedOut();
+      }
+    } catch (e) {
+      signinError.textContent = "Sign-in failed. Please try again.";
+      showSignedOut();
+    }
+  })();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
