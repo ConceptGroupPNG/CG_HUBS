@@ -2,7 +2,12 @@
 // Only caches this app's own files (so it opens instantly and is
 // installable). Never touches Microsoft Graph, sign-in, or the MSAL CDN
 // script — those always go straight to the network.
-const CACHE_NAME = "concept-time-shell-v1";
+// Bump this version string any time index.html (or any other shell file)
+// changes — that's what makes the browser notice this file differs, install
+// the new service worker, and evict the old cached copy. Without a bump,
+// phones that already visited keep serving the stale cached index.html
+// indefinitely, even after the repo itself is updated.
+const CACHE_NAME = "concept-time-shell-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",
