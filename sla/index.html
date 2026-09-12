@@ -199,22 +199,23 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .section-title{font-size:13px;font-weight:700;margin:18px 0 8px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-left:3px solid var(--accent);padding-left:8px;}
 
 /* Agreement detail — each section (Notes, Fee schedule, Scope of Work,
-   Tickets, Time logged) gets its own card and accent color so they read as
+   Tickets, Time logged) gets its own card with a full colored border all
+   the way round (matching the Ticket detail page's style) so they read as
    distinct blocks at a glance, rather than one long undifferentiated page.
    Colors are deliberately cool/neutral, not the green/amber/rust/red used
    for SLA breach status elsewhere, so the two kinds of color never compete
    for meaning on the same screen. */
-.agr-section{border:1px solid var(--gridline);border-left:4px solid var(--ink-2);border-radius:10px;padding:14px 16px;margin:16px 0;background:var(--surface-1);}
+.agr-section{border:2px solid var(--gridline);border-radius:10px;padding:14px 16px;margin:16px 0;background:var(--surface-1);}
 .agr-section > .section-title{margin-top:0;border-left:none;padding-left:0;}
-.agr-section.c-notes{border-left-color:var(--brand-gold);}
+.agr-section.c-notes{border-color:var(--brand-gold);}
 .agr-section.c-notes > .section-title{color:var(--brand-gold-dk);}
-.agr-section.c-fee{border-left-color:var(--accent);}
+.agr-section.c-fee{border-color:var(--accent);}
 .agr-section.c-fee > .section-title{color:var(--accent-dk);}
-.agr-section.c-scope{border-left-color:#0f8b8d;}
+.agr-section.c-scope{border-color:#0f8b8d;}
 .agr-section.c-scope > .section-title{color:#0f8b8d;}
-.agr-section.c-tickets{border-left-color:#6952c9;}
+.agr-section.c-tickets{border-color:#6952c9;}
 .agr-section.c-tickets > .section-title{color:#6952c9;}
-.agr-section.c-time{border-left-color:#4a5568;}
+.agr-section.c-time{border-color:#4a5568;}
 .agr-section.c-time > .section-title{color:#4a5568;}
 
 /* Fee schedule rows hold input fields, so the global table cell padding
