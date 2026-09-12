@@ -1156,17 +1156,23 @@ function renderDashboard(){
   `;
 }
 
+// Shows "Internal Support" instead of a bare "—" when a ticket genuinely has
+// no client AND is explicitly marked Internal — a single change point that
+// surfaces the Internal/Ad-Hoc distinction everywhere a ticket's client is
+// shown (ticket list, ticket detail subheading, dashboard cards), without
+// having to touch each of those render sites individually.
 function clientName(ticket){
   const c = state.clients.find(c => String(c.id) === String(ticketLookupId(ticket,"Client")));
   const ec = state.endClients.find(c => String(c.id) === String(ticketLookupId(ticket,"EndClient")));
   if(ec) return `${ec.fields.Title} (${c?c.fields.Title:"—"})`;
-  return c ? c.fields.Title : "—";
+  if(c) return c.fields.Title;
+  return (ticket.fields.OwningEntityType||"AdHoc") === "Internal" ? "Internal Support" : "—";
 }
 
 /* ============================================================
    TICKETS
    ============================================================ */
-let ticketFilters = { type:"", priority:"", status:"", client:"", q:"" };
+let ticketFilters = { type:"", priority:"", status:"", client:"", owning:"", q:"" };
 let ticketDetailId = null;
 
 function renderTickets(){
@@ -1192,6 +1198,14 @@ function renderTickets(){
         <option value="">All clients</option>
         ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
       </select>
+      <select onchange="ticketFilters.owning=this.value; renderTicketsTable();">
+        <option value="">All owning entities</option>
+        <option value="Internal">Internal Support</option>
+        <option value="AdHoc">Ad Hoc</option>
+        <option value="Agreement">SLA Agreement</option>
+        <option value="WorkOrder">Custom Work Order</option>
+        <option value="ServiceAck">Service Ack</option>
+      </select>
       <input type="text" placeholder="Search title / ticket #..." oninput="ticketFilters.q=this.value; renderTicketsTable();">
     </div>
     <div id="ticketsTableWrap"></div>
@@ -1211,6 +1225,7 @@ function filteredTickets(){
     if(ticketFilters.priority && f.Priority !== ticketFilters.priority) return false;
     if(ticketFilters.status && f.Status !== ticketFilters.status) return false;
     if(ticketFilters.client && String(ticketLookupId(t,"Client")) !== String(ticketFilters.client)) return false;
+    if(ticketFilters.owning && (f.OwningEntityType||"AdHoc") !== ticketFilters.owning) return false;
     if(ticketFilters.q){
       const q = ticketFilters.q.toLowerCase();
       if(!(f.Title||"").toLowerCase().includes(q) && !(f.TicketNumber||"").toLowerCase().includes(q)) return false;
@@ -1353,16 +1368,27 @@ function owningEntityOptionsHtml(type, selected){
     .map(a => `<option value="${a.id}" ${String(a.id)===String(selected)?"selected":""}>${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</option>`).join("");
   if(type === "WorkOrder") return state.workOrders.filter(w => ["Draft","Active"].includes(w.fields.Status))
     .map(w => `<option value="${w.id}" ${String(w.id)===String(selected)?"selected":""}>${esc(w.fields.WorkOrderNumber||("WO-"+w.id))} — ${esc(w.fields.Title)}</option>`).join("");
+  if(type === "ServiceAck") return [...state.serviceAcks].sort((a,b)=> new Date(b.fields.EffectiveDate||0)-new Date(a.fields.EffectiveDate||0))
+    .map(sa => `<option value="${sa.id}" ${String(sa.id)===String(selected)?"selected":""}>${esc(sa.fields.Title)}${sa.fields.Reference?` — ${esc(sa.fields.Reference)}`:""}</option>`).join("");
   return "";
 }
 
 // Wired to the ticket form's Owning-entity select (id "tf_owntype").
+// "Internal" and "AdHoc" both have no reference record to pick (there's
+// nothing to look up), but only "Internal" also forces Client back to blank
+// and locks it — an Internal Support ticket has no client by definition,
+// whereas Ad Hoc still expects a real (billable) client to be chosen.
 function onOwningTypeChange(){
   const type = document.getElementById("tf_owntype").value;
   const wrap = document.getElementById("tf_ownref_wrap");
-  if(type === "AdHoc"){ wrap.style.display = "none"; document.getElementById("tf_ownref").innerHTML = ""; return; }
+  const clientSel = document.getElementById("tf_client");
+  if(clientSel){
+    clientSel.disabled = (type === "Internal");
+    if(type === "Internal") clientSel.value = "";
+  }
+  if(type === "Internal" || type === "AdHoc"){ wrap.style.display = "none"; document.getElementById("tf_ownref").innerHTML = ""; return; }
   wrap.style.display = "";
-  document.getElementById("tf_ownref_label").textContent = type === "Agreement" ? "Agreement" : "Work order";
+  document.getElementById("tf_ownref_label").textContent = type === "Agreement" ? "Agreement" : type === "WorkOrder" ? "Work order" : "Service Ack";
   document.getElementById("tf_ownref").innerHTML = `<option value="">— select —</option>` + owningEntityOptionsHtml(type);
 }
 
@@ -1373,9 +1399,9 @@ function onOwningRefChange(){
   const type = document.getElementById("tf_owntype").value;
   const refId = document.getElementById("tf_ownref").value;
   if(!refId) return;
-  const entity = type === "Agreement"
-    ? state.agreements.find(a => String(a.id)===String(refId))
-    : state.workOrders.find(w => String(w.id)===String(refId));
+  const entity = type === "Agreement" ? state.agreements.find(a => String(a.id)===String(refId))
+    : type === "WorkOrder" ? state.workOrders.find(w => String(w.id)===String(refId))
+    : state.serviceAcks.find(sa => String(sa.id)===String(refId));
   if(!entity) return;
   const clientId = ticketLookupId(entity,"Client");
   const endClientId = ticketLookupId(entity,"EndClient");
@@ -1390,26 +1416,37 @@ function onOwningRefChange(){
   }
 }
 
-// All hours attributable to an Agreement or Work Order: tickets owned by it
-// (their SLA_TimeEntries rows), entries logged directly against it in SLA
-// HUB (no ticket), and entries logged externally via CG_Time's Time Tracking
-// Widget — matched cross-site by each OWNED TICKET's own synced active-entity
-// title (the widget logs against Tickets now, not Agreements/Work Orders —
-// see syncTicketActiveEntity()), rolled up here for reporting. Also still
-// matches the entity's own former active-entity title, so hours logged
-// against it before this change don't silently disappear from its total.
+// The ticket/time-entry lookup field name that points back at a given
+// Owning-entity type — "Agreement"/"WorkOrder" have carried these since the
+// start; "ServiceAck" (OwningServiceAck) is ticket-only for now (no
+// SLA_TimeEntries field for it yet, so a Service Ack's "direct" bucket below
+// always comes back empty — hours only roll up via tickets tied to it).
+function owningRefFieldFor(type){
+  return type === "Agreement" ? "OwningAgreement" : type === "WorkOrder" ? "OwningWorkOrder" : "OwningServiceAck";
+}
+
+// All hours attributable to an Agreement, Work Order, or Service Ack: tickets
+// owned by it (their SLA_TimeEntries rows), entries logged directly against
+// it in SLA HUB (no ticket), and entries logged externally via CG_Time's Time
+// Tracking Widget — matched cross-site by each OWNED TICKET's own synced
+// active-entity title (the widget logs against Tickets now, not
+// Agreements/Work Orders — see syncTicketActiveEntity()), rolled up here for
+// reporting. Also still matches the entity's own former active-entity title,
+// so hours logged against it before this change don't silently disappear
+// from its total.
 function hoursForOwningEntity(type, entity){
   const legacyTitle = activeEntityTitleFor(type, entity);
+  const refField = owningRefFieldFor(type);
   const ownedTicketIds = new Set(
     state.tickets.filter(t => t.fields.OwningEntityType===type &&
-      String(ticketLookupId(t, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id))
+      String(ticketLookupId(t, refField))===String(entity.id))
       .map(t => String(t.id))
   );
   const ownedTickets = state.tickets.filter(t => ownedTicketIds.has(String(t.id)));
   const ticketTitles = new Set(ownedTickets.map(t => activeEntityTitleFor("Ticket", t)));
   const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
   const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType===type &&
-    String(ticketLookupId(e, type==="Agreement"?"OwningAgreement":"OwningWorkOrder"))===String(entity.id));
+    String(ticketLookupId(e, refField))===String(entity.id));
   const external = state.crossTimeEntries.filter(e => {
     const csa = (e.fields.CSA||"").trim();
     return ticketTitles.has(csa) || csa === legacyTitle;
@@ -1474,6 +1511,11 @@ function owningEntityLinkHtml(ticket){
     const wo = state.workOrders.find(w => String(w.id)===String(ticketLookupId(ticket,"OwningWorkOrder")));
     return wo ? `<a href="#" onclick="openWorkOrderDetail('${wo.id}'); return false;">${esc(wo.fields.WorkOrderNumber||("WO-"+wo.id))} — ${esc(wo.fields.Title)}</a>` : "Work order (not found)";
   }
+  if(type === "ServiceAck"){
+    const sa = state.serviceAcks.find(s => String(s.id)===String(ticketLookupId(ticket,"OwningServiceAck")));
+    return sa ? `<a href="#" onclick="openServiceAckDetail('${sa.id}'); return false;">${esc(sa.fields.Title)}${sa.fields.Reference?` — ${esc(sa.fields.Reference)}`:""}</a>` : "Service Ack (not found)";
+  }
+  if(type === "Internal") return "Internal Support (no client)";
   return "Ad Hoc (no formal agreement)";
 }
 
@@ -1532,12 +1574,14 @@ function openTicketForm(){
         <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-            <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+            <option value="Internal" selected>Internal Support (no client)</option>
+            <option value="AdHoc">Ad Hoc (billable, no formal agreement)</option>
             <option value="Agreement">SLA Agreement</option>
             <option value="WorkOrder">Custom Work Order</option>
+            <option value="ServiceAck">Service Acknowledgement</option>
           </select></div>
           <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
-          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+          <div class="field"><label>Client</label><select id="tf_client" disabled onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
             <option value="">— none (internal) —</option>
             ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
@@ -1722,7 +1766,8 @@ function openEditTicketForm(ticketId){
   if(!t) return;
   const owningType = t.fields.OwningEntityType || "AdHoc";
   const owningRefId = owningType === "Agreement" ? ticketLookupId(t,"OwningAgreement")
-    : owningType === "WorkOrder" ? ticketLookupId(t,"OwningWorkOrder") : "";
+    : owningType === "WorkOrder" ? ticketLookupId(t,"OwningWorkOrder")
+    : owningType === "ServiceAck" ? ticketLookupId(t,"OwningServiceAck") : "";
   const clientId = ticketLookupId(t,"Client");
   const endClientId = ticketLookupId(t,"EndClient");
   openModal(`
@@ -1762,15 +1807,17 @@ function openEditTicketForm(ticketId){
         <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-            <option value="AdHoc" ${owningType==="AdHoc"?"selected":""}>Ad Hoc (no formal agreement)</option>
+            <option value="Internal" ${owningType==="Internal"?"selected":""}>Internal Support (no client)</option>
+            <option value="AdHoc" ${owningType==="AdHoc"?"selected":""}>Ad Hoc (billable, no formal agreement)</option>
             <option value="Agreement" ${owningType==="Agreement"?"selected":""}>SLA Agreement</option>
             <option value="WorkOrder" ${owningType==="WorkOrder"?"selected":""}>Custom Work Order</option>
+            <option value="ServiceAck" ${owningType==="ServiceAck"?"selected":""}>Service Acknowledgement</option>
           </select></div>
-          <div class="field span2" id="tf_ownref_wrap" style="display:${owningType==="AdHoc"?"none":""};">
-            <label id="tf_ownref_label">${owningType==="WorkOrder"?"Work order":"Agreement"}</label>
+          <div class="field span2" id="tf_ownref_wrap" style="display:${(owningType==="AdHoc"||owningType==="Internal")?"none":""};">
+            <label id="tf_ownref_label">${owningType==="WorkOrder"?"Work order":owningType==="ServiceAck"?"Service Ack":"Agreement"}</label>
             <select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option>${owningEntityOptionsHtml(owningType, owningRefId)}</select>
           </div>
-          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+          <div class="field"><label>Client</label><select id="tf_client" ${owningType==="Internal"?"disabled":""} onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
             <option value="">— none (internal) —</option>
             ${sortedClients().map(c=>`<option value="${c.id}" ${String(clientId)===String(c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
@@ -1799,7 +1846,7 @@ async function submitEditTicketForm(ticketId){
   let endClientId = document.getElementById("tf_endclient").value;
   const owningType = document.getElementById("tf_owntype").value;
   const owningRefId = document.getElementById("tf_ownref") ? document.getElementById("tf_ownref").value : "";
-  let owningAgreement = null, owningWorkOrder = null;
+  let owningAgreement = null, owningWorkOrder = null, owningServiceAck = null;
   if(owningType === "Agreement" && owningRefId){
     owningAgreement = state.agreements.find(a => String(a.id)===String(owningRefId));
     if(owningAgreement){
@@ -1812,6 +1859,13 @@ async function submitEditTicketForm(ticketId){
       clientId = ticketLookupId(owningWorkOrder,"Client") || clientId;
       endClientId = ticketLookupId(owningWorkOrder,"EndClient") || endClientId;
     }
+  } else if(owningType === "ServiceAck" && owningRefId){
+    owningServiceAck = state.serviceAcks.find(sa => String(sa.id)===String(owningRefId));
+    if(owningServiceAck){
+      clientId = ticketLookupId(owningServiceAck,"Client") || clientId;
+    }
+  } else if(owningType === "Internal"){
+    clientId = ""; endClientId = ""; // Internal Support tickets never carry a client, whatever the (disabled) field last held
   }
 
   const fields = {
@@ -1828,7 +1882,8 @@ async function submitEditTicketForm(ticketId){
     ClientLookupId: clientId ? Number(clientId) : null,
     EndClientLookupId: endClientId ? Number(endClientId) : null,
     OwningAgreementLookupId: owningAgreement ? Number(owningAgreement.id) : null,
-    OwningWorkOrderLookupId: owningWorkOrder ? Number(owningWorkOrder.id) : null
+    OwningWorkOrderLookupId: owningWorkOrder ? Number(owningWorkOrder.id) : null,
+    OwningServiceAckLookupId: owningServiceAck ? Number(owningServiceAck.id) : null
   };
 
   try{
@@ -2458,9 +2513,11 @@ async function convertEmailToTicket(messageId){
         <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-            <option value="AdHoc" selected>Ad Hoc (no formal agreement)</option>
+            <option value="AdHoc" selected>Ad Hoc (billable, no formal agreement)</option>
+            <option value="Internal">Internal Support (no client)</option>
             <option value="Agreement">SLA Agreement</option>
             <option value="WorkOrder">Custom Work Order</option>
+            <option value="ServiceAck">Service Acknowledgement</option>
           </select></div>
           <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
           <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
@@ -2546,9 +2603,9 @@ async function submitTicketFormCore(opts={}){
   // directly rather than trusting the UI's auto-fill, so a ticket always
   // ends up with the right Client/EndClient even if onOwningRefChange()
   // never fired for some reason.
-  const owningType = document.getElementById("tf_owntype") ? document.getElementById("tf_owntype").value : "AdHoc";
+  const owningType = document.getElementById("tf_owntype") ? document.getElementById("tf_owntype").value : "Internal";
   const owningRefId = document.getElementById("tf_ownref") ? document.getElementById("tf_ownref").value : "";
-  let owningAgreement = null, owningWorkOrder = null;
+  let owningAgreement = null, owningWorkOrder = null, owningServiceAck = null;
   if(owningType === "Agreement" && owningRefId){
     owningAgreement = state.agreements.find(a => String(a.id)===String(owningRefId));
     if(owningAgreement){
@@ -2561,6 +2618,13 @@ async function submitTicketFormCore(opts={}){
       clientId = ticketLookupId(owningWorkOrder,"Client") || clientId;
       endClientId = ticketLookupId(owningWorkOrder,"EndClient") || endClientId;
     }
+  } else if(owningType === "ServiceAck" && owningRefId){
+    owningServiceAck = state.serviceAcks.find(sa => String(sa.id)===String(owningRefId));
+    if(owningServiceAck){
+      clientId = ticketLookupId(owningServiceAck,"Client") || clientId;
+    }
+  } else if(owningType === "Internal"){
+    clientId = ""; endClientId = ""; // Internal Support tickets never carry a client, whatever the (disabled) field last held
   }
 
   const targets = resolveTargetsFor(priority, clientId, endClientId, owningAgreement?.id);
@@ -2590,6 +2654,7 @@ async function submitTicketFormCore(opts={}){
   if(endClientId) fields.EndClientLookupId = Number(endClientId);
   if(owningAgreement) fields.OwningAgreementLookupId = Number(owningAgreement.id);
   if(owningWorkOrder) fields.OwningWorkOrderLookupId = Number(owningWorkOrder.id);
+  if(owningServiceAck) fields.OwningServiceAckLookupId = Number(owningServiceAck.id);
   // Raised from a CSA Agreement's Scope of Work Subtask (via the "+ Raise
   // ticket" button)? Carry those two extra, more granular owning-entity
   // links too — the Agreement link above still resolves rate/targets as
@@ -2946,7 +3011,7 @@ async function submitEndClientForm(id){
    against it — manually via a ticket, directly in SLA HUB, or via CG
    Time's shared Time Tracking Widget — combined into one table.
    ============================================================ */
-let agreementsTab = "agreements"; // "agreements" | "workorders" | "serviceacks" | "adhoc" — "workorders" is kept as an internally-reachable state (see below) even though it no longer has a visible tab
+let agreementsTab = "agreements"; // "agreements" | "serviceacks" | "workorders" | "adhoc"
 let agreementDetailId = null;
 let workOrderDetailId = null;
 let adHocClientDetailId = null;
@@ -2957,22 +3022,17 @@ function renderAgreements(){
   // one just before calling this (via navigate()), and each tab's list
   // renderer only ever reads its own matching id, so nothing stale leaks
   // across tabs. Resetting here would wipe that id before it's ever read.
-  //
-  // Work Orders no longer has a visible tab or a creation entry point here
-  // (Service Acks replaced it in this slot) — but the "workorders" dispatch
-  // branch below is deliberately kept working, because a Ticket's "Owning
-  // entity" link still calls openWorkOrderDetail() for any ticket owned by
-  // a pre-existing Work Order, and that link must keep resolving even
-  // though Work Orders can no longer be managed from the nav.
   document.getElementById("page-agreements").innerHTML = `
     <div class="page-header">
-      <div><h2>Agreements</h2><div class="sub">What tickets and hours are logged against — SLA Agreements, Service Acknowledgements, or Ad Hoc Support</div></div>
+      <div><h2>Agreements</h2><div class="sub">What tickets and hours are logged against — SLA Agreements, Service Acknowledgements, Custom Work Orders, or Ad Hoc Support</div></div>
       ${agreementsTab==='agreements' ? `<button class="btn btn-accent" onclick="openAgreementForm()">+ New agreement</button>` : ""}
       ${agreementsTab==='serviceacks' ? `<button class="btn btn-accent" onclick="openServiceAckDetail()">+ New Service Acknowledgement</button>` : ""}
+      ${agreementsTab==='workorders' ? `<button class="btn btn-accent" onclick="openWorkOrderForm()">+ New work order</button>` : ""}
     </div>
     <div class="tabbar">
       <div class="tab ${agreementsTab==='agreements'?'active':''}" onclick="agreementsTab='agreements'; agreementDetailId=null; renderAgreements();">Agreements</div>
       <div class="tab ${agreementsTab==='serviceacks'?'active':''}" onclick="agreementsTab='serviceacks'; serviceAckDetailOpen=false; currentServiceAckId=null; renderAgreements();">Service Acks</div>
+      <div class="tab ${agreementsTab==='workorders'?'active':''}" onclick="agreementsTab='workorders'; workOrderDetailId=null; renderAgreements();">Work Orders</div>
       <div class="tab ${agreementsTab==='adhoc'?'active':''}" onclick="agreementsTab='adhoc'; adHocClientDetailId=null; renderAgreements();">Ad Hoc Support</div>
     </div>
     <div id="agreementsBodyWrap"></div>
@@ -4405,6 +4465,26 @@ function renderServiceAckDetail(){
   saLines = []; saLineCounter = 0;
   saAppendixTasks = []; saAppendixTaskCounter = 0;
 
+  // Tickets raised against this Service Ack (mirrors Agreement/Work Order's
+  // own "tickets + hours logged" section) — only meaningful once the SA is
+  // actually saved, so this is skipped entirely while creating a new one.
+  let ticketsSectionHtml = "";
+  if(sa){
+    const bucket = hoursForOwningEntity("ServiceAck", sa);
+    const tickets = state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id)));
+    ticketsSectionHtml = `
+      <div class="section-title">Tickets under this Service Ack (${bucket.total.toFixed(2)} hrs logged)</div>
+      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
+        <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets raised under this Service Ack yet.</div>`}
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
+        <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('ServiceAck','${sa.id}');">+ New ticket under this Service Ack</button>
+      </div>
+    `;
+  }
+
   wrap.innerHTML = `
     <div class="detail-panel" style="margin-top:16px;">
       <button class="close" onclick="closeServiceAckDetail();">✕</button>
@@ -4465,6 +4545,7 @@ function renderServiceAckDetail(){
           <div id="sa_preview"><div class="empty">Select a client and add at least one line item to preview the document.</div></div>
         </div>
       </div>
+      ${ticketsSectionHtml}
     </div>
   `;
 
