@@ -4354,8 +4354,8 @@ function renderServiceAcksList(){
         <div class="record-card clickable" onclick="openServiceAckDetail('${sa.id}')">
           <div class="record-card-top">
             <div>
-              <div class="record-card-title"><span class="num">${esc(sa.fields.Title)}</span>${esc(client?client.fields.Title:"—")}</div>
-              <div class="record-card-sub">${fmtDate(sa.fields.EffectiveDate)}</div>
+              <div class="record-card-title"><span class="num">${esc(sa.fields.Title)}</span>${esc(sa.fields.Reference || "—")}</div>
+              <div class="record-card-sub">${esc(client?client.fields.Title:"—")} · ${fmtDate(sa.fields.EffectiveDate)}</div>
             </div>
             <div class="record-card-badges">
               <span class="badge badge-neutral">${esc(sa.fields.Status||"—")}</span>
