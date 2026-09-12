@@ -266,6 +266,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div class="nav-item" data-page="tickets" onclick="navigate('tickets')">🎫 Tickets</div>
     <div class="nav-item" data-page="agreements" onclick="agreementDetailId=null; workOrderDetailId=null; adHocClientDetailId=null; navigate('agreements')">🗂 Agreements</div>
     <div class="nav-item" data-page="invoices" onclick="navigate('invoices')">🧾 Invoices</div>
+    <div class="nav-item" data-page="serviceacks" onclick="navigate('serviceacks')">📝 Service Acks</div>
     <div class="nav-section">Setup</div>
     <div class="nav-item" data-page="clients" onclick="navigate('clients')">🏢 Clients</div>
     <div class="nav-item" data-page="resources" onclick="navigate('resources')">👥 Resources</div>
@@ -282,6 +283,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div id="page-email" class="page"></div>
     <div id="page-agreements" class="page"></div>
     <div id="page-invoices" class="page"></div>
+    <div id="page-serviceacks" class="page"></div>
     <div id="page-clients" class="page"></div>
     <div id="page-resources" class="page"></div>
     <div id="page-admin" class="page"></div>
@@ -709,6 +711,7 @@ let state = {
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
   ticketAssignments: [], dismissedEmails: [], ticketConversations: [], ticketNotes: [],
   agreementScopeItems: [], agreementSubtasks: [], agreementFeeLines: [],
+  serviceAcks: [],
   me: null
 };
 
@@ -793,7 +796,7 @@ function ticketSeverityClass(bs){
 /* ============================================================
    NAVIGATION / RENDER ENGINE
    ============================================================ */
-const PAGES = ["dashboard","tickets","email","agreements","invoices","clients","resources","admin"];
+const PAGES = ["dashboard","tickets","email","agreements","invoices","serviceacks","clients","resources","admin"];
 let currentPage = "dashboard";
 
 function navigate(page){
@@ -810,7 +813,8 @@ function navigate(page){
   });
   const renderers = {
     dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
-    agreements: renderAgreements, invoices: renderInvoices, clients: renderClients, resources: renderResources, admin: renderAdmin
+    agreements: renderAgreements, invoices: renderInvoices, serviceacks: renderServiceAcks,
+    clients: renderClients, resources: renderResources, admin: renderAdmin
   };
   renderers[page](); // render instantly from current state — snappy nav, no wait
   scheduleRefresh(); // then reload from SharePoint shortly after, so a nav change always ends up fresh
@@ -920,6 +924,14 @@ async function loadCoreData(){
     state.agreementFeeLines = agreementFeeLines;
   }catch(e){
     console.warn("Couldn't load Agreement scope/subtask/fee-line lists (run Add-SLAHub-CSAAgreements.ps1 if they don't exist yet):", e);
+  }
+  // Service Acknowledgements — separate, non-fatal try/catch so the rest of
+  // SLA HUB still works if Add-SLAHub-ServiceAcknowledgements.ps1 hasn't
+  // been run yet.
+  try{
+    state.serviceAcks = await fetchAllListItems("SLA_ServiceAcks");
+  }catch(e){
+    console.warn("Couldn't load SLA_ServiceAcks (run Add-SLAHub-ServiceAcknowledgements.ps1 if this list doesn't exist yet):", e);
   }
 }
 
@@ -4303,6 +4315,583 @@ function downloadCSV(filename, headers, rowObjs){
   const a = document.createElement("a"); a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   SERVICE ACKNOWLEDGEMENTS — a faithful port of PSP HUB's
+   Quotes -> Generate a Quote -> Service Acknowledgement flow (the SA
+   document type only — PSP's general "Quote" type, email, and
+   convert-to-invoice actions were not part of this request). One item
+   per SA; Section 2 line items and Appendix 1 tasks are packed as
+   JSON, matching the LineItems-as-JSON convention already used by
+   Invoices and Agreements. Numbering ("SA-0001") mirrors Invoices'
+   SLA_LastInvoiceNumber sequence pattern exactly, via SLA_LastSANumber.
+   ============================================================ */
+let saTab = "list";
+let saLines = [];
+let saLineCounter = 0;
+let saAppendixTasks = [];
+let saAppendixTaskCounter = 0;
+let currentServiceAckId = null;
+
+function renderServiceAcks(){
+  document.getElementById("page-serviceacks").innerHTML = `
+    <div class="page-header"><div><h2>Service Acknowledgements</h2><div class="sub">Generate, preview and print a Service Acknowledgement — same document and flow as PSP HUB's Quotes → Generate a Quote → Service Acknowledgement</div></div></div>
+    <div class="tabbar">
+      <div class="tab ${saTab==='list'?'active':''}" onclick="saTab='list'; renderServiceAcks();">Service Acknowledgements</div>
+      <div class="tab ${saTab==='generate'?'active':''}" onclick="startNewServiceAck();">Generate Service Acknowledgement</div>
+    </div>
+    <div id="saBody"></div>
+  `;
+  if(saTab === "list") renderServiceAcksList(); else renderGenerateServiceAck();
+}
+
+function renderServiceAcksList(){
+  const rows = [...state.serviceAcks].sort((a,b)=> new Date(b.fields.EffectiveDate||0)-new Date(a.fields.EffectiveDate||0));
+  document.getElementById("saBody").innerHTML = rows.length ? `
+    <div class="card" style="padding:0;">
+      <table><thead><tr><th>SA No</th><th>Client</th><th>Effective date</th><th>Total cost</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows.map(sa=>{
+        const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(sa,"Client")));
+        return `<tr>
+        <td><b>${esc(sa.fields.Title)}</b></td>
+        <td>${esc(client?client.fields.Title:"—")}</td>
+        <td>${fmtDate(sa.fields.EffectiveDate)}</td>
+        <td>${fmtMoney(sa.fields.TotalAmount, sa.fields.Currency)}</td>
+        <td><span class="badge badge-neutral">${esc(sa.fields.Status||"—")}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-sm" onclick="viewServiceAckById('${sa.id}')" title="Preview">👁</button>
+          <button class="btn btn-sm" onclick="printServiceAckById('${sa.id}')" title="Print">🖨</button>
+          <button class="btn btn-sm" onclick="editServiceAckById('${sa.id}')" title="Edit">✏️</button>
+          <button class="btn btn-sm btn-danger" onclick="confirmDeleteServiceAck(this,'${sa.id}')" title="Delete">🗑</button>
+        </td>
+      </tr>`; }).join("")}</tbody></table>
+    </div>` : `<div class="empty">No Service Acknowledgements generated yet.</div>`;
+}
+
+function startNewServiceAck(){
+  currentServiceAckId = null;
+  saLines = []; saLineCounter = 0;
+  saAppendixTasks = []; saAppendixTaskCounter = 0;
+  saTab = "generate";
+  renderServiceAcks();
+}
+
+function renderGenerateServiceAck(){
+  document.getElementById("saBody").innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+      <div class="card">
+        <div class="field"><label>Client *</label>
+          <select id="sa_client" onchange="onSAClientChange()">
+            <option value="">Select client…</option>
+            ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-grid" style="margin-top:12px;">
+          <div class="field"><label>Contact person</label><input type="text" id="sa_contact" placeholder="e.g. Jenny Tom" oninput="renderSAPreview()"></div>
+          <div class="field"><label>Effective delivery date</label><input type="date" id="sa_date" value="${new Date().toISOString().slice(0,10)}" onchange="renderSAPreview()"></div>
+        </div>
+        <div class="field" style="margin-top:12px;"><label>Project / Change Description (short)</label><input type="text" id="sa_reference" placeholder="Short description of the work" oninput="renderSAPreview()"></div>
+        <div class="field" style="margin-top:12px;"><label>SA No <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-2);">(auto)</span></label><input type="text" id="sa_saNo" readonly style="background:var(--page);color:var(--ink-2);font-weight:700;"></div>
+
+        <div style="margin:20px 0 8px;display:flex;align-items:center;justify-content:space-between;">
+          <div class="section-title" style="margin:0;">Service Info and Service Fee (VAT excluded)</div>
+          <button class="btn btn-sm btn-accent" onclick="addSALine()">+ Add line</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 70px 90px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
+          <div>Description</div><div style="text-align:center;">Hours</div><div style="text-align:center;">Cost</div><div></div>
+        </div>
+        <div id="sa_lines_container"></div>
+        <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--gridline);text-align:right;">
+          <div style="font-size:16px;font-weight:800;">Total Cost: <span id="sa_total">0.00</span></div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:2px;">VAT excluded — tax applied automatically at invoicing based on client tax status</div>
+        </div>
+
+        <div style="margin-top:22px;padding-top:16px;border-top:2px solid var(--gridline);">
+          <div class="section-title" style="margin-top:0;">Appendix 1 — Task List and Estimates</div>
+          <div class="field"><label>Project / Change Description</label><input type="text" id="sa_appendix_title" placeholder="e.g. Additional Hours for Configuration, Testing and Implementation of…" oninput="renderSAPreview()"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);">Tasks</div>
+            <button class="btn btn-sm btn-accent" onclick="addSAAppendixTask()">+ Add task</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
+            <div>Task</div><div>Description</div><div style="text-align:center;">Hours</div><div></div>
+          </div>
+          <div id="sa_appendix_container"></div>
+          <div id="sa_appendix_hours_check" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:700;"></div>
+        </div>
+
+        <button class="btn btn-accent" id="sa_save_btn" onclick="saveServiceAck()" style="width:100%;margin-top:18px;">💾 Save Service Acknowledgement</button>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h3 style="margin:0;font-size:15px;">Preview</h3>
+          <button class="btn btn-sm" id="sa_print_btn" onclick="printGeneratedSAPreview()" style="display:none;">🖨 Print</button>
+        </div>
+        <div id="sa_preview"><div class="empty">Select a client and add at least one line item to preview the document.</div></div>
+      </div>
+    </div>
+  `;
+  if(!currentServiceAckId){
+    if(!saLines.length) addSALine();
+    generateSANumberPreview();
+  }
+  renderSALines();
+  renderSAAppendixTasks();
+}
+
+// Zero Rated clients must never have taxed line items — mirrors PSP HUB's
+// getClientTaxRate()/onQuoteClientChange() exactly.
+function getSATaxRate(){
+  const clientId = document.getElementById("sa_client")?.value;
+  const c = state.clients.find(x=>String(x.id)===String(clientId));
+  return c?.fields?.TaxType === "Zero Rated" ? 0 : 10;
+}
+function onSAClientChange(){
+  const clientId = document.getElementById("sa_client")?.value;
+  const c = state.clients.find(x=>String(x.id)===String(clientId));
+  if(c?.fields?.TaxType === "Zero Rated" && saLines.some(l=>l.taxPercent !== 0)){
+    saLines.forEach(l=>{ l.taxPercent = 0; });
+    renderSALines();
+    toast(`${c.fields.Title} is Zero Rated — all line items set to 0% tax`);
+  } else {
+    updateSATotals();
+  }
+}
+
+function addSALine(prefill=null){
+  saLineCounter++;
+  const id = "saline_" + saLineCounter;
+  saLines.push({
+    id,
+    description: prefill?.Description || "",
+    hours: prefill?.Hours || 0,
+    unitPrice: prefill?.Cost ?? 0,
+    taxPercent: prefill?.TaxPercent !== undefined ? prefill.TaxPercent : getSATaxRate(),
+  });
+  renderSALines();
+}
+function removeSALine(id){
+  saLines = saLines.filter(l=>l.id!==id);
+  if(!saLines.length) addSALine(); else renderSALines();
+}
+function updateSALine(id, field, value){
+  const line = saLines.find(l=>l.id===id);
+  if(!line) return;
+  if(field === "description") line.description = value;
+  else line[field] = parseFloat(value) || 0;
+  const totalEl = document.getElementById("saline-total-" + id);
+  if(totalEl) totalEl.textContent = line.unitPrice.toFixed(2);
+  updateSATotals();
+}
+function renderSALines(){
+  const container = document.getElementById("sa_lines_container");
+  if(!container) return;
+  container.innerHTML = saLines.map(l => `
+    <div style="display:grid;grid-template-columns:1fr 70px 90px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+      <textarea placeholder="Description of scope item" rows="2"
+        oninput="updateSALine('${l.id}','description',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;background:var(--page);">${esc(l.description)}</textarea>
+      <input type="number" placeholder="Hours" value="${l.hours}" min="0" step="0.5"
+        oninput="updateSALine('${l.id}','hours',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;margin-top:1px;">
+      <input type="number" placeholder="Cost" value="${l.unitPrice}" min="0" step="0.01"
+        oninput="updateSALine('${l.id}','unitPrice',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;margin-top:1px;">
+      <button onclick="removeSALine('${l.id}')" title="Remove line" style="background:none;border:none;color:var(--critical);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+    </div>`).join("");
+  updateSATotals();
+}
+
+function updateSATotals(){
+  const total = saLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+  const totalEl = document.getElementById("sa_total");
+  if(totalEl) totalEl.textContent = total.toFixed(2);
+  updateSAAppendixHoursCheck();
+  renderSAPreview();
+}
+
+// Live-checks Section 2's total hours against Appendix 1's total hours —
+// mirrors the hard block enforced at save time in saveServiceAck(), so the
+// mismatch is visible before someone even tries to save.
+function updateSAAppendixHoursCheck(){
+  const el = document.getElementById("sa_appendix_hours_check");
+  if(!el) return;
+  const lineHours = saLines.reduce((s,l) => s + (l.hours||0), 0);
+  const taskHours = saAppendixTasks.reduce((s,t) => s + (t.hours||0), 0);
+  const match = Math.abs(lineHours - taskHours) < 0.001;
+  el.textContent = match
+    ? `✓ Hours match: ${lineHours} hours`
+    : `⚠ Hours mismatch — Service Fee: ${lineHours} hours, Appendix 1: ${taskHours} hours. These must match before saving.`;
+  el.style.background = match ? "var(--good-bg)" : "var(--warning-bg)";
+  el.style.color = match ? "var(--good)" : "var(--warning)";
+}
+
+function addSAAppendixTask(prefill=null){
+  saAppendixTaskCounter++;
+  const id = "saatask_" + saAppendixTaskCounter;
+  saAppendixTasks.push({ id, task: prefill?.Task || "", description: prefill?.Description || "", hours: prefill?.Hours || 0 });
+  renderSAAppendixTasks();
+  renderSAPreview();
+}
+function removeSAAppendixTask(id){
+  saAppendixTasks = saAppendixTasks.filter(t=>t.id!==id);
+  renderSAAppendixTasks();
+  renderSAPreview();
+}
+function updateSAAppendixTask(id, field, value){
+  const t = saAppendixTasks.find(x=>x.id===id);
+  if(!t) return;
+  t[field] = field === "hours" ? (parseFloat(value)||0) : value;
+  updateSAAppendixHoursCheck();
+  renderSAPreview();
+}
+function renderSAAppendixTasks(){
+  const container = document.getElementById("sa_appendix_container");
+  if(!container) return;
+  container.innerHTML = saAppendixTasks.map(t => `
+    <div style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;align-items:start;margin-bottom:8px;">
+      <textarea placeholder="Task name" rows="2" oninput="updateSAAppendixTask('${t.id}','task',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;background:var(--page);">${esc(t.task)}</textarea>
+      <textarea placeholder="Description / sub-steps" rows="2" oninput="updateSAAppendixTask('${t.id}','description',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:34px;background:var(--page);">${esc(t.description)}</textarea>
+      <input type="number" placeholder="Hours" value="${t.hours}" min="0" step="0.5"
+        oninput="updateSAAppendixTask('${t.id}','hours',this.value)"
+        style="padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;margin-top:1px;">
+      <button onclick="removeSAAppendixTask('${t.id}')" title="Remove task" style="background:none;border:none;color:var(--critical);cursor:pointer;padding:4px;font-size:16px;font-weight:700;line-height:1;margin-top:4px;">✕</button>
+    </div>`).join("");
+  updateSAAppendixHoursCheck();
+}
+
+function renderSAPreview(){
+  const clientId = document.getElementById("sa_client")?.value;
+  const previewEl = document.getElementById("sa_preview");
+  const printBtn = document.getElementById("sa_print_btn");
+  if(!previewEl) return;
+  if(!clientId || !saLines.some(l=>l.description)){
+    previewEl.innerHTML = `<div class="empty">Select a client and add at least one line item to preview the document.</div>`;
+    if(printBtn) printBtn.style.display = "none";
+    return;
+  }
+  const client = state.clients.find(c=>String(c.id)===String(clientId));
+  const saNo = document.getElementById("sa_saNo").value;
+  const effectiveDate = document.getElementById("sa_date").value;
+  const appendixTitle = document.getElementById("sa_appendix_title").value;
+
+  const serviceRows = saLines.filter(l=>l.description).map((l,i) => `
+    <tr>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${i+1}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${esc(l.description).replace(/\n/g,"<br>")}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${l.hours} Hours</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:right;">${l.unitPrice.toFixed(2)}</td>
+    </tr>`).join("");
+  const appendixRows = saAppendixTasks.filter(t=>t.task).map(t => `
+    <tr>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;font-weight:700;">${esc(t.task)}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${esc(t.description).replace(/\n/g,"<br>")}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${t.hours} Hours</td>
+    </tr>`).join("");
+  const totalCost = saLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+  const totalHours = saAppendixTasks.reduce((s,t) => s + (t.hours||0), 0);
+
+  previewEl.innerHTML = `<div style="border:1px solid var(--gridline);border-radius:8px;overflow:hidden;">${buildSADocumentHTML({
+    saNo, effectiveDate, client, currency: client?.fields?.Currency || "PGK",
+    serviceRows, totalCost, appendixTitle, appendixRows, totalHours,
+  })}</div>`;
+  if(printBtn) printBtn.style.display = "";
+}
+
+// Builds the printable Service Acknowledgement Form itself — General Info /
+// Service Fee / Invoice & Payment / signature block / Appendix 1 task
+// breakdown — matching PSP HUB's agreed document exactly, just with SLA
+// HUB's own embedded Concept Group logo (LOGO_B64) instead of a fetched
+// image, so printing never depends on a network round-trip. Shared by the
+// live Generate-tab preview, the saved-record preview modal, and both print
+// paths, so all four can never drift out of sync with each other.
+function buildSADocumentHTML(d){
+  const client = d.client;
+  const addr = client ? [client.fields.POAddressLine1, client.fields.POCity, client.fields.POCountry].filter(Boolean).join(", ") : "";
+  const fmtD = v => v ? new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}) : "";
+  const cell = "padding:8px 10px;border:1px solid #999;font-size:12px;";
+  const labelCell = `${cell}background:#f2f2f2;font-weight:700;width:220px;`;
+  return `
+    <div id="sa-doc-content" style="padding:24px;background:#fff;font-family:Arial,sans-serif;color:#1a2744;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div>
+          <div style="font-size:20px;font-weight:700;color:#3B2E1E;">Concept Group</div>
+          <div style="font-size:11px;color:#555;font-style:italic;">Sect. 51 Lot 35, Airvos Avenue, Touaguba Hill, P.O. Box 190, Waigani, National Capital District</div>
+        </div>
+        <img src="data:image/jpeg;base64,${LOGO_B64}" style="height:50px;">
+      </div>
+      <div style="text-align:center;font-size:18px;font-weight:800;margin:20px 0 4px;">SERVICE ACKNOWLEDGEMENT FORM</div>
+      <div style="text-align:center;font-size:12px;font-weight:700;color:#1a2744;margin-bottom:20px;">${esc(d.saNo)}</div>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">1. General Info</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tr><td style="${labelCell}">Effective Delivery Date</td><td style="${cell}">${fmtD(d.effectiveDate)}</td></tr>
+        <tr><td style="${labelCell}">Client Name</td><td style="${cell}">${esc(client?client.fields.Title:"")}${addr ? ` <span style="color:#666;">(${esc(addr)})</span>` : ""}</td></tr>
+        <tr><td style="${labelCell}">Service Provider</td><td style="${cell}">Concept Group</td></tr>
+      </table>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">2. Service Info and Service Fee (VAT Excluded)</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="${cell}background:#f2f2f2;width:34px;">#</th>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Description</th>
+            <th style="${cell}background:#f2f2f2;width:110px;">Estimated Hours</th>
+            <th style="${cell}background:#f2f2f2;width:120px;">Cost ${esc(d.currency)}</th>
+          </tr>
+        </thead>
+        <tbody>${d.serviceRows}</tbody>
+      </table>
+      <div style="text-align:right;font-size:13px;font-weight:800;margin:-8px 0 16px;">Total Cost ${esc(d.currency)}: ${d.totalCost.toFixed(2)}</div>
+
+      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;">3. Invoice and Payment</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <tr><td style="${labelCell}">Invoicing</td><td style="${cell}">To be invoiced upon completion.</td></tr>
+        <tr><td style="${labelCell}">Payment Due-Date</td><td style="${cell}">14 Days from date of Invoice.</td></tr>
+      </table>
+
+      <div style="font-size:12px;margin-bottom:36px;">
+        I accept the above service quotation and service detail:
+        <div style="margin-top:28px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signature</div>
+        <div style="margin-top:20px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signee Full Name</div>
+        <div style="margin-top:20px;border-bottom:1px solid #999;width:260px;"></div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Signee Title / Company</div>
+        <div style="margin-top:20px;">Date: _______________________</div>
+      </div>
+
+      <div style="page-break-before:always;font-size:16px;font-weight:800;margin-bottom:6px;">Appendix 1</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Task List and Estimates for ${esc(d.appendixTitle || "")}</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
+        <thead>
+          <tr>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Task / Activity</th>
+            <th style="${cell}background:#f2f2f2;text-align:left;">Description</th>
+            <th style="${cell}background:#f2f2f2;width:90px;">Duration</th>
+          </tr>
+        </thead>
+        <tbody>${d.appendixRows}
+          <tr><td style="${cell}font-weight:800;" colspan="2">Total Hours</td><td style="${cell}font-weight:800;text-align:center;">${d.totalHours}</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:10px;color:#666;font-style:italic;">* Note: This is our best estimate at this time. It may not be a complete list of the work to be done. If there are further findings by Concept, we will alert the client and seek authorization for an additional effort before work starts.</div>
+    </div>`;
+}
+
+// Regenerates the auto-number field's preview (SA-XXXX from SLA_LastSANumber)
+// without claiming it — the number is only actually reserved at save time
+// in reserveNextSANumber(), so two people filling the form concurrently
+// can't collide.
+async function generateSANumberPreview(){
+  if(currentServiceAckId) return; // editing an existing SA — number is fixed, don't recompute
+  try{
+    const seq = await fetchAllListItems("SLA_LastSANumber");
+    const last = Number(seq[0]?.fields?.LastSANo) || 0;
+    const el = document.getElementById("sa_saNo");
+    if(el) el.value = "SA-" + String(last+1).padStart(4,"0");
+  }catch(e){ console.warn("Couldn't preview next SA number (run Add-SLAHub-ServiceAcknowledgements.ps1 if SLA_LastSANumber doesn't exist yet):", e); }
+}
+async function reserveNextSANumber(){
+  const seq = await fetchAllListItems("SLA_LastSANumber");
+  const row = seq[0];
+  const next = (Number(row?.fields?.LastSANo)||0) + 1;
+  await graphUpdateItem("SLA_LastSANumber", row.id, { LastSANo: next });
+  return "SA-" + String(next).padStart(4,"0");
+}
+
+async function saveServiceAck(){
+  const clientId = document.getElementById("sa_client").value;
+  if(!clientId){ toast("Please select a client", true); return; }
+  if(!saLines.some(l=>l.description)){ toast("Please add at least one line item", true); return; }
+
+  // Hard block: Section 2 hours must exactly match Appendix 1 total hours —
+  // mirrors PSP HUB's saveQuote() validation exactly.
+  if(!document.getElementById("sa_appendix_title").value.trim()){
+    toast("Please enter a Project / Change Description for Appendix 1", true); return;
+  }
+  if(!saAppendixTasks.some(t=>t.task)){
+    toast("Please add at least one task to Appendix 1", true); return;
+  }
+  const lineHours = saLines.reduce((s,l) => s + (l.hours||0), 0);
+  const taskHours = saAppendixTasks.reduce((s,t) => s + (t.hours||0), 0);
+  if(Math.abs(lineHours - taskHours) > 0.001){
+    toast(`Cannot save: Service Fee shows ${lineHours} hours but Appendix 1 totals ${taskHours} hours. These must match exactly.`, true);
+    return;
+  }
+
+  const client = state.clients.find(c=>String(c.id)===String(clientId));
+
+  let saNo = document.getElementById("sa_saNo").value; // for edits, this is the existing, unchanging number
+  if(!currentServiceAckId){
+    const btn = document.getElementById("sa_save_btn");
+    const origHtml = btn ? btn.innerHTML : "";
+    if(btn){ btn.disabled = true; btn.innerHTML = "Reserving number…"; }
+    try{
+      saNo = await reserveNextSANumber();
+    }catch(e){
+      if(btn){ btn.disabled = false; btn.innerHTML = origHtml; }
+      toast("Could not reserve an SA number: " + e.message, true);
+      return;
+    }
+    if(btn){ btn.disabled = false; btn.innerHTML = origHtml; }
+  }
+
+  const subtotal = saLines.reduce((s,l) => s + (l.unitPrice||0), 0);
+  const tax = saLines.reduce((s,l) => s + (l.unitPrice||0) * ((l.taxPercent||0)/100), 0);
+  const total = subtotal + tax;
+
+  const lines = saLines.filter(l=>l.description).map(l => ({ Description: l.description, Hours: l.hours, Cost: l.unitPrice, TaxPercent: l.taxPercent }));
+  const tasks = saAppendixTasks.filter(t=>t.task).map(t => ({ Task: t.task, Description: t.description, Hours: t.hours }));
+
+  const fields = {
+    Title: saNo,
+    ClientLookupId: Number(clientId),
+    ContactPerson: document.getElementById("sa_contact").value,
+    EffectiveDate: document.getElementById("sa_date").value ? new Date(document.getElementById("sa_date").value).toISOString() : null,
+    Reference: document.getElementById("sa_reference").value,
+    AppendixTitle: document.getElementById("sa_appendix_title").value,
+    ServiceLines: JSON.stringify(lines),
+    AppendixTasks: JSON.stringify(tasks),
+    Currency: client?.fields?.Currency || "PGK",
+    TaxType: client?.fields?.TaxType || "Tax on Sales",
+    SubTotal: Math.round(subtotal*100)/100,
+    TaxAmount: Math.round(tax*100)/100,
+    TotalAmount: Math.round(total*100)/100,
+    TotalHours: taskHours,
+    CreatedBy: currentAccount?.name || currentAccount?.username || "",
+  };
+  if(!currentServiceAckId) fields.Status = "Draft"; // only set on create; edits preserve existing status
+
+  try{
+    if(currentServiceAckId){
+      await graphUpdateItem("SLA_ServiceAcks", currentServiceAckId, fields);
+    } else {
+      await graphCreateItem("SLA_ServiceAcks", fields);
+    }
+    state.serviceAcks = await fetchAllListItems("SLA_ServiceAcks");
+    toast(`Service Acknowledgement ${saNo} saved`);
+    currentServiceAckId = null;
+    saLines = []; saAppendixTasks = [];
+    saTab = "list";
+    renderServiceAcks();
+  }catch(e){ console.error(e); toast("Error saving Service Acknowledgement: " + e.message, true); }
+}
+
+function editServiceAckById(id){
+  const sa = state.serviceAcks.find(x=>String(x.id)===String(id));
+  if(!sa) return;
+  currentServiceAckId = id;
+  saTab = "generate";
+  renderServiceAcks(); // builds the skeleton; currentServiceAckId being set skips the default-blank-line seed
+  document.getElementById("sa_client").value = ticketLookupId(sa,"Client") || "";
+  document.getElementById("sa_contact").value = sa.fields.ContactPerson || "";
+  document.getElementById("sa_date").value = sa.fields.EffectiveDate ? new Date(sa.fields.EffectiveDate).toISOString().slice(0,10) : "";
+  document.getElementById("sa_reference").value = sa.fields.Reference || "";
+  document.getElementById("sa_saNo").value = sa.fields.Title || "";
+  document.getElementById("sa_appendix_title").value = sa.fields.AppendixTitle || "";
+
+  let lines = []; try{ lines = JSON.parse(sa.fields.ServiceLines || "[]"); }catch(e){}
+  saLines = []; saLineCounter = 0;
+  if(lines.length) lines.forEach(l=>addSALine(l)); else addSALine();
+
+  let tasks = []; try{ tasks = JSON.parse(sa.fields.AppendixTasks || "[]"); }catch(e){}
+  saAppendixTasks = []; saAppendixTaskCounter = 0;
+  tasks.forEach(t=>addSAAppendixTask(t));
+  renderSAAppendixTasks();
+  renderSAPreview();
+}
+
+// Builds the document HTML for an already-saved SA record — shared by
+// viewServiceAckById() and printServiceAckById() so the two never drift out
+// of sync with each other.
+function buildDocHtmlForSavedSA(sa){
+  let lines = []; try{ lines = JSON.parse(sa.fields.ServiceLines || "[]"); }catch(e){}
+  let tasks = []; try{ tasks = JSON.parse(sa.fields.AppendixTasks || "[]"); }catch(e){}
+  const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(sa,"Client")));
+  const serviceRows = lines.map((l,i) => `
+    <tr>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${i+1}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${esc(l.Description||"").replace(/\n/g,"<br>")}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${l.Hours||0} Hours</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:right;">${(l.Cost||0).toFixed(2)}</td>
+    </tr>`).join("");
+  const appendixRows = tasks.map(t => `
+    <tr>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;font-weight:700;">${esc(t.Task||"")}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;">${esc(t.Description||"").replace(/\n/g,"<br>")}</td>
+      <td style="padding:8px 10px;border:1px solid #999;font-size:12px;text-align:center;">${t.Hours||0} Hours</td>
+    </tr>`).join("");
+  return buildSADocumentHTML({
+    saNo: sa.fields.Title, effectiveDate: sa.fields.EffectiveDate, client,
+    currency: sa.fields.Currency || "PGK", serviceRows, totalCost: sa.fields.SubTotal||0,
+    appendixTitle: sa.fields.AppendixTitle || "", appendixRows, totalHours: sa.fields.TotalHours||0,
+  });
+}
+
+function viewServiceAckById(id){
+  const sa = state.serviceAcks.find(x=>String(x.id)===String(id));
+  if(!sa) return;
+  const docHtml = buildDocHtmlForSavedSA(sa);
+  openModal(`
+    <h3 style="margin:0 0 4px;">${esc(sa.fields.Title)}</h3>
+    <div style="border:1px solid var(--gridline);border-radius:8px;overflow:hidden;margin-top:12px;">${docHtml}</div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn btn-accent" onclick="printServiceAckById('${sa.id}')">🖨 Print</button>
+    </div>
+  `, {wide:true});
+}
+
+// Shared print helper — window.open + document.write, same convention as
+// printTicket() below (self-contained HTML, embedded logo, no network
+// dependency, a "noprint" Print button for the popup window itself).
+function printSADocWindow(title, contentHtml){
+  const win = window.open("", "_blank");
+  win.document.write(`<!DOCTYPE html><html><head><title>${esc(title)}</title>
+    <style>body{margin:0;} @media print{ .noprint{display:none;} }</style>
+  </head><body>
+    ${contentHtml}
+    <p class="noprint" style="padding:0 24px 24px;"><button onclick="window.print()">Print</button></p>
+  </body></html>`);
+  win.document.close();
+}
+function printGeneratedSAPreview(){
+  const content = document.getElementById("sa-doc-content");
+  if(!content) return;
+  printSADocWindow(document.getElementById("sa_saNo")?.value || "Service Acknowledgement", content.outerHTML);
+}
+function printServiceAckById(id){
+  const sa = state.serviceAcks.find(x=>String(x.id)===String(id));
+  if(!sa) return;
+  printSADocWindow(sa.fields.Title, buildDocHtmlForSavedSA(sa));
+  // Mirrors PSP HUB's markQuoteSentIfDraft() — printing a Draft SA marks it Sent.
+  if(sa.fields.Status === "Draft"){
+    graphUpdateItem("SLA_ServiceAcks", sa.id, { Status: "Sent" }).then(()=>{
+      sa.fields.Status = "Sent";
+      if(saTab === "list") renderServiceAcksList();
+    }).catch(()=>{});
+  }
+}
+
+function confirmDeleteServiceAck(btn, id){
+  if(btn.dataset.armed === "1"){ deleteServiceAck(id); return; }
+  btn.dataset.armed = "1";
+  const original = btn.textContent;
+  btn.textContent = "Confirm?";
+  setTimeout(() => { if(btn.isConnected){ btn.dataset.armed = "0"; btn.textContent = original; } }, 3000);
+}
+async function deleteServiceAck(id){
+  try{
+    await graphDeleteItem("SLA_ServiceAcks", id);
+    state.serviceAcks = state.serviceAcks.filter(x=>String(x.id)!==String(id));
+    toast("Service Acknowledgement deleted");
+    renderServiceAcksList();
+  }catch(e){ toast("Couldn't delete: " + e.message, true); }
 }
 
 /* ============================================================
