@@ -33,12 +33,18 @@
     --shadow:0 4px 16px rgba(94,73,31,0.16);
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bottom:env(safe-area-inset-bottom,0px);
+    --bg-photo:url("background.jpg");
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;height:100%;}
   body{
     font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
-    background:var(--page-bg);
+    /* Same treatment as the CG Time dashboard: a cream wash over the
+       watch/gears photo so it reads as a faint texture, not a busy image. */
+    background:
+      linear-gradient(180deg, rgba(236,225,200,0.72) 0%, rgba(236,225,200,0.55) 40%, rgba(226,213,183,0.82) 100%),
+      var(--bg-photo) center/cover no-repeat;
+    background-color:var(--page-bg);
     color:var(--ink-primary);
     min-height:100dvh;
     overscroll-behavior:none;

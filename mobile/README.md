@@ -24,6 +24,7 @@ cg-time-mobile/
   manifest.json        PWA metadata (name, icon, colors)
   sw.js                 tiny service worker so the app shell opens instantly
   logo.png              the CG Time logo (same one used on the dashboard)
+  background.jpg        the watch/gears background photo (same one used on the dashboard)
   icons/                home-screen icons generated from that logo
 README.md               this file
 ```
@@ -47,48 +48,28 @@ user's name. The desktop widget doesn't have one since it's one person's
 own PC; a phone is more often shared or borrowed, so it seemed worth the
 one extra tap.
 
-## Azure AD setup — pick one
+## Azure AD setup
 
-The app needs an Azure AD App Registration to sign in with. Two ways to
-get there; either works, and the code doesn't care which you pick beyond
-one config line.
+This app has its own dedicated App Registration, **"CG Time Mobile"**
+(client ID `ec5454e0-c794-419b-9ec9-464e9917ef3c`) — matching the pattern
+SLA HUB, the ZKTeco Bridge, and the desktop Widget each already follow
+(one registration per component), which the strategic review recommended
+as the long-term target for the whole platform, rather than the four Hubs
+currently sharing one registration. `index.html`'s `CONFIG.clientId` is
+already set to this ID — nothing to change there.
 
-### Option A — reuse the widget's existing registration (least setup)
+Registration details, for reference (already done):
+- Platform: **Single-page application**, redirect URI
+  `https://marcusappdev.github.io/CG_Training/cg-time-mobile/` (note the
+  trailing slash — GitHub Pages serves this folder with one, and the
+  registered redirect URI has to match exactly, slash and all).
+- API permissions: Microsoft Graph → Delegated → `Sites.ReadWrite.All`
+  and `User.Read`, with admin consent granted.
 
-The desktop widget already has its own registration ("Concept Time
-Widget", client ID `f42f07db-5396-44f2-96dc-e2b64b49ee9c`) with exactly
-the permissions this page needs (`Sites.ReadWrite.All`, `User.Read`).
-`index.html` is already configured to use it — you only need to teach
-that same registration about this new page:
-
-1. In the Azure Portal, go to **Entra ID → App registrations** and open
-   the one named **Concept Time Widget** (or search the client ID above).
-2. Go to **Authentication → Add a platform → Single-page application**
-   (this is a different platform type from the widget's existing
-   "Mobile and desktop applications" one — you're adding a second one
-   alongside it, not replacing it).
-3. For the redirect URI, enter the exact URL this page will be hosted at
-   once you've deployed it — see "Where to host it" below for what that
-   URL will be (e.g.
-   `https://marcusappdev.github.io/CG_Training/cg-time-mobile/`).
-4. Save. Nothing else to change — no new permissions, no new consent.
-
-### Option B — give this app its own dedicated registration
-
-Matches the pattern SLA HUB, the ZKTeco Bridge, and the Widget each
-already follow (one registration per component) — the direction the
-strategic review recommended as the long-term target for the whole
-platform, rather than the four Hubs currently sharing one registration.
-
-1. **Entra ID → App registrations → New registration.** Name it
-   something like "Concept Time Mobile".
-2. Platform: **Single-page application**, redirect URI as in Option A,
-   step 3.
-3. **API permissions → Add a permission → Microsoft Graph → Delegated →**
-   add `Sites.ReadWrite.All` and `User.Read`, then **Grant admin consent**.
-4. Copy the new **Application (client) ID** and paste it into
-   `index.html`, replacing the `clientId` value near the top of the
-   `<script>` block (look for `CONFIG.clientId`).
+If this page ever gets hosted at a different URL, add that as an
+additional redirect URI on the same registration (Authentication → Add a
+platform → Single-page application, or just add another redirect URI
+under the existing SPA platform) rather than creating a new registration.
 
 ## Where to host it
 
