@@ -197,6 +197,25 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .tabbar .tab{padding:9px 14px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .tabbar .tab.active{color:var(--accent);border-color:var(--accent);}
 .section-title{font-size:13px;font-weight:700;margin:18px 0 8px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-left:3px solid var(--accent);padding-left:8px;}
+
+/* Agreement detail — each section (Notes, Fee schedule, Scope of Work,
+   Tickets, Time logged) gets its own card and accent color so they read as
+   distinct blocks at a glance, rather than one long undifferentiated page.
+   Colors are deliberately cool/neutral, not the green/amber/rust/red used
+   for SLA breach status elsewhere, so the two kinds of color never compete
+   for meaning on the same screen. */
+.agr-section{border:1px solid var(--gridline);border-left:4px solid var(--ink-2);border-radius:10px;padding:14px 16px;margin:16px 0;background:var(--surface-1);}
+.agr-section > .section-title{margin-top:0;border-left:none;padding-left:0;}
+.agr-section.c-notes{border-left-color:var(--brand-gold);}
+.agr-section.c-notes > .section-title{color:var(--brand-gold-dk);}
+.agr-section.c-fee{border-left-color:var(--accent);}
+.agr-section.c-fee > .section-title{color:var(--accent-dk);}
+.agr-section.c-scope{border-left-color:#0f8b8d;}
+.agr-section.c-scope > .section-title{color:#0f8b8d;}
+.agr-section.c-tickets{border-left-color:#6952c9;}
+.agr-section.c-tickets > .section-title{color:#6952c9;}
+.agr-section.c-time{border-left-color:#4a5568;}
+.agr-section.c-time > .section-title{color:#4a5568;}
 </style>
 </head>
 <body>
@@ -3431,21 +3450,25 @@ function renderAgreementDetail(){
         <b>Commencement / Termination</b><div>${fmtDate(a.fields.StartDate)} – ${esc(a.fields.TermDescription) || fmtDate(a.fields.EndDate)}</div>
         <b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div>
       </div>
-      ${a.fields.Notes ? `<div class="section-title">Notes</div><div>${esc(a.fields.Notes).replace(/\n/g,"<br>")}</div>` : ""}
+      ${a.fields.Notes ? `<div class="agr-section c-notes"><div class="section-title">Notes</div><div>${esc(a.fields.Notes).replace(/\n/g,"<br>")}</div></div>` : ""}
 
       ${renderAgreementFeeSchedule(a)}
 
       ${renderAgreementScopeOfWork(a)}
 
-      <div class="section-title">Tickets under this agreement</div>
-      ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
-        <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
-          <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
-        </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this agreement yet.</div>`}
+      <div class="agr-section c-tickets">
+        <div class="section-title">Tickets under this agreement</div>
+        ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
+          <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+            <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
+            <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+          </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this agreement yet.</div>`}
+      </div>
 
-      <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
-      ${combinedTimeRowsHtml(bucket)}
+      <div class="agr-section c-time">
+        <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
+        ${combinedTimeRowsHtml(bucket)}
+      </div>
     </div>
   `;
 }
@@ -3458,6 +3481,7 @@ function renderAgreementFeeSchedule(a){
   const ccy = client?.fields?.Currency || "PGK";
   const totals = feeLineTotals(a.id, a.fields.TaxRatePercent);
   return `
+    <div class="agr-section c-fee">
     <div class="section-title">Fee schedule (Time &amp; Materials)</div>
     ${lines.length ? `
     <table><thead><tr><th>Service</th><th>Rate/day</th><th>Est. days</th><th>Est. cost</th><th></th></tr></thead>
@@ -3482,6 +3506,7 @@ function renderAgreementFeeSchedule(a){
       <input type="number" step="0.01" id="fl_rate_${a.id}" placeholder="Rate/day" style="width:100px;flex-shrink:0;">
       <input type="number" step="1" id="fl_days_${a.id}" placeholder="Days" style="width:70px;flex-shrink:0;">
       <button class="btn btn-sm btn-accent" onclick="addFeeLine('${a.id}')" title="Add fee line" style="flex-shrink:0;">+ Add</button>
+    </div>
     </div>
   `;
 }
@@ -3524,11 +3549,13 @@ async function saveScopeItemEdit(scopeItemId, agreementId){
 function renderAgreementScopeOfWork(a){
   const items = agreementScopeItems(a.id);
   return `
+    <div class="agr-section c-scope">
     <div class="section-title">Scope of Work</div>
     ${items.length ? items.map((s,idx) => renderScopeItemRow(a, s, idx+1)).join("") : `<div class="empty">No scope items yet.</div>`}
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
       <input type="text" id="scope_new_${a.id}" placeholder="+ New scope item…" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter'){addScopeItem('${a.id}');}">
       <button class="btn btn-sm btn-accent" onclick="addScopeItem('${a.id}')" title="Add scope item" style="flex-shrink:0;">+ Add</button>
+    </div>
     </div>
   `;
 }
