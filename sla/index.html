@@ -3158,6 +3158,14 @@ function raiseTicketFromSubtask(agreementId, scopeItemId, subtaskId){
   }
 }
 
+// Same idea, but raised directly against a Scope of Work item rather than
+// one of its Subtasks — for work that doesn't need to be broken down first.
+function raiseTicketFromScopeItem(agreementId, scopeItemId){
+  openTicketForm(); // resets raiseTicketSubtaskContext to null — set it below, after
+  raiseTicketSubtaskContext = { scopeItemId, subtaskId: null };
+  presetOwningEntity("Agreement", agreementId);
+}
+
 /* ---------- Word document generation (docx.js) ---------- */
 function wdParaA(text, opts={}){
   return new docx.Paragraph({
@@ -3408,6 +3416,11 @@ function renderAgreementDetail(){
       <button class="close" onclick="agreementDetailId=null; renderAgreementDetail();">✕</button>
       <h3 style="margin:0 0 4px;">${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</h3>
       <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(client?client.fields.Title:"—")}${endClient?` · ${esc(endClient.fields.Title)}`:""}</div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="openDirectLogTimeForm('Agreement','${a.id}')">+ Log time directly</button>
+        <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('Agreement','${a.id}');">+ New ticket under this agreement</button>
+        <button class="btn btn-sm btn-gold" onclick="generateAgreementWordDocument('${a.id}')">📄 Generate Document (.docx)</button>
+      </div>
       <div class="kv">
         <b>Status</b><div>
           <select onchange="updateAgreementStatus('${a.id}', this.value)">
@@ -3433,12 +3446,6 @@ function renderAgreementDetail(){
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
       ${combinedTimeRowsHtml(bucket)}
-
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;flex-wrap:wrap;">
-        <button class="btn btn-sm" onclick="openDirectLogTimeForm('Agreement','${a.id}')">+ Log time directly</button>
-        <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('Agreement','${a.id}');">+ New ticket under this agreement</button>
-        <button class="btn btn-sm btn-gold" onclick="generateAgreementWordDocument('${a.id}')">📄 Generate Document (.docx)</button>
-      </div>
     </div>
   `;
 }
@@ -3546,6 +3553,7 @@ function renderScopeItemRow(a, s, num){
           <span style="color:var(--muted);margin-right:6px;">${num}.</span>${esc(s.fields.Title)}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm" onclick="event.stopPropagation(); raiseTicketFromScopeItem('${a.id}','${s.id}')" title="Raise ticket">🎫</button>
           <button class="btn btn-sm" onclick="event.stopPropagation(); toggleAddSubtaskRow('${s.id}','${a.id}')" title="Add subtask">➕</button>
           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); confirmDeleteScopeItem(this,'${s.id}')" title="Delete">🗑</button>
         </div>
