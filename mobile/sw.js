@@ -7,13 +7,13 @@
 // the new service worker, and evict the old cached copy. Without a bump,
 // phones that already visited keep serving the stale cached index.html
 // indefinitely, even after the repo itself is updated.
-const CACHE_NAME = "concept-time-shell-v4";
+const CACHE_NAME = "concept-time-shell-v5";
 const SHELL_FILES = [
   "./",
   "./index.html",
   "./manifest.json",
   "./logo.png",
-  "./background.jpg",
+  "./background.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-512-maskable.png",
@@ -22,7 +22,16 @@ const SHELL_FILES = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) =>
+      // Fetch each shell file independently (not cache.addAll, which is
+      // all-or-nothing) so one bad/missing file can't silently fail the
+      // whole update and strand everyone on the previous cached version.
+      Promise.allSettled(
+        SHELL_FILES.map((file) =>
+          cache.add(file).catch((err) => console.warn("Shell file failed to cache:", file, err))
+        )
+      )
+    ).then(() => self.skipWaiting())
   );
 });
 

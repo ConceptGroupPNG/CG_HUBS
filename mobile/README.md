@@ -24,7 +24,7 @@ cg-time-mobile/
   manifest.json        PWA metadata (name, icon, colors)
   sw.js                 tiny service worker so the app shell opens instantly
   logo.png              the CG Time logo (same one used on the dashboard)
-  background.jpg        the watch/gears background photo (same one used on the dashboard)
+  background.png        the watch/gears background photo
   icons/                home-screen icons generated from that logo
 README.md               this file
 ```
