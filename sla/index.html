@@ -3457,10 +3457,6 @@ function renderAgreementsList(){
               <button class="btn btn-sm" onclick="event.stopPropagation(); openAgreementForm('${a.id}')">Edit</button>
             </div>
           </div>
-          <div class="record-card-meta">
-            <span><span class="m-label">Rate</span>${a.fields.Rate?fmtMoney(a.fields.Rate, client?.fields?.Currency):"—"}</span>
-            ${a.fields.TotalAmount ? `<span><span class="m-label">Fee total</span>${fmtMoney(a.fields.TotalAmount, client?.fields?.Currency)}</span>` : ""}
-          </div>
         </div>`;
       }).join("")}
     </div>` : `<div class="empty">No agreements yet.</div>`}
@@ -4365,9 +4361,6 @@ function renderServiceAcksList(){
               <span class="badge badge-neutral">${esc(sa.fields.Status||"—")}</span>
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); confirmDeleteServiceAck(this,'${sa.id}')">Delete</button>
             </div>
-          </div>
-          <div class="record-card-meta">
-            <span><span class="m-label">Total cost</span>${fmtMoney(sa.fields.TotalAmount, sa.fields.Currency)}</span>
           </div>
         </div>`;
       }).join("")}
