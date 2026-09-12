@@ -266,7 +266,6 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div class="nav-item" data-page="tickets" onclick="navigate('tickets')">🎫 Tickets</div>
     <div class="nav-item" data-page="agreements" onclick="agreementDetailId=null; workOrderDetailId=null; adHocClientDetailId=null; navigate('agreements')">🗂 Agreements</div>
     <div class="nav-item" data-page="invoices" onclick="navigate('invoices')">🧾 Invoices</div>
-    <div class="nav-item" data-page="serviceacks" onclick="navigate('serviceacks')">📝 Service Acks</div>
     <div class="nav-section">Setup</div>
     <div class="nav-item" data-page="clients" onclick="navigate('clients')">🏢 Clients</div>
     <div class="nav-item" data-page="resources" onclick="navigate('resources')">👥 Resources</div>
@@ -283,7 +282,6 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div id="page-email" class="page"></div>
     <div id="page-agreements" class="page"></div>
     <div id="page-invoices" class="page"></div>
-    <div id="page-serviceacks" class="page"></div>
     <div id="page-clients" class="page"></div>
     <div id="page-resources" class="page"></div>
     <div id="page-admin" class="page"></div>
@@ -796,7 +794,7 @@ function ticketSeverityClass(bs){
 /* ============================================================
    NAVIGATION / RENDER ENGINE
    ============================================================ */
-const PAGES = ["dashboard","tickets","email","agreements","invoices","serviceacks","clients","resources","admin"];
+const PAGES = ["dashboard","tickets","email","agreements","invoices","clients","resources","admin"];
 let currentPage = "dashboard";
 
 function navigate(page){
@@ -813,7 +811,7 @@ function navigate(page){
   });
   const renderers = {
     dashboard: renderDashboard, tickets: renderTickets, email: renderEmail,
-    agreements: renderAgreements, invoices: renderInvoices, serviceacks: renderServiceAcks,
+    agreements: renderAgreements, invoices: renderInvoices,
     clients: renderClients, resources: renderResources, admin: renderAdmin
   };
   renderers[page](); // render instantly from current state — snappy nav, no wait
@@ -2948,7 +2946,7 @@ async function submitEndClientForm(id){
    against it — manually via a ticket, directly in SLA HUB, or via CG
    Time's shared Time Tracking Widget — combined into one table.
    ============================================================ */
-let agreementsTab = "agreements"; // "agreements" | "workorders" | "adhoc"
+let agreementsTab = "agreements"; // "agreements" | "workorders" | "serviceacks" | "adhoc" — "workorders" is kept as an internally-reachable state (see below) even though it no longer has a visible tab
 let agreementDetailId = null;
 let workOrderDetailId = null;
 let adHocClientDetailId = null;
@@ -2959,21 +2957,29 @@ function renderAgreements(){
   // one just before calling this (via navigate()), and each tab's list
   // renderer only ever reads its own matching id, so nothing stale leaks
   // across tabs. Resetting here would wipe that id before it's ever read.
+  //
+  // Work Orders no longer has a visible tab or a creation entry point here
+  // (Service Acks replaced it in this slot) — but the "workorders" dispatch
+  // branch below is deliberately kept working, because a Ticket's "Owning
+  // entity" link still calls openWorkOrderDetail() for any ticket owned by
+  // a pre-existing Work Order, and that link must keep resolving even
+  // though Work Orders can no longer be managed from the nav.
   document.getElementById("page-agreements").innerHTML = `
     <div class="page-header">
-      <div><h2>Agreements</h2><div class="sub">What tickets and hours are logged against — SLA Agreements, Work Orders, or Ad Hoc Support</div></div>
+      <div><h2>Agreements</h2><div class="sub">What tickets and hours are logged against — SLA Agreements, Service Acknowledgements, or Ad Hoc Support</div></div>
       ${agreementsTab==='agreements' ? `<button class="btn btn-accent" onclick="openAgreementForm()">+ New agreement</button>` : ""}
-      ${agreementsTab==='workorders' ? `<button class="btn btn-accent" onclick="openWorkOrderForm()">+ New work order</button>` : ""}
+      ${agreementsTab==='serviceacks' ? `<button class="btn btn-accent" onclick="openServiceAckDetail()">+ New Service Acknowledgement</button>` : ""}
     </div>
     <div class="tabbar">
       <div class="tab ${agreementsTab==='agreements'?'active':''}" onclick="agreementsTab='agreements'; agreementDetailId=null; renderAgreements();">Agreements</div>
-      <div class="tab ${agreementsTab==='workorders'?'active':''}" onclick="agreementsTab='workorders'; workOrderDetailId=null; renderAgreements();">Work Orders</div>
+      <div class="tab ${agreementsTab==='serviceacks'?'active':''}" onclick="agreementsTab='serviceacks'; serviceAckDetailOpen=false; currentServiceAckId=null; renderAgreements();">Service Acks</div>
       <div class="tab ${agreementsTab==='adhoc'?'active':''}" onclick="agreementsTab='adhoc'; adHocClientDetailId=null; renderAgreements();">Ad Hoc Support</div>
     </div>
     <div id="agreementsBodyWrap"></div>
   `;
   if(agreementsTab==='agreements') renderAgreementsList();
   else if(agreementsTab==='workorders') renderWorkOrdersList();
+  else if(agreementsTab==='serviceacks') renderServiceAcksList();
   else renderAdHocList();
 }
 
@@ -4326,119 +4332,169 @@ function downloadCSV(filename, headers, rowObjs){
    JSON, matching the LineItems-as-JSON convention already used by
    Invoices and Agreements. Numbering ("SA-0001") mirrors Invoices'
    SLA_LastInvoiceNumber sequence pattern exactly, via SLA_LastSANumber.
+
+   Lives as a tab inside the Agreements page (in the slot Work Orders
+   used to occupy), not as its own nav item/page. List rows are
+   click-to-open — openServiceAckDetail() unifies "create new" (no id)
+   and "edit" (an id) into the one inline panel below the list, exactly
+   mirroring Agreements' own openAgreementDetail()/click-to-edit pattern.
    ============================================================ */
-let saTab = "list";
 let saLines = [];
 let saLineCounter = 0;
 let saAppendixTasks = [];
 let saAppendixTaskCounter = 0;
 let currentServiceAckId = null;
-
-function renderServiceAcks(){
-  document.getElementById("page-serviceacks").innerHTML = `
-    <div class="page-header"><div><h2>Service Acknowledgements</h2><div class="sub">Generate, preview and print a Service Acknowledgement — same document and flow as PSP HUB's Quotes → Generate a Quote → Service Acknowledgement</div></div></div>
-    <div class="tabbar">
-      <div class="tab ${saTab==='list'?'active':''}" onclick="saTab='list'; renderServiceAcks();">Service Acknowledgements</div>
-      <div class="tab ${saTab==='generate'?'active':''}" onclick="startNewServiceAck();">Generate Service Acknowledgement</div>
-    </div>
-    <div id="saBody"></div>
-  `;
-  if(saTab === "list") renderServiceAcksList(); else renderGenerateServiceAck();
-}
+let serviceAckDetailOpen = false;
 
 function renderServiceAcksList(){
+  const wrap = document.getElementById("agreementsBodyWrap");
   const rows = [...state.serviceAcks].sort((a,b)=> new Date(b.fields.EffectiveDate||0)-new Date(a.fields.EffectiveDate||0));
-  document.getElementById("saBody").innerHTML = rows.length ? `
-    <div class="card" style="padding:0;">
-      <table><thead><tr><th>SA No</th><th>Client</th><th>Effective date</th><th>Total cost</th><th>Status</th><th></th></tr></thead>
-      <tbody>${rows.map(sa=>{
+  wrap.innerHTML = `
+    ${rows.length ? `
+    <div class="record-list">
+      ${rows.map(sa=>{
         const client = state.clients.find(c=>String(c.id)===String(ticketLookupId(sa,"Client")));
-        return `<tr>
-        <td><b>${esc(sa.fields.Title)}</b></td>
-        <td>${esc(client?client.fields.Title:"—")}</td>
-        <td>${fmtDate(sa.fields.EffectiveDate)}</td>
-        <td>${fmtMoney(sa.fields.TotalAmount, sa.fields.Currency)}</td>
-        <td><span class="badge badge-neutral">${esc(sa.fields.Status||"—")}</span></td>
-        <td style="white-space:nowrap;">
-          <button class="btn btn-sm" onclick="viewServiceAckById('${sa.id}')" title="Preview">👁</button>
-          <button class="btn btn-sm" onclick="printServiceAckById('${sa.id}')" title="Print">🖨</button>
-          <button class="btn btn-sm" onclick="editServiceAckById('${sa.id}')" title="Edit">✏️</button>
-          <button class="btn btn-sm btn-danger" onclick="confirmDeleteServiceAck(this,'${sa.id}')" title="Delete">🗑</button>
-        </td>
-      </tr>`; }).join("")}</tbody></table>
-    </div>` : `<div class="empty">No Service Acknowledgements generated yet.</div>`;
+        return `
+        <div class="record-card clickable" onclick="openServiceAckDetail('${sa.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title"><span class="num">${esc(sa.fields.Title)}</span>${esc(client?client.fields.Title:"—")}</div>
+              <div class="record-card-sub">${fmtDate(sa.fields.EffectiveDate)}</div>
+            </div>
+            <div class="record-card-badges">
+              <span class="badge badge-neutral">${esc(sa.fields.Status||"—")}</span>
+              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); confirmDeleteServiceAck(this,'${sa.id}')">Delete</button>
+            </div>
+          </div>
+          <div class="record-card-meta">
+            <span><span class="m-label">Total cost</span>${fmtMoney(sa.fields.TotalAmount, sa.fields.Currency)}</span>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="empty">No Service Acknowledgements generated yet.</div>`}
+    <div id="serviceAckDetailWrap"></div>
+  `;
+  renderServiceAckDetail();
 }
 
-function startNewServiceAck(){
+// Unifies the old "Generate" tab and the old editServiceAckById() into one
+// entry point — call with no id to start a new Service Acknowledgement, or
+// an existing SA's id to open it for click-to-edit — landing either way on
+// the same inline panel beneath the list, exactly like openAgreementDetail().
+function openServiceAckDetail(id){
+  agreementsTab = 'serviceacks';
+  serviceAckDetailOpen = true;
+  currentServiceAckId = id || null;
+  navigate('agreements');
+  document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
+}
+
+function closeServiceAckDetail(){
+  serviceAckDetailOpen = false;
   currentServiceAckId = null;
+  renderServiceAckDetail();
+}
+
+function renderServiceAckDetail(){
+  const wrap = document.getElementById("serviceAckDetailWrap");
+  if(!wrap) return;
+  if(!serviceAckDetailOpen){ wrap.innerHTML = ""; return; }
+  const sa = currentServiceAckId ? state.serviceAcks.find(x=>String(x.id)===String(currentServiceAckId)) : null;
+  if(!sa && currentServiceAckId){ // the record disappeared from under us (e.g. deleted elsewhere) — just close quietly
+    serviceAckDetailOpen = false; currentServiceAckId = null; wrap.innerHTML = ""; return;
+  }
+
+  // Always rebuilt from the authoritative SA record (or blank, for a new
+  // one) rather than trusted to already be in sync — this function can be
+  // re-invoked at any time by a background refresh re-rendering the whole
+  // list it lives under, and rebuilding from scratch here is what keeps
+  // repeated re-renders from silently duplicating lines/tasks.
   saLines = []; saLineCounter = 0;
   saAppendixTasks = []; saAppendixTaskCounter = 0;
-  saTab = "generate";
-  renderServiceAcks();
-}
 
-function renderGenerateServiceAck(){
-  document.getElementById("saBody").innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
-      <div class="card">
-        <div class="field"><label>Client *</label>
-          <select id="sa_client" onchange="onSAClientChange()">
-            <option value="">Select client…</option>
-            ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="form-grid" style="margin-top:12px;">
-          <div class="field"><label>Contact person</label><input type="text" id="sa_contact" placeholder="e.g. Jenny Tom" oninput="renderSAPreview()"></div>
-          <div class="field"><label>Effective delivery date</label><input type="date" id="sa_date" value="${new Date().toISOString().slice(0,10)}" onchange="renderSAPreview()"></div>
-        </div>
-        <div class="field" style="margin-top:12px;"><label>Project / Change Description (short)</label><input type="text" id="sa_reference" placeholder="Short description of the work" oninput="renderSAPreview()"></div>
-        <div class="field" style="margin-top:12px;"><label>SA No <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-2);">(auto)</span></label><input type="text" id="sa_saNo" readonly style="background:var(--page);color:var(--ink-2);font-weight:700;"></div>
-
-        <div style="margin:20px 0 8px;display:flex;align-items:center;justify-content:space-between;">
-          <div class="section-title" style="margin:0;">Service Info and Service Fee (VAT excluded)</div>
-          <button class="btn btn-sm btn-accent" onclick="addSALine()">+ Add line</button>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 70px 90px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
-          <div>Description</div><div style="text-align:center;">Hours</div><div style="text-align:center;">Cost</div><div></div>
-        </div>
-        <div id="sa_lines_container"></div>
-        <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--gridline);text-align:right;">
-          <div style="font-size:16px;font-weight:800;">Total Cost: <span id="sa_total">0.00</span></div>
-          <div style="font-size:11px;color:var(--ink-2);margin-top:2px;">VAT excluded — tax applied automatically at invoicing based on client tax status</div>
-        </div>
-
-        <div style="margin-top:22px;padding-top:16px;border-top:2px solid var(--gridline);">
-          <div class="section-title" style="margin-top:0;">Appendix 1 — Task List and Estimates</div>
-          <div class="field"><label>Project / Change Description</label><input type="text" id="sa_appendix_title" placeholder="e.g. Additional Hours for Configuration, Testing and Implementation of…" oninput="renderSAPreview()"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;">
-            <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);">Tasks</div>
-            <button class="btn btn-sm btn-accent" onclick="addSAAppendixTask()">+ Add task</button>
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="closeServiceAckDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${sa ? esc(sa.fields.Title) : "New Service Acknowledgement"}</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;margin-top:12px;">
+        <div class="card">
+          <div class="field"><label>Client *</label>
+            <select id="sa_client" onchange="onSAClientChange()">
+              <option value="">Select client…</option>
+              ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
+            </select>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
-            <div>Task</div><div>Description</div><div style="text-align:center;">Hours</div><div></div>
+          <div class="form-grid" style="margin-top:12px;">
+            <div class="field"><label>Contact person</label><input type="text" id="sa_contact" placeholder="e.g. Jenny Tom" oninput="renderSAPreview()"></div>
+            <div class="field"><label>Effective delivery date</label><input type="date" id="sa_date" value="${new Date().toISOString().slice(0,10)}" onchange="renderSAPreview()"></div>
           </div>
-          <div id="sa_appendix_container"></div>
-          <div id="sa_appendix_hours_check" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:700;"></div>
+          <div class="field" style="margin-top:12px;"><label>Project / Change Description (short)</label><input type="text" id="sa_reference" placeholder="Short description of the work" oninput="renderSAPreview()"></div>
+          <div class="field" style="margin-top:12px;"><label>SA No <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-2);">(auto)</span></label><input type="text" id="sa_saNo" readonly style="background:var(--page);color:var(--ink-2);font-weight:700;"></div>
+
+          <div style="margin:20px 0 8px;display:flex;align-items:center;justify-content:space-between;">
+            <div class="section-title" style="margin:0;">Service Info and Service Fee (VAT excluded)</div>
+            <button class="btn btn-sm btn-accent" onclick="addSALine()">+ Add line</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 90px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
+            <div>Description</div><div style="text-align:center;">Hours</div><div style="text-align:center;">Cost</div><div></div>
+          </div>
+          <div id="sa_lines_container"></div>
+          <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--gridline);text-align:right;">
+            <div style="font-size:16px;font-weight:800;">Total Cost: <span id="sa_total">0.00</span></div>
+            <div style="font-size:11px;color:var(--ink-2);margin-top:2px;">VAT excluded — tax applied automatically at invoicing based on client tax status</div>
+          </div>
+
+          <div style="margin-top:22px;padding-top:16px;border-top:2px solid var(--gridline);">
+            <div class="section-title" style="margin-top:0;">Appendix 1 — Task List and Estimates</div>
+            <div class="field"><label>Project / Change Description</label><input type="text" id="sa_appendix_title" placeholder="e.g. Additional Hours for Configuration, Testing and Implementation of…" oninput="renderSAPreview()"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);">Tasks</div>
+              <button class="btn btn-sm btn-accent" onclick="addSAAppendixTask()">+ Add task</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:6px;padding:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;">
+              <div>Task</div><div>Description</div><div style="text-align:center;">Hours</div><div></div>
+            </div>
+            <div id="sa_appendix_container"></div>
+            <div id="sa_appendix_hours_check" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:700;"></div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:18px;">
+            ${sa ? `<button class="btn btn-sm" onclick="printServiceAckById('${sa.id}')">🖨 Print</button>` : ""}
+            <button class="btn btn-accent" id="sa_save_btn" onclick="saveServiceAck()" style="flex:1;">💾 Save Service Acknowledgement</button>
+          </div>
         </div>
 
-        <button class="btn btn-accent" id="sa_save_btn" onclick="saveServiceAck()" style="width:100%;margin-top:18px;">💾 Save Service Acknowledgement</button>
-      </div>
-
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h3 style="margin:0;font-size:15px;">Preview</h3>
-          <button class="btn btn-sm" id="sa_print_btn" onclick="printGeneratedSAPreview()" style="display:none;">🖨 Print</button>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h3 style="margin:0;font-size:15px;">Preview</h3>
+            <button class="btn btn-sm" id="sa_print_btn" onclick="printGeneratedSAPreview()" style="display:none;">🖨 Print</button>
+          </div>
+          <div id="sa_preview"><div class="empty">Select a client and add at least one line item to preview the document.</div></div>
         </div>
-        <div id="sa_preview"><div class="empty">Select a client and add at least one line item to preview the document.</div></div>
       </div>
     </div>
   `;
-  if(!currentServiceAckId){
-    if(!saLines.length) addSALine();
+
+  if(sa){
+    document.getElementById("sa_client").value = ticketLookupId(sa,"Client") || "";
+    document.getElementById("sa_contact").value = sa.fields.ContactPerson || "";
+    document.getElementById("sa_date").value = sa.fields.EffectiveDate ? new Date(sa.fields.EffectiveDate).toISOString().slice(0,10) : "";
+    document.getElementById("sa_reference").value = sa.fields.Reference || "";
+    document.getElementById("sa_saNo").value = sa.fields.Title || "";
+    document.getElementById("sa_appendix_title").value = sa.fields.AppendixTitle || "";
+
+    let lines = []; try{ lines = JSON.parse(sa.fields.ServiceLines || "[]"); }catch(e){}
+    if(lines.length) lines.forEach(l=>addSALine(l)); else addSALine();
+
+    let tasks = []; try{ tasks = JSON.parse(sa.fields.AppendixTasks || "[]"); }catch(e){}
+    tasks.forEach(t=>addSAAppendixTask(t));
+  } else {
+    addSALine();
     generateSANumberPreview();
   }
   renderSALines();
   renderSAAppendixTasks();
+  renderSAPreview();
 }
 
 // Zero Rated clients must never have taxed line items — mirrors PSP HUB's
@@ -4776,34 +4832,10 @@ async function saveServiceAck(){
     state.serviceAcks = await fetchAllListItems("SLA_ServiceAcks");
     toast(`Service Acknowledgement ${saNo} saved`);
     currentServiceAckId = null;
+    serviceAckDetailOpen = false;
     saLines = []; saAppendixTasks = [];
-    saTab = "list";
-    renderServiceAcks();
+    renderServiceAcksList();
   }catch(e){ console.error(e); toast("Error saving Service Acknowledgement: " + e.message, true); }
-}
-
-function editServiceAckById(id){
-  const sa = state.serviceAcks.find(x=>String(x.id)===String(id));
-  if(!sa) return;
-  currentServiceAckId = id;
-  saTab = "generate";
-  renderServiceAcks(); // builds the skeleton; currentServiceAckId being set skips the default-blank-line seed
-  document.getElementById("sa_client").value = ticketLookupId(sa,"Client") || "";
-  document.getElementById("sa_contact").value = sa.fields.ContactPerson || "";
-  document.getElementById("sa_date").value = sa.fields.EffectiveDate ? new Date(sa.fields.EffectiveDate).toISOString().slice(0,10) : "";
-  document.getElementById("sa_reference").value = sa.fields.Reference || "";
-  document.getElementById("sa_saNo").value = sa.fields.Title || "";
-  document.getElementById("sa_appendix_title").value = sa.fields.AppendixTitle || "";
-
-  let lines = []; try{ lines = JSON.parse(sa.fields.ServiceLines || "[]"); }catch(e){}
-  saLines = []; saLineCounter = 0;
-  if(lines.length) lines.forEach(l=>addSALine(l)); else addSALine();
-
-  let tasks = []; try{ tasks = JSON.parse(sa.fields.AppendixTasks || "[]"); }catch(e){}
-  saAppendixTasks = []; saAppendixTaskCounter = 0;
-  tasks.forEach(t=>addSAAppendixTask(t));
-  renderSAAppendixTasks();
-  renderSAPreview();
 }
 
 // Builds the document HTML for an already-saved SA record — shared by
@@ -4833,20 +4865,6 @@ function buildDocHtmlForSavedSA(sa){
   });
 }
 
-function viewServiceAckById(id){
-  const sa = state.serviceAcks.find(x=>String(x.id)===String(id));
-  if(!sa) return;
-  const docHtml = buildDocHtmlForSavedSA(sa);
-  openModal(`
-    <h3 style="margin:0 0 4px;">${esc(sa.fields.Title)}</h3>
-    <div style="border:1px solid var(--gridline);border-radius:8px;overflow:hidden;margin-top:12px;">${docHtml}</div>
-    <div class="modal-actions" style="margin-top:16px;">
-      <button class="btn" onclick="closeModal()">Close</button>
-      <button class="btn btn-accent" onclick="printServiceAckById('${sa.id}')">🖨 Print</button>
-    </div>
-  `, {wide:true});
-}
-
 // Shared print helper — window.open + document.write, same convention as
 // printTicket() below (self-contained HTML, embedded logo, no network
 // dependency, a "noprint" Print button for the popup window itself).
@@ -4873,7 +4891,7 @@ function printServiceAckById(id){
   if(sa.fields.Status === "Draft"){
     graphUpdateItem("SLA_ServiceAcks", sa.id, { Status: "Sent" }).then(()=>{
       sa.fields.Status = "Sent";
-      if(saTab === "list") renderServiceAcksList();
+      if(agreementsTab==='serviceacks') renderServiceAcksList();
     }).catch(()=>{});
   }
 }
@@ -4890,6 +4908,7 @@ async function deleteServiceAck(id){
     await graphDeleteItem("SLA_ServiceAcks", id);
     state.serviceAcks = state.serviceAcks.filter(x=>String(x.id)!==String(id));
     toast("Service Acknowledgement deleted");
+    if(String(currentServiceAckId)===String(id)){ serviceAckDetailOpen = false; currentServiceAckId = null; }
     renderServiceAcksList();
   }catch(e){ toast("Couldn't delete: " + e.message, true); }
 }
