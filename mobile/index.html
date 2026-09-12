@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Concept Time</title>
+<meta name="theme-color" content="#5e491f" />
+<meta name="description" content="Log time against active CSAs, Proposals, PSP activities and SLA tickets across Concept Group." />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Concept Time" />
+<meta name="mobile-web-app-capable" content="yes" />
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<style>
+  :root{
+    --page-bg:#ece1c8;
+    --surface-card:#f7f1e2;
+    --surface-card-2:#efe6cf;
+    --ink-primary:#241a10;
+    --ink-secondary:#5c4a34;
+    --ink-muted:#8a7860;
+    --brass:#86693a;
+    --brass-deep:#5e491f;
+    --brass-light:#b4934f;
+    --hairline:#ddd0ab;
+    --status-good:#0ca30c;
+    --status-warning:#b5790a;
+    --status-critical:#d03b3b;
+    --radius:14px;
+    --shadow:0 4px 16px rgba(94,73,31,0.16);
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+    background:var(--page-bg);
+    color:var(--ink-primary);
+    min-height:100dvh;
+    overscroll-behavior:none;
+  }
+  #app{min-height:100dvh;display:flex;flex-direction:column;}
+  [hidden]{display:none!important;}
+
+  /* ---------- Sign-in screen ---------- */
+  .signin-screen{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(28px + var(--safe-top)) 24px calc(28px + var(--safe-bottom));
+  }
+  .signin-card{
+    width:100%;max-width:380px;background:var(--surface-card);border:1px solid var(--hairline);
+    border-radius:20px;box-shadow:var(--shadow);padding:36px 28px 32px;text-align:center;
+  }
+  .signin-logo{width:100%;max-width:220px;height:auto;display:block;margin:0 auto 18px;filter:drop-shadow(0 3px 7px rgba(0,0,0,0.25));}
+  .signin-tagline{margin:0 0 26px;font-size:14px;color:var(--ink-secondary);}
+  .btn-signin{
+    width:100%;border:none;border-radius:12px;padding:15px 18px;font-size:16px;font-weight:700;
+    background:linear-gradient(160deg,var(--brass-light),var(--brass-deep));color:#fff8e8;cursor:pointer;
+  }
+  .btn-signin:active{filter:brightness(0.95);}
+  .signin-error{margin-top:16px;font-size:13px;color:var(--status-critical);min-height:1em;}
+
+  /* ---------- Main app ---------- */
+  .topbar{
+    display:flex;align-items:center;gap:10px;padding:calc(12px + var(--safe-top)) 16px 12px;
+    background:var(--surface-card);border-bottom:1px solid var(--hairline);
+  }
+  .topbar-logo{height:34px;width:auto;flex:none;}
+  .topbar-title{font-size:15px;font-weight:700;color:var(--ink-primary);flex:1;letter-spacing:.01em;}
+  .user-chip{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+  .user-name{font-size:11.5px;color:var(--ink-muted);max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .signout-link{border:none;background:none;color:var(--brass);font-size:11.5px;font-weight:600;padding:0;cursor:pointer;}
+
+  .content{flex:1;padding:18px 18px calc(28px + var(--safe-bottom));display:flex;flex-direction:column;gap:16px;max-width:480px;width:100%;margin:0 auto;}
+
+  .field-label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-muted);margin:0 0 6px;}
+
+  .entity-select{
+    width:100%;padding:14px 14px;font-size:16px;border-radius:12px;border:1px solid var(--hairline);
+    background:var(--surface-card);color:var(--ink-primary);appearance:none;
+  }
+  .entity-select:disabled{color:var(--ink-muted);}
+
+  .timer-card{
+    background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:22px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;
+  }
+  .timer-display{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-primary);min-height:42px;letter-spacing:.02em;}
+  .btn-timer{
+    width:100%;max-width:260px;border:none;border-radius:999px;padding:18px 20px;font-size:17px;font-weight:700;
+    background:linear-gradient(160deg,var(--brass-light),var(--brass-deep));color:#fff8e8;cursor:pointer;
+  }
+  .btn-timer:disabled{opacity:.45;}
+  .btn-timer.running{background:linear-gradient(160deg,#d9704f,#a8402a);}
+  .btn-timer:active:not(:disabled){filter:brightness(0.95);}
+
+  .divider{display:flex;align-items:center;gap:10px;color:var(--ink-muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--hairline);}
+
+  .manual-row{display:flex;gap:10px;}
+  .manual-input{
+    flex:1;min-width:0;padding:14px 14px;font-size:16px;border-radius:12px;border:1px solid var(--hairline);
+    background:var(--surface-card);color:var(--ink-primary);
+  }
+  .btn-log{
+    flex:none;border:none;border-radius:12px;padding:0 22px;font-size:15px;font-weight:700;
+    background:var(--surface-card-2);color:var(--brass-deep);border:1px solid var(--hairline);cursor:pointer;
+  }
+  .btn-log:disabled{opacity:.45;}
+  .btn-log:active:not(:disabled){background:var(--brass-light);color:#fff8e8;}
+
+  .last-entry{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--surface-card-2);border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;font-size:13.5px;color:var(--ink-secondary);
+  }
+  .last-entry strong{color:var(--ink-primary);}
+  .btn-detail{border:none;background:none;color:var(--brass);font-weight:700;font-size:13px;cursor:pointer;flex:none;padding:4px 6px;}
+
+  .detail-panel{
+    background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);padding:14px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .detail-label{font-size:12.5px;font-weight:700;color:var(--ink-secondary);}
+  .detail-textarea{
+    width:100%;min-height:70px;border-radius:10px;border:1px solid var(--hairline);padding:10px 12px;
+    font-family:inherit;font-size:15px;resize:vertical;background:var(--surface-card-2);color:var(--ink-primary);
+  }
+  .detail-actions{display:flex;justify-content:flex-end;gap:8px;}
+  .detail-actions button{border:none;border-radius:10px;padding:9px 16px;font-size:13.5px;font-weight:700;cursor:pointer;}
+  .detail-cancel{background:transparent;border:1px solid var(--hairline)!important;color:var(--ink-muted);}
+  .detail-save{background:var(--brass-deep);color:#fff8e8;}
+
+  .error-banner{
+    background:rgba(208,59,59,0.12);border:1px solid rgba(208,59,59,0.35);color:#9c2c2c;
+    border-radius:10px;padding:10px 14px;font-size:13px;min-height:0;
+  }
+
+  .spacer{flex:1;}
+  .footnote{text-align:center;font-size:11px;color:var(--ink-muted);padding-top:4px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Sign-in screen -->
+  <div id="signinScreen" class="signin-screen">
+    <div class="signin-card">
+      <img class="signin-logo" src="logo.png" alt="Concept Time" />
+      <p class="signin-tagline">Concept Group — time logging, wherever you are</p>
+      <button id="signInBtn" class="btn-signin">Sign in with Microsoft</button>
+      <div id="signinError" class="signin-error"></div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="mainScreen" hidden style="flex:1;display:flex;flex-direction:column;">
+    <div class="topbar">
+      <img class="topbar-logo" src="logo.png" alt="" />
+      <div class="topbar-title">Concept Time</div>
+      <div class="user-chip">
+        <span id="userName" class="user-name"></span>
+        <button id="signOutBtn" class="signout-link">Sign out</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div>
+        <p class="field-label">Log time against</p>
+        <select id="entitySelect" class="entity-select" disabled>
+          <option>Loading…</option>
+        </select>
+      </div>
+
+      <div class="timer-card">
+        <button id="timerBtn" class="btn-timer" disabled>Start</button>
+        <div id="timerDisplay" class="timer-display"></div>
+      </div>
+
+      <div class="divider">or log manually</div>
+
+      <div class="manual-row">
+        <input id="manualHours" class="manual-input" type="number" inputmode="decimal" step="0.25" min="0.25"
+               placeholder="Hours, e.g. 1.5" title="Enter hours as a decimal, e.g. 1.5 for 1 hour 30 minutes" />
+        <button id="manualLogBtn" class="btn-log" disabled>Log</button>
+      </div>
+
+      <div id="lastEntryRow" class="last-entry" hidden>
+        <span id="lastEntryText"></span>
+        <button id="detailBtn" class="btn-detail">Add detail</button>
+      </div>
+
+      <div id="detailPanel" class="detail-panel" hidden>
+        <div id="detailLabel" class="detail-label"></div>
+        <textarea id="detailTextarea" class="detail-textarea" placeholder="Optional notes about this entry…"></textarea>
+        <div class="detail-actions">
+          <button id="detailCancelBtn" class="detail-cancel">Discard</button>
+          <button id="detailSaveBtn" class="detail-save">Save</button>
+        </div>
+      </div>
+
+      <div id="errorBanner" class="error-banner" hidden></div>
+
+      <div class="spacer"></div>
+      <div class="footnote">Concept Group · CG Time</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------
+  // Same tenant and SharePoint site as every other Hub and as the desktop
+  // Concept Time widget. CLIENT_ID defaults to the desktop widget's own
+  // app registration — see README.md "Azure AD setup" for what you need
+  // to add there (a redirect URI for wherever this page ends up hosted),
+  // or swap in a dedicated client ID if you'd rather this app have its
+  // own registration.
+  const CONFIG = {
+    tenantId: "ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
+    clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c",
+    siteHostname: "conceptcompg.sharepoint.com",
+    sitePath: "/sites/CG_Time",
+    activeEntitiesListName: "CSA_ActiveEntities",
+    timeEntriesListName: "CSA_TimeEntries",
+    scopes: ["Sites.ReadWrite.All", "User.Read"],
+  };
+
+  const REDIRECT_URI = window.location.origin + window.location.pathname.replace(/\/+$/, "");
+
+  // ---------------------------------------------------------------------
+  // Elements
+  // ---------------------------------------------------------------------
+  const signinScreen = document.getElementById("signinScreen");
+  const mainScreen = document.getElementById("mainScreen");
+  const signInBtn = document.getElementById("signInBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const signinError = document.getElementById("signinError");
+  const userNameEl = document.getElementById("userName");
+
+  const entitySelect = document.getElementById("entitySelect");
+  const timerBtn = document.getElementById("timerBtn");
+  const timerDisplay = document.getElementById("timerDisplay");
+  const manualHours = document.getElementById("manualHours");
+  const manualLogBtn = document.getElementById("manualLogBtn");
+
+  const lastEntryRow = document.getElementById("lastEntryRow");
+  const lastEntryText = document.getElementById("lastEntryText");
+  const detailBtn = document.getElementById("detailBtn");
+  const detailPanel = document.getElementById("detailPanel");
+  const detailLabel = document.getElementById("detailLabel");
+  const detailTextarea = document.getElementById("detailTextarea");
+  const detailSaveBtn = document.getElementById("detailSaveBtn");
+  const detailCancelBtn = document.getElementById("detailCancelBtn");
+
+  const errorBanner = document.getElementById("errorBanner");
+
+  // ---------------------------------------------------------------------
+  // Auth (MSAL Browser, PKCE + redirect — matches CG Time / CSA HUB / SLA HUB)
+  // ---------------------------------------------------------------------
+  const msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CONFIG.clientId,
+      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+      redirectUri: REDIRECT_URI,
+    },
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+  });
+
+  async function getAccessToken() {
+    const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
+    if (!account) throw new Error("Not signed in");
+    try {
+      const result = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account });
+      return result.accessToken;
+    } catch (e) {
+      await msalInstance.acquireTokenRedirect({ scopes: CONFIG.scopes });
+      return new Promise(() => {}); // navigation is happening; nothing more to do here
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Graph calls against the CG_Time SharePoint site — same site, lists and
+  // field names as the desktop widget writes, so entries from phone and
+  // desktop are indistinguishable in reporting.
+  // ---------------------------------------------------------------------
+  const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+  let siteId = null, activeEntitiesListId = null, timeListId = null, currentUserLabel = null;
+
+  async function graphFetch(path, options = {}) {
+    const token = await getAccessToken();
+    const res = await fetch(`${GRAPH_BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Graph API error ${res.status}: ${text}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function ensureSiteAndLists() {
+    if (siteId && activeEntitiesListId && timeListId) return;
+    const site = await graphFetch(`/sites/${CONFIG.siteHostname}:${CONFIG.sitePath}`);
+    siteId = site.id;
+    const lists = await graphFetch(`/sites/${siteId}/lists?$select=id,displayName`);
+    const activeList = lists.value.find((l) => l.displayName === CONFIG.activeEntitiesListName);
+    const timeList = lists.value.find((l) => l.displayName === CONFIG.timeEntriesListName);
+    if (!activeList || !timeList) {
+      throw new Error(`Could not find "${CONFIG.activeEntitiesListName}" and/or "${CONFIG.timeEntriesListName}" on the site.`);
+    }
+    activeEntitiesListId = activeList.id;
+    timeListId = timeList.id;
+  }
+
+  async function getCurrentUserLabel() {
+    if (currentUserLabel) return currentUserLabel;
+    const me = await graphFetch("/me?$select=displayName,mail,userPrincipalName");
+    currentUserLabel = me.displayName || me.mail || me.userPrincipalName;
+    return currentUserLabel;
+  }
+
+  async function getActiveEntities() {
+    await ensureSiteAndLists();
+    const result = await graphFetch(
+      `/sites/${siteId}/lists/${activeEntitiesListId}/items?expand=fields(select=Title,Description,IsActive,Source)&$top=200`
+    );
+    return result.value
+      .filter((item) => item.fields && item.fields.IsActive)
+      .map((item) => ({
+        code: item.fields.Title,
+        description: item.fields.Description || "",
+        source: item.fields.Source || "",
+      }));
+  }
+
+  async function addTimeEntry(entry) {
+    await ensureSiteAndLists();
+    const user = await getCurrentUserLabel();
+    const body = {
+      fields: {
+        Title: entry.csa,
+        CSA: entry.csa,
+        WorkDate: entry.date,
+        TimeStarted: entry.timeStarted || "",
+        TimeStopped: entry.timeStopped || "",
+        Hours: entry.hours,
+        EntryMethod: entry.method,
+        EntryUser: user,
+        Source: entry.source || "",
+      },
+    };
+    const created = await graphFetch(`/sites/${siteId}/lists/${timeListId}/items`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return { ...entry, user, itemId: created.id };
+  }
+
+  async function updateActivityDetail(itemId, detailText) {
+    await ensureSiteAndLists();
+    await graphFetch(`/sites/${siteId}/lists/${timeListId}/items/${itemId}/fields`, {
+      method: "PATCH",
+      body: JSON.stringify({ ActivityDetail: detailText }),
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // UI state & helpers
+  // ---------------------------------------------------------------------
+  let entitySourceMap = new Map();
+  let timerRunning = false;
+  let timerStart = null;
+  let timerIntervalId = null;
+  let lastLoggedItemId = null;
+  let lastLoggedCode = "";
+
+  function showError(message) {
+    if (message) {
+      errorBanner.textContent = message;
+      errorBanner.hidden = false;
+    } else {
+      errorBanner.hidden = true;
+      errorBanner.textContent = "";
+    }
+  }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function formatElapsed(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+    const s = String(totalSeconds % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+  function roundToQuarterHour(hoursDecimal) {
+    return Math.round(hoursDecimal * 4) / 4;
+  }
+  function roundUpToQuarterHour(hoursDecimal) {
+    return Math.max(0.25, Math.ceil(hoursDecimal * 4) / 4);
+  }
+  // Local calendar components, never toISOString()/new Date(string) — avoids
+  // the UTC-shift bug in PNG's UTC+10 timezone (same pattern as every other Hub).
+  function toLocalDateOnly(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  async function loadEntities() {
+    entitySelect.disabled = true;
+    entitySelect.innerHTML = "<option>Loading…</option>";
+    try {
+      const entities = await getActiveEntities();
+      if (!entities.length) {
+        entitySelect.innerHTML = "<option>No active work found</option>";
+        return;
+      }
+      entitySourceMap = new Map(entities.map((e) => [e.code, e.source]));
+      entitySelect.innerHTML = entities.map((e) => `<option value="${e.code}">${e.code} — ${e.description}</option>`).join("");
+      entitySelect.disabled = false;
+      timerBtn.disabled = false;
+      manualLogBtn.disabled = false;
+      showError("");
+    } catch (e) {
+      entitySelect.innerHTML = "<option>Could not load</option>";
+      showError(e.message);
+    }
+  }
+
+  function clearDetailOpportunity() {
+    lastLoggedItemId = null;
+    lastLoggedCode = "";
+    lastEntryRow.hidden = true;
+    detailPanel.hidden = true;
+  }
+
+  function openDetailOpportunity(itemId, code, summaryText) {
+    lastLoggedItemId = itemId;
+    lastLoggedCode = code;
+    lastEntryText.innerHTML = summaryText;
+    lastEntryRow.hidden = false;
+    detailPanel.hidden = true;
+  }
+
+  detailBtn.addEventListener("click", () => {
+    if (!lastLoggedItemId) return;
+    detailLabel.textContent = `Add detail for ${lastLoggedCode}`;
+    detailTextarea.value = "";
+    detailPanel.hidden = false;
+    detailTextarea.focus();
+  });
+  detailCancelBtn.addEventListener("click", () => { detailPanel.hidden = true; });
+  detailSaveBtn.addEventListener("click", async () => {
+    const text = detailTextarea.value.trim();
+    const itemId = lastLoggedItemId;
+    if (text && itemId) {
+      try {
+        await updateActivityDetail(itemId, text);
+      } catch (e) {
+        showError(`Could not save detail: ${e.message}`);
+      }
+    }
+    detailPanel.hidden = true;
+  });
+
+  async function logEntry(entry) {
+    showError("");
+    manualLogBtn.disabled = true;
+    timerBtn.disabled = true;
+    try {
+      const result = await addTimeEntry(entry);
+      const timeLabel = entry.method === "Timer" ? `${entry.timeStarted}–${entry.timeStopped}` : "Manual";
+      openDetailOpportunity(result.itemId, entry.csa, `<strong>${entry.csa}</strong> · ${entry.hours}h (${timeLabel})`);
+    } catch (e) {
+      showError(`Could not save entry: ${e.message}`);
+    } finally {
+      manualLogBtn.disabled = false;
+      timerBtn.disabled = false;
+    }
+  }
+
+  timerBtn.addEventListener("click", async () => {
+    if (!timerRunning) {
+      clearDetailOpportunity();
+      timerRunning = true;
+      timerStart = new Date();
+      timerBtn.textContent = "Stop";
+      timerBtn.classList.add("running");
+      entitySelect.disabled = true;
+      timerIntervalId = setInterval(() => {
+        timerDisplay.textContent = formatElapsed(new Date() - timerStart);
+      }, 1000);
+    } else {
+      clearInterval(timerIntervalId);
+      const stopTime = new Date();
+      const hours = roundUpToQuarterHour((stopTime - timerStart) / 3600000);
+      timerRunning = false;
+      timerBtn.textContent = "Start";
+      timerBtn.classList.remove("running");
+      entitySelect.disabled = false;
+      timerDisplay.textContent = "";
+
+      await logEntry({
+        csa: entitySelect.value,
+        timeStarted: formatTime(timerStart),
+        timeStopped: formatTime(stopTime),
+        hours,
+        method: "Timer",
+        date: toLocalDateOnly(timerStart),
+        source: entitySourceMap.get(entitySelect.value) || "",
+      });
+      timerStart = null;
+    }
+  });
+
+  manualLogBtn.addEventListener("click", async () => {
+    const hours = parseFloat(manualHours.value);
+    if (!hours || hours <= 0) {
+      showError("Enter a valid number of hours (e.g. 1.5).");
+      return;
+    }
+    const now = new Date();
+    await logEntry({
+      csa: entitySelect.value,
+      timeStarted: "",
+      timeStopped: "",
+      hours: roundToQuarterHour(hours),
+      method: "Manual",
+      date: toLocalDateOnly(now),
+      source: entitySourceMap.get(entitySelect.value) || "",
+    });
+    manualHours.value = "";
+  });
+
+  // ---------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------
+  function showSignedIn(account) {
+    signinScreen.hidden = true;
+    mainScreen.hidden = false;
+    userNameEl.textContent = account.name || account.username || "";
+  }
+  function showSignedOut() {
+    mainScreen.hidden = true;
+    signinScreen.hidden = false;
+  }
+
+  signInBtn.addEventListener("click", async () => {
+    signinError.textContent = "";
+    signInBtn.disabled = true;
+    signInBtn.textContent = "Signing in…";
+    try {
+      await msalInstance.loginRedirect({ scopes: CONFIG.scopes });
+    } catch (e) {
+      signinError.textContent = "Sign-in failed. Please try again.";
+      signInBtn.disabled = false;
+      signInBtn.textContent = "Sign in with Microsoft";
+    }
+  });
+
+  signOutBtn.addEventListener("click", () => {
+    const account = msalInstance.getActiveAccount();
+    msalInstance.logoutRedirect({ account });
+  });
+
+  (async function boot() {
+    try {
+      const resp = await msalInstance.handleRedirectPromise();
+      let account = (resp && resp.account) || msalInstance.getAllAccounts()[0];
+      if (account) {
+        msalInstance.setActiveAccount(account);
+        showSignedIn(account);
+        await loadEntities();
+      } else {
+        showSignedOut();
+      }
+    } catch (e) {
+      signinError.textContent = "Sign-in failed. Please try again.";
+      showSignedOut();
+    }
+  })();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
