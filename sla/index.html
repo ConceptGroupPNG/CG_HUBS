@@ -216,6 +216,13 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .agr-section.c-tickets > .section-title{color:#6952c9;}
 .agr-section.c-time{border-left-color:#4a5568;}
 .agr-section.c-time > .section-title{color:#4a5568;}
+
+/* Fee schedule rows hold input fields, so the global table cell padding
+   (9px/10px, used app-wide) reads as oversized here. Scoped to c-fee only
+   so no other table in the app is affected. */
+.agr-section.c-fee th{padding:4px 6px;}
+.agr-section.c-fee td{padding:2px 6px;}
+.agr-section.c-fee td input[type=text],.agr-section.c-fee td input[type=number]{padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--page);}
 </style>
 </head>
 <body>
