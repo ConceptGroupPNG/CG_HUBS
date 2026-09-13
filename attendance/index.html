@@ -188,7 +188,7 @@
   // create it and paste the client ID in below.
   const CONFIG = {
     tenantId: "ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
-    clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", // see README.md
+    clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc",
     siteHostname: "conceptcompg.sharepoint.com",
     sitePath: "/sites/CG_Time",
     employeesListName: "CG_Employees",
@@ -296,20 +296,29 @@
     return graphFetch("/me?$select=displayName,mail,userPrincipalName");
   }
 
-  async function findEmployeeByEmail(email) {
+  async function fetchAllEmployees() {
     await ensureSiteAndLists();
     const result = await graphFetch(
       `/sites/${siteId}/lists/${employeesListId}/items?expand=fields(select=Title,EmployeeNumber,Email,IsActive)&$top=500`
     );
-    const target = (email || "").toLowerCase();
-    return (
-      result.value.find(
-        (item) =>
-          item.fields &&
-          item.fields.IsActive !== false &&
-          (item.fields.Email || "").toLowerCase() === target
-      ) || null
-    );
+    return result.value;
+  }
+
+  // Matches trimmed + case-insensitive, against either candidate email.
+  // Returns { employee } on a clean match, or { inactiveMatch } if the only
+  // hit found is flagged IsActive:false (a very common near-miss — the
+  // record's there, it's just not marked Active), so the banner can tell
+  // the two failure modes apart instead of guessing.
+  function matchEmployee(employees, candidateEmails) {
+    const targets = candidateEmails.filter(Boolean).map((e) => e.trim().toLowerCase());
+    for (const item of employees) {
+      const f = item.fields || {};
+      const rowEmail = (f.Email || "").trim().toLowerCase();
+      if (!rowEmail || !targets.includes(rowEmail)) continue;
+      if (f.IsActive === false) return { inactiveMatch: item };
+      return { employee: item };
+    }
+    return {};
   }
 
   async function findCurrentPayPeriod(dateStr) {
@@ -535,8 +544,21 @@
 
     try {
       const me = await getMe();
-      const employee = (await findEmployeeByEmail(me.mail)) || (await findEmployeeByEmail(me.userPrincipalName));
+      const candidates = [...new Set([me.mail, me.userPrincipalName].filter(Boolean))];
+      const employees = await fetchAllEmployees();
+      const { employee, inactiveMatch } = matchEmployee(employees, candidates);
       if (!employee) {
+        const triedText = candidates.filter(Boolean).join(" or ");
+        if (inactiveMatch) {
+          notLinkedBanner.innerHTML =
+            `Found <b>${inactiveMatch.fields.Title || inactiveMatch.fields.EmployeeNumber}</b> in CG_Employees with a matching email, ` +
+            `but that record isn't marked Active — ask your administrator to tick Active on it.`;
+        } else {
+          notLinkedBanner.innerHTML =
+            `Your sign-in isn't linked to an Employee record yet. This app looked for ` +
+            `<b>${triedText || "(no email on your Microsoft account)"}</b> in CG_Employees' Email column and found no match. ` +
+            `Ask your administrator to check that column for extra spaces or a typo.`;
+        }
         notLinkedBanner.hidden = false;
         statusArea.hidden = true;
         return;
