@@ -425,6 +425,29 @@ async function sendGraphMailTracked(toEmail, toName, subject, htmlBody){
   return draft.conversationId || null;
 }
 
+// Same "draft then explicit send" pattern as sendGraphMailTracked() (so the
+// conversationId can be read back before sending), but replies IN-THREAD to
+// an existing inbound message via Graph's createReply instead of composing a
+// brand-new message. This is the only way the returned conversationId is
+// guaranteed to be the SAME one the client's own thread already uses — a
+// freshly composed message (even with a "Re: ..." subject and the ticket
+// number in it) gets its own, unrelated conversationId from Exchange, so a
+// later reply anywhere in the client's original thread would never match it
+// in Email Intake's conversationId lookup (see renderEmail()) and would just
+// keep reappearing in the review queue forever. Used only when the ticket
+// being acknowledged came from converting an inbound email — see
+// sendTicketAcknowledgment().
+async function sendGraphMailReplyTracked(sourceMessageGraphId, htmlBody){
+  if(!sourceMessageGraphId) return null;
+  const draft = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${sourceMessageGraphId}/createReply`, { method: "POST" });
+  await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${draft.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body: { contentType: "HTML", content: htmlBody } })
+  });
+  await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${draft.id}/send`, { method: "POST" });
+  return draft.conversationId || null;
+}
+
 async function resolveSiteId(){
   if(_siteId) return _siteId;
   const data = await callGraph(`${GRAPH}/sites/${SITE_HOST}:${SITE_PATH}`);
@@ -2056,7 +2079,17 @@ async function notifyTicketAssigned(t, toName, toEmail){
 // what lets a later reply be matched back automatically (see
 // sendGraphMailTracked() and renderEmail()'s conversationId matching).
 // Best-effort only, same as the other notifications.
-async function sendTicketAcknowledgment(t){
+//
+// sourceMessageGraphId, when given (a ticket created by converting an
+// inbound email — see submitEmailTicketForm()), routes this through
+// sendGraphMailReplyTracked() instead of sendGraphMailTracked(), so the
+// acknowledgment lands as an actual reply in the CLIENT'S OWN thread rather
+// than starting a disconnected new one. Without this, any later reply the
+// client (or a colleague of theirs, copied on the same thread) sends within
+// their original email thread carries a conversationId Email Intake can
+// never match back to this ticket, and it just piles up in the review queue
+// indefinitely — which is what a freshly-composed acknowledgment used to do.
+async function sendTicketAcknowledgment(t, sourceMessageGraphId){
   const toEmail = (t.fields.RequestedByEmail || "").trim();
   if(!toEmail) return null;
   const toName = t.fields.RequestedByName || toEmail;
@@ -2074,6 +2107,17 @@ async function sendTicketAcknowledgment(t){
     </table>
     <p>We'll be in touch as soon as it's picked up.</p>
   `;
+  if(sourceMessageGraphId){
+    try{
+      const conversationId = await sendGraphMailReplyTracked(sourceMessageGraphId, html);
+      if(conversationId) return conversationId;
+    }catch(e){
+      // Falls through to a fresh message below rather than sending no
+      // acknowledgment at all — e.g. the source message was deleted from
+      // the mailbox since, or reply access is unexpectedly restricted.
+      console.warn("Couldn't reply in-thread for the ticket acknowledgment, sending a new message instead:", e);
+    }
+  }
   try{
     return await sendGraphMailTracked(toEmail, toName, subject, html);
   }catch(e){
@@ -2582,7 +2626,7 @@ async function submitEmailTicketForm(messageId){
   // showing up again in Email Intake — see renderEmail(). No write back to
   // the shared mailbox is needed, so this can't 403 on a delegated-read-only
   // account the way the old "tag the email as converted" approach could.
-  await submitTicketFormCore({ sourceMessageId: m?.internetMessageId || messageId, source: "Email" });
+  await submitTicketFormCore({ sourceMessageId: m?.internetMessageId || messageId, sourceMessageGraphId: messageId, source: "Email" });
   if(m){
     inboxMessages = inboxMessages.filter(x => x.id !== messageId);
     renderEmail();
@@ -2687,7 +2731,7 @@ async function submitTicketFormCore(opts={}){
       // because its conversationId needs saving onto the ticket before this
       // batch's refresh — that's the hook Email Intake later uses to match a
       // reply back to this ticket automatically.
-      const ackConversationId = await sendTicketAcknowledgment(created);
+      const ackConversationId = await sendTicketAcknowledgment(created, opts.sourceMessageGraphId);
       if(ackConversationId){
         try{
           await graphUpdateItem("SLA_Tickets", created.id, { AckConversationId: ackConversationId });
