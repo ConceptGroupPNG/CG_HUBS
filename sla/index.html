@@ -2494,6 +2494,7 @@ function renderEmailList(){
             </div>
             <div class="record-card-actions">
               ${older.length ? `<button class="btn btn-sm" onclick="event.stopPropagation(); toggleThreadExpand('${g.key}')">${expanded?"Hide":"Show"} ${older.length} earlier in thread</button>` : ""}
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openLinkThreadToTicketModal('${g.key}')">Link to ticket</button>
               <button class="btn btn-sm" onclick="event.stopPropagation(); convertThreadAsInternal('${g.key}')">Log as Internal</button>
               <button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${latest.id}')">Review</button>
             </div>
@@ -2762,6 +2763,102 @@ function convertThreadAsInternal(threadKey){
     defaultAssigneeEmail,
     dismissSiblingIds: group.messages.filter(m => m.id !== latest.id).map(m => m.id)
   });
+}
+
+// Strips a leading Re:/Fwd: (repeated, since mail clients can stack them) so
+// a thread's subject can be matched or searched against a ticket's own
+// Title without the reply-chain noise.
+function normalizeSubject(s){
+  let out = (s||"").trim();
+  let stripped = true;
+  while(stripped){
+    const next = out.replace(/^(re|fw|fwd)\s*:\s*/i, "");
+    stripped = next !== out;
+    out = next;
+  }
+  return out.trim();
+}
+
+// Covers a thread that predates conversationId-based auto-matching (an
+// older ticket whose acknowledgment email went out before that tracking
+// existed, or one created some other way) — lets staff manually attach a
+// whole thread's messages onto an EXISTING ticket's Conversation instead of
+// only being able to start a new one. Deliberately a manual pick rather
+// than auto-matching by subject text alone: two unrelated tickets can share
+// a similar subject, and silently linking the wrong one would be worse than
+// making someone pick.
+function openLinkThreadToTicketModal(threadKey){
+  const group = groupEmailThreads(inboxMessages).find(g => g.key === threadKey);
+  if(!group) return;
+  const suggestedSearch = normalizeSubject(group.messages[0].subject || "");
+  openModal(`
+    <h3>🔗 Link thread to an existing ticket</h3>
+    <p class="modal-sub">Imports every message in this thread (${group.messages.length}) into the ticket's Conversation. Where the ticket doesn't already have one of its own, this also remembers the thread's conversation so future replies in it match automatically from now on.</p>
+    <div class="field" style="margin-bottom:10px;">
+      <input type="text" id="linkTicketSearch" placeholder="Search by ticket number or title…" value="${esc(suggestedSearch)}" oninput="renderLinkTicketResults('${threadKey}')">
+    </div>
+    <div id="linkTicketResults"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>
+  `, {wide:true});
+  renderLinkTicketResults(threadKey);
+  document.getElementById("linkTicketSearch")?.focus();
+}
+
+function renderLinkTicketResults(threadKey){
+  const wrap = document.getElementById("linkTicketResults");
+  if(!wrap) return;
+  const q = (document.getElementById("linkTicketSearch")?.value || "").toLowerCase().trim();
+  const rows = state.tickets
+    .filter(t => !q || (t.fields.TicketNumber||"").toLowerCase().includes(q) || (t.fields.Title||"").toLowerCase().includes(q))
+    .sort((a,b)=> new Date(b.fields.DateOpened||0) - new Date(a.fields.DateOpened||0))
+    .slice(0, 25);
+  wrap.innerHTML = rows.length ? `
+    <div class="record-list" style="max-height:360px;overflow-y:auto;">
+      ${rows.map(t => `
+      <div class="record-card clickable" onclick="linkThreadToTicket('${threadKey}', '${t.id}')">
+        <div class="record-card-top">
+          <div>
+            <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
+            <div class="record-card-sub">${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</div>
+          </div>
+          <div class="record-card-badges">${ticketStatusBadge(t.fields.Status)}</div>
+        </div>
+      </div>`).join("")}
+    </div>
+  ` : `<div class="empty">No tickets match "${esc(q)}".</div>`;
+}
+
+async function linkThreadToTicket(threadKey, ticketId){
+  const group = groupEmailThreads(inboxMessages).find(g => g.key === threadKey);
+  const ticket = state.tickets.find(t => String(t.id)===String(ticketId));
+  if(!group || !ticket){ closeModal(); return; }
+  closeModal();
+  const conversationId = group.messages[0].conversationId || null;
+  try{
+    await withBatchedRefresh(async () => {
+      // Only claim the conversationId slot if the ticket doesn't already
+      // have one of its own — never steal an existing, working linkage.
+      if(conversationId && !ticket.fields.AckConversationId){
+        await graphUpdateItem("SLA_Tickets", ticket.id, { AckConversationId: conversationId });
+        ticket.fields.AckConversationId = conversationId;
+      }
+      const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
+      for(const m of group.messages){
+        if(importedIds.has(m.internetMessageId)) continue;
+        await importReplyIntoConversation(m, ticket);
+      }
+    });
+  }catch(e){
+    console.error(e);
+    toast("Couldn't link this thread to the ticket: " + e.message, true);
+    return;
+  }
+  inboxMessages = inboxMessages.filter(x => !group.messages.some(m => m.id === x.id));
+  const willAutoMatch = conversationId && ticket.fields.AckConversationId === conversationId;
+  toast(`Linked ${group.messages.length} message${group.messages.length===1?"":"s"} to ${ticket.fields.TicketNumber||ticket.id}${willAutoMatch ? "" : " (future replies here won't auto-match — this ticket's conversation is already taken by a different thread)"}`);
+  renderEmail();
 }
 
 function matchClientByEmail(email){
