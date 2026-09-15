@@ -866,7 +866,7 @@ select:focus{border-color:var(--teal)}
             <div class="card-header"><h2 id="rpt2-count">Invoice Financial Summary</h2></div>
             <div class="table-wrap">
               <table><thead><tr>
-                <th>Invoice #</th><th>Organisation</th><th>Course Name / Start Date</th>
+                <th>Invoice #</th><th>Organisation</th><th>Course Name / Start Date</th><th style="text-align:right">Qty</th>
                 <th style="text-align:right">Invoice Amount (Excl. GST)</th><th style="text-align:right">GST</th>
                 <th style="text-align:right">Amount Paid</th><th>Status</th>
               </tr></thead>
@@ -5186,7 +5186,7 @@ let _report2Cache = null; // array of invoice groups: {invNum, org, amountExGST,
 
 async function buildInvoiceFinancialSummaryReport(){
   const tbody = document.getElementById('rpt2-tbody');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
   try{
     const [invs, invLines, atts, pays] = await Promise.all([
       cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
@@ -5224,18 +5224,18 @@ async function buildInvoiceFinancialSummaryReport(){
           return false;
         });
         const dates = [...new Set(matched.map(a=>(a.RunStartDate||'').substring(0,10)).filter(Boolean))].sort();
-        return {name: l.CourseName, dates};
+        return {name: l.CourseName, qty: +l.Quantity||0, dates};
       });
       // Invoices with no line items at all (legacy flat-field records) still
       // need a row to appear under - show a single blank "course" placeholder.
-      if(!courses.length) courses.push({name:'', dates:[]});
+      if(!courses.length) courses.push({name:'', qty:null, dates:[]});
 
       return {invNum, org: inv.OrgName||'', amountExGST, gst, amountPaid, status, courses};
     }).sort((a,b)=>b.invNum.localeCompare(a.invNum));
 
     renderInvoiceFinancialSummaryReport();
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--red)">Error loading report: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--red)">Error loading report: ${e.message}</td></tr>`;
   }
 }
 
@@ -5268,14 +5268,14 @@ function renderInvoiceFinancialSummaryReport(){
 
   document.getElementById('rpt2-count').textContent = `Invoice Financial Summary (${groups.length} invoice${groups.length!==1?'s':''})`;
   if(!groups.length){
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--g500)">No matching records</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--g500)">No matching records</td></tr>';
     return;
   }
   const statusColor = s => s==='Paid' ? 'var(--teal)' : s==='Partial' ? 'var(--amber)' : s==='Credit Note' ? '#8b5cf6' : s==='Pending' ? 'var(--red)' : 'var(--g500)';
   tbody.innerHTML = groups.map(g=>{
     const headerRow = `<tr style="background:var(--g50);border-top:2px solid var(--g200)">
       <td style="font-weight:700">${g.invNum||'—'}</td>
-      <td style="font-weight:700" colspan="2">${g.org||'—'}</td>
+      <td style="font-weight:700" colspan="3">${g.org||'—'}</td>
       <td style="text-align:right">${fmt(g.amountExGST)}</td>
       <td style="text-align:right">${fmt(g.gst)}</td>
       <td style="text-align:right">${fmt(g.amountPaid)}</td>
@@ -5284,6 +5284,7 @@ function renderInvoiceFinancialSummaryReport(){
     const courseRows = g.courses.map(c=>`<tr>
       <td></td>
       <td colspan="2" style="padding-left:20px;color:var(--g600)">${c.name||'—'}</td>
+      <td style="text-align:right;color:var(--g600)">${c.qty!==null && c.qty!==undefined ? c.qty : '—'}</td>
       <td colspan="4" style="color:var(--g600)">${c.dates.length ? c.dates.map(fmtDate).join(', ') : '—'}</td>
     </tr>`).join('');
     return headerRow + courseRows;
@@ -5313,6 +5314,7 @@ function exportReport2ToExcel(){
           'Invoice #': g.invNum,
           'Organisation': g.org,
           'Course Name': c.name,
+          'Qty': c.qty!==null && c.qty!==undefined ? c.qty : '',
           'Course Start Date': c.dates.length===1 ? toLocalDate(c.dates[0]) : (c.dates.map(fmtDate).join(', ')||''),
           'Invoice Amount (Excl. GST)': g.amountExGST,
           'GST': g.gst,
@@ -5324,10 +5326,10 @@ function exportReport2ToExcel(){
     const ws = XLSX.utils.json_to_sheet(sheetData, {cellDates:true});
     const range = XLSX.utils.decode_range(ws['!ref']);
     for(let row=range.s.r+1; row<=range.e.r; row++){
-      const cell = ws[XLSX.utils.encode_cell({r:row, c:3})]; // Course Start Date column
+      const cell = ws[XLSX.utils.encode_cell({r:row, c:4})]; // Course Start Date column (shifted right by the new Qty column)
       if(cell && cell.t==='d') cell.z = 'dd/mm/yyyy';
     }
-    ws['!cols'] = [{wch:14},{wch:28},{wch:30},{wch:18},{wch:20},{wch:12},{wch:14},{wch:14}];
+    ws['!cols'] = [{wch:14},{wch:28},{wch:30},{wch:8},{wch:18},{wch:20},{wch:12},{wch:14},{wch:14}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     const now = new Date();
