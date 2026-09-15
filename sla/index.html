@@ -2288,9 +2288,15 @@ let selectedEmailIds = new Set(); // for bulk "delete selected" in the review qu
 // Turns HTML email content into plain text for storage/display — the div is
 // never attached to the document, so nothing in it (styles, scripts, images)
 // ever runs or loads; this only ever reads back .textContent.
+// Outlook/Word HTML exports embed a <style> block (@font-face, .MsoNormal,
+// .MsoChpDefault, @page rules, etc.) right in the body — .textContent walks
+// every descendant text node regardless of whether it's rendered, so that CSS
+// text leaks into the "plain text" unless the <style>/<script> elements are
+// removed first.
 function stripHtml(html){
   const div = document.createElement("div");
   div.innerHTML = html || "";
+  div.querySelectorAll("style, script").forEach(el => el.remove());
   return (div.textContent || div.innerText || "").trim();
 }
 
