@@ -88,7 +88,7 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 
 /* ---------- Record cards — list rows shown as distinct, self-contained
    cards instead of dense table rows. A colored left edge doubles as a
-   status indicator on ticket-related lists (see ticketSeverityClass()). */
+   status indicator on ticket-related lists (see ticketCardClass()). */
 .record-list{display:flex;flex-direction:column;gap:10px;}
 .record-card{background:var(--surface-1);border:1.5px solid var(--gridline);border-left:4px solid var(--accent);border-radius:10px;padding:13px 16px;}
 .record-card.clickable{cursor:pointer;transition:box-shadow .15s ease,border-color .15s ease;}
@@ -107,8 +107,13 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 /* One-line variant — client/description plus the response/resolution/assigned
    badges share the card's second line instead of a separate bordered row
    underneath, so a ticket summary card takes noticeably less vertical space. */
-.record-card-sub-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px 16px;margin-top:4px;font-size:12.5px;color:var(--ink-2);}
+.record-card-sub-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px 16px;margin-top:4px;font-size:13.5px;color:var(--ink);}
 .record-card-sub-row .m-label{color:var(--muted);margin-right:5px;}
+/* Closed/Resolved tickets recede visually — muted edge + reduced opacity —
+   so an open-work list isn't dominated by finished tickets sharing the same
+   strong styling as active ones. */
+.record-card.sev-done{border-left-color:var(--gridline);opacity:0.62;}
+.record-card.sev-done:hover{opacity:0.85;}
 
 table{width:100%;border-collapse:collapse;}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--gridline);}
@@ -121,6 +126,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .badge-serious{background:var(--serious-bg);color:var(--serious);}
 .badge-critical{background:var(--critical-bg);color:var(--critical);}
 .badge-neutral{background:#eef0f3;color:var(--ink-2);}
+.badge-info{background:rgba(42,120,214,0.14);color:var(--accent-dk);}
 
 .filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
 .filter-bar select,.filter-bar input{padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;}
@@ -806,9 +812,28 @@ function assignedBadge(t){
   const name = t.fields.AssignedToName;
   return name ? esc(name) : `<span class="badge badge-warning">Unassigned</span>`;
 }
-// Drives a ticket record-card's colored left edge — breached beats at-risk,
+// Ticket workflow Status, badge-styled instead of plain text so it's as
+// scannable in a list as Priority/Response/Resolution already are.
+function ticketStatusBadge(status){
+  const map = {
+    New:                 "badge-warning",
+    Triaged:              "badge-neutral",
+    "In Progress":        "badge-info",
+    "Waiting on Client":  "badge-warning",
+    Resolved:             "badge-good",
+    Closed:                "badge-neutral"
+  };
+  return `<span class="badge ${map[status]||"badge-neutral"}">${esc(status||"—")}</span>`;
+}
+function isClosedStatus(status){
+  return status === "Resolved" || status === "Closed";
+}
+// Drives a ticket record-card's colored left edge and overall prominence.
+// Resolved/Closed tickets recede (muted, regardless of breach state) so they
+// don't visually compete with open work; otherwise breached beats at-risk,
 // otherwise no class (falls back to the card's default neutral/accent edge).
-function ticketSeverityClass(bs){
+function ticketCardClass(t, bs){
+  if(isClosedStatus(t.fields.Status)) return "sev-done";
   if(bs.response==="breached" || bs.resolution==="breached") return "sev-critical";
   if(bs.response==="atrisk" || bs.resolution==="atrisk") return "sev-warning";
   return "";
@@ -1137,12 +1162,13 @@ function renderDashboard(){
       ${watchList.length ? `
       <div class="record-list">
         ${watchList.map(({t,bs}) => `
-        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
               <div class="record-card-sub-row">
                 <span>${esc(clientName(t))}</span>
+                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
                 <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
                 <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
                 <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
@@ -1159,13 +1185,13 @@ function renderDashboard(){
       ${myTickets.length ? `
       <div class="record-list">
         ${myTickets.map(({t,bs}) => `
-        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
+        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
               <div class="record-card-sub-row">
                 <span>${esc(clientName(t))}</span>
-                <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
                 <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
                 <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
               </div>
@@ -1254,7 +1280,13 @@ function filteredTickets(){
       if(!(f.Title||"").toLowerCase().includes(q) && !(f.TicketNumber||"").toLowerCase().includes(q)) return false;
     }
     return true;
-  }).sort((a,b)=> new Date(b.fields.DateOpened||0) - new Date(a.fields.DateOpened||0));
+  }).sort((a,b)=> {
+    // Open tickets first, then closed/resolved — within each group, newest first.
+    const aClosed = isClosedStatus(a.fields.Status) ? 1 : 0;
+    const bClosed = isClosedStatus(b.fields.Status) ? 1 : 0;
+    if(aClosed !== bClosed) return aClosed - bClosed;
+    return new Date(b.fields.DateOpened||0) - new Date(a.fields.DateOpened||0);
+  });
 }
 
 function renderTicketsTable(){
@@ -1264,13 +1296,13 @@ function renderTicketsTable(){
       ${rows.map(t => {
         const bs = breachStatus(t);
         return `
-        <div class="record-card clickable ${ticketSeverityClass(bs)}" onclick="openTicketDetail('${t.id}')">
+        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="openTicketDetail('${t.id}')">
           <div class="record-card-top">
             <div>
               <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
               <div class="record-card-sub-row">
                 <span>${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</span>
-                <span><span class="m-label">Status</span>${esc(t.fields.Status||"—")}</span>
+                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
                 <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
                 <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
                 <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
@@ -2363,31 +2395,96 @@ async function renderEmail(){
     }
     return;
   }
+  renderEmailList();
+}
+
+// Groups the review queue's flat message list into one card per email
+// thread (same Graph conversationId) so a back-and-forth conversation that
+// hasn't been converted or dismissed yet doesn't pile up as several
+// separate-looking rows in the queue — only the newest message needs
+// reviewing up front, the rest are one click away. A message with no
+// conversationId (shouldn't normally happen) just gets its own
+// single-message "thread".
+function threadKeyFor(m){ return m.conversationId || ("msg:"+m.internetMessageId); }
+function groupEmailThreads(messages){
+  const order = [];
+  const map = new Map();
+  for(const m of messages){
+    const key = threadKeyFor(m);
+    if(!map.has(key)){ map.set(key, []); order.push(key); }
+    map.get(key).push(m);
+  }
+  // inboxMessages is already newest-first (Graph's $orderby=receivedDateTime
+  // desc), and this is a stable single pass, so each thread lands at the
+  // position of its OWN newest message — threads stay newest-first too.
+  return order.map(key => ({ key, messages: map.get(key) }));
+}
+let expandedThreadKeys = new Set();
+function toggleThreadExpand(key){
+  if(expandedThreadKeys.has(key)) expandedThreadKeys.delete(key); else expandedThreadKeys.add(key);
+  renderEmailList();
+}
+function toggleThreadSelection(idsCsv, checked){
+  idsCsv.split(",").filter(Boolean).forEach(id => { if(checked) selectedEmailIds.add(id); else selectedEmailIds.delete(id); });
+  renderEmailList();
+}
+
+// Rebuilds emailListWrap from whatever's already in memory (inboxMessages /
+// selectedEmailIds / expandedThreadKeys) — no network call, so expanding a
+// thread or (de)selecting a checkbox updates instantly instead of
+// re-fetching the mailbox.
+function renderEmailList(){
+  const wrap = document.getElementById("emailListWrap");
+  if(!wrap) return;
   const allSelected = inboxMessages.length>0 && inboxMessages.every(m => selectedEmailIds.has(m.id));
-  document.getElementById("emailListWrap").innerHTML = inboxMessages.length ? `
+  const threads = groupEmailThreads(inboxMessages);
+  wrap.innerHTML = inboxMessages.length ? `
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;font-size:12.5px;color:var(--ink-2);">
       <input type="checkbox" id="emailSelectAllCb" ${allSelected?"checked":""} onclick="toggleAllEmailSelection(this)">
       <label for="emailSelectAllCb" style="cursor:pointer;">Select all</label>
     </div>
     <div class="record-list">
-      ${inboxMessages.map(m => `
-      <div class="record-card clickable" onclick="openEmailDetail('${m.id}')">
-        <div class="record-card-top">
-          <div style="display:flex;gap:11px;align-items:flex-start;">
-            <input type="checkbox" onclick="event.stopPropagation()" ${selectedEmailIds.has(m.id)?"checked":""} onchange="toggleEmailSelection('${m.id}', this.checked)" style="margin-top:3px;">
-            <div>
-              <div class="record-card-title">${esc(m.subject||"(no subject)")}</div>
-              <div class="record-card-sub">${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")} · ${fmtDateTime(m.receivedDateTime)}</div>
+      ${threads.map(g => {
+        const latest = g.messages[0];
+        const older = g.messages.slice(1);
+        const groupIds = g.messages.map(x=>x.id);
+        const allInThreadChecked = groupIds.every(id => selectedEmailIds.has(id));
+        const expanded = expandedThreadKeys.has(g.key);
+        return `
+        <div class="record-card ${older.length ? "" : "clickable"}" ${older.length ? "" : `onclick="openEmailDetail('${latest.id}')"`}>
+          <div class="record-card-top">
+            <div style="display:flex;gap:11px;align-items:flex-start;">
+              <input type="checkbox" onclick="event.stopPropagation()" ${allInThreadChecked?"checked":""} onchange="toggleThreadSelection('${groupIds.join(",")}', this.checked)" style="margin-top:3px;">
+              <div ${older.length ? `style="cursor:pointer;" onclick="openEmailDetail('${latest.id}')"` : ""}>
+                <div class="record-card-title">${esc(latest.subject||"(no subject)")}</div>
+                <div class="record-card-sub">${esc(latest.from?.emailAddress?.name || latest.from?.emailAddress?.address || "—")} · ${fmtDateTime(latest.receivedDateTime)}</div>
+              </div>
+            </div>
+            <div class="record-card-actions">
+              ${older.length ? `<button class="btn btn-sm" onclick="event.stopPropagation(); toggleThreadExpand('${g.key}')">${expanded?"Hide":"Show"} ${older.length} earlier in thread</button>` : ""}
+              <button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${latest.id}')">Review</button>
             </div>
           </div>
-          <div class="record-card-actions">
-            <button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Review</button>
+          <div class="record-card-meta" style="border-top:none;padding-top:0;margin-top:9px;">
+            <span>${esc((latest.bodyPreview||"").slice(0,140))}</span>
           </div>
-        </div>
-        <div class="record-card-meta" style="border-top:none;padding-top:0;margin-top:9px;">
-          <span>${esc((m.bodyPreview||"").slice(0,140))}</span>
-        </div>
-      </div>`).join("")}
+          ${older.length ? `
+          <div class="badge badge-neutral" style="margin-top:9px;">${g.messages.length} messages in this thread</div>
+          ${expanded ? `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--gridline);display:flex;flex-direction:column;gap:9px;">
+            ${older.map(m => `
+            <div style="display:flex;gap:11px;align-items:flex-start;">
+              <input type="checkbox" onclick="event.stopPropagation()" ${selectedEmailIds.has(m.id)?"checked":""} onchange="toggleEmailSelection('${m.id}', this.checked)" style="margin-top:3px;">
+              <div style="cursor:pointer;flex:1;" onclick="openEmailDetail('${m.id}')">
+                <div style="font-size:12.5px;color:var(--ink-2);"><b style="color:var(--ink);">${esc(m.from?.emailAddress?.name || m.from?.emailAddress?.address || "—")}</b> · ${fmtDateTime(m.receivedDateTime)}</div>
+                <div style="font-size:12.5px;color:var(--ink-2);margin-top:2px;">${esc((m.bodyPreview||"").slice(0,140))}</div>
+              </div>
+              <button class="btn btn-sm" onclick="event.stopPropagation(); convertEmailToTicket('${m.id}')">Review</button>
+            </div>`).join("")}
+          </div>` : ""}
+          ` : ""}
+        </div>`;
+      }).join("")}
     </div>
   ` : `<div class="empty">No unconverted emails in the inbox.</div>`;
   updateEmailBulkBar();
@@ -2400,11 +2497,11 @@ function toggleEmailSelection(messageId, checked){
 function toggleAllEmailSelection(checkboxEl){
   if(checkboxEl.checked) inboxMessages.forEach(m => selectedEmailIds.add(m.id));
   else selectedEmailIds.clear();
-  renderEmail();
+  renderEmailList();
 }
 function clearEmailSelection(){
   selectedEmailIds.clear();
-  renderEmail();
+  renderEmailList();
 }
 function updateEmailBulkBar(){
   const bar = document.getElementById("emailBulkBar");
@@ -3618,7 +3715,7 @@ function renderAgreementDetail(){
         ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
           <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
             <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-            <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+            <td>${priorityBadge(t.fields.Priority)}</td><td>${ticketStatusBadge(t.fields.Status)}</td><td>${assignedBadge(t)}</td>
           </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this agreement yet.</div>`}
       </div>
 
@@ -3945,7 +4042,7 @@ function renderWorkOrderDetail(){
       ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${ticketStatusBadge(t.fields.Status)}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets opened under this work order yet.</div>`}
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
@@ -4100,7 +4197,7 @@ function renderAdHocDetail(){
       ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${ticketStatusBadge(t.fields.Status)}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No Ad Hoc tickets for this client yet.</div>`}
 
       <div class="section-title">Time logged (${bucket.total.toFixed(2)} hrs — tickets, direct entries, and CG Time's widget combined)</div>
@@ -4521,7 +4618,7 @@ function renderServiceAckDetail(){
       ${tickets.length ? `<table><thead><tr><th>Ticket</th><th>Priority</th><th>Status</th><th>Assigned</th></tr></thead>
         <tbody>${tickets.map(t=>`<tr class="clickable" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
           <td><b>${esc(t.fields.TicketNumber||t.id)}</b><br><span style="color:var(--ink-2);">${esc(t.fields.Title||"")}</span></td>
-          <td>${priorityBadge(t.fields.Priority)}</td><td>${esc(t.fields.Status||"—")}</td><td>${assignedBadge(t)}</td>
+          <td>${priorityBadge(t.fields.Priority)}</td><td>${ticketStatusBadge(t.fields.Status)}</td><td>${assignedBadge(t)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No tickets raised under this Service Ack yet.</div>`}
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;">
         <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('ServiceAck','${sa.id}');">+ New ticket under this Service Ack</button>
