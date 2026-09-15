@@ -2332,6 +2332,83 @@ async function importReplyIntoConversation(m, ticket){
   }
 }
 
+// A conversation row imported before the stripHtml() fix (see above) can have
+// raw Outlook/Word CSS glued onto the real message text — this is how those
+// rows are recognised so they can be offered for repair, regardless of which
+// ticket they ended up on.
+const CSS_LEAK_PATTERN = /@font-face|mso-[a-z-]+\s*:|MsoNormal|MsoChpDefault|WordSection\d|panose-1/i;
+function looksCssCorrupted(bodyText){
+  return CSS_LEAK_PATTERN.test(bodyText || "");
+}
+
+// One-time repair for conversation rows created before the stripHtml() fix.
+// Re-fetches each affected message by its stored InternetMessageId (not
+// dependent on it still being among the most recent 30 inbox messages the
+// way Email Intake's own fetch is) and rewrites the Body field in place with
+// the now-cleaned text. A message that's been deleted/moved out of the
+// mailbox since is skipped, not treated as an error.
+async function repairCorruptedConversations(){
+  const candidates = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body));
+  if(candidates.length === 0){ toast("No corrupted conversation entries found."); return; }
+  const byTicket = new Map();
+  for(const c of candidates){
+    const t = state.tickets.find(t => String(t.id)===String(c.fields.TicketId));
+    const label = t ? (t.fields.TicketNumber||t.id) : `ticket #${c.fields.TicketId}`;
+    byTicket.set(label, (byTicket.get(label)||0) + 1);
+  }
+  const summary = [...byTicket.entries()].map(([label,n]) => `<li>${esc(label)} — ${n} entr${n===1?"y":"ies"}</li>`).join("");
+  openModal(`
+    <h3>🧹 Repair conversation text</h3>
+    <p class="modal-sub">${candidates.length} conversation entr${candidates.length===1?"y":"ies"} still ${candidates.length===1?"has":"have"} leaked Outlook formatting code from before the fix, across:</p>
+    <ul style="margin:0 0 14px 20px;font-size:13.5px;">${summary}</ul>
+    <p style="color:var(--ink-2);font-size:12.5px;line-height:1.5;margin:0 0 18px;">This re-fetches each original email and rewrites the stored text using the fixed cleanup — it doesn't resend or change any email. A message that's since been deleted from the mailbox is skipped.</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="runConversationRepair()">Repair ${candidates.length} entr${candidates.length===1?"y":"ies"}</button>
+    </div>
+  `);
+}
+
+async function runConversationRepair(){
+  closeModal();
+  const candidates = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body));
+  let fixed = 0, skipped = 0;
+  for(const c of candidates){
+    const imId = c.fields.InternetMessageId;
+    if(!imId){ skipped++; continue; }
+    try{
+      const q = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages?$filter=internetMessageId eq '${encodeURIComponent(imId)}'&$select=id,body`;
+      const res = await callGraph(q);
+      const match = (res.value||[])[0];
+      if(!match?.body?.content){ skipped++; continue; }
+      const cleaned = (match.body.contentType === "html" ? stripHtml(match.body.content) : match.body.content).slice(0, 4000);
+      await graphUpdateItem("SLA_TicketConversations", c.id, { Body: cleaned });
+      c.fields.Body = cleaned;
+      fixed++;
+    }catch(e){
+      console.warn("Couldn't repair a conversation entry:", e);
+      skipped++;
+    }
+  }
+  toast(`Repaired ${fixed} conversation entr${fixed===1?"y":"ies"}${skipped?`, ${skipped} skipped (original email not found)`:""}.`);
+  if(document.getElementById("emailListWrap")) renderEmail();
+  if(ticketDetailId) renderTicketDetail();
+}
+
+function updateConversationRepairBanner(){
+  const el = document.getElementById("conversationRepairBanner");
+  if(!el) return;
+  const count = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body)).length;
+  if(!count){ el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="record-card" style="border-left-color:var(--warning);background:var(--warning-bg);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+      <div>⚠️ ${count} ticket conversation entr${count===1?"y":"ies"} ${count===1?"has":"have"} leaked Outlook formatting code from before a fix — the real message text is still there, just mixed in with junk.</div>
+      <button class="btn btn-sm" onclick="repairCorruptedConversations()">Repair now</button>
+    </div>
+  `;
+}
+
 async function renderEmail(){
   // The page shell (header + the two wraps below) is only built once, the
   // first time this page is opened — not on every call. This function gets
@@ -2352,6 +2429,7 @@ async function renderEmail(){
         <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
         <button class="btn" onclick="renderEmail()">↻ Refresh</button>
       </div>
+      <div id="conversationRepairBanner" hidden></div>
       <div id="emailBulkBar" class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;" hidden>
         <span id="emailBulkCount" style="font-size:13px;color:var(--ink-2);align-self:center;margin-right:4px;"></span>
         <button class="btn btn-sm" onclick="clearEmailSelection()">Clear selection</button>
@@ -2361,6 +2439,7 @@ async function renderEmail(){
       <div id="emailDetailWrap"></div>
     `;
   }
+  updateConversationRepairBanner();
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
       + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId,conversationId`;
