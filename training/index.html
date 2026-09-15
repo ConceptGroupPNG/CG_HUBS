@@ -794,7 +794,7 @@ select:focus{border-color:var(--teal)}
 
       <!-- REPORTS -->
       <div id="page-reports" class="page">
-        <div id="reports-landing">
+        <div id="reports-landing" style="display:flex;flex-direction:column;gap:12px">
           <div class="report-card" onclick="openReport('courseAttendeeFinancial')" style="cursor:pointer;background:var(--white);border:1px solid var(--g200);border-radius:var(--rl);padding:20px;display:flex;align-items:center;gap:16px;max-width:520px">
             <div style="width:44px;height:44px;border-radius:10px;background:var(--teal-light,#e6f7f1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
               <i class="ti ti-report" style="font-size:22px;color:var(--teal)"></i>
@@ -802,6 +802,16 @@ select:focus{border-color:var(--teal)}
             <div>
               <div style="font-weight:700;font-size:14px;color:var(--g800)">Course &amp; Attendee Financial Report</div>
               <div style="font-size:12px;color:var(--g500);margin-top:2px">Course, trainer, venue, attendee, organisation, and invoice details in one exportable list.</div>
+            </div>
+            <i class="ti ti-chevron-right" style="margin-left:auto;color:var(--g400)"></i>
+          </div>
+          <div class="report-card" onclick="openReport('invoiceFinancialSummary')" style="cursor:pointer;background:var(--white);border:1px solid var(--g200);border-radius:var(--rl);padding:20px;display:flex;align-items:center;gap:16px;max-width:520px">
+            <div style="width:44px;height:44px;border-radius:10px;background:var(--teal-light,#e6f7f1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <i class="ti ti-receipt" style="font-size:22px;color:var(--teal)"></i>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--g800)">Invoice Financial Summary</div>
+              <div style="font-size:12px;color:var(--g500);margin-top:2px">Invoice totals, GST, payment status, grouped by invoice with each course listed underneath.</div>
             </div>
             <i class="ti ti-chevron-right" style="margin-left:auto;color:var(--g400)"></i>
           </div>
@@ -835,6 +845,32 @@ select:focus{border-color:var(--teal)}
                 <th class="sortable" onclick="sortReport('status')">Status <i class="ti ti-arrows-sort" style="font-size:12px"></i></th>
               </tr></thead>
               <tbody id="rpt-tbody"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div id="reports-detail-2" style="display:none">
+          <button class="btn btn-outline btn-sm" onclick="closeReportDetail()" style="margin-bottom:12px"><i class="ti ti-arrow-left"></i> All Reports</button>
+          <div class="filter-bar">
+            <div class="search-wrap"><i class="ti ti-search"></i><input type="text" placeholder="Search invoice #, organisation, course, status..." id="rpt2-q" oninput="renderInvoiceFinancialSummaryReport()"></div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--g500)">
+              <span>Course Start Date</span>
+              <input type="date" id="rpt2-date-from" onchange="renderInvoiceFinancialSummaryReport()" style="padding:6px 8px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+              <span>to</span>
+              <input type="date" id="rpt2-date-to" onchange="renderInvoiceFinancialSummaryReport()" style="padding:6px 8px;border:1px solid var(--g200);border-radius:6px;font-size:12px">
+            </div>
+            <button class="btn btn-outline" onclick="resetReport2Filters()" title="Clear filters"><i class="ti ti-x"></i> Clear</button>
+            <button class="btn btn-primary" onclick="exportReport2ToExcel()" style="margin-left:auto"><i class="ti ti-file-spreadsheet"></i> Export to Excel</button>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2 id="rpt2-count">Invoice Financial Summary</h2></div>
+            <div class="table-wrap">
+              <table><thead><tr>
+                <th>Invoice #</th><th>Organisation</th><th>Course Name / Start Date</th>
+                <th style="text-align:right">Invoice Amount (Excl. GST)</th><th style="text-align:right">GST</th>
+                <th style="text-align:right">Amount Paid</th><th>Status</th>
+              </tr></thead>
+              <tbody id="rpt2-tbody"></tbody></table>
             </div>
           </div>
         </div>
@@ -4882,10 +4918,16 @@ let _reportsCache = null; // the currently-open report's assembled rows, for sea
 
 async function openReport(reportId){
   document.getElementById('reports-landing').style.display = 'none';
-  document.getElementById('reports-detail').style.display = '';
   if(reportId === 'courseAttendeeFinancial'){
+    document.getElementById('reports-detail').style.display = '';
+    document.getElementById('reports-detail-2').style.display = 'none';
     setReportDateRangeToCurrentMonth();
     await buildCourseAttendeeFinancialReport();
+  } else if(reportId === 'invoiceFinancialSummary'){
+    document.getElementById('reports-detail').style.display = 'none';
+    document.getElementById('reports-detail-2').style.display = '';
+    setReport2DateRangeToCurrentMonth();
+    await buildInvoiceFinancialSummaryReport();
   }
 }
 
@@ -4905,10 +4947,20 @@ function setReportDateRangeToCurrentMonth(){
   if(fromEl) fromEl.value = toStr(first);
   if(toEl) toEl.value = toStr(last);
 }
+function setReport2DateRangeToCurrentMonth(){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m+1, 0);
+  const toStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fromEl = document.getElementById('rpt2-date-from');
+  const toEl = document.getElementById('rpt2-date-to');
+  if(fromEl) fromEl.value = toStr(first);
+  if(toEl) toEl.value = toStr(last);
+}
 
-// Clears the search text and resets the date range back to the current
-// month, rather than leaving the dates empty (which would show nothing
-// meaningful - "cleared" should mean "back to the sensible default").
+// Clears the search text and empties the date range entirely (no filter) -
+// "Clear" means show everything, not "back to the default month".
 function resetReportFilters(){
   const q = document.getElementById('rpt-q');
   if(q) q.value = '';
@@ -4918,11 +4970,22 @@ function resetReportFilters(){
   if(toEl) toEl.value = '';
   renderCourseAttendeeFinancialReport();
 }
+function resetReport2Filters(){
+  const q = document.getElementById('rpt2-q');
+  if(q) q.value = '';
+  const fromEl = document.getElementById('rpt2-date-from');
+  const toEl = document.getElementById('rpt2-date-to');
+  if(fromEl) fromEl.value = '';
+  if(toEl) toEl.value = '';
+  renderInvoiceFinancialSummaryReport();
+}
 
 function closeReportDetail(){
   document.getElementById('reports-landing').style.display = '';
   document.getElementById('reports-detail').style.display = 'none';
+  document.getElementById('reports-detail-2').style.display = 'none';
   _reportsCache = null;
+  _report2Cache = null;
 }
 
 // One row per Attendee, joined against Course Runs (for Trainer/Venue) and
@@ -5113,6 +5176,164 @@ function exportReportToExcel(){
     const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     XLSX.writeFile(wb, `Course_Attendee_Financial_Report_${todayStr}.xlsx`);
     toast(`Exported ${rows.length} row${rows.length>1?'s':''} to Excel`);
+  });
+}
+
+// ============================================================
+// REPORT 2: Invoice Financial Summary (grouped by Invoice #)
+// ============================================================
+let _report2Cache = null; // array of invoice groups: {invNum, org, amountExGST, gst, amountPaid, status, courses:[{name, dates:[...]}]}
+
+async function buildInvoiceFinancialSummaryReport(){
+  const tbody = document.getElementById('rpt2-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+  try{
+    const [invs, invLines, atts, pays] = await Promise.all([
+      cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
+      cache.invoicelines ? Promise.resolve(cache.invoicelines) : getItems('invoicelines','$top=999'),
+      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
+      cache.payments ? Promise.resolve(cache.payments) : getItems('payments','$top=500'),
+    ]);
+    cache.invoices=invs; cache.invoicelines=invLines; cache.attendees=atts; cache.payments=pays;
+
+    _report2Cache = invs.map(inv=>{
+      const invNum = inv.InvoiceNumber||inv.Title||'';
+      const invNumLower = invNum.trim().toLowerCase();
+      const lines = invLines.filter(l=>(l.Title||'').trim().toLowerCase()===invNumLower);
+      const lt = invoiceLineTotals(invNum);
+      // Ex-GST / GST split: use real line-item totals where they exist,
+      // falling back to backing 10% out of the stored Total for older
+      // invoices that predate line items entirely.
+      const amountExGST = invoiceExGSTTotal(inv);
+      const total = lt ? lt.total : (+inv.TotalAmount||0);
+      const gst = Math.round((total-amountExGST)*100)/100;
+      const amountPaid = invoiceTotalPaid(inv); // the real, actual amount received - not prorated
+      const status = isCreditNote(inv) ? 'Credit Note' : invoiceStatus(inv);
+
+      // Each course line's date(s) come from its actually-matched attendees
+      // (the same matching already used for the Invoice Lines "Attendees
+      // Matched To" summary), since that's the authoritative record of when
+      // people actually attend - not a free-text field on the line itself.
+      const courses = lines.filter(l=>l.CourseName).map(l=>{
+        const cNameLower = (l.CourseName||'').trim().toLowerCase();
+        const matched = atts.filter(a=>{
+          if((a.InvoiceRef||'').trim().toLowerCase()!==invNumLower) return false;
+          const aLine=(a.InvoiceLineCourse||'').trim().toLowerCase();
+          if(aLine===cNameLower) return true;
+          if(!aLine && (a.CourseTitle||'').trim().toLowerCase()===cNameLower) return true;
+          return false;
+        });
+        const dates = [...new Set(matched.map(a=>(a.RunStartDate||'').substring(0,10)).filter(Boolean))].sort();
+        return {name: l.CourseName, dates};
+      });
+      // Invoices with no line items at all (legacy flat-field records) still
+      // need a row to appear under - show a single blank "course" placeholder.
+      if(!courses.length) courses.push({name:'', dates:[]});
+
+      return {invNum, org: inv.OrgName||'', amountExGST, gst, amountPaid, status, courses};
+    }).sort((a,b)=>b.invNum.localeCompare(a.invNum));
+
+    renderInvoiceFinancialSummaryReport();
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--red)">Error loading report: ${e.message}</td></tr>`;
+  }
+}
+
+// Filtering happens at the INVOICE level, not the individual course line -
+// if a search or date range matches ANY course in an invoice, the whole
+// invoice group (all its courses) stays visible, rather than showing a
+// group header with some of its own lines mysteriously missing.
+function getFilteredReport2Groups(){
+  if(!_report2Cache) return [];
+  const q = (document.getElementById('rpt2-q')?.value||'').trim().toLowerCase();
+  const from = document.getElementById('rpt2-date-from')?.value||'';
+  const to = document.getElementById('rpt2-date-to')?.value||'';
+  return _report2Cache.filter(g=>{
+    if(q){
+      const groupText = [g.invNum, g.org, g.status, ...g.courses.map(c=>c.name)].join(' ').toLowerCase();
+      if(!groupText.includes(q)) return false;
+    }
+    if(from || to){
+      const anyDateInRange = g.courses.some(c=>c.dates.some(d=>(!from||d>=from)&&(!to||d<=to)));
+      if(!anyDateInRange) return false;
+    }
+    return true;
+  });
+}
+
+function renderInvoiceFinancialSummaryReport(){
+  const tbody = document.getElementById('rpt2-tbody');
+  if(!_report2Cache) return;
+  const groups = getFilteredReport2Groups();
+
+  document.getElementById('rpt2-count').textContent = `Invoice Financial Summary (${groups.length} invoice${groups.length!==1?'s':''})`;
+  if(!groups.length){
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--g500)">No matching records</td></tr>';
+    return;
+  }
+  const statusColor = s => s==='Paid' ? 'var(--teal)' : s==='Partial' ? 'var(--amber)' : s==='Credit Note' ? '#8b5cf6' : s==='Pending' ? 'var(--red)' : 'var(--g500)';
+  tbody.innerHTML = groups.map(g=>{
+    const headerRow = `<tr style="background:var(--g50);border-top:2px solid var(--g200)">
+      <td style="font-weight:700">${g.invNum||'—'}</td>
+      <td style="font-weight:700" colspan="2">${g.org||'—'}</td>
+      <td style="text-align:right">${fmt(g.amountExGST)}</td>
+      <td style="text-align:right">${fmt(g.gst)}</td>
+      <td style="text-align:right">${fmt(g.amountPaid)}</td>
+      <td><span style="color:${statusColor(g.status)};font-weight:600">${g.status}</span></td>
+    </tr>`;
+    const courseRows = g.courses.map(c=>`<tr>
+      <td></td>
+      <td colspan="2" style="padding-left:20px;color:var(--g600)">${c.name||'—'}</td>
+      <td colspan="4" style="color:var(--g600)">${c.dates.length ? c.dates.map(fmtDate).join(', ') : '—'}</td>
+    </tr>`).join('');
+    return headerRow + courseRows;
+  }).join('');
+}
+
+function exportReport2ToExcel(){
+  if(!_report2Cache || !_report2Cache.length){ toast('Nothing to export','error'); return; }
+  const groups = getFilteredReport2Groups();
+  if(!groups.length){ toast('No matching rows to export','error'); return; }
+
+  ensureXLSXLoadedForReports(()=>{
+    const toLocalDate = s => {
+      if(!s) return null;
+      const parts = s.split('-').map(Number);
+      if(parts.length!==3 || parts.some(isNaN)) return null;
+      return new Date(parts[0], parts[1]-1, parts[2]);
+    };
+    // Flattened, one row per course - Invoice #/Org/Amount/GST/Paid/Status
+    // repeated on every row. This is deliberately different from the grouped
+    // on-screen view: a real spreadsheet is far more useful denormalised,
+    // ready for filtering or a PivotTable, than visually grouped like a report.
+    const sheetData = [];
+    groups.forEach(g=>{
+      g.courses.forEach(c=>{
+        sheetData.push({
+          'Invoice #': g.invNum,
+          'Organisation': g.org,
+          'Course Name': c.name,
+          'Course Start Date': c.dates.length===1 ? toLocalDate(c.dates[0]) : (c.dates.map(fmtDate).join(', ')||''),
+          'Invoice Amount (Excl. GST)': g.amountExGST,
+          'GST': g.gst,
+          'Amount Paid': g.amountPaid,
+          'Status': g.status,
+        });
+      });
+    });
+    const ws = XLSX.utils.json_to_sheet(sheetData, {cellDates:true});
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for(let row=range.s.r+1; row<=range.e.r; row++){
+      const cell = ws[XLSX.utils.encode_cell({r:row, c:3})]; // Course Start Date column
+      if(cell && cell.t==='d') cell.z = 'dd/mm/yyyy';
+    }
+    ws['!cols'] = [{wch:14},{wch:28},{wch:30},{wch:18},{wch:20},{wch:12},{wch:14},{wch:14}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    XLSX.writeFile(wb, `Invoice_Financial_Summary_${todayStr}.xlsx`);
+    toast(`Exported ${sheetData.length} row${sheetData.length>1?'s':''} to Excel`);
   });
 }
 
