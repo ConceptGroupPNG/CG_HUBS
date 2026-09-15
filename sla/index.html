@@ -339,6 +339,9 @@ let _timeSiteId = null;
 // shared/user mailboxes). Staff signing in must have delegated (Mail.Read.Shared)
 // access to this mailbox.
 const HELPDESK_MAILBOX = "support@concept.com.pg";
+// Used only to flag "this looks like a staff-to-staff thread, not a client
+// request" in Email Intake — a same-domain sender is a hint, not a rule.
+const HELPDESK_DOMAIN = (HELPDESK_MAILBOX.split("@")[1] || "").toLowerCase();
 
 // Where SLA HUB itself is hosted — used only for the plain-text link in
 // notification emails so a reader knows where to go to see the ticket.
@@ -738,7 +741,7 @@ let state = {
   agreements: [], workOrders: [], crossActiveEntities: [], crossTimeEntries: [],
   ticketAssignments: [], dismissedEmails: [], ticketConversations: [], ticketNotes: [],
   agreementScopeItems: [], agreementSubtasks: [], agreementFeeLines: [],
-  serviceAcks: [],
+  serviceAcks: [], resourceNotes: [],
   me: null
 };
 
@@ -954,6 +957,15 @@ async function loadCoreData(){
     state.ticketNotes = await fetchAllListItems("SLA_TicketNotes");
   }catch(e){
     console.warn("Couldn't load SLA_TicketNotes (run Add-SLAHub-TicketNotes.ps1 if this list doesn't exist yet):", e);
+  }
+  // Staff notes logged against a Resource (not tied to any one ticket) — a
+  // running log of "what's current" for that person. Separate, non-fatal
+  // try/catch so the rest of SLA HUB still works if
+  // Add-SLAHub-ResourceNotes.ps1 hasn't been run yet.
+  try{
+    state.resourceNotes = await fetchAllListItems("SLA_ResourceNotes");
+  }catch(e){
+    console.warn("Couldn't load SLA_ResourceNotes (run Add-SLAHub-ResourceNotes.ps1 if this list doesn't exist yet):", e);
   }
   // CSA-style Agreement breakdown — Scope of Work items, their Subtasks, and
   // the Fee Line Items that make up an Agreement's rate card. Separate,
@@ -1289,30 +1301,40 @@ function filteredTickets(){
   });
 }
 
+// Shared ticket summary-card markup — used by the main Tickets list and by
+// a Resource's "current & recent tickets" detail view, so both stay visually
+// identical and any future tweak (badges, sort styling, etc.) only needs
+// changing in one place. opts.onClick overrides the default (open the
+// ticket right where the card already is); opts.hideAssigned drops the
+// "Assigned" chip when it would just repeat whichever resource's page this
+// card is already sitting on.
+function ticketCardHtml(t, opts={}){
+  const bs = breachStatus(t);
+  const onClick = opts.onClick || `openTicketDetail('${t.id}')`;
+  return `
+  <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="${onClick}">
+    <div class="record-card-top">
+      <div>
+        <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
+        <div class="record-card-sub-row">
+          <span>${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</span>
+          <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
+          <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
+          <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
+          ${opts.hideAssigned ? "" : `<span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>`}
+          <span><span class="m-label">Opened</span>${fmtDate(t.fields.DateOpened)}</span>
+        </div>
+      </div>
+      <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
+    </div>
+  </div>`;
+}
+
 function renderTicketsTable(){
   const rows = filteredTickets();
   document.getElementById("ticketsTableWrap").innerHTML = rows.length ? `
     <div class="record-list">
-      ${rows.map(t => {
-        const bs = breachStatus(t);
-        return `
-        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="openTicketDetail('${t.id}')">
-          <div class="record-card-top">
-            <div>
-              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub-row">
-                <span>${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</span>
-                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
-                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
-                <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
-                <span><span class="m-label">Opened</span>${fmtDate(t.fields.DateOpened)}</span>
-              </div>
-            </div>
-            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-        </div>`;
-      }).join("")}
+      ${rows.map(t => ticketCardHtml(t)).join("")}
     </div>
   ` : `<div class="empty">No tickets match these filters.</div>`;
 }
@@ -2406,6 +2428,15 @@ async function renderEmail(){
 // conversationId (shouldn't normally happen) just gets its own
 // single-message "thread".
 function threadKeyFor(m){ return m.conversationId || ("msg:"+m.internetMessageId); }
+// A same-domain sender as the shared mailbox itself (i.e. one of our own
+// people, not a client on their own domain) — used to badge a thread as
+// likely-internal in the review queue. A hint for staff to glance at, not a
+// hard rule — see convertThreadAsInternal() for turning that into a ticket.
+function isInternalSender(m){
+  const addr = (m.from?.emailAddress?.address||"").toLowerCase();
+  const domain = addr.split("@")[1] || "";
+  return !!domain && domain === HELPDESK_DOMAIN;
+}
 function groupEmailThreads(messages){
   const order = [];
   const map = new Map();
@@ -2450,18 +2481,20 @@ function renderEmailList(){
         const groupIds = g.messages.map(x=>x.id);
         const allInThreadChecked = groupIds.every(id => selectedEmailIds.has(id));
         const expanded = expandedThreadKeys.has(g.key);
+        const allInternal = g.messages.every(isInternalSender);
         return `
         <div class="record-card ${older.length ? "" : "clickable"}" ${older.length ? "" : `onclick="openEmailDetail('${latest.id}')"`}>
           <div class="record-card-top">
             <div style="display:flex;gap:11px;align-items:flex-start;">
               <input type="checkbox" onclick="event.stopPropagation()" ${allInThreadChecked?"checked":""} onchange="toggleThreadSelection('${groupIds.join(",")}', this.checked)" style="margin-top:3px;">
               <div ${older.length ? `style="cursor:pointer;" onclick="openEmailDetail('${latest.id}')"` : ""}>
-                <div class="record-card-title">${esc(latest.subject||"(no subject)")}</div>
+                <div class="record-card-title">${esc(latest.subject||"(no subject)")}${allInternal ? ` <span class="badge badge-info">Internal</span>` : ""}</div>
                 <div class="record-card-sub">${esc(latest.from?.emailAddress?.name || latest.from?.emailAddress?.address || "—")} · ${fmtDateTime(latest.receivedDateTime)}</div>
               </div>
             </div>
             <div class="record-card-actions">
               ${older.length ? `<button class="btn btn-sm" onclick="event.stopPropagation(); toggleThreadExpand('${g.key}')">${expanded?"Hide":"Show"} ${older.length} earlier in thread</button>` : ""}
+              <button class="btn btn-sm" onclick="event.stopPropagation(); convertThreadAsInternal('${g.key}')">Log as Internal</button>
               <button class="btn btn-sm btn-accent" onclick="event.stopPropagation(); convertEmailToTicket('${latest.id}')">Review</button>
             </div>
           </div>
@@ -2611,28 +2644,41 @@ function renderEmailDetail(){
   `;
 }
 
-async function convertEmailToTicket(messageId){
+// opts lets a caller pre-fill this same modal for cases beyond "review a
+// single client email" — currently used by convertThreadAsInternal() to
+// preset an Internal Support ticket from a whole staff-to-staff thread.
+// requesterName/requesterEmail/description override the defaults (which
+// otherwise come straight from the message being reviewed); dismissSiblingIds
+// carries sibling thread message ids through to submitEmailTicketForm so they
+// get cleared from the queue alongside the one actually being converted.
+async function convertEmailToTicket(messageId, opts={}){
   const m = inboxMessages.find(x => x.id === messageId);
   if(!m) return;
   const fromAddr = m.from?.emailAddress?.address || "";
   const fromName = m.from?.emailAddress?.name || fromAddr;
+  const reqName = opts.requesterName || fromName;
+  const reqEmail = opts.requesterEmail || fromAddr;
+  const description = opts.description != null ? opts.description : (m.bodyPreview||"");
+  const dismissCsv = (opts.dismissSiblingIds||[]).join(",");
   openModal(`
-    <h3>✉️ Convert email to ticket</h3>
-    <p class="modal-sub">From <b>${esc(fromName)}</b>${fromAddr?` (${esc(fromAddr)})`:""} — review and adjust before creating the ticket.</p>
+    <h3>✉️ ${opts.presetInternal ? "Log internal thread as a ticket" : "Convert email to ticket"}</h3>
+    <p class="modal-sub">${opts.presetInternal
+      ? `Preset as Internal Support, with the whole thread below — review and adjust before creating the ticket.`
+      : `From <b>${esc(fromName)}</b>${fromAddr?` (${esc(fromAddr)})`:""} — review and adjust before creating the ticket.`}</p>
     <div class="form-sections">
       <div class="form-section full">
         <div class="form-section-title">From &amp; assigned to</div>
         <div class="form-grid">
-          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(fromName)}"></div>
-          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(fromAddr)}"></div>
-          ${assignPickerHtml("tf")}
+          <div class="field"><label>Requested by (name)</label><input id="tf_reqname" type="text" value="${esc(reqName)}"></div>
+          <div class="field"><label>Requested by (email)</label><input id="tf_reqemail" type="text" value="${esc(reqEmail)}"></div>
+          ${assignPickerHtml("tf", opts.defaultAssigneeEmail)}
         </div>
       </div>
 
       <div class="form-section full">
         <div class="form-section-title">Description</div>
         <div class="form-grid full">
-          <div class="field"><textarea id="tf_desc">${esc(m.bodyPreview||"")}</textarea></div>
+          <div class="field"><textarea id="tf_desc" ${opts.presetInternal ? `style="min-height:170px;"` : ""}>${esc(description)}</textarea></div>
         </div>
       </div>
 
@@ -2654,16 +2700,16 @@ async function convertEmailToTicket(messageId){
         <div class="form-section-title">Ownership &amp; billing</div>
         <div class="form-grid">
           <div class="field span2"><label>Owning entity</label><select id="tf_owntype" onchange="onOwningTypeChange()">
-            <option value="AdHoc" selected>Ad Hoc (billable, no formal agreement)</option>
-            <option value="Internal">Internal Support (no client)</option>
+            <option value="AdHoc" ${opts.presetInternal?"":"selected"}>Ad Hoc (billable, no formal agreement)</option>
+            <option value="Internal" ${opts.presetInternal?"selected":""}>Internal Support (no client)</option>
             <option value="Agreement">SLA Agreement</option>
             <option value="WorkOrder">Custom Work Order</option>
             <option value="ServiceAck">Service Acknowledgement</option>
           </select></div>
           <div class="field span2" id="tf_ownref_wrap" style="display:none;"><label id="tf_ownref_label">Agreement</label><select id="tf_ownref" onchange="onOwningRefChange()"><option value="">— select —</option></select></div>
-          <div class="field"><label>Client</label><select id="tf_client" onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
+          <div class="field"><label>Client</label><select id="tf_client" ${opts.presetInternal?"disabled":""} onchange="document.getElementById('tf_endclient').innerHTML=endClientOptions(this.value)">
             <option value="">— none (internal) —</option>
-            ${sortedClients().map(c=>`<option value="${c.id}" ${matchClientByEmail(fromAddr)===c.id?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
+            ${sortedClients().map(c=>`<option value="${c.id}" ${(!opts.presetInternal && matchClientByEmail(fromAddr)===c.id)?"selected":""}>${esc(c.fields.Title)}</option>`).join("")}
           </select></div>
           <div class="field"><label>End client</label><select id="tf_endclient"><option value="">—</option></select></div>
           <div class="field"><label>Billable</label><select id="tf_billable" onchange="document.getElementById('tf_rate_wrap').style.display=this.value==='true'?'':'none';"><option value="false">No</option><option value="true">Yes</option></select></div>
@@ -2675,9 +2721,47 @@ async function convertEmailToTicket(messageId){
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-danger" onclick="deleteEmailFromIntake('${messageId}')">Delete</button>
-      <button class="btn btn-accent" onclick="submitEmailTicketForm('${messageId}')">Create ticket</button>
+      <button class="btn btn-accent" onclick="submitEmailTicketForm('${messageId}', '${dismissCsv}')">Create ticket</button>
     </div>
   `, {wide:true});
+}
+
+// Quick path for an internal, no-client thread (staff discussing something
+// on the shared mailbox, like the NASFUND example) that used to just get
+// "Delete"d out of the review queue with no trace left anywhere. This turns
+// the WHOLE thread into one Internal Support ticket instead — the full
+// transcript goes into the ticket's Description — and clears every message
+// in the thread from the queue at once, so it's remembered rather than
+// silently dropped. Still opens the normal review modal (preset, not
+// auto-submitted) so nothing gets created without a look first.
+function convertThreadAsInternal(threadKey){
+  const group = groupEmailThreads(inboxMessages).find(g => g.key === threadKey);
+  if(!group) return;
+  const latest = group.messages[0];
+  const chronological = [...group.messages].sort((a,b)=> new Date(a.receivedDateTime||0) - new Date(b.receivedDateTime||0));
+  const root = chronological[0];
+  const rootAddr = root.from?.emailAddress?.address || "";
+  const rootName = root.from?.emailAddress?.name || rootAddr;
+  const transcript = chronological.map(m => {
+    const who = m.from?.emailAddress?.name || m.from?.emailAddress?.address || "Unknown sender";
+    return `— ${who} · ${fmtDateTime(m.receivedDateTime)} —\n${(m.bodyPreview||"").trim()}`;
+  }).join("\n\n");
+  // Best-effort default assignee: whichever known Resource most recently
+  // posted in the thread (messages are newest-first) — a reasonable "who has
+  // the ball" guess, easy to change before creating the ticket.
+  let defaultAssigneeEmail = "";
+  for(const m of group.messages){
+    const addr = (m.from?.emailAddress?.address||"").toLowerCase();
+    if(state.resources.some(r => (r.fields.MatchEmail||"").toLowerCase() === addr)){ defaultAssigneeEmail = addr; break; }
+  }
+  convertEmailToTicket(latest.id, {
+    presetInternal: true,
+    description: transcript,
+    requesterName: rootName,
+    requesterEmail: rootAddr,
+    defaultAssigneeEmail,
+    dismissSiblingIds: group.messages.filter(m => m.id !== latest.id).map(m => m.id)
+  });
 }
 
 function matchClientByEmail(email){
@@ -2717,15 +2801,38 @@ async function deleteEmailFromIntake(messageId){
   }
 }
 
-async function submitEmailTicketForm(messageId){
+// dismissSiblingsCsv (comma-separated message ids, optional) covers a whole
+// thread getting converted at once — see convertThreadAsInternal(): only the
+// message actually named here becomes the ticket's SourceMessageId, so its
+// siblings need clearing from the queue the same non-destructive way "Delete"
+// does, or they'd just reappear next refresh.
+async function submitEmailTicketForm(messageId, dismissSiblingsCsv){
   const m = inboxMessages.find(x => x.id === messageId);
   // The ticket's SourceMessageId (set below) is what keeps this email from
   // showing up again in Email Intake — see renderEmail(). No write back to
   // the shared mailbox is needed, so this can't 403 on a delegated-read-only
   // account the way the old "tag the email as converted" approach could.
   await submitTicketFormCore({ sourceMessageId: m?.internetMessageId || messageId, sourceMessageGraphId: messageId, source: "Email" });
-  if(m){
-    inboxMessages = inboxMessages.filter(x => x.id !== messageId);
+  const siblingIds = (dismissSiblingsCsv||"").split(",").filter(Boolean);
+  for(const id of siblingIds){
+    const sib = inboxMessages.find(x => x.id === id);
+    if(!sib) continue;
+    try{
+      const created = await graphCreateItem("SLA_DismissedEmails", {
+        Title: "Logged onto ticket (related thread message)",
+        InternetMessageId: sib.internetMessageId || "",
+        Subject: sib.subject || "",
+        DismissedByName: currentAccount?.name || currentAccount?.username || "",
+        DismissedByEmail: (currentAccount?.username || "").toLowerCase().trim(),
+        DismissedAt: nowIso()
+      });
+      state.dismissedEmails.push(created);
+    }catch(e){
+      console.warn("Couldn't clear a related thread message from the review queue:", e);
+    }
+  }
+  if(m || siblingIds.length){
+    inboxMessages = inboxMessages.filter(x => x.id !== messageId && !siblingIds.includes(x.id));
     renderEmail();
   }
 }
@@ -2901,30 +3008,160 @@ function renderClients(){
    as well as being what CG Time pulls in once SLA_HUB is registered in
    its CG_Hubs admin screen (ResourcesListName = SLA_Resources).
    ============================================================ */
+let resourceDetailId = null;
+
 function renderResources(){
   document.getElementById("page-resources").innerHTML = `
     <div class="page-header">
-      <div><h2>Resources</h2><div class="sub">Support staff and contractors — who tickets can be assigned to</div></div>
+      <div><h2>Resources</h2><div class="sub">Support staff and contractors — click a name to see what's currently on their plate</div></div>
       <button class="btn btn-accent" onclick="openResourceForm()">+ New resource</button>
     </div>
     <div id="resourcesTableWrap"></div>
+    <div id="resourceDetailWrap"></div>
   `;
+  renderResourcesTable();
+  renderResourceDetail();
+}
+
+function renderResourcesTable(){
+  const wrap = document.getElementById("resourcesTableWrap");
+  if(!wrap) return;
   const rows = state.resources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
-  document.getElementById("resourcesTableWrap").innerHTML = rows.length ? `
+  wrap.innerHTML = rows.length ? `
     <div class="card" style="padding:0;">
-      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Status</th></tr></thead>
+      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Open tickets</th><th>Status</th></tr></thead>
       <tbody>${rows.map(r=>{
         const active = r.fields.IsActive !== false;
-        return `<tr class="clickable" onclick="openResourceForm('${r.id}')">
+        const openCount = ticketsForResource(r).filter(t => !isClosedStatus(t.fields.Status)).length;
+        return `<tr class="clickable" onclick="openResourceDetail('${r.id}')">
           <td><b>${esc(r.fields.Title)}</b></td>
           <td>${esc(r.fields.ResourceType||"—")}</td>
           <td>${esc(r.fields.BusinessUnit||"—")}</td>
           <td>${esc(r.fields.MatchEmail||"—")}</td>
+          <td>${openCount || "—"}</td>
           <td>${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}</td>
         </tr>`;
       }).join("")}</tbody></table>
     </div>
   ` : `<div class="empty">No resources yet. Click "+ New resource" to add support staff or contractors — they'll then show up in every "Assigned to" picker.</div>`;
+}
+
+// Every ticket currently assigned to this resource (by MatchEmail), open
+// work first — same ordering as the main Tickets list — so this doubles as
+// "what's live for this person right now" and their history in one place.
+function ticketsForResource(resource){
+  const email = (resource.fields.MatchEmail||"").toLowerCase().trim();
+  if(!email) return [];
+  return state.tickets.filter(t => (t.fields.AssignedToEmail||"").toLowerCase().trim() === email)
+    .sort((a,b)=> {
+      const aClosed = isClosedStatus(a.fields.Status) ? 1 : 0;
+      const bClosed = isClosedStatus(b.fields.Status) ? 1 : 0;
+      if(aClosed !== bClosed) return aClosed - bClosed;
+      return new Date(b.fields.DateOpened||0) - new Date(a.fields.DateOpened||0);
+    });
+}
+
+function openResourceDetail(id){
+  resourceDetailId = id;
+  renderResourceDetail();
+  document.getElementById("resourceDetailWrap").scrollIntoView({behavior:"smooth"});
+}
+
+// The "what's current for this person" view this whole feature is for —
+// their live/recent ticket workload (across every owning-entity type, not
+// just client work) plus a running Notes log for anything worth remembering
+// that doesn't belong on any one ticket.
+function renderResourceDetail(){
+  const wrap = document.getElementById("resourceDetailWrap");
+  if(!wrap) return;
+  if(!resourceDetailId){ wrap.innerHTML = ""; return; }
+  const r = state.resources.find(x=>String(x.id)===String(resourceDetailId));
+  if(!r){ wrap.innerHTML = ""; return; }
+  const active = r.fields.IsActive !== false;
+  const tickets = ticketsForResource(r);
+  const openTickets = tickets.filter(t => !isClosedStatus(t.fields.Status));
+  const withStatus = openTickets.map(t => ({ t, bs: breachStatus(t) }));
+  const atRiskOrBreached = withStatus.filter(x => ["atrisk","breached"].includes(x.bs.response) || ["atrisk","breached"].includes(x.bs.resolution));
+  const notes = resourceNotes(r.id);
+
+  wrap.innerHTML = `
+    <div class="detail-panel" style="margin-top:16px;">
+      <button class="close" onclick="resourceDetailId=null; renderResourceDetail();">✕</button>
+      <h3 style="margin:0 0 4px;">${esc(r.fields.Title)}${active?"":` <span class="badge badge-neutral">Inactive</span>`}</h3>
+      <div style="color:var(--ink-2);font-size:13px;margin-bottom:14px;">
+        ${esc(r.fields.ResourceType||"—")}${r.fields.BusinessUnit?` · ${esc(r.fields.BusinessUnit)}`:""}${r.fields.MatchEmail?` · ${esc(r.fields.MatchEmail)}`:""}
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button class="btn btn-sm" onclick="openResourceForm('${r.id}')">✏️ Edit</button>
+      </div>
+
+      <div class="stat-row" style="margin-bottom:18px;">
+        <div class="stat-tile"><div class="val">${openTickets.length}</div><div class="lbl">Open tickets</div></div>
+        <div class="stat-tile tone-warning"><div class="val">${atRiskOrBreached.length}</div><div class="lbl">At risk / breached</div></div>
+        <div class="stat-tile"><div class="val">${tickets.length - openTickets.length}</div><div class="lbl">Resolved / closed</div></div>
+      </div>
+
+      <div class="section-title">Current &amp; recent tickets</div>
+      ${tickets.length ? `
+      <div class="record-list" style="margin-bottom:18px;">
+        ${tickets.map(t => ticketCardHtml(t, { onClick:`navigate('tickets'); openTicketDetail('${t.id}')`, hideAssigned:true })).join("")}
+      </div>
+      ` : `<div class="empty" style="margin-bottom:18px;">No tickets have been assigned to ${esc(r.fields.Title)} yet.</div>`}
+
+      <div class="tkt-section c-notes">
+      <div class="section-title">Notes${notes.length ? ` (${notes.length})` : ""}</div>
+      <div class="field" style="margin-bottom:8px;">
+        <textarea id="resNoteInput_${r.id}" placeholder="Log something worth remembering about this person's current work or projects — visible to staff only, timestamped automatically…" style="min-height:56px;"></textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button id="resNoteAddBtn_${r.id}" class="btn btn-sm btn-accent" onclick="addResourceNote('${r.id}')">+ Add note</button>
+      </div>
+      ${notes.length ? `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${notes.map(n => `
+          <div style="border:1px solid var(--gridline);border-radius:8px;padding:10px 12px;background:var(--page);">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">
+              <span><b style="color:var(--ink);">${esc(n.fields.AuthorName||n.fields.AuthorEmail||"—")}</b></span>
+              <span>${fmtDateTime(n.fields.CreatedAt)}</span>
+            </div>
+            <div style="white-space:pre-wrap;font-size:13px;">${esc(n.fields.Note||"")}</div>
+          </div>
+        `).join("")}
+      </div>
+      ` : `<div class="empty">No notes logged yet.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function resourceNotes(resourceId){
+  return state.resourceNotes
+    .filter(n => String(n.fields.ResourceId)===String(resourceId))
+    .sort((a,b)=> new Date(b.fields.CreatedAt||0) - new Date(a.fields.CreatedAt||0)); // newest first
+}
+
+async function addResourceNote(resourceId){
+  const ta = document.getElementById(`resNoteInput_${resourceId}`);
+  const text = (ta?.value || "").trim();
+  if(!text){ toast("Write something first.", true); return; }
+  const btn = document.getElementById(`resNoteAddBtn_${resourceId}`);
+  if(btn) btn.disabled = true;
+  try{
+    const created = await graphCreateItem("SLA_ResourceNotes", {
+      Title: `Note on resource ${resourceId}`,
+      ResourceId: Number(resourceId), Note: text,
+      AuthorName: currentAccount?.name || currentAccount?.username || "",
+      AuthorEmail: (currentAccount?.username || "").toLowerCase().trim(),
+      CreatedAt: nowIso()
+    });
+    state.resourceNotes.push(created);
+    renderResourceDetail();
+  }catch(e){
+    console.error(e);
+    toast("Couldn't add note: " + e.message, true);
+  } finally {
+    if(btn) btn.disabled = false;
+  }
 }
 
 function openResourceForm(id){
