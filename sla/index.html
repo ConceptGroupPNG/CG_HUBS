@@ -2297,83 +2297,155 @@ function stripHtml(html){
   const div = document.createElement("div");
   div.innerHTML = html || "";
   div.querySelectorAll("style, script").forEach(el => el.remove());
-  return (div.textContent || div.innerText || "").trim();
+  // .textContent has no concept of "block" vs "inline" — it just concatenates
+  // every text node with nothing in between, so adjacent block elements
+  // (paragraphs, table cells, quoted-reply divs) run straight into each
+  // other with no space at all (e.g. "ConsultantConcept Group"). Insert a
+  // newline at every block boundary (and for <br>) before reading it back,
+  // so a forwarded/quoted chain reads as lines instead of one run-on blob.
+  div.querySelectorAll("br").forEach(el => el.replaceWith("\n"));
+  div.querySelectorAll("p, div, tr, li, h1, h2, h3, h4, h5, h6, blockquote, table")
+    .forEach(el => el.insertAdjacentText("afterend", "\n"));
+  let text = div.textContent || div.innerText || "";
+  // Collapse the runs of blank lines / trailing spaces that the newlines
+  // above introduce (nested block elements each add their own), so the
+  // result reads as normal paragraphs rather than swapping "too smashed
+  // together" for "too much blank space".
+  text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  return text.trim();
 }
+
+// Guards against the same message being imported onto a ticket's
+// Conversation twice at once. renderEmail() can be re-entered while an
+// earlier pass is still awaiting Graph calls for a previous message in the
+// same thread (each successful import's own graphCreateItem() schedules a
+// background refresh, which can call renderEmail() again before the
+// original pass's loop finishes) — without this, both passes see the
+// message as "not yet imported" and each create their own
+// SLA_TicketConversations row for it, showing as an exact duplicate.
+const _importingMessageIds = new Set();
 
 // Captures one reply email onto its ticket's Conversation. Best-effort and
 // non-fatal — a failed import just leaves the email to be picked up again on
 // the next refresh rather than blocking Email Intake.
 async function importReplyIntoConversation(m, ticket){
-  let bodyText = m.bodyPreview || "";
+  const importKey = m.internetMessageId || m.id;
+  if(importKey && _importingMessageIds.has(importKey)) return;
+  if(importKey) _importingMessageIds.add(importKey);
   try{
-    const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${m.id}?$select=body`);
-    if(full?.body?.content){
-      bodyText = full.body.contentType === "html" ? stripHtml(full.body.content) : full.body.content;
+    let bodyText = m.bodyPreview || "";
+    try{
+      const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${m.id}?$select=body`);
+      if(full?.body?.content){
+        bodyText = full.body.contentType === "html" ? stripHtml(full.body.content) : full.body.content;
+      }
+    }catch(e){
+      console.warn("Couldn't fetch full body for a ticket reply, using the preview instead:", e);
     }
-  }catch(e){
-    console.warn("Couldn't fetch full body for a ticket reply, using the preview instead:", e);
-  }
-  try{
-    const created = await graphCreateItem("SLA_TicketConversations", {
-      Title: `Reply on ${ticket.fields.TicketNumber||ticket.id}`,
-      TicketId: Number(ticket.id),
-      Direction: "Inbound",
-      FromName: m.from?.emailAddress?.name || m.from?.emailAddress?.address || "",
-      FromEmail: m.from?.emailAddress?.address || "",
-      Subject: m.subject || "",
-      Body: bodyText.slice(0, 4000),
-      InternetMessageId: m.internetMessageId || "",
-      MessageDate: m.receivedDateTime || nowIso(),
-      LoggedAt: nowIso()
-    });
-    state.ticketConversations.push(created);
-  }catch(e){
-    console.warn("Couldn't log a reply email to SLA_TicketConversations (run Add-SLAHub-TicketConversations.ps1 if this list doesn't exist yet):", e);
+    try{
+      const created = await graphCreateItem("SLA_TicketConversations", {
+        Title: `Reply on ${ticket.fields.TicketNumber||ticket.id}`,
+        TicketId: Number(ticket.id),
+        Direction: "Inbound",
+        FromName: m.from?.emailAddress?.name || m.from?.emailAddress?.address || "",
+        FromEmail: m.from?.emailAddress?.address || "",
+        Subject: m.subject || "",
+        Body: bodyText.slice(0, 4000),
+        InternetMessageId: m.internetMessageId || "",
+        MessageDate: m.receivedDateTime || nowIso(),
+        LoggedAt: nowIso()
+      });
+      state.ticketConversations.push(created);
+    }catch(e){
+      console.warn("Couldn't log a reply email to SLA_TicketConversations (run Add-SLAHub-TicketConversations.ps1 if this list doesn't exist yet):", e);
+    }
+  } finally {
+    if(importKey) _importingMessageIds.delete(importKey);
   }
 }
 
-// A conversation row imported before the stripHtml() fix (see above) can have
-// raw Outlook/Word CSS glued onto the real message text — this is how those
-// rows are recognised so they can be offered for repair, regardless of which
-// ticket they ended up on.
+// A conversation row imported before the stripHtml() fix (see above) can
+// have raw Outlook/Word CSS glued onto the real message text — this is how
+// those rows are recognised so they can be offered for repair, regardless
+// of which ticket they ended up on.
 const CSS_LEAK_PATTERN = /@font-face|mso-[a-z-]+\s*:|MsoNormal|MsoChpDefault|WordSection\d|panose-1/i;
 function looksCssCorrupted(bodyText){
   return CSS_LEAK_PATTERN.test(bodyText || "");
 }
+// Before the block-boundary-newline fix, a forwarded/quoted chain (several
+// "From: … Sent: … To: … Subject: …" blocks from earlier messages in the
+// thread) got glued into one run-on line with no breaks at all. Several of
+// those header labels packed together with almost no line breaks is that
+// signature — a normal reply has at most a couple, spread across real lines.
+function looksLikeRunOnQuoteChain(bodyText){
+  const t = bodyText || "";
+  if(t.length < 400) return false;
+  const headerHits = (t.match(/\b(From|Sent|To|Cc|Subject):/g) || []).length;
+  const lineCount = (t.match(/\n/g) || []).length;
+  return headerHits >= 3 && lineCount <= 2;
+}
+function conversationBodyNeedsRepair(bodyText){
+  return looksCssCorrupted(bodyText) || looksLikeRunOnQuoteChain(bodyText);
+}
+// The same re-entrancy race that importReplyIntoConversation() now guards
+// against (see _importingMessageIds above) could already have created exact
+// duplicate rows — same ticket, same source email — before this fix. Group
+// by TicketId+InternetMessageId and treat every row after the first
+// (earliest SharePoint id) in a group as an extra to remove.
+function findDuplicateConversationEntries(){
+  const groups = new Map();
+  for(const c of state.ticketConversations){
+    const imId = c.fields.InternetMessageId;
+    if(!imId) continue;
+    const key = c.fields.TicketId + "|" + imId;
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  const extras = [];
+  for(const rows of groups.values()){
+    if(rows.length < 2) continue;
+    rows.sort((a,b)=> Number(a.id) - Number(b.id));
+    extras.push(...rows.slice(1));
+  }
+  return extras;
+}
 
-// One-time repair for conversation rows created before the stripHtml() fix.
-// Re-fetches each affected message by its stored InternetMessageId (not
-// dependent on it still being among the most recent 30 inbox messages the
-// way Email Intake's own fetch is) and rewrites the Body field in place with
-// the now-cleaned text. A message that's been deleted/moved out of the
-// mailbox since is skipped, not treated as an error.
+// One-time cleanup for conversation rows affected by bugs fixed above: text
+// still carrying leaked Outlook CSS or a run-on quote chain gets re-fetched
+// and re-cleaned in place, and exact duplicate rows from the old
+// re-entrancy race get removed. Re-fetching is by each row's stored
+// InternetMessageId — not dependent on it still being among the most recent
+// 30 inbox messages the way Email Intake's own fetch is. A message that's
+// been deleted/moved out of the mailbox since is skipped, not treated as an
+// error.
 async function repairCorruptedConversations(){
-  const candidates = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body));
-  if(candidates.length === 0){ toast("No corrupted conversation entries found."); return; }
+  const toClean = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body));
+  const toRemove = findDuplicateConversationEntries();
+  if(toClean.length === 0 && toRemove.length === 0){ toast("No corrupted or duplicate conversation entries found."); return; }
   const byTicket = new Map();
-  for(const c of candidates){
+  for(const c of toClean){
     const t = state.tickets.find(t => String(t.id)===String(c.fields.TicketId));
     const label = t ? (t.fields.TicketNumber||t.id) : `ticket #${c.fields.TicketId}`;
     byTicket.set(label, (byTicket.get(label)||0) + 1);
   }
-  const summary = [...byTicket.entries()].map(([label,n]) => `<li>${esc(label)} — ${n} entr${n===1?"y":"ies"}</li>`).join("");
+  const summary = [...byTicket.entries()].map(([label,n]) => `<li>${esc(label)} — ${n} entr${n===1?"y":"ies"} to clean up</li>`).join("");
   openModal(`
     <h3>🧹 Repair conversation text</h3>
-    <p class="modal-sub">${candidates.length} conversation entr${candidates.length===1?"y":"ies"} still ${candidates.length===1?"has":"have"} leaked Outlook formatting code from before the fix, across:</p>
-    <ul style="margin:0 0 14px 20px;font-size:13.5px;">${summary}</ul>
-    <p style="color:var(--ink-2);font-size:12.5px;line-height:1.5;margin:0 0 18px;">This re-fetches each original email and rewrites the stored text using the fixed cleanup — it doesn't resend or change any email. A message that's since been deleted from the mailbox is skipped.</p>
+    <p class="modal-sub">Found ${toClean.length} conversation entr${toClean.length===1?"y":"ies"} with leaked formatting or a run-on quote chain, and ${toRemove.length} exact duplicate row${toRemove.length===1?"":"s"} from an old timing bug, across:</p>
+    <ul style="margin:0 0 14px 20px;font-size:13.5px;">${summary || "<li>—</li>"}</ul>
+    <p style="color:var(--ink-2);font-size:12.5px;line-height:1.5;margin:0 0 18px;">This re-fetches each original email and rewrites the stored text using the fixed cleanup, and removes the duplicate rows — it doesn't resend or change any email. A message that's since been deleted from the mailbox is skipped.</p>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-accent" onclick="runConversationRepair()">Repair ${candidates.length} entr${candidates.length===1?"y":"ies"}</button>
+      <button class="btn btn-accent" onclick="runConversationRepair()">Clean up ${toClean.length + toRemove.length} entr${(toClean.length+toRemove.length)===1?"y":"ies"}</button>
     </div>
   `);
 }
 
 async function runConversationRepair(){
   closeModal();
-  const candidates = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body));
+  const toClean = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body));
   let fixed = 0, skipped = 0;
-  for(const c of candidates){
+  for(const c of toClean){
     const imId = c.fields.InternetMessageId;
     if(!imId){ skipped++; continue; }
     try{
@@ -2390,7 +2462,18 @@ async function runConversationRepair(){
       skipped++;
     }
   }
-  toast(`Repaired ${fixed} conversation entr${fixed===1?"y":"ies"}${skipped?`, ${skipped} skipped (original email not found)`:""}.`);
+  const toRemove = findDuplicateConversationEntries();
+  let removed = 0;
+  for(const c of toRemove){
+    try{
+      await graphDeleteItem("SLA_TicketConversations", c.id);
+      state.ticketConversations = state.ticketConversations.filter(x => x.id !== c.id);
+      removed++;
+    }catch(e){
+      console.warn("Couldn't remove a duplicate conversation entry:", e);
+    }
+  }
+  toast(`Repaired ${fixed} conversation entr${fixed===1?"y":"ies"}, removed ${removed} duplicate${removed===1?"":"s"}${skipped?`, ${skipped} skipped (original email not found)`:""}.`);
   if(document.getElementById("emailListWrap")) renderEmail();
   if(ticketDetailId) renderTicketDetail();
 }
@@ -2398,12 +2481,14 @@ async function runConversationRepair(){
 function updateConversationRepairBanner(){
   const el = document.getElementById("conversationRepairBanner");
   if(!el) return;
-  const count = state.ticketConversations.filter(c => looksCssCorrupted(c.fields.Body)).length;
-  if(!count){ el.hidden = true; el.innerHTML = ""; return; }
+  const cleanCount = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body)).length;
+  const dupeCount = findDuplicateConversationEntries().length;
+  const total = cleanCount + dupeCount;
+  if(!total){ el.hidden = true; el.innerHTML = ""; return; }
   el.hidden = false;
   el.innerHTML = `
     <div class="record-card" style="border-left-color:var(--warning);background:var(--warning-bg);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-      <div>⚠️ ${count} ticket conversation entr${count===1?"y":"ies"} ${count===1?"has":"have"} leaked Outlook formatting code from before a fix — the real message text is still there, just mixed in with junk.</div>
+      <div>⚠️ ${total} ticket conversation entr${total===1?"y":"ies"} ${total===1?"needs":"need"} cleanup — leaked formatting, a run-on quote chain, or an exact duplicate from an old bug. The real message text is still there.</div>
       <button class="btn btn-sm" onclick="repairCorruptedConversations()">Repair now</button>
     </div>
   `;
