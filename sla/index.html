@@ -2293,6 +2293,22 @@ let selectedEmailIds = new Set(); // for bulk "delete selected" in the review qu
 // every descendant text node regardless of whether it's rendered, so that CSS
 // text leaks into the "plain text" unless the <style>/<script> elements are
 // removed first.
+// A reply email's HTML always carries the entire prior thread quoted
+// underneath the sender's own new text (that's just how mail clients
+// compose a reply) — every one of these markers is a mail client's own
+// standard way of introducing that quoted block: a classic Outlook
+// "From: … / Sent: … / To: … / Subject: …" header, a "-----Original
+// Message-----" divider, or a "On <date>, <name> wrote:" line (Gmail/Apple
+// Mail style). Cutting the text at the first one keeps only what this
+// particular sender actually typed — the older messages in the thread are
+// each captured on their own, from their own reply email, so nothing is
+// lost, it just stops being repeated in every single entry underneath it.
+const QUOTE_BOUNDARY_RE = /(^|\n)\s*-{3,}\s*Original Message\s*-{3,}|(^|\n)\s*From:\s[\s\S]{0,300}?Sent:\s|(^|\n)\s*On\s[\s\S]{0,150}?wrote:\s*(\n|$)/i;
+function trimQuotedHistory(text){
+  const m = text.match(QUOTE_BOUNDARY_RE);
+  return m ? text.slice(0, m.index).trim() : text;
+}
+
 function stripHtml(html){
   const div = document.createElement("div");
   div.innerHTML = html || "";
@@ -2311,8 +2327,8 @@ function stripHtml(html){
   // above introduce (nested block elements each add their own), so the
   // result reads as normal paragraphs rather than swapping "too smashed
   // together" for "too much blank space".
-  text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-  return text.trim();
+  text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return trimQuotedHistory(text);
 }
 
 // Guards against the same message being imported onto a ticket's
@@ -2384,8 +2400,14 @@ function looksLikeRunOnQuoteChain(bodyText){
   const lineCount = (t.match(/\n/g) || []).length;
   return headerHits >= 3 && lineCount <= 2;
 }
+// An entry imported before the quote-trimming fix (see trimQuotedHistory())
+// still has the whole rest of the thread quoted underneath the sender's own
+// text — same marker trimQuotedHistory() now cuts new imports at.
+function containsUntrimmedQuote(bodyText){
+  return QUOTE_BOUNDARY_RE.test(bodyText || "");
+}
 function conversationBodyNeedsRepair(bodyText){
-  return looksCssCorrupted(bodyText) || looksLikeRunOnQuoteChain(bodyText);
+  return looksCssCorrupted(bodyText) || looksLikeRunOnQuoteChain(bodyText) || containsUntrimmedQuote(bodyText);
 }
 // The same re-entrancy race that importReplyIntoConversation() now guards
 // against (see _importingMessageIds above) could already have created exact
