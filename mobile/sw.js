@@ -7,7 +7,7 @@
 // the new service worker, and evict the old cached copy. Without a bump,
 // phones that already visited keep serving the stale cached index.html
 // indefinitely, even after the repo itself is updated.
-const CACHE_NAME = "concept-time-shell-v5";
+const CACHE_NAME = "concept-time-shell-v6";
 const SHELL_FILES = [
   "./",
   "./index.html",

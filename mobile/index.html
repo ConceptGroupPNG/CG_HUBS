@@ -291,8 +291,17 @@
       const result = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account });
       return result.accessToken;
     } catch (e) {
-      await msalInstance.acquireTokenRedirect({ scopes: CONFIG.scopes });
-      return new Promise(() => {}); // navigation is happening; nothing more to do here
+      // Silent refresh failed — normally we'd fall back to an interactive
+      // redirect, but doing that from deep inside an async action (e.g.
+      // stopping a timer or saving a manual entry) rather than directly
+      // from a click handler can fail to actually navigate on some mobile
+      // browsers. If we then returned a promise that never resolves, the
+      // whole action just hangs forever with no error and nothing saved —
+      // indistinguishable from a dead button. Fail loudly instead, so the
+      // user gets a clear, actionable message rather than silence.
+      throw new Error(
+        "Your sign-in session needs refreshing — please sign out and sign in again."
+      );
     }
   }
 
