@@ -48,6 +48,19 @@ user's name. The desktop widget doesn't have one since it's one person's
 own PC; a phone is more often shared or borrowed, so it seemed worth the
 one extra tap.
 
+## If a save ever fails (e.g. a long-running timer)
+
+Stopping the timer or logging a manual entry needs a brief round-trip to
+Microsoft to save it. If that fails for any reason — no signal for a
+moment, or a sign-in session that's aged and needs refreshing (more
+likely the longer a timer's been running, e.g. an all-day job) — the
+calculated entry is **not** thrown away. It shows in an amber banner
+above the error message with **Retry** and **Discard** buttons, so
+sorting out the connection or signing in again and tapping Retry saves
+it normally. That pending entry is also remembered if the page gets
+closed or reloaded before you get to retry it, so it's still there next
+time you open the app.
+
 ## Azure AD setup
 
 This app has its own dedicated App Registration, **"CG Time Mobile"**

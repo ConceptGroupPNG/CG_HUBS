@@ -145,6 +145,18 @@
     border-radius:10px;padding:10px 14px;font-size:13px;min-height:0;
   }
 
+  .pending-entry{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    background:rgba(199,144,34,0.12);border:1px solid rgba(199,144,34,0.4);color:#8a5f14;
+    border-radius:10px;padding:10px 14px;font-size:13px;
+  }
+  .pending-entry strong{color:var(--ink-primary);}
+  .pending-entry-actions{display:flex;gap:6px;flex:none;}
+  .pending-entry-actions button{border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}
+  .btn-pending-discard{background:transparent;border:1px solid rgba(199,144,34,0.4)!important;color:#8a5f14;}
+  .btn-pending-retry{background:var(--brass-deep);color:#fff8e8;}
+  .pending-entry-actions button:disabled{opacity:.5;}
+
   .spacer{flex:1;}
   .footnote{text-align:center;font-size:11px;color:var(--ink-muted);padding-top:4px;}
 </style>
@@ -205,6 +217,14 @@
         <div class="detail-actions">
           <button id="detailCancelBtn" class="detail-cancel">Discard</button>
           <button id="detailSaveBtn" class="detail-save">Save</button>
+        </div>
+      </div>
+
+      <div id="pendingEntryBanner" class="pending-entry" hidden>
+        <span id="pendingEntryText"></span>
+        <div class="pending-entry-actions">
+          <button id="pendingDiscardBtn" class="btn-pending-discard">Discard</button>
+          <button id="pendingRetryBtn" class="btn-pending-retry">Retry</button>
         </div>
       </div>
 
@@ -271,6 +291,10 @@
   const detailCancelBtn = document.getElementById("detailCancelBtn");
 
   const errorBanner = document.getElementById("errorBanner");
+  const pendingEntryBanner = document.getElementById("pendingEntryBanner");
+  const pendingEntryText = document.getElementById("pendingEntryText");
+  const pendingRetryBtn = document.getElementById("pendingRetryBtn");
+  const pendingDiscardBtn = document.getElementById("pendingDiscardBtn");
 
   // ---------------------------------------------------------------------
   // Auth (MSAL Browser, PKCE + redirect — matches CG Time / CSA HUB / SLA HUB)
@@ -406,6 +430,43 @@
   let lastLoggedItemId = null;
   let lastLoggedCode = "";
 
+  // ---------------------------------------------------------------------
+  // Pending (unsaved) entry — if a save to Graph fails for any reason
+  // (a dropped connection, a token that needed refreshing, etc.), the
+  // calculated entry (hours, times, which job) is kept here rather than
+  // thrown away, with a Retry option, so a long timer's worth of work
+  // can't silently vanish just because the final save hiccuped. Persisted
+  // to localStorage too, in case the page reloads before it's retried.
+  // Only holds one entry at a time — a second failure while one is
+  // already pending replaces it, on the assumption this is rare and a
+  // single phone/user won't usually stack up multiple failed saves.
+  // ---------------------------------------------------------------------
+  const PENDING_ENTRY_KEY = "concept-time-pending-entry";
+  let pendingEntry = null;
+  try {
+    const saved = localStorage.getItem(PENDING_ENTRY_KEY);
+    if (saved) pendingEntry = JSON.parse(saved);
+  } catch (e) { /* ignore corrupt/inaccessible storage */ }
+  // Note: renderPendingEntry() is called from boot(), once the DOM/signed-in
+  // screen is ready, to actually show this restored banner if there is one.
+
+  function savePendingEntry(entry) {
+    pendingEntry = entry;
+    try {
+      if (entry) localStorage.setItem(PENDING_ENTRY_KEY, JSON.stringify(entry));
+      else localStorage.removeItem(PENDING_ENTRY_KEY);
+    } catch (e) { /* ignore corrupt/inaccessible storage */ }
+    renderPendingEntry();
+  }
+
+  function renderPendingEntry() {
+    if (!pendingEntry) { pendingEntryBanner.hidden = true; return; }
+    const e = pendingEntry;
+    const timeLabel = e.method === "Timer" ? `${e.timeStarted}–${e.timeStopped}` : "Manual";
+    pendingEntryText.innerHTML = `Not saved yet: <strong>${e.csa}</strong> · ${e.hours}h (${timeLabel})`;
+    pendingEntryBanner.hidden = false;
+  }
+
   function showError(message) {
     if (message) {
       errorBanner.textContent = message;
@@ -504,17 +565,35 @@
     showError("");
     manualLogBtn.disabled = true;
     timerBtn.disabled = true;
+    pendingRetryBtn.disabled = true;
     try {
       const result = await addTimeEntry(entry);
+      // Saved — if this was a retry of the pending entry, clear it.
+      if (pendingEntry === entry || (pendingEntry && pendingEntry.csa === entry.csa && pendingEntry.hours === entry.hours && pendingEntry.timeStarted === entry.timeStarted)) {
+        savePendingEntry(null);
+      }
       const timeLabel = entry.method === "Timer" ? `${entry.timeStarted}–${entry.timeStopped}` : "Manual";
       openDetailOpportunity(result.itemId, entry.csa, `<strong>${entry.csa}</strong> · ${entry.hours}h (${timeLabel})`);
     } catch (e) {
-      showError(`Could not save entry: ${e.message}`);
+      // Keep the calculated entry rather than losing it — see
+      // savePendingEntry's comment above for why.
+      savePendingEntry(entry);
+      showError(`Could not save entry: ${e.message} — your ${entry.hours}h is kept above, tap Retry once that's sorted.`);
     } finally {
       manualLogBtn.disabled = false;
       timerBtn.disabled = false;
+      pendingRetryBtn.disabled = false;
     }
   }
+
+  pendingRetryBtn.addEventListener("click", async () => {
+    if (!pendingEntry) return;
+    await logEntry(pendingEntry);
+  });
+  pendingDiscardBtn.addEventListener("click", () => {
+    savePendingEntry(null);
+    showError("");
+  });
 
   timerBtn.addEventListener("click", async () => {
     if (!timerRunning) {
@@ -576,6 +655,7 @@
     signinScreen.hidden = true;
     mainScreen.hidden = false;
     userNameEl.textContent = account.name || account.username || "";
+    renderPendingEntry(); // shows a leftover unsaved entry from before a reload, if any
   }
   function showSignedOut() {
     mainScreen.hidden = true;
