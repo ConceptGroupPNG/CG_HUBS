@@ -5224,11 +5224,15 @@ async function buildInvoiceFinancialSummaryReport(){
           return false;
         });
         const dates = [...new Set(matched.map(a=>(a.RunStartDate||'').substring(0,10)).filter(Boolean))].sort();
-        return {name: l.CourseName, qty: +l.Quantity||0, dates};
+        return {
+          name: l.CourseName, qty: +l.Quantity||0, dates,
+          amountExGST: Math.round((+l.FeeExGST||0)*(+l.Quantity||0)*100)/100,
+          gst: +l.GSTAmount||0,
+        };
       });
       // Invoices with no line items at all (legacy flat-field records) still
       // need a row to appear under - show a single blank "course" placeholder.
-      if(!courses.length) courses.push({name:'', qty:null, dates:[]});
+      if(!courses.length) courses.push({name:'', qty:null, dates:[], amountExGST:null, gst:null});
 
       return {invNum, org: inv.OrgName||'', amountExGST, gst, amountPaid, status, courses};
     }).sort((a,b)=>b.invNum.localeCompare(a.invNum));
@@ -5254,8 +5258,15 @@ function getFilteredReport2Groups(){
       if(!groupText.includes(q)) return false;
     }
     if(from || to){
-      const anyDateInRange = g.courses.some(c=>c.dates.some(d=>(!from||d>=from)&&(!to||d<=to)));
-      if(!anyDateInRange) return false;
+      const hasAnyDate = g.courses.some(c=>c.dates.length>0);
+      // Only apply the date filter when there's actual date data to compare
+      // against. An invoice with no attendees matched yet has no dates at
+      // all on any of its courses - excluding it here would be silently
+      // hiding it from every date range, not correctly saying "out of range".
+      if(hasAnyDate){
+        const anyDateInRange = g.courses.some(c=>c.dates.some(d=>(!from||d>=from)&&(!to||d<=to)));
+        if(!anyDateInRange) return false;
+      }
     }
     return true;
   });
@@ -5285,7 +5296,9 @@ function renderInvoiceFinancialSummaryReport(){
       <td></td>
       <td colspan="2" style="padding-left:20px;color:var(--g600)">${c.name||'—'}</td>
       <td style="text-align:right;color:var(--g600)">${c.qty!==null && c.qty!==undefined ? c.qty : '—'}</td>
-      <td colspan="4" style="color:var(--g600)">${c.dates.length ? c.dates.map(fmtDate).join(', ') : '—'}</td>
+      <td style="text-align:right;color:var(--g600)">${c.amountExGST!==null ? fmt(c.amountExGST) : '—'}</td>
+      <td style="text-align:right;color:var(--g600)">${c.gst!==null ? fmt(c.gst) : '—'}</td>
+      <td colspan="2" style="color:var(--g600)">${c.dates.length ? c.dates.map(fmtDate).join(', ') : '—'}</td>
     </tr>`).join('');
     return headerRow + courseRows;
   }).join('');
@@ -5303,10 +5316,12 @@ function exportReport2ToExcel(){
       if(parts.length!==3 || parts.some(isNaN)) return null;
       return new Date(parts[0], parts[1]-1, parts[2]);
     };
-    // Flattened, one row per course - Invoice #/Org/Amount/GST/Paid/Status
-    // repeated on every row. This is deliberately different from the grouped
-    // on-screen view: a real spreadsheet is far more useful denormalised,
-    // ready for filtering or a PivotTable, than visually grouped like a report.
+    // Flattened, one row per course. Amount PGK (Excl. GST) and GST are each
+    // course line's OWN figures - these correctly sum to the invoice total
+    // across its rows. Amount Paid and Status stay invoice-level and are
+    // necessarily repeated on every row for the same invoice, since payments
+    // are recorded against the whole invoice, not split per course line -
+    // there's no way to know how much of a payment applies to which course.
     const sheetData = [];
     groups.forEach(g=>{
       g.courses.forEach(c=>{
@@ -5316,9 +5331,9 @@ function exportReport2ToExcel(){
           'Course Name': c.name,
           'Qty': c.qty!==null && c.qty!==undefined ? c.qty : '',
           'Course Start Date': c.dates.length===1 ? toLocalDate(c.dates[0]) : (c.dates.map(fmtDate).join(', ')||''),
-          'Invoice Amount (Excl. GST)': g.amountExGST,
-          'GST': g.gst,
-          'Amount Paid': g.amountPaid,
+          'Amount PGK (Excl. GST)': c.amountExGST!==null ? c.amountExGST : '',
+          'GST': c.gst!==null ? c.gst : '',
+          'Amount Paid (Invoice Total)': g.amountPaid,
           'Status': g.status,
         });
       });
