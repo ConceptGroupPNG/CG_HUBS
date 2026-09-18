@@ -269,9 +269,12 @@
   const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
   let siteId = null, employeesListId = null, timeListId = null, payPeriodsListId = null;
 
-  async function graphFetch(path, options = {}) {
+  // Low-level authenticated fetch against an absolute Graph URL. graphFetch()
+  // below is the normal entry point (path relative to GRAPH_BASE); this one
+  // also lets graphFetchAllPages follow a full "@odata.nextLink" URL as-is.
+  async function graphRequest(url, options = {}) {
     const token = await getAccessToken();
-    const res = await fetch(`${GRAPH_BASE}${path}`, {
+    const res = await fetch(url, {
       ...options,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -284,6 +287,28 @@
       throw new Error(`Graph API error ${res.status}: ${text}`);
     }
     return res.status === 204 ? null : res.json();
+  }
+
+  async function graphFetch(path, options = {}) {
+    return graphRequest(`${GRAPH_BASE}${path}`, options);
+  }
+
+  // SharePoint list reads are paged (500 items/page here, but Graph can page
+  // sooner on its own). CG_EmployeeTimeRecords in particular already holds
+  // years of biometric + manual entries, so it's well past one page — a
+  // single-page read (the bug this replaced) simply never sees today's most
+  // recently created rows, since Graph returns items oldest-first. Follow
+  // "@odata.nextLink" until it's gone, exactly like the CG Time dashboard's
+  // own fetchAllListItems does against this same site.
+  async function graphFetchAllPages(path) {
+    let url = `${GRAPH_BASE}${path}`;
+    let items = [];
+    while (url) {
+      const page = await graphRequest(url);
+      items = items.concat(page.value || []);
+      url = page["@odata.nextLink"] || null;
+    }
+    return items;
   }
 
   async function ensureSiteAndLists() {
@@ -307,10 +332,9 @@
 
   async function fetchAllEmployees() {
     await ensureSiteAndLists();
-    const result = await graphFetch(
+    return graphFetchAllPages(
       `/sites/${siteId}/lists/${employeesListId}/items?expand=fields(select=Title,EmployeeNumber,Email,IsActive)&$top=500`
     );
-    return result.value;
   }
 
   // Matches trimmed + case-insensitive, against either candidate email.
@@ -332,10 +356,10 @@
 
   async function findCurrentPayPeriod(dateStr) {
     await ensureSiteAndLists();
-    const result = await graphFetch(
+    const items = await graphFetchAllPages(
       `/sites/${siteId}/lists/${payPeriodsListId}/items?expand=fields(select=PayNumber,PPEStart,PPEEnd)&$top=500`
     );
-    const match = result.value.find((item) => {
+    const match = items.find((item) => {
       const f = item.fields || {};
       const start = (f.PPEStart || "").slice(0, 10);
       const end = (f.PPEEnd || "").slice(0, 10);
@@ -346,11 +370,11 @@
 
   async function findTodayRecord(employeeNumber, dateStr) {
     await ensureSiteAndLists();
-    const result = await graphFetch(
+    const items = await graphFetchAllPages(
       `/sites/${siteId}/lists/${timeListId}/items?expand=fields(select=Title,EmployeeNumber,WorkDate,TimeIn,TimeOut,EntrySource)&$top=500`
     );
     return (
-      result.value.find((item) => {
+      items.find((item) => {
         const f = item.fields || {};
         return (
           (f.EmployeeNumber || "").toLowerCase() === (employeeNumber || "").toLowerCase() &&
