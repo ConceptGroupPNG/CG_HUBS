@@ -4997,10 +4997,15 @@ async function buildCourseAttendeeFinancialReport(){
   tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
   _reportSortState = {key:null, dir:1};
   try{
+    // Always fetch fresh - a report has to reflect the current, live state
+    // of the data, not whatever happened to already be sitting in cache
+    // from an earlier, unrelated page visit this session. Reusing a stale
+    // cache here silently showed incomplete/outdated records even when the
+    // real SharePoint data was correct and complete.
     const [atts, runs, invs] = await Promise.all([
-      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
-      cache.runs ? Promise.resolve(cache.runs) : getItems('runs','$top=500'),
-      cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
+      getItems('attendees','$top=500'),
+      getItems('runs','$top=500'),
+      getItems('invoices','$top=500'),
     ]);
     cache.attendees=atts; cache.runs=runs; cache.invoices=invs;
 
@@ -5188,11 +5193,14 @@ async function buildInvoiceFinancialSummaryReport(){
   const tbody = document.getElementById('rpt2-tbody');
   tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
   try{
+    // Always fetch fresh - same reasoning as the Course & Attendee report:
+    // a report must reflect current reality, not a stale snapshot from
+    // whatever page happened to be visited earlier this session.
     const [invs, invLines, atts, pays] = await Promise.all([
-      cache.invoices ? Promise.resolve(cache.invoices) : getItems('invoices','$top=500'),
-      cache.invoicelines ? Promise.resolve(cache.invoicelines) : getItems('invoicelines','$top=999'),
-      cache.attendees ? Promise.resolve(cache.attendees) : getItems('attendees','$top=500'),
-      cache.payments ? Promise.resolve(cache.payments) : getItems('payments','$top=500'),
+      getItems('invoices','$top=500'),
+      getItems('invoicelines','$top=999'),
+      getItems('attendees','$top=500'),
+      getItems('payments','$top=500'),
     ]);
     cache.invoices=invs; cache.invoicelines=invLines; cache.attendees=atts; cache.payments=pays;
 
@@ -5231,10 +5239,40 @@ async function buildInvoiceFinancialSummaryReport(){
         };
       });
       // Invoices with no line items at all (legacy flat-field records) still
-      // need a row to appear under - show a single blank "course" placeholder.
+      // need a row to appear under. Rather than a blank placeholder, replicate
+      // the SAME fallback the Edit Invoice form already uses (initInvoiceLines)
+      // for these exact records: synthesize a single course line from the
+      // flat fields stored directly on the invoice, since no real
+      // CG_InvoiceLines record exists to read from.
+      if(!courses.length && (+inv.FeeExGST||+inv.TotalAmount)){
+        let courseName = inv.CourseTitle||'';
+        let runDate = (inv.RunStartDate||'').substring(0,10);
+        if(!courseName && inv.AttendeeName){
+          const attName=(inv.AttendeeName||'').trim().toLowerCase();
+          const att=atts.find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName);
+          if(att){
+            courseName = att.CourseTitle||'';
+            if(!runDate) runDate = (att.RunStartDate||'').substring(0,10);
+          }
+        }
+        courses.push({
+          name: courseName, qty: 1, dates: runDate ? [runDate] : [],
+          amountExGST: +inv.FeeExGST||0, gst: +inv.GSTAmount||0,
+        });
+      }
       if(!courses.length) courses.push({name:'', qty:null, dates:[], amountExGST:null, gst:null});
 
-      return {invNum, org: inv.OrgName||'', amountExGST, gst, amountPaid, status, courses};
+      // Organisation: fall back to the linked attendee's own OrgName when
+      // the invoice's own OrgName is blank - same known fallback the Edit
+      // Invoice form already uses for these exact legacy records.
+      let org = inv.OrgName||'';
+      if(!org && inv.AttendeeName){
+        const attName=(inv.AttendeeName||'').trim().toLowerCase();
+        const att=atts.find(a=>(a.FullName||a.Title||'').trim().toLowerCase()===attName);
+        if(att) org = att.OrgName||'';
+      }
+
+      return {invNum, org, amountExGST, gst, amountPaid, status, courses};
     }).sort((a,b)=>b.invNum.localeCompare(a.invNum));
 
     renderInvoiceFinancialSummaryReport();
