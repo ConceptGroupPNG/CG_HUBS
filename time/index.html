@@ -148,6 +148,8 @@
     background:var(--surface-card-2);border:1px solid var(--hairline-soft);
   }
   .ex-icon{font-size:15px;margin-top:1px;color:var(--status-warning);}
+  .ex-item-link{transition:background 0.15s ease,border-color 0.15s ease;}
+  .ex-item-link:hover{background:var(--surface-card);border-color:var(--brass-light);}
   .ex-body{flex:1;}
   .ex-title{font-size:12.5px;font-weight:600;color:var(--ink-primary);}
   .ex-meta{font-size:11px;color:var(--ink-muted);margin-top:1px;}
@@ -412,6 +414,15 @@
   .te-save-bar{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
   .te-table td.te-day-name{white-space:nowrap;font-size:12.5px;}
   .te-table .te-day-num{display:block;font-size:10.5px;color:var(--ink-muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  /* Time Entry anomaly tags — "warn" is a genuine past-date exception
+     (missing clock-out / unclosed or out-of-order break), "progress" is
+     just today's still-open clock-in or break, shown neutrally. */
+  .te-table tr.te-row-warn td{background:color-mix(in srgb, var(--status-critical) 7%, transparent);}
+  .te-table tr.te-row-progress td{background:color-mix(in srgb, var(--brass-wash) 45%, transparent);}
+  .te-anom-icon{display:inline-block;font-size:11px;}
+  .te-anom-icon.te-anom-warn{color:var(--status-critical);}
+  .te-anom-icon.te-anom-progress{color:var(--ink-muted);}
+  .te-table tr.te-row-jump td{background:color-mix(in srgb, var(--brass-deep) 25%, transparent) !important;transition:background 0.4s ease;}
 
   /* ---------- employee calendar tab ---------- */
   .cal-month{margin-bottom:18px;}
@@ -2481,6 +2492,7 @@ const EMPLOYEES_TABS = [
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
   { key: "daily-report", label: "Daily Report", render: () => renderDailyReportTab() },
   { key: "attendance", label: "Attendance", render: () => renderAttendanceTab() },
+  { key: "time-exceptions", label: "Time Exceptions", render: () => renderTimeExceptionsTab() },
   { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
   { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
   { key: "pay-groups", label: "Pay Groups", render: () => renderPayGroupsTab() },
@@ -2777,15 +2789,36 @@ function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, ove
   return { totalHours, breakHours, hoursToPay };
 }
 
+// Memoized employeeNumber|date -> record index over allEmployeeTimeRecords,
+// rebuilt only when that array itself has been replaced (a reference
+// check, not a deep one) — e.g. after a save or the initial fetch. Added
+// because the Time Exceptions tab's "all periods" view now calls
+// findTimeRecord once per Employee per day across every Pay Period on
+// file, and a fresh O(n) scan per lookup no longer scales the way it did
+// when only one Employee/one period was ever looked up at a time (see
+// Marcus's own scaling concern about this list's row count).
+let _timeRecordIndexCache = null;
+let _timeRecordIndexSource = null;
+
+function timeRecordIndex(){
+  if(_timeRecordIndexSource === allEmployeeTimeRecords) return _timeRecordIndexCache;
+  const idx = new Map();
+  allEmployeeTimeRecords.forEach(r => {
+    const f = r.fields;
+    const key = (f.EmployeeNumber||"").toLowerCase() + "|" + (f.WorkDate||"").slice(0,10);
+    idx.set(key, r); // one row per employee/day is the intended schema — a duplicate keeps the last one seen
+  });
+  _timeRecordIndexCache = idx;
+  _timeRecordIndexSource = allEmployeeTimeRecords;
+  return idx;
+}
+
 // Finds the existing CG_EmployeeTimeRecords row (if any) for one
 // employee + date, so Time Entry pre-fills already-saved days and
-// Save knows whether to PATCH or POST.
+// Save knows whether to PATCH or POST. Same signature/behavior as
+// before — now backed by timeRecordIndex() instead of a linear scan.
 function findTimeRecord(employeeNumber, dateStr){
-  return allEmployeeTimeRecords.find(r => {
-    const f = r.fields;
-    return (f.EmployeeNumber||"").toLowerCase() === (employeeNumber||"").toLowerCase()
-      && (f.WorkDate||"").slice(0,10) === dateStr;
-  }) || null;
+  return timeRecordIndex().get((employeeNumber||"").toLowerCase() + "|" + dateStr) || null;
 }
 
 let etFilters = { employeeNumber: "", payNumber: "" };
@@ -2804,6 +2837,25 @@ function findPayPeriodForDate(dateStr){
     const end = (p.fields.PPEEnd||"").slice(0,10);
     return start && end && dateStr >= start && dateStr <= end;
   }) || null;
+}
+
+// Shared anomaly check for one Employee+day in the Time Entry grids —
+// reuses attendanceStatusForDay (the same logic behind Attendance/Time
+// Exceptions) so a row is never flagged one way there and another way
+// here. "warn" = a genuine past-date exception; "progress" = today's
+// still-open clock-in/break, a neutral in-progress state, not an error.
+function timeEntryRowAnomaly(employee, dateStr, rec){
+  const s = attendanceStatusForDay(employee, dateStr, rec, todayStr());
+  const warnings = [];
+  if(s.missedClockOut) warnings.push("Missing Clock Out");
+  if(s.breakNotClosed) warnings.push("Break not closed (no Break In)");
+  if(s.breakOutOfOrder) warnings.push("Break In recorded with no Break Out");
+  if(warnings.length) return { level: "warn", label: warnings.join("; ") };
+  const progress = [];
+  if(s.clockInProgress) progress.push("Clocked in, still open today");
+  if(s.breakInProgress) progress.push("On break, still open today");
+  if(progress.length) return { level: "progress", label: progress.join("; ") };
+  return null;
 }
 
 function renderEmployeeTimeEntryTab(){
@@ -2890,9 +2942,10 @@ function renderEmployeeTimeEntryBody(){
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
     const d = new Date(dateStr + "T00:00:00");
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const anomaly = timeEntryRowAnomaly(employee, dateStr, rec);
     return `
-      <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}">
-        <td>${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
+      <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}${anomaly?' te-row-'+anomaly.level:''}">
+        <td>${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
         <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
         <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
@@ -3071,9 +3124,10 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
+    const anomaly = timeEntryRowAnomaly(emp, dateStr, rec);
     return `
-      <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}">
-        <td class="te-day-name">${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
+      <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}" class="${anomaly?'te-row-'+anomaly.level:''}">
+        <td class="te-day-name">${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
         <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
         <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
@@ -3376,6 +3430,18 @@ function attendanceStatusForDay(employee, dateStr, record, todayD){
   const shift = findShiftByName(effectiveShiftName);
   const timeIn = f ? (f.TimeIn || "") : "";
   const timeOut = f ? (f.TimeOut || "") : "";
+  const breakOut = f ? (f.BreakStart || "") : ""; // clocked OUT for break
+  const breakIn = f ? (f.BreakEnd || "") : "";     // clocked back IN from break
+
+  // Break-punch anomalies are judged independently of Present/Late/Absent —
+  // a Break In with no matching Break Out has no legitimate "in progress"
+  // reading (you can't return from a break you never left for), so it's
+  // flagged regardless of date or whether Time In is even on file. An open
+  // Break Out with no Break In yet is either a genuine gap (past date) or
+  // "still on break" (today) — same present/past split as a missed clock-out.
+  const breakOutOfOrder = !!(breakIn && !breakOut);
+  const breakNotClosed = !!(breakOut && !breakIn && dateStr < todayD);
+  const breakInProgress = !!(breakOut && !breakIn && dateStr === todayD);
 
   if(timeIn){
     let status = "present";
@@ -3391,13 +3457,15 @@ function attendanceStatusForDay(employee, dateStr, record, todayD){
       if(diffMins > ATT_LATE_GRACE_MINUTES) status = "late";
     }
     const missedClockOut = !timeOut && dateStr < todayD;
-    return { status, missedClockOut, shift, timeIn, timeOut };
+    const clockInProgress = !timeOut && dateStr === todayD;
+    return { status, missedClockOut, clockInProgress, breakNotClosed, breakInProgress, breakOutOfOrder, shift, timeIn, timeOut, breakOut, breakIn };
   }
 
-  if(dateStr > todayD) return { status: "future", missedClockOut: false, shift, timeIn: "", timeOut: "" };
-  if(!shift) return { status: "unscheduled", missedClockOut: false, shift: null, timeIn: "", timeOut: "" };
-  if(!shiftRunsOn(shift, dateStr)) return { status: "off", missedClockOut: false, shift, timeIn: "", timeOut: "" };
-  return { status: "absent", missedClockOut: false, shift, timeIn: "", timeOut: "" };
+  const base = { missedClockOut: false, clockInProgress: false, breakNotClosed, breakInProgress, breakOutOfOrder, timeIn: "", timeOut: "", breakOut, breakIn };
+  if(dateStr > todayD) return { status: "future", shift, ...base };
+  if(!shift) return { status: "unscheduled", shift: null, ...base };
+  if(!shiftRunsOn(shift, dateStr)) return { status: "off", shift, ...base };
+  return { status: "absent", shift, ...base };
 }
 
 function computeAttendanceForPeriod(period){
@@ -3445,6 +3513,18 @@ function attendanceExceptionsForPeriod(period){
           detail: `Clocked in at ${c.timeIn}, no Time Out on file`,
         });
       }
+      if(c.breakNotClosed){
+        exceptions.push({
+          employee: r.employee, dateStr: c.dateStr, type: "Break not closed",
+          detail: `Clocked out for break at ${c.breakOut}, no Break In on file`,
+        });
+      }
+      if(c.breakOutOfOrder){
+        exceptions.push({
+          employee: r.employee, dateStr: c.dateStr, type: "Break punch out of order",
+          detail: `Break In recorded at ${c.breakIn} with no matching Break Out`,
+        });
+      }
     });
   });
   return exceptions.sort((a,b)=> b.dateStr === a.dateStr
@@ -3452,8 +3532,23 @@ function attendanceExceptionsForPeriod(period){
     : b.dateStr.localeCompare(a.dateStr));
 }
 
+// Same exceptions, gathered across every Pay Period on file — the default
+// view for the Time Exceptions tab (see Marcus's "all outstanding, across
+// periods" preference), each tagged with the Pay Period it came from so a
+// row can still be deep-linked into the right Time Entry period.
+function attendanceExceptionsAcrossPeriods(periods){
+  const all = [];
+  periods.forEach(period => {
+    attendanceExceptionsForPeriod(period).forEach(x => {
+      all.push({ ...x, payNumber: period.fields.PayNumber, period });
+    });
+  });
+  return all.sort((a,b)=> b.dateStr === a.dateStr
+    ? (a.employee.fields.Title||"").localeCompare(b.employee.fields.Title||"")
+    : b.dateStr.localeCompare(a.dateStr));
+}
+
 let attFilters = { payNumber: "" };
-let attExFilter = "all"; // "all" | "Absent" | "Late" | "Missed clock-out"
 
 function renderAttendanceTab(){
   const container = document.getElementById("empTabContent");
@@ -3523,19 +3618,18 @@ function renderAttendanceBody(){
   const totalPresent = rows.reduce((s,r)=>s+r.counts.present,0);
   const totalLate = rows.reduce((s,r)=>s+r.counts.late,0);
   const totalAbsent = rows.reduce((s,r)=>s+r.counts.absent,0);
-  const exceptions = attendanceExceptionsForPeriod(period);
 
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
-      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift. <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail.</div>
+      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift. <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
         <span class="att-legend-item"><span class="att-swatch att-late"></span>Late ${totalLate}</span>
         <span class="att-legend-item"><span class="att-swatch att-absent"></span>Absent ${totalAbsent}</span>
       </div>
     </div>
-    <div class="panel" style="margin-bottom:16px;">
+    <div class="panel">
       <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
         <table class="att-table">
           <thead><tr><th style="text-align:left;">Employee</th>${headCells}<th>P</th><th>L</th><th>A</th></tr></thead>
@@ -3543,70 +3637,136 @@ function renderAttendanceBody(){
         </table>
       </div>
     </div>
+  `;
+}
+
+/* ============================================================
+   TIME EXCEPTIONS TAB — its own tab (split out of Attendance, per
+   Marcus) covering all 5 incomplete/anomalous-punch types: Absent,
+   Late, Missed clock-out, Break not closed, Break punch out of
+   order. Defaults to everything outstanding across ALL Pay Periods
+   (Marcus's preference), with a Pay Period filter to narrow to one.
+   Same computed-fresh, nothing-stored, review/report/CSV-export
+   pattern the old Attendance "Exceptions this period" panel used.
+   Clicking a row deep-links into Time Entry with that Employee/
+   Pay Period/day pre-loaded and scrolled into view.
+   ============================================================ */
+let timeExFilters = { payNumber: "all" };
+let timeExTypeFilter = "all"; // "all" | one of TIME_EX_TYPES
+
+const TIME_EX_TYPES = ["Absent", "Late", "Missed clock-out", "Break not closed", "Break punch out of order"];
+
+function renderTimeExceptionsTab(){
+  const container = document.getElementById("empTabContent");
+  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  if(!periods.length){
+    container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
+    return;
+  }
+  if(!periods.some(p => String(p.fields.PayNumber) === String(timeExFilters.payNumber))) timeExFilters.payNumber = "all";
+  const periodOptions = `<option value="all">All periods (outstanding)</option>` +
+    periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Pay Period</label>
+        <select id="texPeriod">${periodOptions}</select>
+      </div>
+    </div>
+    <div id="texBody"></div>
+  `;
+  document.getElementById("texPeriod").value = timeExFilters.payNumber;
+  document.getElementById("texPeriod").addEventListener("change", e => { timeExFilters.payNumber = e.target.value; renderTimeExceptionsBody(); });
+  renderTimeExceptionsBody();
+}
+
+function renderTimeExceptionsBody(){
+  const body = document.getElementById("texBody");
+  if(!body) return;
+  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  let exceptions, scopeLabel;
+  if(timeExFilters.payNumber === "all"){
+    exceptions = attendanceExceptionsAcrossPeriods(periods);
+    scopeLabel = "All Pay Periods (outstanding)";
+  }else{
+    const period = periods.find(p => String(p.fields.PayNumber) === String(timeExFilters.payNumber));
+    if(!period){
+      body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a Pay Period.</div></div>`;
+      return;
+    }
+    exceptions = attendanceExceptionsForPeriod(period).map(x => ({ ...x, payNumber: period.fields.PayNumber, period }));
+    scopeLabel = `Pay #${period.fields.PayNumber}`;
+  }
+
+  body.innerHTML = `
     <div class="panel">
-      <h3><span>&#9888;</span>Exceptions this period</h3>
-      <div class="panel-sub" style="margin-bottom:10px;">Absences, late arrivals, and missed clock-outs for Pay #${esc(period.fields.PayNumber)} &mdash; computed fresh from CG_EmployeeTimeRecords every time, nothing stored separately (unlike the Timesheets Exceptions tab's CG_ExceptionsQueue). Review and extract only.</div>
+      <h3><span>&#9888;</span>Time Exceptions</h3>
+      <div class="panel-sub" style="margin-bottom:10px;">Absences, late arrivals, missed clock-outs, and unclosed/out-of-order breaks &mdash; computed fresh from CG_EmployeeTimeRecords every time, nothing stored separately (unlike the Timesheets Exceptions tab's CG_ExceptionsQueue). Scope: ${esc(scopeLabel)}. Click an exception to jump straight to that day in Time Entry.</div>
       <div class="filter-bar" style="margin-bottom:12px;">
         <div class="filter-field"><label>Type</label>
-          <select id="attExType">
+          <select id="texType">
             <option value="all">All types</option>
-            <option value="Absent">Absent</option>
-            <option value="Late">Late</option>
-            <option value="Missed clock-out">Missed clock-out</option>
+            ${TIME_EX_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("")}
           </select>
         </div>
-        <div class="filter-count" id="attExCount"></div>
+        <div class="filter-count" id="texCount"></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-        <button class="print-btn" id="attReportBtn">Open printable report</button>
-        <button class="print-btn" id="attCsvBtn">Download CSV</button>
+        <button class="print-btn" id="texReportBtn">Open printable report</button>
+        <button class="print-btn" id="texCsvBtn">Download CSV</button>
       </div>
-      <div class="ex-list" id="attExceptionsList"></div>
+      <div class="ex-list" id="texList"></div>
     </div>
   `;
 
-  document.getElementById("attExType").value = attExFilter;
-  document.getElementById("attExType").addEventListener("change", e => { attExFilter = e.target.value; renderAttendanceExceptionsList(exceptions); });
-  document.getElementById("attReportBtn").addEventListener("click", () => {
-    openDocInNewTab(buildAttendanceReportDocHtml(period, filterAttendanceExceptions(exceptions)));
+  document.getElementById("texType").value = timeExTypeFilter;
+  document.getElementById("texType").addEventListener("change", e => { timeExTypeFilter = e.target.value; renderTimeExceptionsList(exceptions); });
+  document.getElementById("texReportBtn").addEventListener("click", () => {
+    openDocInNewTab(buildTimeExceptionsReportDocHtml(scopeLabel, filterTimeExceptions(exceptions)));
   });
-  document.getElementById("attCsvBtn").addEventListener("click", () => {
-    downloadAttendanceExceptionsCsv(period, filterAttendanceExceptions(exceptions));
+  document.getElementById("texCsvBtn").addEventListener("click", () => {
+    downloadTimeExceptionsCsv(scopeLabel, filterTimeExceptions(exceptions));
   });
 
-  renderAttendanceExceptionsList(exceptions);
+  renderTimeExceptionsList(exceptions);
 }
 
-function filterAttendanceExceptions(exceptions){
-  return attExFilter === "all" ? exceptions : exceptions.filter(x => x.type === attExFilter);
+function filterTimeExceptions(exceptions){
+  return timeExTypeFilter === "all" ? exceptions : exceptions.filter(x => x.type === timeExTypeFilter);
 }
 
-function renderAttendanceExceptionsList(exceptions){
-  const list = document.getElementById("attExceptionsList");
-  const countEl = document.getElementById("attExCount");
+function renderTimeExceptionsList(exceptions){
+  const list = document.getElementById("texList");
+  const countEl = document.getElementById("texCount");
   if(!list) return;
-  const filtered = filterAttendanceExceptions(exceptions);
+  const filtered = filterTimeExceptions(exceptions);
   if(countEl) countEl.textContent = `${filtered.length} exception${filtered.length===1?"":"s"}`;
   if(!filtered.length){
-    list.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">No attendance exceptions for this period${attExFilter==="all"?"":` of type "${esc(attExFilter)}"`}.</div>`;
+    list.innerHTML = `<div style="font-size:12px;color:var(--ink-muted);">No time exceptions${timeExTypeFilter==="all"?"":` of type "${esc(timeExTypeFilter)}"`} in this scope.</div>`;
     return;
   }
-  const ICON = { "Absent": "&#10007;", "Late": "&#8987;", "Missed clock-out": "&#9888;" };
-  const COLOR = { "Absent": "var(--status-critical)", "Late": "var(--status-warning)", "Missed clock-out": "var(--status-serious)" };
-  list.innerHTML = filtered.map(x => `
-    <div class="ex-item">
+  const ICON = { "Absent": "&#10007;", "Late": "&#8987;", "Missed clock-out": "&#9888;", "Break not closed": "&#9888;", "Break punch out of order": "&#10071;" };
+  const COLOR = { "Absent": "var(--status-critical)", "Late": "var(--status-warning)", "Missed clock-out": "var(--status-serious)", "Break not closed": "var(--status-serious)", "Break punch out of order": "var(--status-critical)" };
+  list.innerHTML = filtered.map((x,i) => `
+    <div class="ex-item ex-item-link" data-tex-idx="${i}" style="cursor:pointer;">
       <div class="ex-icon" style="color:${COLOR[x.type]||'var(--status-warning)'};">${ICON[x.type]||'&#8226;'}</div>
       <div class="ex-body">
-        <div class="ex-title">${esc(x.employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(x.employee.fields.EmployeeNumber)})</span></div>
+        <div class="ex-title">${esc(x.employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(x.employee.fields.EmployeeNumber)})</span>${x.payNumber!=null?` <span style="font-weight:400;color:var(--ink-muted);">&middot; Pay #${esc(x.payNumber)}</span>`:''}</div>
         <div class="ex-meta">${esc(x.type)} &middot; ${esc(fmtDateDMY(x.dateStr))} &middot; ${esc(x.detail)}</div>
       </div>
     </div>
   `).join("");
+  list.querySelectorAll("[data-tex-idx]").forEach(el => {
+    el.addEventListener("click", () => {
+      const x = filtered[parseInt(el.getAttribute("data-tex-idx"), 10)];
+      if(x) goToTimeEntryFromException(x);
+    });
+  });
 }
 
-/* ---- Attendance report (printable) + CSV export — same pattern as
-   buildExceptionsReportDocHtml/downloadExceptionsCsv below. ---- */
-function buildAttendanceReportDocHtml(period, exceptions){
+/* ---- Time Exceptions report (printable) + CSV export — same pattern as
+   the old Attendance exceptions panel, generalized for a multi-period
+   scope label and an extra Pay # column. ---- */
+function buildTimeExceptionsReportDocHtml(scopeLabel, exceptions){
   const list = exceptions.slice().sort((a,b)=> b.dateStr.localeCompare(a.dateStr));
   const byType = {};
   list.forEach(x => { byType[x.type] = (byType[x.type]||0) + 1; });
@@ -3616,10 +3776,11 @@ function buildAttendanceReportDocHtml(period, exceptions){
     <tr>
       <td>${esc(fmtDateDMY(x.dateStr))}</td>
       <td>${esc(x.employee.fields.Title)} (${esc(x.employee.fields.EmployeeNumber)})</td>
+      <td>${x.payNumber!=null ? esc(x.payNumber) : ""}</td>
       <td>${esc(x.type)}</td>
       <td>${esc(x.detail)}</td>
     </tr>
-  `).join("") : `<tr><td colspan="4" style="text-align:center;color:#666;">No exceptions match this filter.</td></tr>`;
+  `).join("") : `<tr><td colspan="5" style="text-align:center;color:#666;">No exceptions match this filter.</td></tr>`;
 
   const subtotalsHtml = typeLabels.map(label => `
     <tr><td>${esc(label)}</td><td style="text-align:right">${byType[label]}</td></tr>
@@ -3630,14 +3791,14 @@ function buildAttendanceReportDocHtml(period, exceptions){
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Attendance Exceptions Report — CG Time</title>
+<title>Time Exceptions Report — CG Time</title>
 <style>${DOC_STYLE}</style>
 </head>
 <body>
 <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
 
-<div class="doc-header">Attendance Exceptions Report</div>
-<div class="doc-sub">CG Time &middot; Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))}</div>
+<div class="doc-header">Time Exceptions Report</div>
+<div class="doc-sub">CG Time &middot; ${esc(scopeLabel)}</div>
 
 <div class="meta-row">
   <div><b>Exceptions:</b> ${list.length}</div>
@@ -3645,7 +3806,7 @@ function buildAttendanceReportDocHtml(period, exceptions){
 
 <table class="rpt-table">
   <thead>
-    <tr><th>Date</th><th>Employee</th><th>Type</th><th>Detail</th></tr>
+    <tr><th>Date</th><th>Employee</th><th>Pay #</th><th>Type</th><th>Detail</th></tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
 </table>
@@ -3666,15 +3827,16 @@ ${typeLabels.length ? `
 `;
 }
 
-function downloadAttendanceExceptionsCsv(period, exceptions){
+function downloadTimeExceptionsCsv(scopeLabel, exceptions){
   const list = exceptions.slice().sort((a,b)=> b.dateStr.localeCompare(a.dateStr));
-  const headers = ["Date","EmployeeNumber","EmployeeName","Type","Detail"];
+  const headers = ["Date","EmployeeNumber","EmployeeName","PayNumber","Type","Detail"];
   const lines = [headers.join(",")];
   list.forEach(x => {
     lines.push([
       x.dateStr,
       x.employee.fields.EmployeeNumber || "",
       x.employee.fields.Title || "",
+      x.payNumber!=null ? x.payNumber : "",
       x.type,
       x.detail,
     ].map(csvEscape).join(","));
@@ -3684,11 +3846,36 @@ function downloadAttendanceExceptionsCsv(period, exceptions){
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `CG_Time_Attendance_Pay${period.fields.PayNumber}_${todayStr()}.csv`;
+  const safeScope = String(scopeLabel).replace(/[^A-Za-z0-9]+/g, "_");
+  a.download = `CG_Time_TimeExceptions_${safeScope}_${todayStr()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Deep link: jump from a Time Exceptions row straight into the By
+// Employee Time Entry grid for that Employee/Pay Period, scrolled to
+// and highlighting the exact day the exception is on.
+function goToTimeEntryFromException(x){
+  const period = x.period || findPayPeriodForDate(x.dateStr);
+  if(!period){
+    alert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
+    return;
+  }
+  etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
+  etFilters.payNumber = String(period.fields.PayNumber);
+  etMode = "employee";
+  employeesActiveTab = "time-entry";
+  renderEmployeesHub();
+  setTimeout(() => {
+    const row = document.querySelector(`#teRows tr[data-date="${x.dateStr}"]`);
+    if(row){
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.classList.add("te-row-jump");
+      setTimeout(() => row.classList.remove("te-row-jump"), 2200);
+    }
+  }, 60);
 }
 
 /* ============================================================
