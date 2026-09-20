@@ -1,11 +1,12 @@
 # CG Time Attendance
 
 A one-page installable web app (PWA) for employees to clock themselves
-in and out from their phone — gated by GPS so it only works within
-200m of the Concept Group office. Separate from **Concept Time Mobile**
-(that one logs billable/consulting hours against CSA/SLA work); this one
-writes straight into the same **CG_EmployeeTimeRecords** list the CG Time
-dashboard already uses for staff Time & Attendance.
+in and out from their phone — gated by GPS so it only works at a Clock
+In/Out location they've been assigned to in CG Time. Separate from
+**Concept Time Mobile** (that one logs billable/consulting hours against
+CSA/SLA work); this one writes straight into the same
+**CG_EmployeeTimeRecords** list the CG Time dashboard already uses for
+staff Time & Attendance.
 
 ## What's in this folder
 
@@ -58,21 +59,34 @@ This shows up in the CG Time dashboard's Daily Report, Attendance, and
 Exceptions tabs exactly like any other row — "Mobile" just becomes a
 third value alongside "Manual" and "Biometric" in EntrySource.
 
-## The geofence
+## Clock locations (managed entirely from CG Time)
 
-Centre point and radius are set near the top of `index.html`'s
-`<script>` block:
+Geofencing is no longer a single hardcoded office point in this app —
+it's per-Employee, driven by two lists on the CG_Time SharePoint site
+that CG Time's own **Employees → Locations** tab manages:
 
-```js
-const OFFICE_LAT = -9.471917;
-const OFFICE_LON = 147.154083;
-const OFFICE_RADIUS_METERS = 200;
-```
+- **CG_ClockLocations** — one row per named location (e.g. "Head
+  Office", "Warehouse"), each with its own `Latitude`, `Longitude`,
+  `RadiusMeters`, and `IsActive`.
+- **CG_EmployeeLocationAssignments** — a join list saying which
+  Employees may use which Locations (an Employee can have none, one,
+  or several).
 
-That's from the coordinates you gave me (9°28'18.9"S 147°09'14.7"E),
-200m as a starting point. If it's too tight or too loose in practice
-(GPS accuracy varies — typically 10–30m outdoors, worse indoors), just
-change `OFFICE_RADIUS_METERS` and redeploy; nothing else depends on it.
+This app only ever **reads** these two lists — adding, editing,
+retiring a Location, or changing who's assigned to it all happens in
+CG Time, never here. At sign-in, this app looks up the signed-in
+Employee's assigned + Active Locations and checks their live GPS
+against all of them, accepting Clock In/Out if they're within range of
+**any one** of them. If GPS accuracy has someone borderline, adjusting
+a Location's `RadiusMeters` in CG Time takes effect immediately next
+time they open the app — nothing to change here.
+
+If an Employee has no Locations assigned (or the two lists above
+haven't been set up yet on the CG_Time site), the app shows "You're
+not assigned to a Clock In/Out location yet" and disables Clock In —
+same clear-diagnosis approach as the "not linked to an Employee
+record" banner, rather than silently failing.
+
 Location is re-checked at the moment someone taps Clock In/Out, not
 just on page load, so a stale "in range" reading from earlier can't be
 used to clock in from somewhere else later.
@@ -116,16 +130,22 @@ Home screen; iOS Safari: Share → Add to Home Screen).
 
 ## Quick test checklist
 
-- [ ] Add your own email to your CG_Employees row, then sign in — you
-      should land on the clock in/out screen, not the "not linked" banner.
-- [ ] From within 200m of the office: location pill shows green/in-range,
-      Clock In button is enabled.
+- [ ] Add your own email to your CG_Employees row, assign yourself at
+      least one Location in CG Time's Employees → Locations tab, then
+      sign in — you should land on the clock in/out screen, not the
+      "not linked" banner.
+- [ ] From within range of an assigned Location: location pill shows
+      green/in-range and names that Location, Clock In button is enabled.
 - [ ] Tap Clock In — check CG_EmployeeTimeRecords in SharePoint (or the
       CG Time dashboard's Daily Report tab) for a new row with today's
       date, your Employee Number, `TimeIn` set, `EntrySource: "Mobile"`.
 - [ ] Tap Clock Out — same row now has `TimeOut` set too; app shows
       "Today's attendance complete" and disables the button.
-- [ ] From well outside 200m (or with location permission denied):
-      button stays disabled with a clear reason shown.
+- [ ] From well outside every assigned Location's radius (or with
+      location permission denied): button stays disabled, message names
+      the nearest assigned Location and how far away you are.
+- [ ] Remove all of your Location assignments in CG Time, reload: app
+      shows "not assigned to a Clock In/Out location" and Clock In stays
+      disabled, without ever prompting for GPS.
 - [ ] Install to home screen, close the app fully, reopen — still
       signed in, still shows today's correct status.

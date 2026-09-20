@@ -194,15 +194,13 @@
     employeesListName: "CG_Employees",
     timeRecordsListName: "CG_EmployeeTimeRecords",
     payPeriodsListName: "CG_PayPeriods",
+    // Per-employee geofence locations, managed entirely from CG Time's
+    // Employees → Locations tab — this app only ever reads them. See
+    // "Clock locations" in README.md for the exact list shapes.
+    clockLocationsListName: "CG_ClockLocations",
+    employeeLocationAssignmentsListName: "CG_EmployeeLocationAssignments",
     scopes: ["Sites.ReadWrite.All", "User.Read"],
   };
-
-  // Office geofence — 9°28'18.9"S 147°09'14.7"E, converted to decimal
-  // degrees. Adjust OFFICE_RADIUS_METERS here if 200m proves too tight or
-  // too loose in practice; no other change needed.
-  const OFFICE_LAT = -9.471917;
-  const OFFICE_LON = 147.154083;
-  const OFFICE_RADIUS_METERS = 200;
 
   // Use the page's actual path as-is (GitHub Pages serves this folder with
   // a trailing slash, and that's what must be registered in Azure AD too).
@@ -268,6 +266,7 @@
   // ---------------------------------------------------------------------
   const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
   let siteId = null, employeesListId = null, timeListId = null, payPeriodsListId = null;
+  let clockLocationsListId = null, employeeLocationAssignmentsListId = null, locationListsResolved = false;
 
   // Low-level authenticated fetch against an absolute Graph URL. graphFetch()
   // below is the normal entry point (path relative to GRAPH_BASE); this one
@@ -312,7 +311,7 @@
   }
 
   async function ensureSiteAndLists() {
-    if (siteId && employeesListId && timeListId && payPeriodsListId) return;
+    if (siteId && employeesListId && timeListId && payPeriodsListId && locationListsResolved) return;
     const site = await graphFetch(`/sites/${CONFIG.siteHostname}:${CONFIG.sitePath}`);
     siteId = site.id;
     const lists = await graphFetch(`/sites/${siteId}/lists?$select=id,displayName`);
@@ -324,6 +323,18 @@
     employeesListId = find(CONFIG.employeesListName);
     timeListId = find(CONFIG.timeRecordsListName);
     payPeriodsListId = find(CONFIG.payPeriodsListName);
+
+    // The two clock-location lists are treated as optional here — if CG
+    // Time's rollout of per-employee Locations hasn't happened yet (or the
+    // list names ever drift), this app degrades to "no assigned locations"
+    // for everyone rather than breaking sign-in and clock in/out entirely.
+    const findOptional = (name) => {
+      const l = lists.value.find((x) => x.displayName === name);
+      return l ? l.id : null;
+    };
+    clockLocationsListId = findOptional(CONFIG.clockLocationsListName);
+    employeeLocationAssignmentsListId = findOptional(CONFIG.employeeLocationAssignmentsListName);
+    locationListsResolved = true;
   }
 
   async function getMe() {
@@ -366,6 +377,61 @@
       return start && end && dateStr >= start && dateStr <= end;
     });
     return match ? parseFloat(match.fields.PayNumber) : null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Clock locations — managed entirely from CG Time's Employees →
+  // Locations tab; this app only ever reads them. An Employee can be
+  // assigned to zero, one, or several Locations, and is allowed to clock
+  // in/out from any one of them.
+  // ---------------------------------------------------------------------
+  async function fetchActiveClockLocations() {
+    await ensureSiteAndLists();
+    if (!clockLocationsListId) return [];
+    return graphFetchAllPages(
+      `/sites/${siteId}/lists/${clockLocationsListId}/items?expand=fields(select=Title,Latitude,Longitude,RadiusMeters,IsActive)&$top=500`
+    );
+  }
+
+  async function fetchEmployeeLocationAssignments(employeeNumber) {
+    await ensureSiteAndLists();
+    if (!employeeLocationAssignmentsListId) return [];
+    const items = await graphFetchAllPages(
+      `/sites/${siteId}/lists/${employeeLocationAssignmentsListId}/items?expand=fields(select=EmployeeNumber,LocationTitle)&$top=500`
+    );
+    const target = (employeeNumber || "").trim().toLowerCase();
+    return items
+      .filter((item) => ((item.fields || {}).EmployeeNumber || "").trim().toLowerCase() === target)
+      .map((item) => (item.fields || {}).LocationTitle)
+      .filter(Boolean);
+  }
+
+  // Resolves the current Employee's allowed Clock In/Out locations: only
+  // Active CG_ClockLocations rows whose Title matches one of this
+  // Employee's CG_EmployeeLocationAssignments rows (trimmed + case-
+  // insensitive, same tolerance as the Email matching above — an admin
+  // typo in casing/whitespace shouldn't silently lock someone out).
+  async function fetchAllowedLocationsForEmployee(employeeNumber) {
+    const [assignedTitles, allLocations] = await Promise.all([
+      fetchEmployeeLocationAssignments(employeeNumber),
+      fetchActiveClockLocations(),
+    ]);
+    const assignedSet = new Set(assignedTitles.map((t) => t.trim().toLowerCase()));
+    return allLocations
+      .filter((item) => {
+        const f = item.fields || {};
+        return f.IsActive !== false && assignedSet.has((f.Title || "").trim().toLowerCase());
+      })
+      .map((item) => {
+        const f = item.fields || {};
+        return {
+          title: f.Title,
+          lat: parseFloat(f.Latitude),
+          lon: parseFloat(f.Longitude),
+          radiusMeters: parseFloat(f.RadiusMeters),
+        };
+      })
+      .filter((loc) => Number.isFinite(loc.lat) && Number.isFinite(loc.lon) && Number.isFinite(loc.radiusMeters));
   }
 
   async function findTodayRecord(employeeNumber, dateStr) {
@@ -448,6 +514,8 @@
   let todayRecord = null; // existing CG_EmployeeTimeRecords row for today, if any
   let lastKnownDistance = null;
   let withinFence = false;
+  let allowedLocations = []; // this Employee's assigned, active CG_ClockLocations rows
+  let matchedLocationTitle = null; // which allowed location they're currently within range of, if any
 
   function showError(message) {
     if (message) {
@@ -487,7 +555,7 @@
       clockBtn.disabled = !withinFence;
     } else {
       statusHeadline.textContent = "Not clocked in";
-      statusDetail.textContent = "Tap below when you arrive at the office.";
+      statusDetail.textContent = "Tap below once you're at an approved Clock In/Out location.";
       clockBtn.textContent = "Clock In";
       clockBtn.classList.remove("out");
       clockBtn.disabled = !withinFence;
@@ -504,24 +572,41 @@
   async function checkLocationAndRefresh() {
     renderLocation("checking", "Checking your location…");
     withinFence = false;
+    matchedLocationTitle = null;
     renderStatus();
+
+    if (!allowedLocations.length) {
+      renderLocation(
+        "out-of-range",
+        "You're not assigned to a Clock In/Out location yet — ask your administrator to assign one in CG Time (Employees → Locations)."
+      );
+      renderStatus();
+      return;
+    }
+
     try {
       const pos = await getCurrentPosition();
-      const dist = distanceMeters(
-        pos.coords.latitude,
-        pos.coords.longitude,
-        OFFICE_LAT,
-        OFFICE_LON
-      );
-      lastKnownDistance = Math.round(dist);
-      withinFence = dist <= OFFICE_RADIUS_METERS;
+      // Check every allowed location and accept the first one in range;
+      // for the message when none match, remember whichever was closest.
+      let nearest = null;
+      for (const loc of allowedLocations) {
+        const dist = distanceMeters(pos.coords.latitude, pos.coords.longitude, loc.lat, loc.lon);
+        if (!nearest || dist < nearest.dist) nearest = { title: loc.title, dist, radiusMeters: loc.radiusMeters };
+        if (dist <= loc.radiusMeters) {
+          withinFence = true;
+          matchedLocationTitle = loc.title;
+          lastKnownDistance = Math.round(dist);
+          break;
+        }
+      }
       if (withinFence) {
-        renderLocation("in-range", `At the office (~${lastKnownDistance}m from centre)`);
+        renderLocation("in-range", `At ${matchedLocationTitle} (~${lastKnownDistance}m from centre)`);
       } else {
-        renderLocation(
-          "out-of-range",
-          `Too far from the office — ~${lastKnownDistance}m away (need to be within ${OFFICE_RADIUS_METERS}m)`
-        );
+        lastKnownDistance = nearest ? Math.round(nearest.dist) : null;
+        const detail = nearest
+          ? ` — nearest is ${nearest.title} (~${lastKnownDistance}m, need to be within ${Math.round(nearest.radiusMeters)}m)`
+          : "";
+        renderLocation("out-of-range", `Too far from an approved location${detail}`);
       }
     } catch (e) {
       withinFence = false;
@@ -599,6 +684,7 @@
       currentEmployee = employee;
       notLinkedBanner.hidden = true;
       statusArea.hidden = false;
+      allowedLocations = await fetchAllowedLocationsForEmployee(employee.fields.EmployeeNumber);
       await refreshTodayRecord();
       await checkLocationAndRefresh();
     } catch (e) {
