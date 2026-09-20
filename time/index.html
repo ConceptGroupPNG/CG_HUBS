@@ -464,6 +464,9 @@
   table.att-table td.att-count.att-present{color:var(--status-good);}
   table.att-table td.att-count.att-late{color:var(--status-warning);}
   table.att-table td.att-count.att-absent{color:var(--status-critical);}
+  table.loc-assign-table th{max-width:120px;overflow:hidden;text-overflow:ellipsis;}
+  table.loc-assign-table td.loc-assign-cell{padding:4px 5px;}
+  table.loc-assign-table td.loc-assign-cell input[type="checkbox"]{width:15px;height:15px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -638,7 +641,7 @@ const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here 
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
 const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries (CSA HUB's own), CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
 // Lists that live on the CG_Time site rather than Concept_CSA
-const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts"]);
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts", "CG_ClockLocations", "CG_EmployeeLocationAssignments"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
@@ -774,6 +777,18 @@ function listItemFieldsUrl(listName, itemId){
 
 async function graphUpdateItem(listName, itemId, fields){
   return graphWrite("PATCH", listItemFieldsUrl(listName, itemId), fields);
+}
+
+function listItemUrl(listName, itemId){
+  return `https://graph.microsoft.com/v1.0/sites/${siteIdForList(listName)}/lists/${listName}/items/${itemId}`;
+}
+
+// CG Time has never hard-deleted anything before this (every other admin
+// list uses an Activate/Deactivate toggle instead) — added for Locations,
+// which genuinely needs Delete, guarded so it's only ever used once an
+// item has nothing else pointing at it (see deleteLocation).
+async function graphDeleteItem(listName, itemId){
+  return graphWrite("DELETE", listItemUrl(listName, itemId));
 }
 
 function siteIdForList(listName){
@@ -974,6 +989,8 @@ let allPayPeriods = [];
 let allEmployees = [];
 let allEmployeeTimeRecords = [];
 let allShifts = [];
+let allClockLocations = [];
+let allEmployeeLocationAssignments = [];
 
 async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
@@ -1018,12 +1035,17 @@ async function refreshAllData(){
     // SharePoint yet (see the Employees setup script) doesn't take down the
     // rest of the dashboard — the Employees/Pay Groups/Pay Periods/Payroll
     // views each show their own "not set up yet" message in that case.
-    [allPayGroups, allPayPeriods, allEmployees, allEmployeeTimeRecords, allShifts] = await Promise.all([
+    [allPayGroups, allPayPeriods, allEmployees, allEmployeeTimeRecords, allShifts, allClockLocations, allEmployeeLocationAssignments] = await Promise.all([
       fetchAllListItems("CG_PayGroups").catch(err => { console.warn("CG_PayGroups not available yet.", err); return []; }),
       fetchAllListItems("CG_PayPeriods").catch(err => { console.warn("CG_PayPeriods not available yet.", err); return []; }),
       fetchAllListItems("CG_Employees").catch(err => { console.warn("CG_Employees not available yet.", err); return []; }),
       fetchAllListItems("CG_EmployeeTimeRecords").catch(err => { console.warn("CG_EmployeeTimeRecords not available yet.", err); return []; }),
       fetchAllListItems("CG_Shifts").catch(err => { console.warn("CG_Shifts not available yet.", err); return []; }),
+      // CG_ClockLocations / CG_EmployeeLocationAssignments back the new
+      // Locations tab (geofenced Clock In/Out sites for the separate CG
+      // Time Attendance App) — same "own list, may not exist yet" fallback.
+      fetchAllListItems("CG_ClockLocations").catch(err => { console.warn("CG_ClockLocations not available yet.", err); return []; }),
+      fetchAllListItems("CG_EmployeeLocationAssignments").catch(err => { console.warn("CG_EmployeeLocationAssignments not available yet.", err); return []; }),
     ]);
 
     banner.style.display = "none";
@@ -2359,6 +2381,343 @@ async function toggleShiftActive(itemId, nextActive){
 }
 
 /* ============================================================
+   LOCATIONS TAB — manage CG_ClockLocations, the geofenced sites an
+   Employee can Clock In/Out from in the separate CG Time Attendance
+   App (that app is built/maintained in its own chat; CG Time only
+   owns where the allowed sites and per-Employee access live). Same
+   click-to-edit admin-table convention as HUBs, plus a genuine
+   Delete (guarded — blocked while any Employee is still assigned to
+   the Location) since Marcus asked for Add/Edit/Delete specifically,
+   not just Activate/Deactivate like every other admin list here.
+
+   A second panel manages CG_EmployeeLocationAssignments, the join
+   list restricting which Employees may use which Locations (Marcus
+   chose per-Employee scoping over "every Location open to everyone").
+   Each checkbox in the grid IS one join row — toggling it writes
+   immediately, same as an Activate/Deactivate toggle elsewhere.
+   ============================================================ */
+const LOC_ROW_COLS = "1.1fr .8fr .8fr .7fr 1.3fr .8fr 1.1fr";
+let editingLocationId = null;
+let confirmDeleteLocationId = null;
+let locFilters = { employeeSearch: "" };
+
+function locationByTitle(title){
+  return allClockLocations.find(l => (l.fields.Title||"") === title) || null;
+}
+
+function renderLocationsTab(){
+  const container = document.getElementById("empTabContent");
+  const sorted = allClockLocations.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+
+  const rows = sorted.map(loc => {
+    const f = loc.fields;
+    const active = f.IsActive !== false;
+    const assignedCount = allEmployeeLocationAssignments.filter(a => (a.fields.LocationTitle||"") === f.Title).length;
+
+    if(loc.id === editingLocationId){
+      return `
+        <div class="hubadmin-row hubadmin-edit-row" data-editing-id="${esc(loc.id)}" style="grid-template-columns:${LOC_ROW_COLS};">
+          <div class="hubadmin-key">${esc(f.Title||"—")}</div>
+          <div><input type="text" class="loc-edit-lat" inputmode="decimal" value="${esc(f.Latitude!=null?f.Latitude:"")}"></div>
+          <div><input type="text" class="loc-edit-lng" inputmode="decimal" value="${esc(f.Longitude!=null?f.Longitude:"")}"></div>
+          <div><input type="text" class="loc-edit-radius" inputmode="numeric" value="${esc(f.RadiusMeters!=null?f.RadiusMeters:"")}"></div>
+          <div><input type="text" class="loc-edit-address" value="${esc(f.Address||"")}"></div>
+          <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="loc-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
+          <div style="display:flex;gap:6px;">
+            <button class="hubadmin-submit loc-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
+            <button class="hubadmin-toggle activate loc-edit-cancel" style="padding:5px 10px;">Cancel</button>
+          </div>
+        </div>
+      `;
+    }
+
+    const deleteBtn = loc.id === confirmDeleteLocationId
+      ? `<button class="hubadmin-toggle deactivate loc-delete-confirm" data-delete-id="${esc(loc.id)}" data-delete-title="${esc(f.Title||"")}" style="background:var(--status-critical);color:#fff;">Confirm delete?</button>
+         <button class="hubadmin-toggle activate loc-delete-cancel">Cancel</button>`
+      : `<button class="hubadmin-toggle deactivate loc-delete-start" data-delete-id="${esc(loc.id)}">Delete</button>`;
+
+    return `
+      <div class="hubadmin-row clickable" data-edit-id="${esc(loc.id)}" style="grid-template-columns:${LOC_ROW_COLS};">
+        <div class="hubadmin-key">${esc(f.Title||"—")}</div>
+        <div>${f.Latitude!=null ? esc(f.Latitude) : "—"}</div>
+        <div>${f.Longitude!=null ? esc(f.Longitude) : "—"}</div>
+        <div>${f.RadiusMeters!=null ? esc(f.RadiusMeters)+"m" : "—"}</div>
+        <div class="hubadmin-site">${esc(f.Address || "—")}${assignedCount ? ` <span style="color:var(--ink-muted);">&middot; ${assignedCount} assigned</span>` : ""}</div>
+        <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="hubadmin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(loc.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button>
+          ${deleteBtn}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const activeLocations = sorted.filter(l => l.fields.IsActive !== false);
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const q = (locFilters.employeeSearch||"").trim().toLowerCase();
+  const shownEmployees = q
+    ? activeEmployees.filter(e => (e.fields.Title||"").toLowerCase().includes(q) || (e.fields.EmployeeNumber||"").toLowerCase().includes(q))
+    : activeEmployees;
+
+  const assignedSet = new Set(allEmployeeLocationAssignments.map(a => `${(a.fields.EmployeeNumber||"").toLowerCase()}|${a.fields.LocationTitle||""}`));
+
+  const gridHeadCells = activeLocations.map(l => `<th title="${esc(l.fields.Title)}">${esc(l.fields.Title)}</th>`).join("");
+  const gridBodyRows = shownEmployees.map(emp => {
+    const empNum = emp.fields.EmployeeNumber || "";
+    const cells = activeLocations.map(l => {
+      const checked = assignedSet.has(`${empNum.toLowerCase()}|${l.fields.Title}`);
+      return `<td class="loc-assign-cell"><input type="checkbox" class="loc-assign-check" data-emp-number="${esc(empNum)}" data-loc-title="${esc(l.fields.Title)}" ${checked?"checked":""}></td>`;
+    }).join("");
+    return `
+      <tr>
+        <td class="att-emp-name">${esc(emp.fields.Title)}<span class="att-emp-num">${esc(empNum)}</span></td>
+        ${cells}
+      </tr>
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128205;</span>Locations</h3>
+      <div class="panel-sub">The geofenced Clock In/Out sites the CG Time Attendance App checks an Employee's GPS position against &mdash; add one here whenever a new site is ready, no code change needed on this side. Click an existing row to edit it. Delete is blocked while any Employee is still assigned to that Location below; Deactivate instead if you just want to pause it. Writes straight to CG_ClockLocations.</div>
+    </div>
+    <div class="res-table-wrap" style="margin-bottom:16px;">
+      <div class="hubadmin-row head" style="grid-template-columns:${LOC_ROW_COLS};"><div>Name</div><div>Latitude</div><div>Longitude</div><div>Radius</div><div>Address</div><div>Status</div><div></div></div>
+      ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Locations on file yet in CG_ClockLocations &mdash; add the first one below.</div>`}
+    </div>
+    <div id="locEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#10010;</span>Add a Location</h3>
+      <div class="panel-sub" style="margin-bottom:12px;">Latitude/Longitude in decimal degrees (e.g. from a map app's "share location" — right-click a spot in Google Maps to copy them), Radius in metres (200m is a reasonable starting point for one building/compound).</div>
+      <div class="hubadmin-form">
+        <div class="filter-field"><label>Name</label><input type="text" id="locNewName" placeholder="e.g. Head Office"></div>
+        <div class="filter-field"><label>Latitude</label><input type="text" id="locNewLat" inputmode="decimal" placeholder="e.g. -9.471917"></div>
+        <div class="filter-field"><label>Longitude</label><input type="text" id="locNewLng" inputmode="decimal" placeholder="e.g. 147.154083"></div>
+        <div class="filter-field"><label>Radius (m)</label><input type="text" id="locNewRadius" inputmode="numeric" placeholder="200"></div>
+        <div class="filter-field"><label>Address</label><input type="text" id="locNewAddress" placeholder="optional, for reference only"></div>
+        <div><button class="hubadmin-submit" id="locAddBtn">+ Add Location</button></div>
+      </div>
+      <div id="locAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
+    </div>
+    <div class="panel">
+      <h3><span>&#128101;</span>Who can use which Location</h3>
+      <div class="panel-sub" style="margin-bottom:10px;">Tick a box to let that Employee Clock In/Out at that Location in the Attendance App &mdash; each tick writes straight to CG_EmployeeLocationAssignments, no separate Save step. Only Active Employees and Active Locations are shown here.</div>
+      ${activeLocations.length ? `
+      <div class="filter-bar" style="margin-bottom:12px;">
+        <div class="filter-field"><label>Find Employee</label><input type="search" id="locEmpSearch" placeholder="name or number…" value="${esc(locFilters.employeeSearch)}"></div>
+      </div>
+      <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
+        <table class="att-table loc-assign-table">
+          <thead><tr><th style="text-align:left;">Employee</th>${gridHeadCells}</tr></thead>
+          <tbody>${gridBodyRows || `<tr><td colspan="${activeLocations.length+1}" style="padding:14px 10px;color:var(--ink-muted);font-size:12px;">No Employees match "${esc(locFilters.employeeSearch)}".</td></tr>`}</tbody>
+        </table>
+      </div>
+      ` : `<div style="font-size:12px;color:var(--ink-muted);">Add at least one Active Location above first.</div>`}
+      <div id="locAssignMsg" style="font-size:11.5px;margin-top:10px;min-height:14px;"></div>
+    </div>
+  `;
+
+  container.querySelectorAll(".hubadmin-row.clickable[data-edit-id]").forEach(row => {
+    row.addEventListener("click", (ev) => {
+      if(ev.target.closest(".hubadmin-toggle")) return;
+      editingLocationId = row.getAttribute("data-edit-id");
+      confirmDeleteLocationId = null;
+      renderLocationsTab();
+    });
+  });
+  container.querySelectorAll(".hubadmin-toggle[data-toggle-id]").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleLocationActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
+    });
+  });
+  container.querySelectorAll(".loc-delete-start").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      confirmDeleteLocationId = btn.getAttribute("data-delete-id");
+      renderLocationsTab();
+    });
+  });
+  container.querySelectorAll(".loc-delete-cancel").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      confirmDeleteLocationId = null;
+      renderLocationsTab();
+    });
+  });
+  container.querySelectorAll(".loc-delete-confirm").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      deleteLocation(btn.getAttribute("data-delete-id"), btn.getAttribute("data-delete-title"));
+    });
+  });
+
+  const editRow = container.querySelector(".hubadmin-edit-row");
+  if(editRow){
+    editRow.querySelector(".loc-edit-save").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      saveLocationEdit(editRow.getAttribute("data-editing-id"), editRow);
+    });
+    editRow.querySelector(".loc-edit-cancel").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      editingLocationId = null;
+      renderLocationsTab();
+    });
+  }
+
+  document.getElementById("locAddBtn").addEventListener("click", addLocation);
+
+  const empSearchEl = document.getElementById("locEmpSearch");
+  if(empSearchEl){
+    empSearchEl.addEventListener("input", e => { locFilters.employeeSearch = e.target.value; renderLocationsTab(); });
+  }
+  container.querySelectorAll(".loc-assign-check").forEach(cb => {
+    cb.addEventListener("change", () => {
+      toggleLocationAssignment(cb.getAttribute("data-emp-number"), cb.getAttribute("data-loc-title"), cb.checked, cb);
+    });
+  });
+}
+
+function parseLatLng(v){
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function addLocation(){
+  const msgEl = document.getElementById("locAddMsg");
+  const name = document.getElementById("locNewName").value.trim();
+  const lat = parseLatLng(document.getElementById("locNewLat").value);
+  const lng = parseLatLng(document.getElementById("locNewLng").value);
+  const radiusRaw = document.getElementById("locNewRadius").value.trim();
+  const radius = radiusRaw === "" ? 200 : parseFloat(radiusRaw);
+  const address = document.getElementById("locNewAddress").value.trim();
+
+  if(!name){
+    reportRowMsg(msgEl, "Name is required — e.g. Head Office.", true);
+    return;
+  }
+  if(allClockLocations.some(l => (l.fields.Title||"").toLowerCase() === name.toLowerCase())){
+    reportRowMsg(msgEl, `A Location named "${name}" already exists.`, true);
+    return;
+  }
+  if(lat == null || lng == null){
+    reportRowMsg(msgEl, "Latitude and Longitude must both be numbers — e.g. -9.471917, 147.154083.", true);
+    return;
+  }
+  if(!Number.isFinite(radius) || radius <= 0){
+    reportRowMsg(msgEl, "Radius must be a positive number of metres.", true);
+    return;
+  }
+  try{
+    await graphCreateItem("CG_ClockLocations", {
+      Title: name, Latitude: lat, Longitude: lng, RadiusMeters: radius, Address: address, IsActive: true,
+    });
+    allClockLocations = await fetchAllListItems("CG_ClockLocations");
+    renderLocationsTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't add that Location — ${err.message}`, true);
+  }
+}
+
+async function saveLocationEdit(itemId, rowEl){
+  const msgEl = document.getElementById("locEditMsg");
+  const lat = parseLatLng(rowEl.querySelector(".loc-edit-lat").value);
+  const lng = parseLatLng(rowEl.querySelector(".loc-edit-lng").value);
+  const radiusRaw = rowEl.querySelector(".loc-edit-radius").value.trim();
+  const radius = parseFloat(radiusRaw);
+  const address = rowEl.querySelector(".loc-edit-address").value.trim();
+  const active = rowEl.querySelector(".loc-edit-active").checked;
+
+  if(lat == null || lng == null){
+    reportRowMsg(msgEl, "Latitude and Longitude must both be numbers.", true);
+    return;
+  }
+  if(!Number.isFinite(radius) || radius <= 0){
+    reportRowMsg(msgEl, "Radius must be a positive number of metres.", true);
+    return;
+  }
+  try{
+    await graphUpdateItem("CG_ClockLocations", itemId, {
+      Latitude: lat, Longitude: lng, RadiusMeters: radius, Address: address, IsActive: active,
+    });
+    allClockLocations = await fetchAllListItems("CG_ClockLocations");
+    editingLocationId = null;
+    renderLocationsTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't save that Location — ${err.message}`, true);
+  }
+}
+
+async function toggleLocationActive(itemId, nextActive){
+  const msgEl = document.getElementById("locEditMsg");
+  try{
+    await graphUpdateItem("CG_ClockLocations", itemId, { IsActive: nextActive });
+    allClockLocations = await fetchAllListItems("CG_ClockLocations");
+    renderLocationsTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't update that Location — ${err.message}`, true);
+  }
+}
+
+async function deleteLocation(itemId, locationTitle){
+  // renderLocationsTab() below replaces the whole Tab's DOM (including
+  // #locEditMsg), so any message must be set AFTER that re-render, never
+  // before — otherwise the fresh element it creates wipes the message
+  // out from under it.
+  const stillAssigned = allEmployeeLocationAssignments.some(a => (a.fields.LocationTitle||"") === locationTitle);
+  if(stillAssigned){
+    confirmDeleteLocationId = null;
+    renderLocationsTab();
+    reportRowMsg(document.getElementById("locEditMsg"), `Can't delete "${locationTitle}" — one or more Employees are still assigned to it below. Unassign them first, or Deactivate it instead.`, true);
+    return;
+  }
+  try{
+    await graphDeleteItem("CG_ClockLocations", itemId);
+    allClockLocations = await fetchAllListItems("CG_ClockLocations");
+    confirmDeleteLocationId = null;
+    renderLocationsTab();
+  }catch(err){
+    console.error(err);
+    confirmDeleteLocationId = null;
+    renderLocationsTab();
+    reportRowMsg(document.getElementById("locEditMsg"), `Couldn't delete that Location — ${err.message}`, true);
+  }
+}
+
+async function toggleLocationAssignment(employeeNumber, locationTitle, checked, checkboxEl){
+  const msgEl = document.getElementById("locAssignMsg");
+  checkboxEl.disabled = true;
+  try{
+    if(checked){
+      const already = allEmployeeLocationAssignments.some(a =>
+        (a.fields.EmployeeNumber||"").toLowerCase() === employeeNumber.toLowerCase() && (a.fields.LocationTitle||"") === locationTitle);
+      if(!already){
+        await graphCreateItem("CG_EmployeeLocationAssignments", {
+          Title: `${employeeNumber} — ${locationTitle}`,
+          EmployeeNumber: employeeNumber,
+          LocationTitle: locationTitle,
+        });
+      }
+    }else{
+      const existing = allEmployeeLocationAssignments.find(a =>
+        (a.fields.EmployeeNumber||"").toLowerCase() === employeeNumber.toLowerCase() && (a.fields.LocationTitle||"") === locationTitle);
+      if(existing) await graphDeleteItem("CG_EmployeeLocationAssignments", existing.id);
+    }
+    allEmployeeLocationAssignments = await fetchAllListItems("CG_EmployeeLocationAssignments");
+    renderLocationsTab();
+  }catch(err){
+    console.error(err);
+    checkboxEl.checked = !checked; // revert the visual state — the write didn't stick
+    checkboxEl.disabled = false;
+    reportRowMsg(msgEl, `Couldn't update that assignment — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
    CALENDAR TAB (within Employees) — CG_PayPeriods, the biweekly
    payroll calendar (Pay# / PPE Start / PPE End / Pay Date) that
    used to be hardcoded into each pay period's Excel workbook,
@@ -2510,6 +2869,7 @@ const EMPLOYEES_TAB_FILTER_RESETS = {
   "attendance": () => { attFilters = { payNumber: "" }; },
   "time-exceptions": () => { timeExFilters = { payNumber: "all" }; timeExTypeFilter = "all"; },
   "payroll": () => { payFilters = { payNumber: "" }; },
+  "locations": () => { locFilters = { employeeSearch: "" }; editingLocationId = null; confirmDeleteLocationId = null; },
 };
 function resetEmployeesTabFilters(tabKey){
   const reset = EMPLOYEES_TAB_FILTER_RESETS[tabKey];
@@ -2519,6 +2879,7 @@ function resetEmployeesTabFilters(tabKey){
 const EMPLOYEES_TABS = [
   { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
   { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
+  { key: "locations", label: "Locations", render: () => renderLocationsTab() },
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
   { key: "daily-report", label: "Daily Report", render: () => renderDailyReportTab() },
   { key: "attendance", label: "Attendance", render: () => renderAttendanceTab() },
