@@ -2528,29 +2528,6 @@ function renderLocationsTab(){
   }).join("");
 
   const activeLocations = sorted.filter(l => l.fields.IsActive !== false);
-  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
-    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
-  const q = (locFilters.employeeSearch||"").trim().toLowerCase();
-  const shownEmployees = q
-    ? activeEmployees.filter(e => (e.fields.Title||"").toLowerCase().includes(q) || (e.fields.EmployeeNumber||"").toLowerCase().includes(q))
-    : activeEmployees;
-
-  const assignedSet = new Set(allEmployeeLocationAssignments.map(a => `${(a.fields.EmployeeNumber||"").toLowerCase()}|${a.fields.LocationTitle||""}`));
-
-  const gridHeadCells = activeLocations.map(l => `<th title="${esc(l.fields.Title)}">${esc(l.fields.Title)}</th>`).join("");
-  const gridBodyRows = shownEmployees.map(emp => {
-    const empNum = emp.fields.EmployeeNumber || "";
-    const cells = activeLocations.map(l => {
-      const checked = assignedSet.has(`${empNum.toLowerCase()}|${l.fields.Title}`);
-      return `<td class="loc-assign-cell"><input type="checkbox" class="loc-assign-check" data-emp-number="${esc(empNum)}" data-loc-title="${esc(l.fields.Title)}" ${checked?"checked":""}></td>`;
-    }).join("");
-    return `
-      <tr>
-        <td class="att-emp-name">${esc(emp.fields.Title)}<span class="att-emp-num">${esc(empNum)}</span></td>
-        ${cells}
-      </tr>
-    `;
-  }).join("");
 
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
@@ -2582,11 +2559,8 @@ function renderLocationsTab(){
       <div class="filter-bar" style="margin-bottom:12px;">
         <div class="filter-field"><label>Find Employee</label><input type="search" id="locEmpSearch" placeholder="name or number…" value="${esc(locFilters.employeeSearch)}"></div>
       </div>
-      <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
-        <table class="att-table loc-assign-table">
-          <thead><tr><th style="text-align:left;">Employee</th>${gridHeadCells}</tr></thead>
-          <tbody>${gridBodyRows || `<tr><td colspan="${activeLocations.length+1}" style="padding:14px 10px;color:var(--ink-muted);font-size:12px;">No Employees match "${esc(locFilters.employeeSearch)}".</td></tr>`}</tbody>
-        </table>
+      <div class="res-table-wrap" id="locAssignGridWrap" style="overflow-x:auto;box-shadow:none;">
+        ${buildLocAssignGridHtml(activeLocations)}
       </div>
       ` : `<div style="font-size:12px;color:var(--ink-muted);">Add at least one Active Location above first.</div>`}
       <div id="locAssignMsg" style="font-size:11.5px;margin-top:10px;min-height:14px;"></div>
@@ -2645,13 +2619,71 @@ function renderLocationsTab(){
 
   const empSearchEl = document.getElementById("locEmpSearch");
   if(empSearchEl){
-    empSearchEl.addEventListener("input", e => { locFilters.employeeSearch = e.target.value; renderLocationsTab(); });
+    // Only re-renders the assignment grid itself (see renderLocAssignGridOnly
+    // below), not the whole Tab — re-running renderLocationsTab() here would
+    // tear down and recreate this very input on every keystroke, which is
+    // why it used to lose focus after each character typed.
+    empSearchEl.addEventListener("input", e => { locFilters.employeeSearch = e.target.value; renderLocAssignGridOnly(); });
   }
-  container.querySelectorAll(".loc-assign-check").forEach(cb => {
+  wireLocAssignCheckboxes(document.getElementById("locAssignGridWrap"));
+}
+
+// Builds just the Employee x Location checkbox table's markup — factored
+// out so both the full Tab render and renderLocAssignGridOnly() (the
+// search-as-you-type path, which must NOT touch the search input itself)
+// can share it.
+function buildLocAssignGridHtml(activeLocations){
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const q = (locFilters.employeeSearch||"").trim().toLowerCase();
+  const shownEmployees = q
+    ? activeEmployees.filter(e => (e.fields.Title||"").toLowerCase().includes(q) || (e.fields.EmployeeNumber||"").toLowerCase().includes(q))
+    : activeEmployees;
+
+  const assignedSet = new Set(allEmployeeLocationAssignments.map(a => `${(a.fields.EmployeeNumber||"").toLowerCase()}|${a.fields.LocationTitle||""}`));
+
+  const gridHeadCells = activeLocations.map(l => `<th title="${esc(l.fields.Title)}">${esc(l.fields.Title)}</th>`).join("");
+  const gridBodyRows = shownEmployees.map(emp => {
+    const empNum = emp.fields.EmployeeNumber || "";
+    const cells = activeLocations.map(l => {
+      const checked = assignedSet.has(`${empNum.toLowerCase()}|${l.fields.Title}`);
+      return `<td class="loc-assign-cell"><input type="checkbox" class="loc-assign-check" data-emp-number="${esc(empNum)}" data-loc-title="${esc(l.fields.Title)}" ${checked?"checked":""}></td>`;
+    }).join("");
+    return `
+      <tr>
+        <td class="att-emp-name">${esc(emp.fields.Title)}<span class="att-emp-num">${esc(empNum)}</span></td>
+        ${cells}
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <table class="att-table loc-assign-table">
+      <thead><tr><th style="text-align:left;">Employee</th>${gridHeadCells}</tr></thead>
+      <tbody>${gridBodyRows || `<tr><td colspan="${activeLocations.length+1}" style="padding:14px 10px;color:var(--ink-muted);font-size:12px;">No Employees match "${esc(locFilters.employeeSearch)}".</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function wireLocAssignCheckboxes(scopeEl){
+  if(!scopeEl) return;
+  scopeEl.querySelectorAll(".loc-assign-check").forEach(cb => {
     cb.addEventListener("change", () => {
       toggleLocationAssignment(cb.getAttribute("data-emp-number"), cb.getAttribute("data-loc-title"), cb.checked, cb);
     });
   });
+}
+
+// Re-renders only the Employee x Location grid (inside #locAssignGridWrap)
+// so typing in Find Employee never rebuilds — and never steals focus from
+// — the search box itself.
+function renderLocAssignGridOnly(){
+  const wrap = document.getElementById("locAssignGridWrap");
+  if(!wrap) return;
+  const activeLocations = allClockLocations.filter(l => l.fields.IsActive !== false)
+    .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
+  wrap.innerHTML = buildLocAssignGridHtml(activeLocations);
+  wireLocAssignCheckboxes(wrap);
 }
 
 function parseLatLng(v){
