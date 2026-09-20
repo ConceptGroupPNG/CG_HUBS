@@ -687,11 +687,23 @@ const VIEW_RENDERERS = {
   "reports": renderReportsView,
   "hubs": renderHubsView,
 };
+let currentNavView = "dashboard";
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   item.addEventListener("click", () => {
+    const viewName = item.getAttribute("data-view");
+    // Leaving the Employees hub or Timesheets view also leaves whichever
+    // of their own Tabs was active — same "clear filters on the way out"
+    // rule applies one level up. (resetEmployeesTabFilters/
+    // resetTimesheetsTabFilters are defined further down the file but
+    // hoisted, and this only ever runs on a later click, well after the
+    // whole script has run.)
+    if(viewName !== currentNavView){
+      if(currentNavView === "employees") resetEmployeesTabFilters(employeesActiveTab);
+      else if(currentNavView === "timesheets") resetTimesheetsTabFilters(tsActiveTab);
+    }
+    currentNavView = viewName;
     document.querySelectorAll(".nav-item[data-view]").forEach(i => i.classList.remove("active"));
     item.classList.add("active");
-    const viewName = item.getAttribute("data-view");
     document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
     document.getElementById(`view-${viewName}`).classList.add("active");
     document.getElementById("viewTitle").textContent = VIEW_TITLES[viewName] || viewName;
@@ -2486,6 +2498,24 @@ async function generateNextPayPeriod(){
    ============================================================ */
 let employeesActiveTab = "employees"; // "employees" | "time-entry" | "payroll" | "calendar"
 
+// Filters set on a Tab shouldn't linger once you leave it — each Tab
+// comes back to its own sensible default (often just "", which the
+// Tab's own render already turns into "current Pay Period" / "first
+// Employee" / etc.) rather than whatever was last typed or picked.
+// One entry per Employees-hub Tab that actually carries filter state;
+// the Employees/Shifts/Calendar/Pay Groups tabs have none to reset.
+const EMPLOYEES_TAB_FILTER_RESETS = {
+  "time-entry": () => { etFilters = { employeeNumber: "", payNumber: "" }; etDayFilters = { workDate: "" }; etMode = "employee"; },
+  "daily-report": () => { dailyReportFilters = { workDate: "" }; },
+  "attendance": () => { attFilters = { payNumber: "" }; },
+  "time-exceptions": () => { timeExFilters = { payNumber: "all" }; timeExTypeFilter = "all"; },
+  "payroll": () => { payFilters = { payNumber: "" }; },
+};
+function resetEmployeesTabFilters(tabKey){
+  const reset = EMPLOYEES_TAB_FILTER_RESETS[tabKey];
+  if(reset) reset();
+}
+
 const EMPLOYEES_TABS = [
   { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
   { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
@@ -2508,7 +2538,9 @@ function renderEmployeesHub(){
   `;
   container.querySelectorAll("[data-emp-tab]").forEach(btn => {
     btn.addEventListener("click", () => {
-      employeesActiveTab = btn.getAttribute("data-emp-tab");
+      const nextTab = btn.getAttribute("data-emp-tab");
+      if(nextTab !== employeesActiveTab) resetEmployeesTabFilters(employeesActiveTab);
+      employeesActiveTab = nextTab;
       renderEmployeesHub();
     });
   });
@@ -2873,7 +2905,15 @@ function renderEmployeeTimeEntryTab(){
   `;
   container.querySelectorAll("[data-et-mode]").forEach(el => {
     el.addEventListener("click", () => {
-      etMode = el.getAttribute("data-et-mode");
+      const nextMode = el.getAttribute("data-et-mode");
+      if(nextMode !== etMode){
+        // Same "leaving a Tab clears its filters" rule, one level down —
+        // By Employee and By Day are their own Tab-styled toggle inside
+        // the Time Entry Tab.
+        if(etMode === "employee") etFilters = { employeeNumber: "", payNumber: "" };
+        else etDayFilters = { workDate: "" };
+      }
+      etMode = nextMode;
       renderEmployeeTimeEntryTab();
     });
   });
@@ -4122,6 +4162,16 @@ function renderTimeEntriesResults(){
 let tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) };
 let tsActiveTab = "timesheet"; // "timesheet" | "exceptions"
 
+// Same "leaving a Tab clears its filters" rule as the Employees hub.
+const TIMESHEETS_TAB_FILTER_RESETS = {
+  "timesheet": () => { tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) }; },
+  "exceptions": () => { exFilters = { status: "open", type: "all", search: "", from: "", to: "" }; },
+};
+function resetTimesheetsTabFilters(tabKey){
+  const reset = TIMESHEETS_TAB_FILTER_RESETS[tabKey];
+  if(reset) reset();
+}
+
 function entriesForResourceAndPeriod(resource, start, end){
   const email = (resource.fields.MatchEmail || "").toLowerCase().trim();
   const name = (resource.fields.Title || "").toLowerCase().trim();
@@ -4144,8 +4194,14 @@ function renderTimesheetsView(){
     </div>
     <div id="tsTabContent"></div>
   `;
-  document.getElementById("tsTabBtnTimesheet").addEventListener("click", () => { tsActiveTab = "timesheet"; renderTimesheetsView(); });
-  document.getElementById("tsTabBtnExceptions").addEventListener("click", () => { tsActiveTab = "exceptions"; renderTimesheetsView(); });
+  document.getElementById("tsTabBtnTimesheet").addEventListener("click", () => {
+    if(tsActiveTab !== "timesheet") resetTimesheetsTabFilters(tsActiveTab);
+    tsActiveTab = "timesheet"; renderTimesheetsView();
+  });
+  document.getElementById("tsTabBtnExceptions").addEventListener("click", () => {
+    if(tsActiveTab !== "exceptions") resetTimesheetsTabFilters(tsActiveTab);
+    tsActiveTab = "exceptions"; renderTimesheetsView();
+  });
 
   if(tsActiveTab === "exceptions") renderTimesheetExceptionsTab();
   else renderTimesheetTab();
