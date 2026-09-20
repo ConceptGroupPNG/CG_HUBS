@@ -199,6 +199,17 @@
     background:rgba(192,58,58,0.94);color:#fff8e8;
     font-size:11px;padding:6px 30px;letter-spacing:.03em;text-align:center;
   }
+  .session-banner{
+    background:rgba(184,134,11,0.96);color:#fff8e8;
+    font-size:12px;padding:8px 30px;letter-spacing:.02em;text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
+  }
+  .session-banner-btn{
+    background:#fff8e8;color:#7a5300;border:none;border-radius:5px;
+    padding:4px 12px;font-size:11px;font-weight:700;letter-spacing:.02em;
+    cursor:pointer;
+  }
+  .session-banner-btn:hover{ background:#fff; }
 
   /* tooltip */
   .tt{position:relative;}
@@ -484,6 +495,10 @@
 <!-- APP -->
 <div id="app">
 <div id="dataBanner" class="data-banner" style="display:none;"></div>
+<div id="sessionBanner" class="session-banner" style="display:none;">
+  <span id="sessionBannerText">Your session has expired.</span>
+  <button id="sessionBannerBtn" class="session-banner-btn" type="button">Sign in again</button>
+</div>
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
@@ -734,33 +749,92 @@ async function acquireToken(){
   }
 }
 
+// Keeps the in-memory accessToken fresh in the background so a long-idle
+// tab (left open over lunch, overnight, etc.) doesn't hit an expired token
+// the next time someone clicks Save. acquireTokenSilent renews from MSAL's
+// cache/refresh-token without any user interaction when possible, so this
+// is a no-op most of the time. Failures here are swallowed — the reactive
+// retry in graphRequest() below is the real safety net if this ever misses.
+function startTokenKeepAlive(){
+  setInterval(()=>{ acquireToken().catch(err => console.warn("Background token refresh failed — will retry on next request.", err)); }, 10*60*1000);
+}
+
+function isAuthErrorStatus(status){
+  return status === 401;
+}
+
+let sessionExpiredShown = false;
+function showSessionExpiredBanner(){
+  if(sessionExpiredShown) return;
+  sessionExpiredShown = true;
+  const banner = document.getElementById("sessionBanner");
+  if(banner) banner.style.display = "flex";
+}
+document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
+  msalInstance.loginRedirect({ scopes: graphScopes });
+});
+
 /* ============================================================
    GRAPH HELPERS — same shape as csa-hub/index.html
    ============================================================ */
-async function graphGet(url){
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if(!res.ok){
-    const body = await res.text();
-    throw new Error(`Graph error ${res.status}: ${body}`);
-  }
-  return res.json();
-}
-
-async function graphWrite(method, url, body){
-  const res = await fetch(url, {
+// Shared fetch-with-retry: SharePoint/Graph access tokens are short-lived
+// (~60-90 min), and this app only ever put a fresh one into `accessToken`
+// at sign-in and re-used it after that — so a tab left open past the
+// token's lifetime got a raw "InvalidAuthenticationToken ... Lifetime
+// validation failed" error dumped straight into whatever form the person
+// was using. Every read/write funnels through here now, so on a 401 we
+// try one silent (or popup, if silent fails) token refresh and replay the
+// request once before giving up. Only if that retry also fails do we
+// surface an error — and if the failure was auth-related, it's a plain
+// "please sign in again" message plus a banner with a Sign In button,
+// never the raw Graph JSON.
+async function graphRequest(method, url, body){
+  const doFetch = () => fetch(url, {
     method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : undefined
+    headers: Object.assign(
+      { Authorization: `Bearer ${accessToken}` },
+      method === "GET" ? {} : { "Content-Type": "application/json" }
+    ),
+    body: (method !== "GET" && body) ? JSON.stringify(body) : undefined
   });
+
+  let res = await doFetch();
+
+  if(isAuthErrorStatus(res.status)){
+    try{
+      await acquireToken();
+      res = await doFetch();
+    }catch(refreshErr){
+      console.warn("Token refresh after 401 failed.", refreshErr);
+    }
+  }
+
   if(!res.ok){
+    if(isAuthErrorStatus(res.status)){
+      showSessionExpiredBanner();
+      throw new Error("Your session has expired. Please sign in again to continue — use the banner at the top, or the Sign Out / sign back in link.");
+    }
     const errBody = await res.text();
     throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
   }
+
+  if(sessionExpiredShown){
+    // A successful call after the banner went up means a refresh (silent
+    // or via the banner's Sign In button) worked — clear it.
+    sessionExpiredShown = false;
+    const banner = document.getElementById("sessionBanner");
+    if(banner) banner.style.display = "none";
+  }
   if(res.status === 204) return null;
   return res.json().catch(()=>null);
+}
+
+async function graphGet(url){
+  return graphRequest("GET", url);
+}
+
+async function graphWrite(method, url, body){
+  return graphRequest(method, url, body);
 }
 
 function listItemsUrl(listName){
@@ -1006,6 +1080,7 @@ async function startApp(){
 
   await Promise.all([resolveSiteId(), resolveTimeSiteId()]);
   await refreshAllData();
+  startTokenKeepAlive();
 }
 
 async function refreshAllData(){
