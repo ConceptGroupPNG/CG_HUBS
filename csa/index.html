@@ -1910,7 +1910,8 @@ async function federateResourceToCgTime(resourceFields){
       DailyRate: resourceFields.DailyRate || 0,
       HourlyRate: resourceFields.HourlyRate || 0,
       BusinessUnit: resourceFields.BusinessUnit,
-      IsActive: isActive
+      IsActive: isActive,
+      HomeHub: "CSA_HUB"
     };
     if(matchResource){
       await graphUpdateItemOnSite(timeSiteId, "CG_Resources", matchResource.id, resourcePayload);
