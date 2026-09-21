@@ -1440,6 +1440,83 @@ async function syncActiveEntity(sourceType, title, description, isActive){
   }
 }
 
+// Federates SLA Hub's own SLA_Resources to CG_Time on every Resource save,
+// same pattern already implemented for CSA Hub, adapted to SLA Hub's own
+// identity ("SLA_HUB" instead of CSA Hub's). Two lists, both matched by
+// email (trimmed, case-insensitive):
+//   - CG_Resources — a full mirror of the local resource, tagged HomeHub so
+//     it's clear which hub owns each row.
+//   - CG_ResourceHubAssignments — matched on ResourceEmail AND Hub together,
+//     so this never touches another hub's row for the same person.
+// Deliberately does NOT go through fetchAllListItems/graphCreateItem/
+// graphUpdateItem (those dispatch by list name via TIME_SITE_LISTS) —
+// CG_Resources' name is close enough to SLA Hub's own SLA_Resources that
+// routing it through that shared name lookup risks a local resource read or
+// write silently redirecting cross-site instead of failing loudly. Every
+// call below names the CG_Time site explicitly via resolveTimeSiteId().
+// Wrapped in its own try/catch: a federation failure must never block the
+// local SLA_Resources save that triggered it.
+async function federateResourceToTime(resource){
+  const email = (resource.fields.MatchEmail || "").trim().toLowerCase();
+  if(!email) return; // nothing to match on
+  try{
+    const timeSiteId = await resolveTimeSiteId();
+
+    async function fetchAllTimeListItems(listName){
+      let items = [];
+      let url = `${GRAPH}/sites/${timeSiteId}/lists/${listName}/items?$expand=fields&$top=200`;
+      while(url){
+        const res = await callGraph(url);
+        items = items.concat(res.value);
+        url = res["@odata.nextLink"] || null;
+      }
+      return items;
+    }
+    async function upsertTimeListItem(listName, existingId, fields){
+      if(existingId){
+        await callGraph(`${GRAPH}/sites/${timeSiteId}/lists/${listName}/items/${existingId}/fields`, {
+          method: "PATCH", body: JSON.stringify(fields)
+        });
+      } else {
+        await callGraph(`${GRAPH}/sites/${timeSiteId}/lists/${listName}/items`, {
+          method: "POST", body: JSON.stringify({ fields })
+        });
+      }
+    }
+
+    // 1. CG_Resources — full mirror of the local resource. SLA Hub's own
+    // SLA_Resources has no rate fields of its own (that's CSA/CG_Time's
+    // domain), so DailyRate/HourlyRate are simply left out of the payload —
+    // untouched on an update, defaulted blank on a new row — rather than
+    // overwritten with data SLA Hub doesn't actually have.
+    const resourceItems = await fetchAllTimeListItems("CG_Resources");
+    const matchedResource = resourceItems.find(x => (x.fields.MatchEmail||"").trim().toLowerCase() === email);
+    await upsertTimeListItem("CG_Resources", matchedResource?.id, {
+      Title: resource.fields.Title || "",
+      ResourceType: resource.fields.ResourceType || "",
+      MatchEmail: email,
+      BusinessUnit: resource.fields.BusinessUnit || "",
+      IsActive: resource.fields.IsActive !== false,
+      HomeHub: "SLA_HUB"
+    });
+
+    // 2. CG_ResourceHubAssignments — matched on email AND Hub together.
+    const assignmentItems = await fetchAllTimeListItems("CG_ResourceHubAssignments");
+    const matchedAssignment = assignmentItems.find(x =>
+      (x.fields.ResourceEmail||"").trim().toLowerCase() === email && x.fields.Hub === "SLA_HUB"
+    );
+    await upsertTimeListItem("CG_ResourceHubAssignments", matchedAssignment?.id, {
+      Title: resource.fields.Title || "",
+      ResourceEmail: email,
+      Hub: "SLA_HUB",
+      Role: "",
+      IsActive: resource.fields.IsActive !== false
+    });
+  }catch(e){
+    console.warn("Couldn't federate this resource to CG_Time (check CG_Resources/CG_ResourceHubAssignments exist on CG_Time and are reachable):", e);
+  }
+}
+
 function owningEntityOptionsHtml(type, selected){
   if(type === "Agreement") return state.agreements.filter(a => a.fields.Status==="Active")
     .map(a => `<option value="${a.id}" ${String(a.id)===String(selected)?"selected":""}>${esc(a.fields.AgreementNumber||("AGR-"+a.id))} — ${esc(a.fields.Title)}</option>`).join("");
@@ -3490,17 +3567,21 @@ async function submitResourceForm(id){
     IsActive: document.getElementById("rf_active").value === "true"
   };
   try{
+    let saved;
     if(id){
       await graphUpdateItem("SLA_Resources", id, fields);
       const r = state.resources.find(x=>String(x.id)===String(id));
       Object.assign(r.fields, fields);
+      saved = r;
     } else {
       const created = await graphCreateItem("SLA_Resources", fields);
       state.resources.push(created);
+      saved = created;
     }
     closeModal();
     toast("Resource saved");
     renderResources();
+    federateResourceToTime(saved); // fire-and-forget — has its own try/catch, never blocks the save above
   }catch(e){ console.error(e); toast("Couldn't save resource: " + e.message, true); }
 }
 
