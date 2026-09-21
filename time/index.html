@@ -1367,7 +1367,7 @@ function renderStatTiles(){
     .reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
 
   document.getElementById("statHours").textContent =
-    thisMonthHours.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1});
+    thisMonthHours.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const deltaEl = document.getElementById("statHoursDelta");
   if(prevMonthHours > 0){
     const pct = ((thisMonthHours - prevMonthHours) / prevMonthHours) * 100;
@@ -1443,7 +1443,7 @@ function renderHubChart(){
     <div class="bar-row">
       <div class="name"><span class="dot" style="background:${color}"></span>${esc(hubLabelFor(key))}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${widthPct}%;background:${color}"></div></div>
-      <div class="val">${val.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})}</div>
+      <div class="val">${val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     </div>
   `;
   }).join("");
@@ -2215,7 +2215,7 @@ function shiftTotalHours(startStr, endStr, breakMinutes, workDaysCount){
   return daily * workDaysCount * SHIFT_FORTNIGHT_WEEKS;
 }
 function fmtShiftHours(hours){
-  return hours == null ? "—" : `${hours.toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})} hrs`;
+  return hours == null ? "—" : `${hours.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} hrs`;
 }
 // Wires a Total Hours preview to live-recalculate as Start/End/Break
 // are typed or a day is toggled — used for both the Add Shift form
