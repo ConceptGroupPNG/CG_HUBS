@@ -1864,15 +1864,14 @@ async function syncActiveEntity(sourceType, title, description, isActive){
 
 /* ============================================================
    RESOURCE FEDERATION — pushes CSA Hub's own Resources into the shared
-   CG_Time site (its own separate CSA_Resources list, plus a row per
-   person in CG_ResourceHubAssignments tagged Hub="CSA_HUB"). Resources
-   remain owned by the Hub that created them; this only ever creates or
-   updates CSA_HUB's own rows, matched by email, never another hub's.
+   CG_Time site (its own CG_Resources list, plus a row per person in
+   CG_ResourceHubAssignments tagged Hub="CSA_HUB"). Resources remain owned
+   by the Hub that created them; this only ever creates or updates
+   CSA_HUB's own rows, matched by email, never another hub's.
    Deliberately bypasses the shared listItemsUrl()/siteIdForList() helpers
-   and targets timeSiteId directly — CG_Time's CSA_Resources list shares
-   its name with this app's own local Resources list on Concept_CSA, and
-   routing "CSA_Resources" generally through TIME_SITE_LISTS would silently
-   break the Hub's own Resources screen.
+   and targets timeSiteId directly, since this app's own local Resources
+   list on Concept_CSA is separately named CSA_Resources — keeping the two
+   name spaces distinct in code as well as on paper.
    ============================================================ */
 async function fetchAllListItemsOnSite(targetSiteId, listName){
   let url = `https://graph.microsoft.com/v1.0/sites/${targetSiteId}/lists/${listName}/items?expand=fields`;
@@ -1900,9 +1899,9 @@ async function federateResourceToCgTime(resourceFields){
   const isActive = resourceFields.IsActive !== false;
 
   try{
-    // 1. Upsert into CG_Time's own CSA_Resources — same field shape as this
+    // 1. Upsert into CG_Time's own CG_Resources — same field shape as this
     // app's local copy, so it's a direct field-for-field mirror.
-    const cgResources = await fetchAllListItemsOnSite(timeSiteId, "CSA_Resources");
+    const cgResources = await fetchAllListItemsOnSite(timeSiteId, "CG_Resources");
     const matchResource = cgResources.find(r => (r.fields.MatchEmail||"").trim().toLowerCase() === email.toLowerCase());
     const resourcePayload = {
       Title: resourceFields.Title,
@@ -1914,9 +1913,9 @@ async function federateResourceToCgTime(resourceFields){
       IsActive: isActive
     };
     if(matchResource){
-      await graphUpdateItemOnSite(timeSiteId, "CSA_Resources", matchResource.id, resourcePayload);
+      await graphUpdateItemOnSite(timeSiteId, "CG_Resources", matchResource.id, resourcePayload);
     } else {
-      await graphCreateItemOnSite(timeSiteId, "CSA_Resources", resourcePayload);
+      await graphCreateItemOnSite(timeSiteId, "CG_Resources", resourcePayload);
     }
 
     // 2. Upsert this Hub's own row in CG_ResourceHubAssignments — matched on
