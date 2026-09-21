@@ -3471,6 +3471,71 @@ function openResourceDetail(id){
   document.getElementById("resourceDetailWrap").scrollIntoView({behavior:"smooth"});
 }
 
+// Every SLA HUB time entry this resource personally logged (matched by
+// EntryUser — the signed-in account that logged it — not by ticket
+// assignment, since someone can log time on a ticket assigned to someone
+// else, or directly against an Agreement/Work Order/Ad Hoc client with no
+// ticket at all). This is specifically what's inside SLA HUB's own
+// SLA_TimeEntries — CG Time's own separately-logged widget entries
+// (CSA_TimeEntries) aren't part of this.
+function timeEntriesForResource(resource){
+  const email = (resource.fields.MatchEmail||"").toLowerCase().trim();
+  if(!email) return [];
+  return state.timeEntries.filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+    .sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
+}
+
+// Resolves what a time entry was actually logged against, for display — the
+// ticket it's tied to, or (for time logged directly with no ticket) the
+// Agreement/Work Order/Ad Hoc client itself — along with a click target to
+// jump straight there. Falls back gracefully if the record it points to has
+// since been deleted.
+function timeEntryTarget(entry){
+  const f = entry.fields;
+  if(f.TicketId){
+    const t = state.tickets.find(x => String(x.id) === String(f.TicketId));
+    return t
+      ? { label: `${t.fields.TicketNumber||t.id} — ${t.fields.Title||""}`, onClick: `navigate('tickets'); openTicketDetail('${t.id}')` }
+      : { label: `Ticket #${f.TicketId} (deleted)`, onClick: null };
+  }
+  if(f.OwningEntityType === "Agreement" && f.OwningAgreementLookupId){
+    const a = state.agreements.find(x => String(x.id) === String(f.OwningAgreementLookupId));
+    return a
+      ? { label: `${a.fields.AgreementNumber||("AGR-"+a.id)} — ${a.fields.Title||""}`, onClick: `openAgreementDetail('${a.id}')` }
+      : { label: "Agreement (deleted)", onClick: null };
+  }
+  if(f.OwningEntityType === "WorkOrder" && f.OwningWorkOrderLookupId){
+    const w = state.workOrders.find(x => String(x.id) === String(f.OwningWorkOrderLookupId));
+    return w
+      ? { label: `${w.fields.WorkOrderNumber||("WO-"+w.id)} — ${w.fields.Title||""}`, onClick: `openWorkOrderDetail('${w.id}')` }
+      : { label: "Work order (deleted)", onClick: null };
+  }
+  if(f.OwningEntityType === "AdHocClient" && f.OwningClientLookupId){
+    const c = state.clients.find(x => String(x.id) === String(f.OwningClientLookupId));
+    return c
+      ? { label: `${c.fields.Title||""} (Ad Hoc)`, onClick: `openAdHocClientDetail('${c.id}')` }
+      : { label: "Ad Hoc client (deleted)", onClick: null };
+  }
+  return { label: f.Title || "—", onClick: null };
+}
+
+// Groups a resource's time entries by what they were logged against, total
+// hours per target — the "against what" breakdown for the Status panel.
+// Most hours first, so the bulk of someone's time is the first thing seen.
+function summarizeResourceHours(entries){
+  const totalHours = entries.reduce((s,e)=> s + (Number(e.fields.Hours)||0), 0);
+  const byTarget = new Map(); // label -> { hours, onClick }
+  for(const e of entries){
+    const { label, onClick } = timeEntryTarget(e);
+    if(!byTarget.has(label)) byTarget.set(label, { hours: 0, onClick });
+    byTarget.get(label).hours += Number(e.fields.Hours)||0;
+  }
+  const breakdown = [...byTarget.entries()]
+    .map(([label, v]) => ({ label, hours: v.hours, onClick: v.onClick }))
+    .sort((a,b)=> b.hours - a.hours);
+  return { totalHours, breakdown };
+}
+
 // The "what's current for this person" view this whole feature is for —
 // their live/recent ticket workload (across every owning-entity type, not
 // just client work) plus a running Notes log for anything worth remembering
@@ -3487,6 +3552,8 @@ function renderResourceDetail(){
   const withStatus = openTickets.map(t => ({ t, bs: breachStatus(t) }));
   const atRiskOrBreached = withStatus.filter(x => ["atrisk","breached"].includes(x.bs.response) || ["atrisk","breached"].includes(x.bs.resolution));
   const notes = resourceNotes(r.id);
+  const timeEntries = timeEntriesForResource(r);
+  const { totalHours, breakdown } = summarizeResourceHours(timeEntries);
 
   wrap.innerHTML = `
     <div class="detail-panel" style="margin-top:16px;">
@@ -3503,6 +3570,7 @@ function renderResourceDetail(){
         <div class="stat-tile"><div class="val">${openTickets.length}</div><div class="lbl">Open tickets</div></div>
         <div class="stat-tile tone-warning"><div class="val">${atRiskOrBreached.length}</div><div class="lbl">At risk / breached</div></div>
         <div class="stat-tile"><div class="val">${tickets.length - openTickets.length}</div><div class="lbl">Resolved / closed</div></div>
+        <div class="stat-tile"><div class="val">${totalHours.toFixed(2)}</div><div class="lbl">Hours logged (SLA HUB)</div></div>
       </div>
 
       <div class="section-title">Current &amp; recent tickets</div>
@@ -3511,6 +3579,19 @@ function renderResourceDetail(){
         ${tickets.map(t => ticketCardHtml(t, { onClick:`navigate('tickets'); openTicketDetail('${t.id}')`, hideAssigned:true })).join("")}
       </div>
       ` : `<div class="empty" style="margin-bottom:18px;">No tickets have been assigned to ${esc(r.fields.Title)} yet.</div>`}
+
+      <div class="section-title">Hours logged in SLA HUB${timeEntries.length ? ` — ${totalHours.toFixed(2)} hrs across ${breakdown.length} item${breakdown.length===1?"":"s"}` : ""}</div>
+      ${breakdown.length ? `
+      <div class="record-list" style="margin-bottom:18px;">
+        ${breakdown.map(b => `
+        <div class="record-card ${b.onClick?"clickable":""}" ${b.onClick?`onclick="${b.onClick}"`:""}>
+          <div class="record-card-top">
+            <div class="record-card-title">${esc(b.label)}</div>
+            <div class="record-card-badges"><span class="badge badge-neutral">${b.hours.toFixed(2)} hrs</span></div>
+          </div>
+        </div>`).join("")}
+      </div>
+      ` : `<div class="empty" style="margin-bottom:18px;">No time logged in SLA HUB by ${esc(r.fields.Title)} yet.</div>`}
 
       <div class="tkt-section c-notes">
       <div class="section-title">Notes${notes.length ? ` (${notes.length})` : ""}</div>
