@@ -3471,25 +3471,35 @@ function openResourceDetail(id){
   document.getElementById("resourceDetailWrap").scrollIntoView({behavior:"smooth"});
 }
 
-// Every time entry this resource personally logged, matched by EntryUser —
-// the signed-in account that logged it — not by ticket assignment, since
-// someone can log time on a ticket assigned to someone else, or directly
-// against an Agreement/Work Order/Ad Hoc client with no ticket at all.
-// Combines BOTH sources, same as the Agreement/Work Order detail pages'
-// "TICKETS, DIRECT ENTRIES, AND CG TIME'S WIDGET COMBINED" total: SLA HUB's
-// own SLA_TimeEntries, plus CG Time's separately-logged widget entries
-// (CSA_TimeEntries) — matched here by the same EntryUser field CG Time's
-// widget stamps on every row it writes. Each entry is tagged with which
-// source it came from (_via) so timeEntryTarget() below knows how to resolve
-// what it was logged against.
+// Every time entry this resource personally logged — not by ticket
+// assignment, since someone can log time on a ticket assigned to someone
+// else, or directly against an Agreement/Work Order/Ad Hoc client with no
+// ticket at all. Combines BOTH sources, same as the Agreement/Work Order
+// detail pages' "TICKETS, DIRECT ENTRIES, AND CG TIME'S WIDGET COMBINED"
+// total: SLA HUB's own SLA_TimeEntries (whose EntryUser is always the
+// signed-in account's lowercased email), plus CG Time's separately-logged
+// widget entries (CSA_TimeEntries). CG_Time's own widget is a different
+// app/list with its own convention for that same-named field — in practice
+// its EntryUser rows have shown up holding the person's plain display name
+// (e.g. "Mathias Sikari") rather than an email — so entries are matched
+// against EITHER the resource's MatchEmail OR its Title (display name),
+// whichever the row actually used. Each entry is tagged with which source
+// it came from (_via) so timeEntryTarget() below knows how to resolve what
+// it was logged against.
 function timeEntriesForResource(resource){
   const email = (resource.fields.MatchEmail||"").toLowerCase().trim();
-  if(!email) return [];
+  const name = (resource.fields.Title||"").toLowerCase().trim();
+  if(!email && !name) return [];
+  const isThisResource = (entryUser) => {
+    const u = (entryUser||"").toLowerCase().trim();
+    if(!u) return false;
+    return (!!email && u === email) || (!!name && u === name);
+  };
   const local = state.timeEntries
-    .filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+    .filter(e => isThisResource(e.fields.EntryUser))
     .map(e => ({ ...e, _via: "SLA HUB" }));
   const external = state.crossTimeEntries
-    .filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+    .filter(e => isThisResource(e.fields.EntryUser))
     .map(e => ({ ...e, _via: "CG Time widget" }));
   return [...local, ...external]
     .sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
