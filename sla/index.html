@@ -3471,26 +3471,60 @@ function openResourceDetail(id){
   document.getElementById("resourceDetailWrap").scrollIntoView({behavior:"smooth"});
 }
 
-// Every SLA HUB time entry this resource personally logged (matched by
-// EntryUser — the signed-in account that logged it — not by ticket
-// assignment, since someone can log time on a ticket assigned to someone
-// else, or directly against an Agreement/Work Order/Ad Hoc client with no
-// ticket at all). This is specifically what's inside SLA HUB's own
-// SLA_TimeEntries — CG Time's own separately-logged widget entries
-// (CSA_TimeEntries) aren't part of this.
+// Every time entry this resource personally logged, matched by EntryUser —
+// the signed-in account that logged it — not by ticket assignment, since
+// someone can log time on a ticket assigned to someone else, or directly
+// against an Agreement/Work Order/Ad Hoc client with no ticket at all.
+// Combines BOTH sources, same as the Agreement/Work Order detail pages'
+// "TICKETS, DIRECT ENTRIES, AND CG TIME'S WIDGET COMBINED" total: SLA HUB's
+// own SLA_TimeEntries, plus CG Time's separately-logged widget entries
+// (CSA_TimeEntries) — matched here by the same EntryUser field CG Time's
+// widget stamps on every row it writes. Each entry is tagged with which
+// source it came from (_via) so timeEntryTarget() below knows how to resolve
+// what it was logged against.
 function timeEntriesForResource(resource){
   const email = (resource.fields.MatchEmail||"").toLowerCase().trim();
   if(!email) return [];
-  return state.timeEntries.filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+  const local = state.timeEntries
+    .filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+    .map(e => ({ ...e, _via: "SLA HUB" }));
+  const external = state.crossTimeEntries
+    .filter(e => (e.fields.EntryUser||"").toLowerCase().trim() === email)
+    .map(e => ({ ...e, _via: "CG Time widget" }));
+  return [...local, ...external]
     .sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
+}
+
+// Resolves a CG_Time widget entry's plain-text CSA field back to the SLA HUB
+// record it was logged against. The widget only offers Tickets now (see
+// syncTicketActiveEntity()), so that's the common case; entries logged
+// before that change may still carry an Agreement/Work Order/Ad Hoc Client's
+// former active-entity title, so those are checked as a fallback — same
+// matching convention hoursForOwningEntity() uses for its own "external"
+// bucket, just resolving a click target instead of just totalling hours.
+function targetForExternalEntry(entry){
+  const csa = (entry.fields.CSA||"").trim();
+  if(!csa) return { label: entry.fields.Title || "—", onClick: null };
+  const ticket = state.tickets.find(t => activeEntityTitleFor("Ticket", t) === csa);
+  if(ticket) return { label: `${ticket.fields.TicketNumber||ticket.id} — ${ticket.fields.Title||""}`, onClick: `navigate('tickets'); openTicketDetail('${ticket.id}')` };
+  const agreement = state.agreements.find(a => activeEntityTitleFor("Agreement", a) === csa);
+  if(agreement) return { label: `${agreement.fields.AgreementNumber||("AGR-"+agreement.id)} — ${agreement.fields.Title||""}`, onClick: `openAgreementDetail('${agreement.id}')` };
+  const workOrder = state.workOrders.find(w => activeEntityTitleFor("WorkOrder", w) === csa);
+  if(workOrder) return { label: `${workOrder.fields.WorkOrderNumber||("WO-"+workOrder.id)} — ${workOrder.fields.Title||""}`, onClick: `openWorkOrderDetail('${workOrder.id}')` };
+  const adHocClient = state.clients.find(c => activeEntityTitleFor("AdHocClient", c) === csa);
+  if(adHocClient) return { label: `${adHocClient.fields.Title||""} (Ad Hoc)`, onClick: `openAdHocClientDetail('${adHocClient.id}')` };
+  return { label: csa, onClick: null };
 }
 
 // Resolves what a time entry was actually logged against, for display — the
 // ticket it's tied to, or (for time logged directly with no ticket) the
 // Agreement/Work Order/Ad Hoc client itself — along with a click target to
 // jump straight there. Falls back gracefully if the record it points to has
-// since been deleted.
+// since been deleted. A CG Time widget entry (tagged _via above) has a
+// different shape (a CSA text field, not lookup IDs) so it's resolved
+// separately via targetForExternalEntry().
 function timeEntryTarget(entry){
+  if(entry._via === "CG Time widget") return targetForExternalEntry(entry);
   const f = entry.fields;
   if(f.TicketId){
     const t = state.tickets.find(x => String(x.id) === String(f.TicketId));
@@ -3524,14 +3558,16 @@ function timeEntryTarget(entry){
 // Most hours first, so the bulk of someone's time is the first thing seen.
 function summarizeResourceHours(entries){
   const totalHours = entries.reduce((s,e)=> s + (Number(e.fields.Hours)||0), 0);
-  const byTarget = new Map(); // label -> { hours, onClick }
+  const byTarget = new Map(); // label -> { hours, onClick, via: Set }
   for(const e of entries){
     const { label, onClick } = timeEntryTarget(e);
-    if(!byTarget.has(label)) byTarget.set(label, { hours: 0, onClick });
-    byTarget.get(label).hours += Number(e.fields.Hours)||0;
+    if(!byTarget.has(label)) byTarget.set(label, { hours: 0, onClick, via: new Set() });
+    const entry = byTarget.get(label);
+    entry.hours += Number(e.fields.Hours)||0;
+    entry.via.add(e._via || "SLA HUB");
   }
   const breakdown = [...byTarget.entries()]
-    .map(([label, v]) => ({ label, hours: v.hours, onClick: v.onClick }))
+    .map(([label, v]) => ({ label, hours: v.hours, onClick: v.onClick, via: [...v.via].sort().join(" + ") }))
     .sort((a,b)=> b.hours - a.hours);
   return { totalHours, breakdown };
 }
@@ -3570,7 +3606,7 @@ function renderResourceDetail(){
         <div class="stat-tile"><div class="val">${openTickets.length}</div><div class="lbl">Open tickets</div></div>
         <div class="stat-tile tone-warning"><div class="val">${atRiskOrBreached.length}</div><div class="lbl">At risk / breached</div></div>
         <div class="stat-tile"><div class="val">${tickets.length - openTickets.length}</div><div class="lbl">Resolved / closed</div></div>
-        <div class="stat-tile"><div class="val">${totalHours.toFixed(2)}</div><div class="lbl">Hours logged (SLA HUB)</div></div>
+        <div class="stat-tile"><div class="val">${totalHours.toFixed(2)}</div><div class="lbl">Hours logged</div></div>
       </div>
 
       <div class="section-title">Current &amp; recent tickets</div>
@@ -3580,7 +3616,7 @@ function renderResourceDetail(){
       </div>
       ` : `<div class="empty" style="margin-bottom:18px;">No tickets have been assigned to ${esc(r.fields.Title)} yet.</div>`}
 
-      <div class="section-title">Hours logged in SLA HUB${timeEntries.length ? ` — ${totalHours.toFixed(2)} hrs across ${breakdown.length} item${breakdown.length===1?"":"s"}` : ""}</div>
+      <div class="section-title">Hours logged (SLA HUB + CG Time widget combined)${timeEntries.length ? ` — ${totalHours.toFixed(2)} hrs across ${breakdown.length} item${breakdown.length===1?"":"s"}` : ""}</div>
       ${breakdown.length ? `
       <div class="record-list" style="margin-bottom:18px;">
         ${breakdown.map(b => `
@@ -3589,9 +3625,10 @@ function renderResourceDetail(){
             <div class="record-card-title">${esc(b.label)}</div>
             <div class="record-card-badges"><span class="badge badge-neutral">${b.hours.toFixed(2)} hrs</span></div>
           </div>
+          <div class="record-card-sub">${esc(b.via)}</div>
         </div>`).join("")}
       </div>
-      ` : `<div class="empty" style="margin-bottom:18px;">No time logged in SLA HUB by ${esc(r.fields.Title)} yet.</div>`}
+      ` : `<div class="empty" style="margin-bottom:18px;">No time logged by ${esc(r.fields.Title)} yet.</div>`}
 
       <div class="tkt-section c-notes">
       <div class="section-title">Notes${notes.length ? ` (${notes.length})` : ""}</div>
