@@ -1286,7 +1286,7 @@ async function autoSeedExceptions(){
     const f = t.fields;
     const resource = resourceForEntry(t);
     const name = resource ? resource.fields.Title : (f.EntryUser || "Unknown");
-    const hours = f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "?";
+    const hours = f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "?";
     const summary = `Billable not set — ${name}, ${hours}h on ${f.CSA || "Unspecified"}`;
     try{
       await graphCreateItem("CG_ExceptionsQueue", {
@@ -1617,7 +1617,7 @@ function renderActivityTable(){
         <td>${esc(f.WorkDate || "—")}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
-        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
         <td>${billable}</td>
       </tr>
@@ -1646,7 +1646,7 @@ function renderTopResources(){
     <div class="tr-row">
       <div class="tr-rank">${i+1}</div>
       <div><div class="tr-name">${esc(name)}</div><div class="tr-sub">${esc(hubByLabel[name] || "—")}</div></div>
-      <div class="tr-hours">${hrs.toFixed(1)}</div>
+      <div class="tr-hours">${hrs.toFixed(2)}</div>
     </div>
   `).join("");
 }
@@ -1675,7 +1675,7 @@ function renderCalendarHeat(){
     if(h > 0) level = Math.min(3, Math.ceil((h/max)*3));
     const cell = document.createElement("div");
     cell.className = "cal-cell tt";
-    cell.innerHTML = `<span class="tt-bubble">${d}: ${h.toFixed(1)}h</span>`;
+    cell.innerHTML = `<span class="tt-bubble">${d}: ${h.toFixed(2)}h</span>`;
     if(level>0) cell.style.background = alphas[level];
     if(level===3) cell.style.borderColor = "transparent";
     cal.appendChild(cell);
@@ -4588,7 +4588,7 @@ function renderTimeEntriesResults(){
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
         <td ${sourceIsInferred ? 'style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — this entry predates the Source column (or came from a writer not yet updated to set it)."' : ''}>${esc(sourceLabel)}</td>
-        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td>${esc(f.ActivityDetail || "—")}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
         <td>${billable}</td>
@@ -4717,7 +4717,7 @@ function renderTimesheetBody(){
     byCsa[label] = (byCsa[label]||0) + (parseFloat(t.fields.Hours)||0);
   });
   const groupRows = Object.entries(byCsa).sort((a,b)=>b[1]-a[1]).map(([label,hrs])=>`
-    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${hrs.toFixed(1)}h</div></div>
+    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${hrs.toFixed(2)}h</div></div>
   `).join("");
 
   const entryRows = entries.map(t=>{
@@ -4727,7 +4727,7 @@ function renderTimesheetBody(){
       <tr>
         <td>${esc(f.WorkDate||"—")}</td>
         <td>${esc(f.CSA||"—")}</td>
-        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(1) : "—"}</td>
+        <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td><span class="src-tag">${esc(f.EntryMethod||"—")}</span></td>
         <td>${billableTxt}</td>
       </tr>
@@ -4740,15 +4740,15 @@ function renderTimesheetBody(){
       <div class="panel-sub">${esc(resource.fields.MatchEmail||"—")} &middot; ${esc(tsFilters.start)} to ${esc(tsFilters.end)} &middot; ${esc(resource._sourceHubLabel||"—")}</div>
     </div>
     <div class="ts-stat-row">
-      <div class="ts-stat"><div class="lbl">Total hours</div><div class="val">${total.toFixed(1)}</div></div>
-      <div class="ts-stat"><div class="lbl">Billable</div><div class="val">${billable.toFixed(1)}</div></div>
-      <div class="ts-stat"><div class="lbl">Not billable</div><div class="val">${notBillable.toFixed(1)}</div></div>
-      <div class="ts-stat"><div class="lbl">Not set</div><div class="val">${notSet.toFixed(1)}</div></div>
+      <div class="ts-stat"><div class="lbl">Total hours</div><div class="val">${total.toFixed(2)}</div></div>
+      <div class="ts-stat"><div class="lbl">Billable</div><div class="val">${billable.toFixed(2)}</div></div>
+      <div class="ts-stat"><div class="lbl">Not billable</div><div class="val">${notBillable.toFixed(2)}</div></div>
+      <div class="ts-stat"><div class="lbl">Not set</div><div class="val">${notSet.toFixed(2)}</div></div>
     </div>
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9776;</span>By CSA / logged against</h3>
       ${groupRows || '<div style="font-size:12px;color:var(--ink-muted);">No entries in this period.</div>'}
-      ${entries.length ? `<div class="ts-group-row total"><div>Total</div><div></div><div>${total.toFixed(1)}h</div></div>` : ""}
+      ${entries.length ? `<div class="ts-group-row total"><div>Total</div><div></div><div>${total.toFixed(2)}h</div></div>` : ""}
     </div>
     <div class="panel">
       <h3><span>&#9998;</span>Entries</h3>
