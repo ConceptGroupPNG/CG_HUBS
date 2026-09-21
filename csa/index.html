@@ -1863,6 +1863,87 @@ async function syncActiveEntity(sourceType, title, description, isActive){
 }
 
 /* ============================================================
+   RESOURCE FEDERATION — pushes CSA Hub's own Resources into the shared
+   CG_Time site (its own separate CSA_Resources list, plus a row per
+   person in CG_ResourceHubAssignments tagged Hub="CSA_HUB"). Resources
+   remain owned by the Hub that created them; this only ever creates or
+   updates CSA_HUB's own rows, matched by email, never another hub's.
+   Deliberately bypasses the shared listItemsUrl()/siteIdForList() helpers
+   and targets timeSiteId directly — CG_Time's CSA_Resources list shares
+   its name with this app's own local Resources list on Concept_CSA, and
+   routing "CSA_Resources" generally through TIME_SITE_LISTS would silently
+   break the Hub's own Resources screen.
+   ============================================================ */
+async function fetchAllListItemsOnSite(targetSiteId, listName){
+  let url = `https://graph.microsoft.com/v1.0/sites/${targetSiteId}/lists/${listName}/items?expand=fields`;
+  let items = [];
+  while(url){
+    const page = await graphGet(url);
+    items = items.concat(page.value || []);
+    url = page["@odata.nextLink"] || null;
+  }
+  return items;
+}
+async function graphCreateItemOnSite(targetSiteId, listName, fields){
+  const url = `https://graph.microsoft.com/v1.0/sites/${targetSiteId}/lists/${listName}/items`;
+  return graphWrite("POST", url, { fields });
+}
+async function graphUpdateItemOnSite(targetSiteId, listName, itemId, fields){
+  const url = `https://graph.microsoft.com/v1.0/sites/${targetSiteId}/lists/${listName}/items/${itemId}/fields`;
+  return graphWrite("PATCH", url, fields);
+}
+
+async function federateResourceToCgTime(resourceFields){
+  const email = (resourceFields.MatchEmail || "").trim();
+  if(!email) return; // no email to match on — nothing meaningful to federate
+
+  const isActive = resourceFields.IsActive !== false;
+
+  try{
+    // 1. Upsert into CG_Time's own CSA_Resources — same field shape as this
+    // app's local copy, so it's a direct field-for-field mirror.
+    const cgResources = await fetchAllListItemsOnSite(timeSiteId, "CSA_Resources");
+    const matchResource = cgResources.find(r => (r.fields.MatchEmail||"").trim().toLowerCase() === email.toLowerCase());
+    const resourcePayload = {
+      Title: resourceFields.Title,
+      ResourceType: resourceFields.ResourceType,
+      MatchEmail: email,
+      DailyRate: resourceFields.DailyRate || 0,
+      HourlyRate: resourceFields.HourlyRate || 0,
+      BusinessUnit: resourceFields.BusinessUnit,
+      IsActive: isActive
+    };
+    if(matchResource){
+      await graphUpdateItemOnSite(timeSiteId, "CSA_Resources", matchResource.id, resourcePayload);
+    } else {
+      await graphCreateItemOnSite(timeSiteId, "CSA_Resources", resourcePayload);
+    }
+
+    // 2. Upsert this Hub's own row in CG_ResourceHubAssignments — matched on
+    // (email, Hub="CSA_HUB") so another hub's row for the same person is
+    // never touched.
+    const assignments = await fetchAllListItemsOnSite(timeSiteId, "CG_ResourceHubAssignments");
+    const matchAssignment = assignments.find(a =>
+      (a.fields.ResourceEmail||"").trim().toLowerCase() === email.toLowerCase() && a.fields.Hub === "CSA_HUB"
+    );
+    const assignmentPayload = {
+      Title: resourceFields.Title,
+      ResourceEmail: email,
+      Hub: "CSA_HUB",
+      IsActive: isActive
+    };
+    if(matchAssignment){
+      await graphUpdateItemOnSite(timeSiteId, "CG_ResourceHubAssignments", matchAssignment.id, assignmentPayload);
+    } else {
+      await graphCreateItemOnSite(timeSiteId, "CG_ResourceHubAssignments", assignmentPayload);
+    }
+  }catch(err){
+    // Don't let a federation failure block the actual local Resource save.
+    console.error("Resource federation to CG_Time failed:", err);
+  }
+}
+
+/* ============================================================
    PROPOSALS
    ============================================================ */
 function proposalStatusBadgeClass(status){
@@ -3214,6 +3295,8 @@ async function saveResource(){
         HourlyRate: o.hourlyRate
       });
     }
+
+    await federateResourceToCgTime(fields);
 
     await loadAllData();
     renderResourcesTable();
