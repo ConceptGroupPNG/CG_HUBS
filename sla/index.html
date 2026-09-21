@@ -114,6 +114,11 @@ input,select,textarea{font-family:inherit;font-size:13px;}
    strong styling as active ones. */
 .record-card.sev-done{border-left-color:var(--gridline);opacity:0.62;}
 .record-card.sev-done:hover{opacity:0.85;}
+/* Generic version of the same "recedes visually" treatment for non-ticket
+   record-cards — an inactive Resource, for instance — so the same "not
+   currently relevant" language reads consistently across every list. */
+.record-card.is-muted{border-left-color:var(--gridline);opacity:0.62;}
+.record-card.is-muted:hover{opacity:0.85;}
 
 table{width:100%;border-collapse:collapse;}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--gridline);}
@@ -3344,25 +3349,42 @@ function renderClients(){
   `;
   const wrap = document.getElementById("clientsTableWrap");
   if(clientsTab === "clients"){
-    wrap.innerHTML = state.clients.length ? `
-      <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Xero contact</th><th>Billable</th><th>Currency</th></tr></thead>
-        <tbody>${sortedClients().map(c=>`<tr class="clickable" onclick="openClientForm('${c.id}')">
-          <td>${esc(c.fields.Title)}</td><td>${esc(c.fields.ClientInvoiceName||"—")}</td>
-          <td>${c.fields.Billable?"Yes":"No"}</td>
-          <td>${esc(c.fields.Currency||"—")}</td>
-        </tr>`).join("")}</tbody></table>
+    const rows = sortedClients();
+    wrap.innerHTML = rows.length ? `
+      <div class="record-list">
+        ${rows.map(c => `
+        <div class="record-card clickable" onclick="openClientForm('${c.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title">${esc(c.fields.Title)}</div>
+              <div class="record-card-sub">${c.fields.ClientInvoiceName ? `Xero contact: ${esc(c.fields.ClientInvoiceName)}` : "No Xero contact set"}</div>
+            </div>
+            <div class="record-card-badges">
+              <span class="badge ${c.fields.Billable ? "badge-good" : "badge-neutral"}">${c.fields.Billable ? "Billable" : "Non-billable"}</span>
+              <span class="badge badge-neutral">${esc(c.fields.Currency||"—")}</span>
+            </div>
+          </div>
+        </div>`).join("")}
       </div>` : `<div class="empty">No clients yet.</div>`;
   } else {
-    wrap.innerHTML = state.endClients.length ? `
-      <div class="card" style="padding:0;">
-        <table><thead><tr><th>Name</th><th>Parent client</th><th>Tracking option</th></tr></thead>
-        <tbody>${sortedEndClients().map(ec=>{
+    const rows = sortedEndClients();
+    wrap.innerHTML = rows.length ? `
+      <div class="record-list">
+        ${rows.map(ec => {
           const parent = state.clients.find(c=>String(c.id)===String(ec.fields.ParentClientLookupId));
-          return `<tr class="clickable" onclick="openEndClientForm('${ec.id}')">
-          <td>${esc(ec.fields.Title)}</td><td>${esc(parent?parent.fields.Title:"—")}</td>
-          <td>${esc(ec.fields.TrackingOption1||"—")}</td>
-        </tr>`;}).join("")}</tbody></table>
+          return `
+        <div class="record-card clickable" onclick="openEndClientForm('${ec.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title">${esc(ec.fields.Title)}</div>
+              <div class="record-card-sub">${esc(parent?parent.fields.Title:"No parent client")}</div>
+            </div>
+            <div class="record-card-badges">
+              <span class="badge badge-neutral">${esc(ec.fields.TrackingOption1||"—")}</span>
+            </div>
+          </div>
+        </div>`;
+        }).join("")}
       </div>` : `<div class="empty">No end clients yet.</div>`;
   }
 }
@@ -3392,23 +3414,38 @@ function renderResources(){
 function renderResourcesTable(){
   const wrap = document.getElementById("resourcesTableWrap");
   if(!wrap) return;
-  const rows = state.resources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+  // Active resources first, same "current work first" ordering as the
+  // Tickets list — an inactive roster shouldn't crowd out who's actually
+  // available today.
+  const rows = state.resources.slice().sort((a,b)=> {
+    const aActive = a.fields.IsActive !== false ? 0 : 1;
+    const bActive = b.fields.IsActive !== false ? 0 : 1;
+    if(aActive !== bActive) return aActive - bActive;
+    return (a.fields.Title||"").localeCompare(b.fields.Title||"");
+  });
   wrap.innerHTML = rows.length ? `
-    <div class="card" style="padding:0;">
-      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Open tickets</th><th>Status</th><th></th></tr></thead>
-      <tbody>${rows.map(r=>{
+    <div class="record-list">
+      ${rows.map(r=>{
         const active = r.fields.IsActive !== false;
         const openCount = ticketsForResource(r).filter(t => !isClosedStatus(t.fields.Status)).length;
-        return `<tr class="clickable" onclick="openResourceForm('${r.id}')">
-          <td><b>${esc(r.fields.Title)}</b></td>
-          <td>${esc(r.fields.ResourceType||"—")}</td>
-          <td>${esc(r.fields.BusinessUnit||"—")}</td>
-          <td>${esc(r.fields.MatchEmail||"—")}</td>
-          <td>${openCount || "—"}</td>
-          <td>${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}</td>
-          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openResourceDetail('${r.id}')">📊 Status</button></td>
-        </tr>`;
-      }).join("")}</tbody></table>
+        return `
+        <div class="record-card clickable ${active?"":"is-muted"}" onclick="openResourceForm('${r.id}')">
+          <div class="record-card-top">
+            <div>
+              <div class="record-card-title">${esc(r.fields.Title)}</div>
+              <div class="record-card-sub-row">
+                <span>${esc(r.fields.ResourceType||"—")}${r.fields.BusinessUnit ? ` · ${esc(r.fields.BusinessUnit)}` : ""}</span>
+                ${r.fields.MatchEmail ? `<span><span class="m-label">Email</span>${esc(r.fields.MatchEmail)}</span>` : ""}
+                <span><span class="m-label">Open tickets</span>${openCount || "—"}</span>
+              </div>
+            </div>
+            <div class="record-card-badges">
+              ${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openResourceDetail('${r.id}')">📊 Status</button>
+            </div>
+          </div>
+        </div>`;
+      }).join("")}
     </div>
   ` : `<div class="empty">No resources yet. Click "+ New resource" to add support staff or contractors — they'll then show up in every "Assigned to" picker.</div>`;
 }
