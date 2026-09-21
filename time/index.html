@@ -652,11 +652,11 @@ const msalConfig = {
 };
 const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
 const SITE_HOST = "conceptcompg.sharepoint.com";
-const SITE_PATH = "/sites/Concept_CSA";       // CSA_Resources still lives here (per v0.3 decision)
+const SITE_PATH = "/sites/Concept_CSA";       // CSA HUB's own site — CSA_Resources used to live here and be read directly (pre-v0.5); superseded by CG_Resources below, kept only for CSA_TimeEntries-adjacent references elsewhere.
 const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
-const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries (CSA HUB's own), CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments
+const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries (CSA HUB's own), CSA_ActiveEntities, CG_ExceptionsQueue, CG_ResourceHubAssignments, CG_Resources
 // Lists that live on the CG_Time site rather than Concept_CSA
-const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts", "CG_ClockLocations", "CG_EmployeeLocationAssignments"]);
+const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts", "CG_ClockLocations", "CG_EmployeeLocationAssignments", "CG_Resources"]);
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
@@ -891,57 +891,58 @@ async function resolveTimeSiteId(){
 }
 
 /* ============================================================
-   RESOURCE SOURCES — each HUB owns and manages its own Resources
-   list; CG Time only ever reads them, never writes. Which HUBs
-   exist, and where each one's Resources list lives, now comes from
-   the CG_Hubs list (managed in the HUBs admin view) instead of being
-   hardcoded here — onboarding a new HUB (e.g. SLA HUB) is "add a row
-   to CG_Hubs", not a code change. DEFAULT_RESOURCE_SOURCES below is
-   only a fallback for before CG_Hubs has been created in SharePoint,
-   so the app doesn't break in the meantime.
-   Every source list MUST expose a MatchEmail column using the same
-   convention as CSA_Resources, or cross-HUB matching (time entries,
-   hub assignments) breaks for that HUB's people.
+   RESOURCES — v0.5+: every HUB now federates its own Resources list
+   INTO one shared list, CG_Resources, on the CG_Time site itself,
+   instead of CG Time reaching out to read each HUB's list directly
+   from its own site. CG Time only ever reads CG_Resources — each
+   HUB's own federation flow is responsible for keeping it current
+   (upserting its own people into it on add/edit, and reflecting
+   deactivations/removals), same "CG Time reads, never writes" rule
+   as before, just against one list instead of several.
+   This replaced the earlier per-HUB multi-site fetch (hubSources() /
+   DEFAULT_RESOURCE_SOURCES / a dedicated CSA_Resources-on-Concept_CSA
+   read) after CSA_Resources and SLA HUB's own list both started
+   federating into CG_Resources — see CG_Time's own chat history
+   (Sept 2026) for why: a second, same-named "CSA_Resources" list had
+   been created directly on the CG_Time site by mistake, which this
+   consolidation also puts to rest by giving the shared list its own
+   unambiguous name.
+   Every row in CG_Resources MUST carry:
+     - MatchEmail — same convention as before; this is the join key
+       used everywhere (time entries, HUB assignments, timesheets,
+       reports) to match a person to their logged hours. It must be
+       spelled exactly as it appears in that person's EntryUser value
+       on whichever HUB's time entries they log against.
+     - HomeHub — the HUB key (e.g. "CSA_HUB", "SLA_HUB") that owns and
+       federates this person's record. This is what used to be inferred
+       from "which list did this row come from" back when each HUB had
+       its own physical list; now that everyone lands in one list, it
+       has to be an explicit column instead. Blank/unrecognised values
+       show up as "Unknown HUB" rather than silently mis-attributing
+       someone to the wrong HUB.
    ============================================================ */
-const DEFAULT_RESOURCE_SOURCES = [
-  { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_Resources", siteHost: SITE_HOST, sitePath: SITE_PATH },
-];
-
-// Builds the live list of resource sources: starts from
-// DEFAULT_RESOURCE_SOURCES (CSA_HUB — the one HUB with real production
-// data, present whether or not CG_Hubs has been created at all) and
-// then layers CG_Hubs rows on top, keyed by HubKey. This is a MERGE,
-// not a replace — registering SLA_HUB (or any other HUB) in CG_Hubs
-// must never silently drop CSA_HUB from the list just because CG_Hubs
-// is no longer empty. A row with IsActive:false, or with no
-// ResourcesListName on file (reserved but not wired up yet), removes
-// that key from the merged result instead of adding to it — including
-// a default, if someone ever explicitly registers CSA_HUB in CG_Hubs
-// with different site details or deactivates it on purpose.
-function hubSources(){
-  const merged = new Map();
-  DEFAULT_RESOURCE_SOURCES.forEach(src => merged.set(src.hub, src));
-  allHubs.forEach(h => {
-    const key = h.fields.Title;
-    if(!key) return;
-    const listName = (h.fields.ResourcesListName || "").trim();
-    if(h.fields.IsActive === false || !listName){
-      merged.delete(key);
-      return;
-    }
-    merged.set(key, {
-      hub: key,
-      label: h.fields.Label || key,
-      listName: listName,
-      siteHost: (h.fields.SiteHost || SITE_HOST).trim(),
-      sitePath: (h.fields.SitePath || "").trim(),
-    });
+// Fetches CG_Resources (one list, on the CG_Time site) and tags each
+// row with its HomeHub, resolved to a display label via hubLabelFor()
+// (defined further down, alongside CG_Hubs) — kept as _sourceHub /
+// _sourceHubLabel on each item so every existing consumer of those
+// two properties (Top Resources widget, the Resources page, Timesheets
+// header, etc.) needed no changes beyond this function.
+async function fetchAllResources(){
+  const items = await fetchAllListItems("CG_Resources");
+  return items.map(item => {
+    const homeHub = (item.fields.HomeHub || "").trim() || null;
+    return {
+      ...item,
+      _sourceHub: homeHub,
+      _sourceHubLabel: homeHub ? hubLabelFor(homeHub) : "Unknown HUB",
+    };
   });
-  return Array.from(merged.values());
 }
 
-// Resolved site IDs, keyed by "host:path", so multiple resource
-// sources on the same site only resolve that site once.
+// Resolved site IDs, keyed by "host:path" — still used by the
+// TimeEntries federation below (each HUB's own TimeEntries list is
+// still read directly from its own site; only Resources moved to the
+// single shared-list model above).
 const siteIdCache = {};
 async function resolveSite(host, path){
   const key = `${host}:${path}`;
@@ -962,47 +963,27 @@ async function fetchListItemsFromSite(siteId, listName, extraQuery=""){
   return items;
 }
 
-// Fetches every configured HUB's own Resources list and merges them,
-// tagging each row with which HUB it came from. A source that fails
-// (list not created yet, site unreachable) is skipped with a console
-// warning instead of breaking the whole dashboard — most HUBs don't
-// have a Resources list of their own yet.
-async function fetchAllResources(){
-  const results = await Promise.all(hubSources().map(async src => {
-    try{
-      const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
-      const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
-      return items.map(item => ({ ...item, _sourceHub: src.hub, _sourceHubLabel: src.label }));
-    }catch(err){
-      console.warn(`Resource source ${src.listName} (${src.hub}) unavailable — skipping.`, err);
-      return [];
-    }
-  }));
-  return results.flat();
-}
-
 /* ============================================================
-   TIMEENTRIES SOURCES — the same federation pattern as Resources
-   above, applied to time entries. Each HUB owns and writes to its
-   own TimeEntries list; CG Time only ever reads them. CSA HUB's
+   TIMEENTRIES SOURCES — each HUB still owns and writes to its own
+   TimeEntries list, read directly from that HUB's own site; this is
+   NOT federated into one shared list the way Resources now is (see
+   CG_Resources above) — TimeEntries stays multi-source. CSA HUB's
    CSA_TimeEntries happens to live on the CG_Time site itself
    (a historical artifact of CG Time originally being built inside
    CSA HUB's own data model), so it's still the built-in default —
    but SLA HUB logs its own hours into its own SLA_TimeEntries list
    on its own Helpdesk site, and does NOT write into CSA_TimeEntries.
    Onboarding SLA HUB's feed (or any future HUB's) is a CG_Hubs row
-   with TimeEntriesListName filled in, not a code change — same
-   convention as ResourcesListName above.
+   with TimeEntriesListName filled in, not a code change.
    ============================================================ */
 const DEFAULT_TIMEENTRIES_SOURCES = [
   { hub: "CSA_HUB", label: "CSA HUB", listName: "CSA_TimeEntries", siteHost: TIME_SITE_HOST, sitePath: TIME_SITE_PATH },
 ];
 
-// Merge rules identical to hubSources(): CG_Hubs rows layer on top of
-// the built-in default, keyed by HubKey. A row with IsActive:false or
-// no TimeEntriesListName on file removes that key instead of adding
-// to it — including CSA_HUB itself, if it's ever explicitly
-// re-registered with different site details.
+// CG_Hubs rows layer on top of the built-in default, keyed by HubKey.
+// A row with IsActive:false or no TimeEntriesListName on file removes
+// that key instead of adding to it — including CSA_HUB itself, if
+// it's ever explicitly re-registered with different site details.
 function timeEntriesSources(){
   const merged = new Map();
   DEFAULT_TIMEENTRIES_SOURCES.forEach(src => merged.set(src.hub, src));
@@ -1250,7 +1231,7 @@ function hubForEntry(entry){
 }
 // Same name/email matching pattern csa-hub/index.html already relies on —
 // CSA_TimeEntries.ResourceRefLookupId isn't trustworthy for this (per that
-// file's own comments), so entries are matched to CSA_Resources by EntryUser
+// file's own comments), so entries are matched to CG_Resources by EntryUser
 // text against Title / MatchEmail instead.
 function resourceForEntry(entry){
   const eu = (entry.fields.EntryUser || "").toLowerCase().trim();
@@ -1702,7 +1683,7 @@ function renderCalendarHeat(){
 }
 
 /* ============================================================
-   RESOURCES VIEW — manage which HUBs each CSA_Resources person is
+   RESOURCES VIEW — manage which HUBs each CG_Resources person is
    also active in, writing to CG_ResourceHubAssignments. Removal is
    a soft-delete (IsActive: false), consistent with the IsActive
    pattern already used elsewhere rather than a hard delete.
@@ -1716,8 +1697,7 @@ const DEFAULT_HUB_KEYS = ["CSA_HUB", "PSP_HUB", "TRAINING_HUB"];
 // The list of HUB keys someone can be assigned to: DEFAULT_HUB_KEYS
 // merged with CG_Hubs — add a row there (e.g. for SLA HUB) and it
 // shows up here with no code change, WITHOUT dropping the baseline
-// HUBs just because CG_Hubs is no longer empty (see hubSources() for
-// the same merge pattern, applied there to resource-fetching).
+// HUBs just because CG_Hubs is no longer empty.
 function hubKeys(){
   const merged = new Map();
   DEFAULT_HUB_KEYS.forEach(k => merged.set(k, k));
@@ -1745,7 +1725,7 @@ function assignmentsForResource(resource){
 function renderResourcesView(){
   const container = document.getElementById("view-resources");
   if(allResources.length === 0){
-    container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No resources found in CSA_Resources.</div></div>`;
+    container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No resources found in CG_Resources.</div></div>`;
     return;
   }
   const sorted = allResources.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
@@ -1757,16 +1737,16 @@ function renderResourcesView(){
     const chips = assignments.map(a => `
       <span class="hub-chip">${esc(hubLabelFor(a.fields.Hub))}<span class="x" data-remove-id="${esc(a.id)}">&times;</span></span>
     `).join("");
-    // Exclude the HUB this person's own Resources list already puts them
-    // in — that's their home HUB, implicit from the source list, not
-    // something CG_ResourceHubAssignments needs to restate.
+    // Exclude this person's own HomeHub (from CG_Resources) — that's
+    // already their home HUB, not something CG_ResourceHubAssignments
+    // needs to restate.
     const available = hubKeys().filter(h => !assignedHubs.has(h) && h !== r._sourceHub);
     // No MatchEmail means there's no reliable key to write CG_ResourceHubAssignments
     // against (or to match it back to this person later) — so there's nothing
     // actionable to show here rather than a control that can only ever fail.
     let addControl;
     if(!email){
-      addControl = `<span style="font-size:11px;color:var(--ink-muted);">no MatchEmail on file in CSA_Resources — can't assign a HUB here</span>`;
+      addControl = `<span style="font-size:11px;color:var(--ink-muted);">no MatchEmail on file in CG_Resources — can't assign a HUB here</span>`;
     } else if(available.length === 0){
       addControl = `<span style="font-size:11px;color:var(--ink-muted);">all HUBs assigned</span>`;
     } else {
@@ -1797,7 +1777,7 @@ function renderResourcesView(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9733;</span>Resource &rarr; HUB assignments</h3>
-      <div class="panel-sub">Pulled from every HUB's own Resources list (only CSA_Resources exists today). Add a HUB for anyone who also works outside their home HUB &mdash; writes straight to CG_ResourceHubAssignments.</div>
+      <div class="panel-sub">Pulled from CG_Resources &mdash; each HUB federates its own people into it, tagged with their HomeHub. Add a HUB for anyone who also works outside their home HUB &mdash; writes straight to CG_ResourceHubAssignments.</div>
     </div>
     <div class="res-table-wrap">
       <div class="res-row head"><div>Name</div><div>Email</div><div>Status</div><div>HUB assignments</div></div>
@@ -1828,7 +1808,7 @@ function reportRowMsg(msgEl, text, isError){
 
 async function addHubAssignmentFor(name, email, hub, msgEl){
   if(!email){
-    reportRowMsg(msgEl, `Can't add a HUB for ${name} — no MatchEmail on file in CSA_Resources.`, true);
+    reportRowMsg(msgEl, `Can't add a HUB for ${name} — no MatchEmail on file in CG_Resources.`, true);
     return;
   }
   try{
@@ -3018,7 +2998,7 @@ function renderEmployeesHub(){
 
 /* ============================================================
    EMPLOYEES TAB — manage CG_Employees, entirely separate from
-   CSA_Resources (a person can be both, but is set up independently
+   CG_Resources (a person can be both, but is set up independently
    in each place — CG Time draws no link between them). Each
    Employee can carry a Default Shift (see the Shifts tab), which
    pre-fills their days in Time Entry — Time In/Out and Break Length
