@@ -3379,7 +3379,7 @@ let resourceDetailId = null;
 function renderResources(){
   document.getElementById("page-resources").innerHTML = `
     <div class="page-header">
-      <div><h2>Resources</h2><div class="sub">Support staff and contractors — click a name to see what's currently on their plate</div></div>
+      <div><h2>Resources</h2><div class="sub">Support staff and contractors — click a name to edit their details, or "Status" to see what's currently on their plate</div></div>
       <button class="btn btn-accent" onclick="openResourceForm()">+ New resource</button>
     </div>
     <div id="resourcesTableWrap"></div>
@@ -3395,17 +3395,18 @@ function renderResourcesTable(){
   const rows = state.resources.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
   wrap.innerHTML = rows.length ? `
     <div class="card" style="padding:0;">
-      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Open tickets</th><th>Status</th></tr></thead>
+      <table><thead><tr><th>Name</th><th>Type</th><th>Business unit</th><th>Match email</th><th>Open tickets</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows.map(r=>{
         const active = r.fields.IsActive !== false;
         const openCount = ticketsForResource(r).filter(t => !isClosedStatus(t.fields.Status)).length;
-        return `<tr class="clickable" onclick="openResourceDetail('${r.id}')">
+        return `<tr class="clickable" onclick="openResourceForm('${r.id}')">
           <td><b>${esc(r.fields.Title)}</b></td>
           <td>${esc(r.fields.ResourceType||"—")}</td>
           <td>${esc(r.fields.BusinessUnit||"—")}</td>
           <td>${esc(r.fields.MatchEmail||"—")}</td>
           <td>${openCount || "—"}</td>
           <td>${active ? `<span class="badge badge-good">Active</span>` : `<span class="badge badge-neutral">Inactive</span>`}</td>
+          <td><button class="btn btn-sm" onclick="event.stopPropagation(); openResourceDetail('${r.id}')">📊 Status</button></td>
         </tr>`;
       }).join("")}</tbody></table>
     </div>
