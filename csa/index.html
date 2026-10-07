@@ -1344,13 +1344,14 @@ function renderTimesheetsTable(){
     const csa = agreementByTitle[csaText] || null;
     const proposal = !csa ? (proposalByTitle[csaText] || null) : null;
     const csaLabel = csa ? csa.fields.Title : (proposal ? `${proposal.fields.Title} (Proposal)` : (f.CSA || "—"));
+    const csaDesc = ((csa || proposal || {}).fields || {}).Description || "";
     const resource = findResourceForEntry(t);
     const resourceLabel = resource ? resource.fields.Title : (f.EntryUser || "—");
     return `
       <tr>
         <td>${fmtDateDMY(f.WorkDate) || "—"}</td>
         <td>${esc(resourceLabel)}</td>
-        <td>${esc(csaLabel)}</td>
+        <td>${esc(csaLabel)}${csaDesc ? `<div style="font-size:12px;color:var(--text-muted,#6b7280);">${esc(csaDesc)}</div>` : ""}</td>
         <td style="text-align:right" class="amount">${parseFloat(f.Hours||0).toFixed(2)}</td>
         <td>${billableSelectHtml(t)}</td>
         <td><input type="text" class="activity-detail-input" value="${esc(f.ActivityDetail)}" placeholder="—" data-original="${esc(f.ActivityDetail)}" onblur="updateActivityDetail('${t.id}', this)"></td>
