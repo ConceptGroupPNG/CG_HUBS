@@ -252,7 +252,7 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .attach-row .attach-meta{font-size:11.5px;color:var(--ink-2);white-space:nowrap;flex-shrink:0;}
 .tabbar{display:flex;gap:4px;border-bottom:2px solid var(--gridline);margin-bottom:16px;}
 .tabbar .tab{padding:9px 14px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
-.tabbar .tab.active{color:var(--accent);border-color:var(--accent);}
+.tabbar .tab.active{color:var(--accent-dk);border-color:var(--accent-dk);}
 .section-title{font-size:13px;font-weight:700;margin:18px 0 8px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-left:3px solid var(--accent);padding-left:8px;}
 
 /* Agreement detail — each section (Notes, Fee schedule, Scope of Work,
@@ -1211,7 +1211,10 @@ function renderDashboard(){
       <div class="stat-tile tone-critical"><div class="val">${breached.length}</div><div class="lbl">Breached</div></div>
       <div class="stat-tile tone-good"><div class="val">${resolvedThisWeek.length}</div><div class="lbl">Resolved this week</div></div>
     </div>
-    <div class="section-title" style="margin-top:0;">Open work board</div>
+    <div class="tabbar" id="dashboardTabs">
+      <div class="tab ${dashboardTab==='mine'?'active':''}" data-tab="mine" onclick="setDashboardTab('mine')">My Tickets (<span id="dashTabMineCount">0</span>)</div>
+      <div class="tab ${dashboardTab==='all'?'active':''}" data-tab="all" onclick="setDashboardTab('all')">All Tickets (<span id="dashTabAllCount">0</span>)</div>
+    </div>
     <div id="dashboardBoardWrap"></div>
   `;
   renderDashboardBoard();
@@ -1476,11 +1479,28 @@ function renderTicketsBoard(wrap){
 // out of the "open tickets" stat tiles above it — Resolved this week covers
 // that instead.
 const DASHBOARD_KANBAN_COLUMNS = KANBAN_COLUMNS.filter(c => c.key !== "Done");
+// Dashboard opens on "My Tickets" (open tickets assigned to whoever is signed
+// in); the other tab shows every open ticket.
+let dashboardTab = "mine";
+function dashboardTickets(tab){
+  const open = state.tickets.filter(t => !isClosedStatus(t.fields.Status));
+  if(tab !== "mine") return open;
+  const myEmail = (currentAccount?.username || "").toLowerCase().trim();
+  return myEmail ? open.filter(t => (t.fields.AssignedToEmail||"").toLowerCase().trim() === myEmail) : [];
+}
+function setDashboardTab(tab){
+  dashboardTab = tab;
+  document.querySelectorAll("#dashboardTabs .tab").forEach(el => el.classList.toggle("active", el.dataset.tab === tab));
+  renderDashboardBoard();
+}
 function renderDashboardBoard(){
   const wrap = document.getElementById("dashboardBoardWrap");
   if(!wrap) return;
-  const openTickets = state.tickets.filter(t => !isClosedStatus(t.fields.Status));
-  renderKanbanBoard(wrap, openTickets, DASHBOARD_KANBAN_COLUMNS);
+  renderKanbanBoard(wrap, dashboardTickets(dashboardTab), DASHBOARD_KANBAN_COLUMNS);
+  // keep the counts in the tab labels current as tickets change
+  const mineEl = document.getElementById("dashTabMineCount"), allEl = document.getElementById("dashTabAllCount");
+  if(mineEl) mineEl.textContent = dashboardTickets("mine").length;
+  if(allEl) allEl.textContent = dashboardTickets("all").length;
 }
 
 // Called everywhere a ticket mutation needs to refresh whatever ticket views
