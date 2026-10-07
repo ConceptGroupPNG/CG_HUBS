@@ -3843,7 +3843,7 @@ function buildDailyReportDocHtml(dateStr, rows){
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Daily Time Report</div>
 <div class="doc-sub">${esc(dayLabel)}</div>
@@ -4283,7 +4283,7 @@ function buildTimeExceptionsReportDocHtml(scopeLabel, exceptions){
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Time Exceptions Report</div>
 <div class="doc-sub">CG Time &middot; ${esc(scopeLabel)}</div>
@@ -4938,7 +4938,7 @@ function renderTimesheetBody(){
    PRINTABLE DOCUMENTS — Timesheets and Reports, generated as
    self-contained documents in a new tab, same pattern csa-hub's
    own "Generate Timesheet" / "Generate Report" features already
-   use in production (@page-sized for A4, own Print/Save-as-PDF
+   use in production (A4 portrait by default, own Print/Save-as-PDF
    button, signature block on the timesheet). CG Time reuses that
    proven format rather than inventing a new one, just sourced
    from CG Time's own aggregated (read-only) data.
@@ -4974,7 +4974,12 @@ function openDocInNewTab(html){
 }
 
 const DOC_STYLE = `
-  @page{ size:A4; margin:20mm 16mm; }
+  /* No forced page size: a fixed @page size that disagrees with the print
+     dialog's Layout (e.g. a printer left on Landscape) makes Chromium/Edge
+     rotate the whole page 90 degrees onto the paper. Leaving size to the
+     dialog means the layout always reflows upright for whatever paper and
+     orientation is chosen (Portrait by default). */
+  @page{ margin:20mm 16mm; }
   body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1a1a1a; font-size:11.5px; line-height:1.5; max-width:800px; margin:0 auto; padding:30px 40px; }
   .doc-header{text-align:center;font-size:16px;font-weight:700;margin-bottom:4px;}
   .doc-sub{text-align:center;font-size:12px;color:#444;margin-bottom:20px;}
@@ -5004,6 +5009,7 @@ const DOC_STYLE = `
   .footer-stamp{margin-top:30px;font-size:10px;color:#888;border-top:1px solid #ccc;padding-top:8px;}
   .no-print{position:fixed;top:16px;right:16px;}
   .no-print button{background:#5e491f;color:#fff8e8;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,sans-serif;}
+  .no-print .print-hint{margin-top:6px;font-size:10.5px;color:#5e491f;text-align:right;font-family:-apple-system,sans-serif;}
   @media print{ .no-print{display:none;} }
 `;
 
@@ -5074,7 +5080,7 @@ function buildTimesheetDocHtml(resource, start, end){
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Timesheet</div>
 <div class="doc-sub">${esc(resource.fields.Title)} &middot; ${esc(periodLabel)}</div>
@@ -5191,7 +5197,7 @@ function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, bil
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Time Entries Report</div>
 <div class="doc-sub">${esc(resource.fields.Title)}</div>
@@ -5211,6 +5217,7 @@ function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, bil
 </table>
 
 ${d.csaLabels.length ? `
+<div style="break-inside:avoid;page-break-inside:avoid;">
 <div style="font-size:12px;font-weight:700;margin:6px 0 8px;">Subtotals by CSA</div>
 <table class="subtotal-table">
   <tbody>
@@ -5218,6 +5225,7 @@ ${d.csaLabels.length ? `
     <tr><td>Grand Total</td><td style="text-align:right">${d.grandTotal.toFixed(2)}</td></tr>
   </tbody>
 </table>
+</div>
 ` : ""}
 
 <div class="summary-row">
@@ -5289,7 +5297,7 @@ function buildExceptionsReportDocHtml(exceptions){
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Exceptions Report</div>
 <div class="doc-sub">CG Time &middot; aggregated view for review only</div>
@@ -5386,7 +5394,7 @@ function buildPayrollSummaryDocHtml(period, rows, grandTotal){
 <style>${DOC_STYLE}</style>
 </head>
 <body>
-<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Payroll Summary</div>
 <div class="doc-sub">Pay #${esc(period.fields.PayNumber)}</div>
