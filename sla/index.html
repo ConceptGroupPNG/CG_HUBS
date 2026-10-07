@@ -17,7 +17,7 @@
   --accent:#2a78d6; --accent-dk:#1c5cab;
   --good:#0ca30c; --warning:#c07800; --serious:#c1552f; --critical:#d03b3b;
   --good-bg:#e8f7e8; --warning-bg:#fef3e0; --serious-bg:#fbe9e2; --critical-bg:#fbe6e6;
-  --main-bg:#c9ced7;
+  --main-bg:#c9ced7; --lane-bg:#e1e4ea;
   --radius:10px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -129,12 +129,12 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .record-card.is-muted:hover{opacity:0.85;}
 
 /* ---------- Kanban board (Tickets page + Dashboard) ---------- */
-/* No grey panel behind the cards: the board and its columns are transparent,
-   so white cards sit straight on the app's (darker) page background and its
-   diagram watermark. Columns are only outlined with a faint border. */
+/* The board itself has no backing panel; each swim lane (column) has its own
+   solid light fill (--lane-bg) sitting on the darker page background, with
+   white cards on top of the lane. */
 .kanban-board{display:flex;gap:14px;overflow-x:auto;padding:4px 4px 12px;}
-.kanban-col{background:transparent;border:1.5px solid rgba(11,11,15,0.16);border-radius:10px;flex:0 0 272px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
-.kanban-col.drag-over{outline-color:var(--accent);background:rgba(42,120,214,0.10);}
+.kanban-col{background:var(--lane-bg);border:1.5px solid rgba(11,11,15,0.16);border-radius:10px;flex:0 0 272px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
+.kanban-col.drag-over{outline-color:var(--accent);background:#d3e0f4;}
 .kanban-col-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1.5px solid rgba(11,11,15,0.16);flex-shrink:0;}
 .kanban-col-count{background:var(--surface-1);border-radius:20px;padding:2px 9px;font-size:11.5px;color:var(--ink-2);font-weight:700;}
 .kanban-col-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
