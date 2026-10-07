@@ -2170,16 +2170,16 @@ function showProposalDetail(itemId){
           <div class="hours-summary">
             <div class="hours-stat">
               <div class="metric-label">Total Hours</div>
-              <div class="metric-value">${totalHours.toFixed(1)}</div>
+              <div class="metric-value">${totalHours.toFixed(2)}</div>
             </div>
             <div class="hours-stat">
               <div class="metric-label">Billable</div>
-              <div class="metric-value">${billableHours.toFixed(1)}</div>
+              <div class="metric-value">${billableHours.toFixed(2)}</div>
             </div>
           </div>
           ${timeEntries.length ? `
             <table class="mini-table">
-              <thead><tr><th>Date</th><th style="text-align:right">Hours</th><th>Billable</th></tr></thead>
+              <thead><tr><th>Date</th><th>Resource</th><th style="text-align:right">Hours</th><th>Billable</th></tr></thead>
               <tbody>
                 ${timeEntries
                   .sort((x,y) => (y.fields.WorkDate||"").localeCompare(x.fields.WorkDate||""))
@@ -2187,7 +2187,8 @@ function showProposalDetail(itemId){
                   .map(t => `
                     <tr>
                       <td>${fmtDateDMY(t.fields.WorkDate)}</td>
-                      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(1)}</td>
+                      <td>${esc((() => { const r = findResourceForEntry(t); return r ? r.fields.Title : (t.fields.EntryUser || "—"); })())}</td>
+                      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
                       <td>${billableDisplay(t)}</td>
                     </tr>
                   `).join("")}
@@ -3483,16 +3484,16 @@ function showAgreementDetail(itemId){
           <div class="hours-summary">
             <div class="hours-stat">
               <div class="metric-label">Total Hours</div>
-              <div class="metric-value">${totalHours.toFixed(1)}</div>
+              <div class="metric-value">${totalHours.toFixed(2)}</div>
             </div>
             <div class="hours-stat">
               <div class="metric-label">Billable</div>
-              <div class="metric-value">${billableHours.toFixed(1)}</div>
+              <div class="metric-value">${billableHours.toFixed(2)}</div>
             </div>
           </div>
           ${timeEntries.length ? `
             <table class="mini-table">
-              <thead><tr><th>Date</th><th style="text-align:right">Hours</th><th>Billable</th></tr></thead>
+              <thead><tr><th>Date</th><th>Resource</th><th style="text-align:right">Hours</th><th>Billable</th></tr></thead>
               <tbody>
                 ${timeEntries
                   .sort((x,y) => (y.fields.WorkDate||"").localeCompare(x.fields.WorkDate||""))
@@ -3500,7 +3501,8 @@ function showAgreementDetail(itemId){
                   .map(t => `
                     <tr>
                       <td>${fmtDateDMY(t.fields.WorkDate)}</td>
-                      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(1)}</td>
+                      <td>${esc((() => { const r = findResourceForEntry(t); return r ? r.fields.Title : (t.fields.EntryUser || "—"); })())}</td>
+                      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
                       <td>${billableDisplay(t)}</td>
                     </tr>
                   `).join("")}
