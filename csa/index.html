@@ -1680,6 +1680,12 @@ document.getElementById("generateReportBtn").addEventListener("click", () => {
   generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter);
 });
 
+function descForCsaTitle(title){
+  const t = (title||"").trim();
+  const it = agreementByTitle[t] || proposalByTitle[t];
+  return (it && it.fields.Description) || "";
+}
+
 function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter){
   const resource = resourceMap[resourceId];
   if(!resource) return;
@@ -1724,7 +1730,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
     const filterTitle = fkind === "prop"
       ? (proposalMap[frawId] ? proposalMap[frawId].fields.Title : "")
       : (agreementMap[frawId] ? agreementMap[frawId].fields.Title : "");
-    if(filterTitle) filterDescParts.push(filterTitle);
+    if(filterTitle) filterDescParts.push(descForCsaTitle(filterTitle) ? `${filterTitle} — ${descForCsaTitle(filterTitle)}` : filterTitle);
   }
   if(billableFilter === "true") filterDescParts.push("Billable only");
   if(billableFilter === "false") filterDescParts.push("Non-billable only");
@@ -1733,7 +1739,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
   const rowsHtml = entries.length ? entries.map(t => `
     <tr>
       <td>${fmtDateDMY(t.fields.WorkDate) || "—"}</td>
-      <td>${esc(t.fields.CSA) || "—"}</td>
+      <td>${esc(t.fields.CSA) || "—"}${descForCsaTitle(t.fields.CSA) ? `<br><span style="font-size:9.5px;color:#555;">${esc(descForCsaTitle(t.fields.CSA))}</span>` : ""}</td>
       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
       <td>${billableTextDisplay(t)}</td>
       <td>${esc(t.fields.ActivityDetail) || "—"}</td>
@@ -1742,7 +1748,7 @@ function generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFi
   `).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
 
   const subtotalsHtml = csaLabels.map(label => `
-    <tr><td>${esc(label)}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
+    <tr><td>${esc(label)}${descForCsaTitle(label) ? ` — ${esc(descForCsaTitle(label))}` : ""}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
   `).join("");
 
   const docHtml = `
