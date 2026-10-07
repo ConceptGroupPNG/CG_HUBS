@@ -17,7 +17,7 @@
   --accent:#2a78d6; --accent-dk:#1c5cab;
   --good:#0ca30c; --warning:#c07800; --serious:#c1552f; --critical:#d03b3b;
   --good-bg:#e8f7e8; --warning-bg:#fef3e0; --serious-bg:#fbe9e2; --critical-bg:#fbe6e6;
-  --board-bg:#e2e4e9; --board-col-bg:#eef0f3;
+  --board-bg:rgba(15,17,23,0.065); --board-col-bg:#eef0f3;
   --radius:10px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -128,12 +128,14 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .record-card.is-muted{border-left-color:var(--gridline);opacity:0.62;}
 .record-card.is-muted:hover{opacity:0.85;}
 
-/* ---------- Tickets Kanban board ---------- */
-/* The board sits on a slightly darker grey canvas than the rest of the app
-   (--board-bg vs --page), with columns a step lighter than that canvas and
-   white cards on top — the same light->dark layering the reference design
-   used, in SLA HUB's own palette rather than copying its colors. */
-.kanban-board{display:flex;gap:14px;overflow-x:auto;padding:16px;background:var(--board-bg);border-radius:14px;}
+/* ---------- Kanban board (Tickets page + Dashboard) ---------- */
+/* No separate solid-color canvas — --board-bg is a translucent dark-grey
+   layer (not an opaque fill), so the app's existing page background (and
+   its faint diagram watermark) still shows through underneath, just dimmed.
+   Columns sit a step lighter on top of that tint, with white cards on top
+   of those — same light-on-dark layering idea as the reference design,
+   without covering up the app's own background. */
+.kanban-board{display:flex;gap:14px;overflow-x:auto;padding:16px;background:var(--board-bg);border:1px solid var(--border);border-radius:14px;}
 .kanban-col{background:var(--board-col-bg);border-radius:10px;flex:0 0 272px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
 .kanban-col.drag-over{outline-color:var(--accent);background:#e7edf7;}
 .kanban-col-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--gridline);flex-shrink:0;}
@@ -1183,23 +1185,12 @@ window.addEventListener("load", init);
    DASHBOARD
    ============================================================ */
 function renderDashboard(){
-  const openTickets = state.tickets.filter(t => !["Resolved","Closed"].includes(t.fields.Status));
+  const openTickets = state.tickets.filter(t => !isClosedStatus(t.fields.Status));
   const withStatus = openTickets.map(t => ({ t, bs: breachStatus(t) }));
   const atRisk = withStatus.filter(x => x.bs.response==="atrisk" || x.bs.resolution==="atrisk");
   const breached = withStatus.filter(x => x.bs.response==="breached" || x.bs.resolution==="breached");
   const weekAgo = new Date(Date.now() - 7*86400000);
   const resolvedThisWeek = state.tickets.filter(t => t.fields.ResolvedAt && new Date(t.fields.ResolvedAt) >= weekAgo);
-
-  const watchList = withStatus
-    .filter(x => ["atrisk","breached"].includes(x.bs.response) || ["atrisk","breached"].includes(x.bs.resolution))
-    .sort((a,b) => new Date(a.t.fields.ResolutionDueAt||a.t.fields.ResponseDueAt||0) - new Date(b.t.fields.ResolutionDueAt||b.t.fields.ResponseDueAt||0))
-    .slice(0,15);
-
-  const myEmail = (currentAccount?.username || "").toLowerCase().trim();
-  const myTickets = withStatus
-    .filter(x => (x.t.fields.AssignedToEmail||"").toLowerCase().trim() === myEmail && myEmail)
-    .sort((a,b) => new Date(a.t.fields.ResolutionDueAt||a.t.fields.ResponseDueAt||0) - new Date(b.t.fields.ResolutionDueAt||b.t.fields.ResponseDueAt||0))
-    .slice(0,15);
 
   document.getElementById("page-dashboard").innerHTML = `
     <div class="page-header">
@@ -1211,52 +1202,10 @@ function renderDashboard(){
       <div class="stat-tile tone-critical"><div class="val">${breached.length}</div><div class="lbl">Breached</div></div>
       <div class="stat-tile tone-good"><div class="val">${resolvedThisWeek.length}</div><div class="lbl">Resolved this week</div></div>
     </div>
-    <div class="card">
-      <div class="section-title" style="margin-top:0;">At risk / breached tickets</div>
-      ${watchList.length ? `
-      <div class="record-list">
-        ${watchList.map(({t,bs}) => `
-        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
-          <div class="record-card-top">
-            <div>
-              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub-row">
-                <span>${esc(clientName(t))}</span>
-                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
-                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
-                <span><span class="m-label">Assigned</span>${assignedBadge(t)}</span>
-              </div>
-            </div>
-            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-        </div>`).join("")}
-      </div>
-      ` : `<div class="empty">Nothing at risk or breached right now.</div>`}
-    </div>
-    <div class="card">
-      <div class="section-title" style="margin-top:0;">My tickets</div>
-      ${myTickets.length ? `
-      <div class="record-list">
-        ${myTickets.map(({t,bs}) => `
-        <div class="record-card clickable ${ticketCardClass(t, bs)}" onclick="navigate('tickets'); openTicketDetail('${t.id}');">
-          <div class="record-card-top">
-            <div>
-              <div class="record-card-title"><span class="num">${esc(t.fields.TicketNumber||t.id)}</span>${esc(t.fields.Title||"")}</div>
-              <div class="record-card-sub-row">
-                <span>${esc(clientName(t))}</span>
-                <span><span class="m-label">Status</span>${ticketStatusBadge(t.fields.Status)}</span>
-                <span><span class="m-label">Response</span>${statusBadge(bs.response)}</span>
-                <span><span class="m-label">Resolution</span>${statusBadge(bs.resolution)}</span>
-              </div>
-            </div>
-            <div class="record-card-badges">${priorityBadge(t.fields.Priority)}</div>
-          </div>
-        </div>`).join("")}
-      </div>
-      ` : `<div class="empty">${myEmail ? "No open tickets assigned to you right now." : "Sign in to see tickets assigned to you."}</div>`}
-    </div>
+    <div class="section-title" style="margin-top:0;">Open work board</div>
+    <div id="dashboardBoardWrap"></div>
   `;
+  renderDashboardBoard();
 }
 
 // Shows "Internal Support" instead of a bare "—" when a ticket genuinely has
@@ -1451,25 +1400,55 @@ function kanbanCardHtml(t){
   </div>`;
 }
 
-function renderTicketsBoard(wrap){
-  const rows = filteredTickets();
+// Shared renderer — both the Tickets page's own board and the Dashboard's
+// board call this with their own ticket list and column set, so the exact
+// same markup/CSS/drag-and-drop powers both instead of two near-duplicates.
+function renderKanbanBoard(wrap, tickets, columns){
   const byCol = {};
-  KANBAN_COLUMNS.forEach(c => byCol[c.key] = []);
-  rows.forEach(t => {
+  columns.forEach(c => byCol[c.key] = []);
+  tickets.forEach(t => {
     const col = ticketBoardColumnFor(t.fields.Status);
     (byCol[col] || (byCol[col] = [])).push(t);
   });
   wrap.innerHTML = `
     <div class="kanban-board">
-      ${KANBAN_COLUMNS.map(c => `
+      ${columns.map(c => `
       <div class="kanban-col" ondragover="onKanbanColDragOver(event)" ondragleave="onKanbanColDragLeave(event)" ondrop="onKanbanColDrop(event,'${c.key}')">
-        <div class="kanban-col-header"><span>${esc(c.label)}</span><span class="kanban-col-count">${byCol[c.key].length}</span></div>
+        <div class="kanban-col-header"><span>${esc(c.label)}</span><span class="kanban-col-count">${(byCol[c.key]||[]).length}</span></div>
         <div class="kanban-col-body">
-          ${byCol[c.key].length ? byCol[c.key].map(kanbanCardHtml).join("") : `<div class="kanban-empty">No tickets</div>`}
+          ${(byCol[c.key]||[]).length ? byCol[c.key].map(kanbanCardHtml).join("") : `<div class="kanban-empty">No tickets</div>`}
         </div>
       </div>`).join("")}
     </div>
   `;
+}
+
+function renderTicketsBoard(wrap){
+  renderKanbanBoard(wrap, filteredTickets(), KANBAN_COLUMNS);
+}
+
+// Dashboard's "live status across all open work" board — all open tickets
+// (not just filtered/assigned-to-me subsets), same card/column styling and
+// drag-and-drop as the Tickets page's board. No Done column here: a
+// resolved/closed ticket drops off this board the same way it already drops
+// out of the "open tickets" stat tiles above it — Resolved this week covers
+// that instead.
+const DASHBOARD_KANBAN_COLUMNS = KANBAN_COLUMNS.filter(c => c.key !== "Done");
+function renderDashboardBoard(){
+  const wrap = document.getElementById("dashboardBoardWrap");
+  if(!wrap) return;
+  const openTickets = state.tickets.filter(t => !isClosedStatus(t.fields.Status));
+  renderKanbanBoard(wrap, openTickets, DASHBOARD_KANBAN_COLUMNS);
+}
+
+// Called everywhere a ticket mutation needs to refresh whatever ticket views
+// are currently in the DOM — the Tickets page's board/list and the
+// Dashboard's board both stay live, regardless of which page is actually
+// showing right now (the other page's markup just sits hidden but current,
+// ready for when the user navigates back to it).
+function refreshTicketViews(){
+  if(document.getElementById("ticketsTableWrap")) renderTicketsTable();
+  if(document.getElementById("dashboardBoardWrap")) renderDashboardBoard();
 }
 
 // Drag-and-drop: dragging a card to a different column changes the ticket's
@@ -1922,10 +1901,11 @@ function openTicketForm(){
 
 async function submitTicketForm(){
   await submitTicketFormCore({});
-  // Guard: this form can now be opened from the Agreements page too (via
-  // "+ New ticket under this agreement/work order"), where the Tickets
-  // page's own table markup may not exist in the DOM yet.
-  if(document.getElementById("ticketsTableWrap")) renderTicketsTable();
+  // refreshTicketViews() guards its own lookups — this form can now be
+  // opened from the Agreements page too (via "+ New ticket under this
+  // agreement/work order"), where the Tickets page's own table markup may
+  // not exist in the DOM yet.
+  refreshTicketViews();
   if(agreementDetailId) renderAgreementDetail();
   if(workOrderDetailId) renderWorkOrderDetail();
 }
@@ -2214,7 +2194,7 @@ async function submitEditTicketForm(ticketId){
     toast("Ticket updated");
     syncTicketActiveEntity(t);
     renderTicketDetail();
-    if(document.getElementById("ticketsTableWrap")) renderTicketsTable();
+    refreshTicketViews();
   }catch(e){ console.error(e); toast("Couldn't save changes: " + e.message, true); }
 }
 
@@ -2230,7 +2210,7 @@ async function updateTicketStatus(id, status){
     await graphUpdateItem("SLA_Tickets", id, fields);
     Object.assign(t.fields, fields);
     toast("Status updated");
-    renderTicketDetail(); renderTicketsTable();
+    renderTicketDetail(); refreshTicketViews();
     await reconcileExceptions();
     // Resolved/Closed drops the ticket out of CG Time's widget dropdown;
     // reopening it (or any other status) brings it back.
@@ -2471,7 +2451,7 @@ async function submitReassignTicket(ticketId, unassign){
     });
     closeModal();
     toast(toName ? "Ticket assigned" : "Ticket unassigned");
-    renderTicketDetail(); renderTicketsTable();
+    renderTicketDetail(); refreshTicketViews();
   }catch(e){ console.error(e); toast("Couldn't update assignment: " + e.message, true); }
 }
 
