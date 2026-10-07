@@ -133,7 +133,7 @@ input,select,textarea{font-family:inherit;font-size:13px;}
    solid light fill (--lane-bg) sitting on the darker page background, with
    white cards on top of the lane. */
 .kanban-board{display:flex;gap:14px;overflow-x:auto;padding:4px 4px 12px;}
-.kanban-col{background:var(--lane-bg);border:1.5px solid rgba(11,11,15,0.16);border-radius:10px;flex:0 0 272px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
+.kanban-col{background:var(--lane-bg);border:1.5px solid rgba(11,11,15,0.16);border-radius:10px;flex:1 1 0;min-width:210px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
 .kanban-col.drag-over{outline-color:var(--accent);background:#d3e0f4;}
 .kanban-col-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1.5px solid rgba(11,11,15,0.16);flex-shrink:0;}
 .kanban-col-count{background:var(--surface-1);border-radius:20px;padding:2px 9px;font-size:11.5px;color:var(--ink-2);font-weight:700;}
@@ -178,6 +178,11 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 @keyframes overlayIn{from{opacity:0;}to{opacity:1;}}
 .modal-overlay{position:fixed;inset:0;background:rgba(10,12,18,0.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:48px 20px;z-index:100;overflow-y:auto;}
 .modal-overlay.active{display:flex;animation:overlayIn .15s ease-out;}
+/* Ticket detail dialog — sits just under the generic modal (z-index 100) so
+   Edit / Reassign / Log time dialogs opened from inside it appear on top. */
+.ticket-dialog-overlay{position:fixed;inset:0;background:rgba(10,12,18,0.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:32px 20px;z-index:90;overflow-y:auto;}
+.ticket-dialog-overlay.active{display:flex;animation:overlayIn .15s ease-out;}
+.ticket-dialog{width:100%;max-width:1040px;animation:modalPop .22s cubic-bezier(.16,1,.3,1);}
 .modal{position:relative;background:#fff;border-radius:16px;width:100%;max-width:660px;padding:30px 32px 28px;box-shadow:0 24px 70px rgba(10,12,18,0.4);border:3px solid var(--accent);animation:modalPop .22s cubic-bezier(.16,1,.3,1);}
 .modal-x{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:50%;border:none;background:var(--page);color:var(--ink-2);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s ease;}
 .modal-x:hover{background:var(--critical-bg);color:var(--critical);transform:rotate(90deg);}
@@ -334,6 +339,8 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
     <div id="page-admin" class="page"></div>
   </div>
 </div>
+
+<div class="ticket-dialog-overlay" id="ticketDialogOverlay" onclick="if(event.target===this) closeTicketDetail();"><div class="ticket-dialog" id="ticketDetailWrap"></div></div>
 
 <div class="modal-overlay" id="modalOverlay"><div class="modal"><button class="modal-x" onclick="closeModal()" aria-label="Close" title="Close">✕</button><div id="modalBody"></div></div></div>
 <div class="toast-wrap" id="toastWrap"></div>
@@ -1221,7 +1228,7 @@ function clientName(ticket){
 /* ============================================================
    TICKETS
    ============================================================ */
-let ticketFilters = { type:"", priority:"", status:"", client:"", owning:"", q:"" };
+let ticketFilters = { type:"", priority:"", status:"", client:"", assignee:"", owning:"", q:"" };
 let ticketDetailId = null;
 // Board is the default — Kanban-style, grouped by Status, drag-and-drop to
 // move a ticket between stages. List is the original dense table-as-cards
@@ -1241,23 +1248,28 @@ function renderTickets(){
       </div>
     </div>
     <div class="filter-bar">
-      <select onchange="ticketFilters.type=this.value; renderTicketsTable();">
+      <select id="tfType" onchange="ticketFilters.type=this.value; renderTicketsTable();">
         <option value="">All types</option>
         <option>Support Request</option><option>Custom Work Order</option><option>Ad Hoc Billable Support</option>
       </select>
-      <select onchange="ticketFilters.priority=this.value; renderTicketsTable();">
+      <select id="tfPriority" onchange="ticketFilters.priority=this.value; renderTicketsTable();">
         <option value="">All priorities</option>
         <option>Critical</option><option>High</option><option>Normal</option><option>Low</option>
       </select>
-      <select onchange="ticketFilters.status=this.value; renderTicketsTable();">
+      <select id="tfStatus" onchange="ticketFilters.status=this.value; renderTicketsTable();">
         <option value="">All statuses</option>
-        <option>New</option><option>Triaged</option><option>In Progress</option><option>Waiting on Client</option><option>Resolved</option><option>Closed</option>
+        <option>New</option><option>In Progress</option><option>Waiting on Client</option><option>Resolved</option><option>Closed</option>
       </select>
-      <select onchange="ticketFilters.client=this.value; renderTicketsTable();">
+      <select id="tfClient" onchange="ticketFilters.client=this.value; renderTicketsTable();">
         <option value="">All clients</option>
         ${sortedClients().map(c=>`<option value="${c.id}">${esc(c.fields.Title)}</option>`).join("")}
       </select>
-      <select onchange="ticketFilters.owning=this.value; renderTicketsTable();">
+      <select id="tfAssignee" onchange="ticketFilters.assignee=this.value; renderTicketsTable();">
+        <option value="">All assignees</option>
+        <option value="__unassigned__">Unassigned</option>
+        ${ticketAssigneeOptions().map(a=>`<option value="${esc(a.key)}">${esc(a.name)}</option>`).join("")}
+      </select>
+      <select id="tfOwning" onchange="ticketFilters.owning=this.value; renderTicketsTable();">
         <option value="">All owning entities</option>
         <option value="Internal">Internal Support</option>
         <option value="AdHoc">Ad Hoc</option>
@@ -1265,16 +1277,34 @@ function renderTickets(){
         <option value="WorkOrder">Custom Work Order</option>
         <option value="ServiceAck">Service Ack</option>
       </select>
-      <input type="text" placeholder="Search title / ticket #..." oninput="ticketFilters.q=this.value; renderTicketsTable();">
+      <input id="tfQ" type="text" placeholder="Search title / ticket #..." oninput="ticketFilters.q=this.value; renderTicketsTable();">
     </div>
     <div id="ticketsTableWrap"></div>
-    <div id="ticketDetailWrap"></div>
   `;
+  // This page gets rebuilt from scratch on every background refresh, so put
+  // the filter controls back to whatever is actually being applied —
+  // otherwise they'd read "All ..." while a filter is still active.
+  [["tfType","type"],["tfPriority","priority"],["tfStatus","status"],["tfClient","client"],
+   ["tfAssignee","assignee"],["tfOwning","owning"],["tfQ","q"]].forEach(([id,key]) => {
+    const el = document.getElementById(id);
+    if(el) el.value = ticketFilters[key] || "";
+  });
   renderTicketsTable();
-  // Re-draw whatever ticket detail was already open (no-op if none is) —
-  // page-tickets' innerHTML was just rebuilt from scratch above, which
-  // wiped ticketDetailWrap back to empty.
-  renderTicketDetail();
+}
+
+// Distinct people tickets are currently assigned to (keyed by email, falling
+// back to name), alphabetical — feeds the "All assignees" filter.
+function ticketAssigneeKey(t){
+  return (t.fields.AssignedToEmail || t.fields.AssignedToName || "").toLowerCase().trim();
+}
+function ticketAssigneeOptions(){
+  const byKey = new Map();
+  state.tickets.forEach(t => {
+    const key = ticketAssigneeKey(t);
+    if(key && !byKey.has(key)) byKey.set(key, t.fields.AssignedToName || t.fields.AssignedToEmail);
+  });
+  return [...byKey.entries()].map(([key,name]) => ({ key, name }))
+    .sort((a,b)=> a.name.localeCompare(b.name));
 }
 
 function filteredTickets(){
@@ -1284,6 +1314,10 @@ function filteredTickets(){
     if(ticketFilters.priority && f.Priority !== ticketFilters.priority) return false;
     if(ticketFilters.status && f.Status !== ticketFilters.status) return false;
     if(ticketFilters.client && String(ticketLookupId(t,"Client")) !== String(ticketFilters.client)) return false;
+    if(ticketFilters.assignee){
+      const key = ticketAssigneeKey(t);
+      if(ticketFilters.assignee === "__unassigned__" ? key : key !== ticketFilters.assignee) return false;
+    }
     if(ticketFilters.owning && (f.OwningEntityType||"AdHoc") !== ticketFilters.owning) return false;
     if(ticketFilters.q){
       const q = ticketFilters.q.toLowerCase();
@@ -1359,13 +1393,16 @@ function setTicketsView(view){
 // finished tickets collapse together instead of eating two columns.
 const KANBAN_COLUMNS = [
   { key: "New",                label: "New" },
-  { key: "Triaged",             label: "Triaged" },
   { key: "In Progress",         label: "In Progress" },
   { key: "Waiting on Client",   label: "Waiting on Client" },
   { key: "Done",                label: "Done" }
 ];
+// "Triaged" is no longer a working status (email intake items aren't tickets
+// until they're triaged), so any older ticket still carrying it lands in New.
 function ticketBoardColumnFor(status){
-  return isClosedStatus(status) ? "Done" : (status || "New");
+  if(isClosedStatus(status)) return "Done";
+  if(!status || status === "Triaged") return "New";
+  return status;
 }
 
 function kanbanInitials(name){
@@ -1911,14 +1948,22 @@ async function submitTicketForm(){
 function openTicketDetail(id){
   ticketDetailId = id;
   renderTicketDetail();
-  document.getElementById("ticketDetailWrap").scrollIntoView({behavior:"smooth"});
+}
+document.addEventListener("keydown", ev => {
+  if(ev.key !== "Escape" || !ticketDetailId) return;
+  if(document.getElementById("modalOverlay").classList.contains("active")) return;
+  closeTicketDetail();
+});
+function closeTicketDetail(){
+  ticketDetailId = null;
+  renderTicketDetail();
 }
 
 function renderTicketDetail(){
   const wrap = document.getElementById("ticketDetailWrap");
-  if(!ticketDetailId){ wrap.innerHTML = ""; return; }
-  const t = state.tickets.find(x => String(x.id)===String(ticketDetailId));
-  if(!t){ wrap.innerHTML = ""; return; }
+  const overlay = document.getElementById("ticketDialogOverlay");
+  const t = ticketDetailId ? state.tickets.find(x => String(x.id)===String(ticketDetailId)) : null;
+  if(!t){ wrap.innerHTML = ""; overlay.classList.remove("active"); return; }
   const bs = breachStatus(t);
   const nativeEntries = state.timeEntries.filter(e => String(e.fields.TicketId)===String(t.id));
   const widgetEntries = externalHoursForTicket(t);
@@ -1931,8 +1976,8 @@ function renderTicketDetail(){
   const attachState = ticketAttachmentsState[t.id] || { status:"loading", items:[] };
 
   wrap.innerHTML = `
-    <div class="detail-panel" style="margin-top:16px;">
-      <button class="close" onclick="ticketDetailId=null; renderTicketDetail();">✕</button>
+    <div class="detail-panel">
+      <button class="close" onclick="closeTicketDetail()">✕</button>
       <h3 style="margin:0 0 4px;">${esc(t.fields.TicketNumber||t.id)} — ${esc(t.fields.Title||"")}</h3>
       <div style="color:var(--ink-2);font-size:13px;margin-bottom:10px;">${esc(t.fields.TicketType||"")} · ${esc(clientName(t))}</div>
 
@@ -1946,7 +1991,7 @@ function renderTicketDetail(){
         <b>Priority</b><div>${priorityBadge(t.fields.Priority)}</div>
         <b>Status</b><div>
           <select onchange="updateTicketStatus('${t.id}', this.value)">
-            ${["New","Triaged","In Progress","Waiting on Client","Resolved","Closed"].map(s=>`<option ${s===t.fields.Status?"selected":""}>${s}</option>`).join("")}
+            ${[...(["New","In Progress","Waiting on Client","Resolved","Closed"].includes(t.fields.Status) || !t.fields.Status ? [] : [t.fields.Status]),"New","In Progress","Waiting on Client","Resolved","Closed"].map(s=>`<option ${s===t.fields.Status?"selected":""}>${s}</option>`).join("")}
           </select>
         </div>
         <b>Response SLA</b><div>${statusBadge(bs.response)} due ${fmtDateTime(t.fields.ResponseDueAt)}</div>
@@ -2051,6 +2096,7 @@ function renderTicketDetail(){
       </div>
     </div>
   `;
+  overlay.classList.add("active");
 }
 
 // Full edit of a ticket already created — reuses the same field ids ("tf_…")
