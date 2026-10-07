@@ -17,6 +17,7 @@
   --accent:#2a78d6; --accent-dk:#1c5cab;
   --good:#0ca30c; --warning:#c07800; --serious:#c1552f; --critical:#d03b3b;
   --good-bg:#e8f7e8; --warning-bg:#fef3e0; --serious-bg:#fbe9e2; --critical-bg:#fbe6e6;
+  --board-bg:#e2e4e9; --board-col-bg:#eef0f3;
   --radius:10px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -74,6 +75,13 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .btn-gold:hover{background:var(--brand-gold-dk);}
 .btn-danger{color:var(--critical);}
 
+/* Board/List segmented toggle, used on the Tickets page header. */
+.view-toggle{display:inline-flex;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;}
+.view-toggle button{border:none;background:var(--surface-1);padding:9px 14px;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:all .12s ease;}
+.view-toggle button:not(:last-child){border-right:1.5px solid var(--border);}
+.view-toggle button:hover{background:#f0f1f3;}
+.view-toggle button.active{background:var(--accent);color:#fff;}
+
 .card{background:var(--surface-1);border:3px solid var(--accent);border-radius:var(--radius);padding:20px;margin-bottom:18px;}
 .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px;}
 .stat-tile{background:var(--surface-1);border:3px solid var(--accent);border-radius:var(--radius);padding:16px 18px;}
@@ -119,6 +127,35 @@ input,select,textarea{font-family:inherit;font-size:13px;}
    currently relevant" language reads consistently across every list. */
 .record-card.is-muted{border-left-color:var(--gridline);opacity:0.62;}
 .record-card.is-muted:hover{opacity:0.85;}
+
+/* ---------- Tickets Kanban board ---------- */
+/* The board sits on a slightly darker grey canvas than the rest of the app
+   (--board-bg vs --page), with columns a step lighter than that canvas and
+   white cards on top — the same light->dark layering the reference design
+   used, in SLA HUB's own palette rather than copying its colors. */
+.kanban-board{display:flex;gap:14px;overflow-x:auto;padding:16px;background:var(--board-bg);border-radius:14px;}
+.kanban-col{background:var(--board-col-bg);border-radius:10px;flex:0 0 272px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);min-height:220px;transition:outline-color .12s ease;outline:2px dashed transparent;outline-offset:-2px;}
+.kanban-col.drag-over{outline-color:var(--accent);background:#e7edf7;}
+.kanban-col-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:12px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--gridline);flex-shrink:0;}
+.kanban-col-count{background:var(--surface-1);border-radius:20px;padding:2px 9px;font-size:11.5px;color:var(--ink-2);font-weight:700;}
+.kanban-col-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
+.kanban-empty{font-size:12px;color:var(--muted);text-align:center;padding:18px 6px;}
+.kanban-card{background:var(--surface-1);border:1.5px solid var(--gridline);border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;cursor:grab;transition:box-shadow .15s ease,opacity .15s ease;}
+.kanban-card:hover{box-shadow:0 4px 14px rgba(10,12,18,0.12);}
+.kanban-card:active{cursor:grabbing;}
+.kanban-card.dragging{opacity:0.35;}
+.kanban-card.sev-warning{border-left-color:var(--warning);}
+.kanban-card.sev-critical{border-left-color:var(--critical);}
+.kanban-card.sev-done{border-left-color:var(--gridline);opacity:0.62;}
+.kanban-card.sev-done:hover{opacity:0.85;}
+.kanban-card-num{font-size:10.5px;font-weight:700;color:var(--accent-dk);}
+.kanban-card-title{font-size:13px;font-weight:700;color:var(--ink);line-height:1.3;margin-top:2px;}
+.kanban-card-sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;}
+.kanban-card-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
+.kanban-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--gridline);font-size:10.5px;color:var(--ink-2);}
+.kanban-avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.kanban-avatar.unassigned{background:var(--muted);}
+.kanban-card-foot .btn-sm{padding:3px 8px;font-size:10.5px;}
 
 table{width:100%;border-collapse:collapse;}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--gridline);}
@@ -1240,12 +1277,22 @@ function clientName(ticket){
    ============================================================ */
 let ticketFilters = { type:"", priority:"", status:"", client:"", owning:"", q:"" };
 let ticketDetailId = null;
+// Board is the default — Kanban-style, grouped by Status, drag-and-drop to
+// move a ticket between stages. List is the original dense table-as-cards
+// view, still available via the toggle for scanning/bulk filtering.
+let ticketsView = "board";
 
 function renderTickets(){
   document.getElementById("page-tickets").innerHTML = `
     <div class="page-header">
       <div><h2>Tickets</h2><div class="sub">Support Requests, Custom Work Orders, and Ad Hoc Billable Support</div></div>
-      <button class="btn btn-accent" onclick="openTicketForm()">+ New ticket</button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="view-toggle">
+          <button id="ticketsViewBoardBtn" class="${ticketsView==='board'?'active':''}" onclick="setTicketsView('board')">🗂 Board</button>
+          <button id="ticketsViewListBtn" class="${ticketsView==='list'?'active':''}" onclick="setTicketsView('list')">☰ List</button>
+        </div>
+        <button class="btn btn-accent" onclick="openTicketForm()">+ New ticket</button>
+      </div>
     </div>
     <div class="filter-bar">
       <select onchange="ticketFilters.type=this.value; renderTicketsTable();">
@@ -1335,13 +1382,128 @@ function ticketCardHtml(t, opts={}){
   </div>`;
 }
 
+// Dispatches to whichever Tickets view is currently selected, into the same
+// #ticketsTableWrap div either way — every other call site (after a save,
+// a status change, a reassignment, etc.) just wants "refresh the tickets
+// list with current data" and doesn't need to know which view that is.
 function renderTicketsTable(){
+  const wrap = document.getElementById("ticketsTableWrap");
+  if(!wrap) return;
+  if(ticketsView === "board"){ renderTicketsBoard(wrap); return; }
   const rows = filteredTickets();
-  document.getElementById("ticketsTableWrap").innerHTML = rows.length ? `
+  wrap.innerHTML = rows.length ? `
     <div class="record-list">
       ${rows.map(t => ticketCardHtml(t)).join("")}
     </div>
   ` : `<div class="empty">No tickets match these filters.</div>`;
+}
+
+function setTicketsView(view){
+  ticketsView = view;
+  const boardBtn = document.getElementById("ticketsViewBoardBtn");
+  const listBtn = document.getElementById("ticketsViewListBtn");
+  if(boardBtn) boardBtn.classList.toggle("active", view==="board");
+  if(listBtn) listBtn.classList.toggle("active", view==="list");
+  renderTicketsTable();
+}
+
+/* ---------- Tickets Kanban board ---------- */
+// Columns are driven by Status, with Resolved+Closed merged into one "Done"
+// column (ticketBoardColumnFor mirrors isClosedStatus for that grouping) so
+// finished tickets collapse together instead of eating two columns.
+const KANBAN_COLUMNS = [
+  { key: "New",                label: "New" },
+  { key: "Triaged",             label: "Triaged" },
+  { key: "In Progress",         label: "In Progress" },
+  { key: "Waiting on Client",   label: "Waiting on Client" },
+  { key: "Done",                label: "Done" }
+];
+function ticketBoardColumnFor(status){
+  return isClosedStatus(status) ? "Done" : (status || "New");
+}
+
+function kanbanInitials(name){
+  const parts = (name||"").trim().split(/\s+/).filter(Boolean);
+  if(!parts.length) return "—";
+  return parts.slice(0,2).map(w=>w[0]).join("").toUpperCase();
+}
+
+function kanbanCardHtml(t){
+  const bs = breachStatus(t);
+  const worstBreach = (bs.response==="breached" || bs.resolution==="breached") ? "breached"
+    : (bs.response==="atrisk" || bs.resolution==="atrisk") ? "atrisk" : null;
+  return `
+  <div class="kanban-card ${ticketCardClass(t, bs)}" draggable="true"
+       ondragstart="onKanbanDragStart(event,'${t.id}')" ondragend="onKanbanDragEnd(event)"
+       onclick="openTicketDetail('${t.id}')">
+    <div class="kanban-card-num">${esc(t.fields.TicketNumber||t.id)}</div>
+    <div class="kanban-card-title">${esc(t.fields.Title||"")}</div>
+    <div class="kanban-card-sub">${esc(t.fields.TicketType||"—")} · ${esc(clientName(t))}</div>
+    <div class="kanban-card-badges">
+      ${priorityBadge(t.fields.Priority)}
+      ${worstBreach ? statusBadge(worstBreach) : ""}
+    </div>
+    <div class="kanban-card-foot">
+      <span class="kanban-avatar ${t.fields.AssignedToName?"":"unassigned"}" title="${esc(t.fields.AssignedToName||"Unassigned")}">${esc(kanbanInitials(t.fields.AssignedToName))}</span>
+      <span>${fmtDate(t.fields.DateOpened)}</span>
+      ${t.fields.Status==="Resolved" ? `<button class="btn btn-sm" onclick="event.stopPropagation(); updateTicketStatus('${t.id}','Closed')">Mark Closed</button>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderTicketsBoard(wrap){
+  const rows = filteredTickets();
+  const byCol = {};
+  KANBAN_COLUMNS.forEach(c => byCol[c.key] = []);
+  rows.forEach(t => {
+    const col = ticketBoardColumnFor(t.fields.Status);
+    (byCol[col] || (byCol[col] = [])).push(t);
+  });
+  wrap.innerHTML = `
+    <div class="kanban-board">
+      ${KANBAN_COLUMNS.map(c => `
+      <div class="kanban-col" ondragover="onKanbanColDragOver(event)" ondragleave="onKanbanColDragLeave(event)" ondrop="onKanbanColDrop(event,'${c.key}')">
+        <div class="kanban-col-header"><span>${esc(c.label)}</span><span class="kanban-col-count">${byCol[c.key].length}</span></div>
+        <div class="kanban-col-body">
+          ${byCol[c.key].length ? byCol[c.key].map(kanbanCardHtml).join("") : `<div class="kanban-empty">No tickets</div>`}
+        </div>
+      </div>`).join("")}
+    </div>
+  `;
+}
+
+// Drag-and-drop: dragging a card to a different column changes the ticket's
+// Status via the existing updateTicketStatus() — same code path a status
+// change from the ticket detail form already uses, so SLA timestamps
+// (FirstResponseAt/ResolvedAt/ClosedAt) and the CG_Time widget sync all stay
+// correct. Dropping into Done sets Status to Resolved (the natural first
+// step); a "Mark Closed" button on Resolved cards finishes the job without
+// needing a second drag.
+function onKanbanDragStart(ev, ticketId){
+  ev.dataTransfer.setData("text/plain", String(ticketId));
+  ev.dataTransfer.effectAllowed = "move";
+  ev.currentTarget.classList.add("dragging");
+}
+function onKanbanDragEnd(ev){
+  ev.currentTarget.classList.remove("dragging");
+}
+function onKanbanColDragOver(ev){
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "move";
+  ev.currentTarget.classList.add("drag-over");
+}
+function onKanbanColDragLeave(ev){
+  ev.currentTarget.classList.remove("drag-over");
+}
+function onKanbanColDrop(ev, columnKey){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove("drag-over");
+  const ticketId = ev.dataTransfer.getData("text/plain");
+  const t = state.tickets.find(x => String(x.id) === String(ticketId));
+  if(!t) return;
+  if(ticketBoardColumnFor(t.fields.Status) === columnKey) return; // dropped back in its own column — no-op
+  const newStatus = columnKey === "Done" ? "Resolved" : columnKey;
+  updateTicketStatus(ticketId, newStatus);
 }
 
 
