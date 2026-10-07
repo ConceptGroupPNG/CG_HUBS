@@ -4598,7 +4598,13 @@ function renderTimeEntriesResults(){
 }
 
 /* ============================================================
-   TIMESHEETS VIEW — a tab bar hosting two tabs:
+   TIMESHEETS VIEW — a tab bar hosting three tabs:
+     - Time Entries Report (first / default tab): one resource's
+       individual time entries, filterable by CSA, date range and
+       billable status, shown on screen in the same layout as CSA
+       HUB's own Time Entries Report (Date / CSA / Hours / Billable /
+       Activity Detail / Method, Subtotals by CSA, Grand Total), with
+       an "Open printable report" action for the A4 document version.
      - Timesheet: one resource's time for a chosen period, grouped
        by what it was logged against, with a Print action for a
        clean document via the browser's own print dialog.
@@ -4608,11 +4614,16 @@ function renderTimeEntriesResults(){
        everywhere else in CG Time.
    ============================================================ */
 let tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) };
-let tsActiveTab = "timesheet"; // "timesheet" | "exceptions"
+let tsActiveTab = "report"; // "report" | "timesheet" | "exceptions"
+function defaultTsReportFilters(){
+  return { resourceEmail: "", csa: "", start: monthStartStr(0), end: monthEndStr(0), billable: "all" };
+}
+let tsReportFilters = defaultTsReportFilters();
 
 // Same "leaving a Tab clears its filters" rule as the Employees hub.
 const TIMESHEETS_TAB_FILTER_RESETS = {
-  "timesheet": () => { tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) }; },
+  "report": () => { tsReportFilters = defaultTsReportFilters(); },
+  "timesheet":() => { tsFilters = { resourceEmail: "", start: monthStartStr(0), end: monthEndStr(0) }; },
   "exceptions": () => { exFilters = { status: "open", type: "all", search: "", from: "", to: "" }; },
 };
 function resetTimesheetsTabFilters(tabKey){
@@ -4637,11 +4648,16 @@ function renderTimesheetsView(){
   const openExCount = allExceptions.filter(e => e.fields.Status !== "Resolved").length;
   container.innerHTML = `
     <div class="subtabs">
+      <button class="subtab ${tsActiveTab==="report"?"active":""}" id="tsTabBtnReport">Time Entries Report</button>
       <button class="subtab ${tsActiveTab==="timesheet"?"active":""}" id="tsTabBtnTimesheet">Timesheet</button>
       <button class="subtab ${tsActiveTab==="exceptions"?"active":""}" id="tsTabBtnExceptions">Exceptions${openExCount ? ` <span class="badge-count">${openExCount}</span>` : ""}</button>
     </div>
     <div id="tsTabContent"></div>
   `;
+  document.getElementById("tsTabBtnReport").addEventListener("click", () => {
+    if(tsActiveTab !== "report") resetTimesheetsTabFilters(tsActiveTab);
+    tsActiveTab = "report"; renderTimesheetsView();
+  });
   document.getElementById("tsTabBtnTimesheet").addEventListener("click", () => {
     if(tsActiveTab !== "timesheet") resetTimesheetsTabFilters(tsActiveTab);
     tsActiveTab = "timesheet"; renderTimesheetsView();
@@ -4652,7 +4668,165 @@ function renderTimesheetsView(){
   });
 
   if(tsActiveTab === "exceptions") renderTimesheetExceptionsTab();
-  else renderTimesheetTab();
+  else if(tsActiveTab === "timesheet") renderTimesheetTab();
+  else renderTimesheetReportTab();
+}
+
+/* ---------- Time Entries Report tab (on-screen) ----------
+   Same data, filters and layout as the printable document built by
+   buildTimeEntriesReportDocHtml() — both go through
+   timeEntriesReportData() so the screen and the PDF can never
+   disagree on which entries are included or what they add up to. */
+function findResourceByEmail(email){
+  return allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === email);
+}
+
+function renderTimesheetReportTab(){
+  const container = document.getElementById("tsTabContent");
+  if(!tsReportFilters.resourceEmail && allResources.length){
+    const first = allResources.slice()
+      .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+      .find(r => (r.fields.MatchEmail||"").trim());
+    if(first) tsReportFilters.resourceEmail = (first.fields.MatchEmail||"").toLowerCase().trim();
+  }
+  const resourceOptions = allResources.slice()
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
+    .join("");
+
+  // CSA choices = whatever this resource has actually logged time
+  // against (any date), so every option is guaranteed to match at
+  // least one entry rather than offering the full CSA catalogue.
+  const resource = findResourceByEmail(tsReportFilters.resourceEmail);
+  const csaValues = resource
+    ? [...new Set(entriesForResourceAndPeriod(resource, "", "").map(t => (t.fields.CSA||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
+    : [];
+  if(tsReportFilters.csa && !csaValues.includes(tsReportFilters.csa)) tsReportFilters.csa = "";
+  const csaOptions = csaValues.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+
+  container.innerHTML = `
+    <div class="filter-bar">
+      <div class="filter-field"><label>Resource</label>
+        <select id="tsrResource">
+          <option value="">Select a resource…</option>
+          ${resourceOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>CSA</label>
+        <select id="tsrCsa">
+          <option value="">All</option>
+          ${csaOptions}
+        </select>
+      </div>
+      <div class="filter-field"><label>From</label><input type="date" id="tsrFrom" value="${esc(tsReportFilters.start)}"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="tsrTo" value="${esc(tsReportFilters.end)}"></div>
+      <div class="filter-field"><label>Billable</label>
+        <select id="tsrBillable">
+          <option value="all">All</option>
+          <option value="billable">Billable</option>
+          <option value="not-billable">Not billable</option>
+          <option value="not-set">Not set</option>
+        </select>
+      </div>
+      <button class="print-btn" id="tsrAllDatesBtn" title="Clear From/To to include every entry on file">All dates</button>
+      <button class="print-btn" id="tsrPrintBtn">Open printable report</button>
+    </div>
+    <div id="tsrBody"></div>
+  `;
+  document.getElementById("tsrResource").value = tsReportFilters.resourceEmail;
+  document.getElementById("tsrCsa").value = tsReportFilters.csa;
+  document.getElementById("tsrBillable").value = tsReportFilters.billable;
+
+  // Changing Resource rebuilds the whole tab (its CSA list depends on
+  // the resource); the other filters only redraw the report body.
+  document.getElementById("tsrResource").addEventListener("change", e => {
+    tsReportFilters.resourceEmail = e.target.value;
+    tsReportFilters.csa = "";
+    renderTimesheetReportTab();
+  });
+  document.getElementById("tsrCsa").addEventListener("change", e => { tsReportFilters.csa = e.target.value; renderTimesheetReportBody(); });
+  document.getElementById("tsrFrom").addEventListener("change", e => { tsReportFilters.start = e.target.value; renderTimesheetReportBody(); });
+  document.getElementById("tsrTo").addEventListener("change", e => { tsReportFilters.end = e.target.value; renderTimesheetReportBody(); });
+  document.getElementById("tsrBillable").addEventListener("change", e => { tsReportFilters.billable = e.target.value; renderTimesheetReportBody(); });
+  document.getElementById("tsrAllDatesBtn").addEventListener("click", () => {
+    tsReportFilters.start = ""; tsReportFilters.end = "";
+    document.getElementById("tsrFrom").value = "";
+    document.getElementById("tsrTo").value = "";
+    renderTimesheetReportBody();
+  });
+  document.getElementById("tsrPrintBtn").addEventListener("click", () => {
+    if(!tsReportFilters.resourceEmail){ alert("Please select a resource first."); return; }
+    const r = findResourceByEmail(tsReportFilters.resourceEmail);
+    if(!r) return;
+    openDocInNewTab(buildTimeEntriesReportDocHtml(r, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable));
+  });
+
+  renderTimesheetReportBody();
+}
+
+function renderTimesheetReportBody(){
+  const body = document.getElementById("tsrBody");
+  if(!body) return;
+  if(!tsReportFilters.resourceEmail){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a resource to see their Time Entries Report.</div></div>`;
+    return;
+  }
+  const resource = findResourceByEmail(tsReportFilters.resourceEmail);
+  if(!resource){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Resource not found.</div></div>`;
+    return;
+  }
+  const d = timeEntriesReportData(resource, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable);
+
+  const rowsHtml = d.entries.length ? d.entries.map(t => {
+    const f = t.fields;
+    return `
+      <tr>
+        <td style="white-space:nowrap;">${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
+        <td>${esc(f.CSA || "—")}</td>
+        <td class="hrs" style="text-align:right;">${parseFloat(f.Hours||0).toFixed(2)}</td>
+        <td>${esc(reportBillableText(t))}</td>
+        <td style="white-space:normal;">${esc(f.ActivityDetail || "—")}</td>
+        <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
+      </tr>
+    `;
+  }).join("") : `<tr><td colspan="6" style="color:var(--ink-muted);">No entries match this filter.</td></tr>`;
+
+  const subtotalRows = d.csaLabels.map(label => `
+    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${d.byCSA[label].toFixed(2)}</div></div>
+  `).join("");
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9776;</span>Time Entries Report &mdash; ${esc(resource.fields.Title||"—")}</h3>
+      <div class="panel-sub">
+        <b>Filter:</b> ${esc(d.filterDesc)} &middot;
+        <b>Period:</b> ${esc(d.periodLabel)} &middot;
+        <b>Entries:</b> ${d.entries.length} &middot;
+        ${esc(resource._sourceHubLabel||"—")}
+      </div>
+    </div>
+    <div class="ts-stat-row">
+      <div class="ts-stat"><div class="lbl">Entries</div><div class="val">${d.entries.length}</div></div>
+      <div class="ts-stat"><div class="lbl">Total hours</div><div class="val">${d.grandTotal.toFixed(2)}</div></div>
+      <div class="ts-stat"><div class="lbl">Billable hours</div><div class="val">${d.billableTotal.toFixed(2)}</div></div>
+      <div class="ts-stat"><div class="lbl">Non-billable hours</div><div class="val">${(d.grandTotal - d.billableTotal).toFixed(2)}</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#9998;</span>Entries</h3>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Date</th><th>CSA</th><th style="text-align:right;">Hours</th><th>Billable</th><th>Activity Detail</th><th>Method</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h3><span>&#931;</span>Subtotals by CSA</h3>
+      ${subtotalRows || '<div style="font-size:12px;color:var(--ink-muted);">No entries match this filter.</div>'}
+      ${d.entries.length ? `<div class="ts-group-row total"><div>Grand Total</div><div></div><div>${d.grandTotal.toFixed(2)}</div></div>` : ""}
+    </div>
+  `;
 }
 
 function renderTimesheetTab(){
@@ -4948,24 +5122,33 @@ ${gridHtml}
 `;
 }
 
-function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, billableFilter){
-  let entries = entriesForResourceAndPeriod(resource, start || "0000-01-01", end || "9999-12-31");
+/* Shared by the Timesheets -> Time Entries Report tab (on screen)
+   and the printable document below, so both always agree. Blank
+   start/end means "no limit" on that side. Period shown is the
+   chosen From/To where set, otherwise the first/last entry's date
+   (same as CSA HUB's own report when run over "all entries"). */
+function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFilter){
+  let entries = entriesForResourceAndPeriod(resource, start || "", end || "");
   if(csaFilterTitle) entries = entries.filter(t => (t.fields.CSA||"").trim() === csaFilterTitle);
   if(billableFilter === "billable") entries = entries.filter(t => t.fields.Billable === true);
   if(billableFilter === "not-billable") entries = entries.filter(t => t.fields.Billable === false);
   if(billableFilter === "not-set") entries = entries.filter(t => !hasBillableChoice(t));
 
-  const actualStart = entries.length ? entries[0].fields.WorkDate : (start || "—");
-  const actualEnd = entries.length ? entries[entries.length-1].fields.WorkDate : (end || "—");
+  const periodStart = start || (entries.length ? entries[0].fields.WorkDate : "");
+  const periodEnd = end || (entries.length ? entries[entries.length-1].fields.WorkDate : "");
+  const periodLabel = (periodStart || periodEnd)
+    ? `${fmtDateDMY(periodStart) || "start"} to ${fmtDateDMY(periodEnd) || "today"}`
+    : "All dates";
+
   const grandTotal = entries.reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
   const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
 
   const byCSA = {};
   entries.forEach(t => {
-    const label = t.fields.CSA || "Unspecified";
+    const label = (t.fields.CSA || "").trim() || "Unspecified";
     byCSA[label] = (byCSA[label] || 0) + (parseFloat(t.fields.Hours)||0);
   });
-  const csaLabels = Object.keys(byCSA).sort();
+  const csaLabels = Object.keys(byCSA).sort((a,b)=>a.localeCompare(b));
 
   const filterDescParts = [];
   if(csaFilterTitle) filterDescParts.push(csaFilterTitle);
@@ -4974,22 +5157,29 @@ function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, bil
   if(billableFilter === "not-set") filterDescParts.push("Not set only");
   const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
 
-  const rowsHtml = entries.length ? entries.map(t => {
-    const billableTxt = hasBillableChoice(t) ? (t.fields.Billable ? "Yes" : "No") : "Not Set";
-    return `
-    <tr>
-      <td>${fmtDateDMY(t.fields.WorkDate) || "—"}</td>
-      <td>${esc(t.fields.CSA) || "—"}</td>
-      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
-      <td>${billableTxt}</td>
-      <td>${esc(t.fields.ActivityDetail) || "—"}</td>
-      <td>${esc(t.fields.EntryMethod) || "—"}</td>
-    </tr>
-  `;
-  }).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+  return { entries, periodLabel, grandTotal, billableTotal, byCSA, csaLabels, filterDesc };
+}
 
-  const subtotalsHtml = csaLabels.map(label => `
-    <tr><td>${esc(label)}</td><td style="text-align:right">${byCSA[label].toFixed(2)}</td></tr>
+function reportBillableText(t){
+  return hasBillableChoice(t) ? (t.fields.Billable ? "Yes" : "No") : "Not Set";
+}
+
+function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, billableFilter){
+  const d = timeEntriesReportData(resource, csaFilterTitle, start, end, billableFilter);
+
+  const rowsHtml = d.entries.length ? d.entries.map(t => `
+    <tr>
+      <td style="white-space:nowrap">${esc(fmtDateDMY(t.fields.WorkDate) || "—")}</td>
+      <td>${esc(t.fields.CSA || "—")}</td>
+      <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
+      <td>${esc(reportBillableText(t))}</td>
+      <td>${esc(t.fields.ActivityDetail || "—")}</td>
+      <td>${esc(t.fields.EntryMethod || "—")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+
+  const subtotalsHtml = d.csaLabels.map(label => `
+    <tr><td>${esc(label)}</td><td style="text-align:right">${d.byCSA[label].toFixed(2)}</td></tr>
   `).join("");
 
   return `
@@ -5008,31 +5198,32 @@ function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, bil
 
 <div class="meta-row">
   <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
-  <div><b>Filter:</b> ${esc(filterDesc)}</div>
-  <div><b>Period:</b> ${esc(fmtDateDMY(actualStart))} to ${esc(fmtDateDMY(actualEnd))}</div>
-  <div><b>Entries:</b> ${entries.length}</div>
+  <div><b>Filter:</b> ${esc(d.filterDesc)}</div>
+  <div><b>Period:</b> ${esc(d.periodLabel)}</div>
+  <div><b>Entries:</b> ${d.entries.length}</div>
 </div>
 
 <table class="rpt-table">
   <thead>
-    <tr><th>Date</th><th>Logged Against</th><th style="text-align:right">Hours</th><th>Billable</th><th>Activity Detail</th><th>Entry Method</th></tr>
+    <tr><th style="width:11%">Date</th><th style="width:27%">CSA</th><th style="width:8%;text-align:right">Hours</th><th style="width:9%">Billable</th><th>Activity Detail</th><th style="width:10%">Method</th></tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
 </table>
 
-${csaLabels.length ? `
+${d.csaLabels.length ? `
+<div style="font-size:12px;font-weight:700;margin:6px 0 8px;">Subtotals by CSA</div>
 <table class="subtotal-table">
   <tbody>
     ${subtotalsHtml}
-    <tr><td>Total</td><td style="text-align:right">${grandTotal.toFixed(2)}</td></tr>
+    <tr><td>Grand Total</td><td style="text-align:right">${d.grandTotal.toFixed(2)}</td></tr>
   </tbody>
 </table>
 ` : ""}
 
 <div class="summary-row">
-  <div><b>Total Hours:</b> ${grandTotal.toFixed(2)}</div>
-  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
-  <div><b>Non-Billable Hours:</b> ${(grandTotal-billableTotal).toFixed(2)}</div>
+  <div><b>Total Hours:</b> ${d.grandTotal.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${d.billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(d.grandTotal-d.billableTotal).toFixed(2)}</div>
 </div>
 
 <div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
