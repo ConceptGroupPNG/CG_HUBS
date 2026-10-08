@@ -33,20 +33,21 @@
   /* ---------- Login screen ---------- */
   #loginScreen{
     height:100vh;display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(135deg,var(--navy) 0%,#0f1a30 100%);
+    background:linear-gradient(180deg,#1e222b 0%,#161a22 100%);
   }
   .login-card{
-    background:var(--card);border-radius:12px;padding:48px 40px;width:360px;
-    text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35);
+    background:#fff;border:3px solid #d4a017;border-radius:16px;padding:48px 44px 52px;width:405px;max-width:92vw;
+    text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45);
   }
-  .login-card h1{font-size:22px;color:var(--navy);margin-bottom:4px;}
-  .login-card p{color:var(--text-muted);font-size:13px;margin-bottom:28px;}
+  .login-logo{display:block;height:56px;width:auto;margin:0 auto 28px;}
+  .login-card h1{font-size:22px;color:#111;margin-bottom:8px;font-weight:700;letter-spacing:.2px;}
+  .login-card p{color:#444;font-size:14px;line-height:1.5;margin-bottom:28px;}
   .login-btn{
-    background:var(--teal);color:#fff;border:none;border-radius:8px;
-    padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;
+    background:#2b78d6;color:#fff;border:none;border-radius:8px;
+    padding:15px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%;
     transition:background .15s;
   }
-  .login-btn:hover{background:var(--teal-light);}
+  .login-btn:hover{background:#1f66bd;}
   /* ---------- App shell ---------- */
   #app{display:none;min-height:100vh;}
   .shell{display:flex;min-height:100vh;}
@@ -243,8 +244,9 @@
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-card">
-    <h1>CSA Hub</h1>
-    <p>Brian Hart Consulting Limited · Concept Group</p>
+    <img class="login-logo" src="https://marcusappdev.github.io/CG_Training/csa-hub/assets/Concept_Consulting_Logo.jpg" alt="Concept Group" onerror="this.style.display='none'">
+    <h1>CSA HUB</h1>
+    <p>Consulting Service Agreements — sign in with your<br>Concept Group account.</p>
     <button class="login-btn" id="loginBtn">Sign in with Microsoft</button>
   </div>
 </div>
