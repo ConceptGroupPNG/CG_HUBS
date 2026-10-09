@@ -245,6 +245,17 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .attach-dropzone.dragover{border-color:var(--accent);background:#eaf3fd;color:var(--ink);}
 .attach-status{font-size:12px;color:var(--accent-dk);margin-top:8px;min-height:16px;}
 .attach-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+/* Thumbnail tiles for ticket attachments */
+.attach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:12px;}
+.attach-tile{position:relative;display:flex;flex-direction:column;border:1.5px solid var(--gridline);border-radius:10px;background:var(--surface-1);overflow:hidden;}
+.attach-thumb{position:relative;display:block;height:130px;background:#eef0f3;border-bottom:1px solid var(--gridline);}
+.attach-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#eef0f3;}
+.attach-thumb-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;}
+.attach-tile-body{padding:8px 10px 10px;min-width:0;}
+.attach-tile-name{display:block;font-size:12.5px;font-weight:700;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.attach-tile-name:hover{text-decoration:underline;}
+.attach-tile-meta{font-size:11px;color:var(--ink-2);margin-top:3px;line-height:1.35;}
+.attach-tile-del{position:absolute;top:6px;right:6px;background:rgba(255,255,255,0.92);padding:3px 7px;}
 .attach-row{display:flex;align-items:center;gap:10px;border:1px solid var(--gridline);border-radius:8px;padding:8px 12px;background:var(--page);}
 .attach-row .attach-icon{font-size:18px;flex-shrink:0;}
 .attach-row .attach-name{flex:1;font-size:13px;font-weight:600;color:var(--ink);text-decoration:none;overflow-wrap:anywhere;}
@@ -616,7 +627,7 @@ function attachmentIcon(name){
 // ticketId -> {status:"loading"|"loaded"|"error", items:[], error}
 let ticketAttachmentsState = {};
 
-async function ensureTicketAttachmentsLoaded(ticketId, force){
+async function ensureTicketAttachmentsLoaded(ticketId, force, isRecheck){
   const cur = ticketAttachmentsState[ticketId];
   if(!force && cur && (cur.status==="loading" || cur.status==="loaded")) return;
   const t = state.tickets.find(x=>String(x.id)===String(ticketId));
@@ -625,6 +636,11 @@ async function ensureTicketAttachmentsLoaded(ticketId, force){
   try{
     const items = await listTicketAttachments(t);
     ticketAttachmentsState[ticketId] = { status:"loaded", items, error:null };
+    // One delayed re-check if some previewable files don't have a thumbnail yet
+    // (e.g. a screenshot pasted a moment ago) — never chained, so it can't loop.
+    if(!isRecheck && items.some(a => attachmentHasThumbnailSupport(a.name) && !attachmentThumbUrl(a))){
+      setTimeout(() => ensureTicketAttachmentsLoaded(ticketId, true, true), 6000);
+    }
   }catch(e){
     console.warn("Couldn't load attachments for ticket", ticketId, e);
     ticketAttachmentsState[ticketId] = { status:"error", items:[], error: e.message };
@@ -635,13 +651,35 @@ async function ensureTicketAttachmentsLoaded(ticketId, force){
 async function listTicketAttachments(t){
   const driveId = await resolveAttachmentsDriveId();
   const folder = ticketAttachmentFolder(t);
+  const base = `${GRAPH}/drives/${driveId}/root:/${encodeURIComponent(folder)}:/children?$select=id,name,size,webUrl,createdDateTime,createdBy&$orderby=name`;
+  const isMissingFolder = e => /\s404\s/.test(` ${e.message} `); // no attachments uploaded yet — folder doesn't exist
   try{
-    const res = await callGraph(`${GRAPH}/drives/${driveId}/root:/${encodeURIComponent(folder)}:/children?$select=id,name,size,webUrl,createdDateTime,createdBy&$orderby=name`);
+    // Ask for Graph's pre-generated thumbnails too (images, PDFs, Office docs).
+    const res = await callGraph(`${base}&$expand=thumbnails($select=medium,large)`);
     return res.value||[];
   }catch(e){
-    if(/\s404\s/.test(` ${e.message} `)) return []; // no attachments uploaded yet — folder doesn't exist
-    throw e;
+    if(isMissingFolder(e)) return [];
+    // If the thumbnail expansion itself is what failed, still list the files
+    // (they just show an icon instead of a preview).
+    try{
+      const res = await callGraph(base);
+      return res.value||[];
+    }catch(e2){
+      if(isMissingFolder(e2)) return [];
+      throw e2;
+    }
   }
+}
+
+// Previews Graph can render a thumbnail for. A just-uploaded file's thumbnail
+// can take a few seconds to be generated, so these are worth one re-check.
+function attachmentHasThumbnailSupport(name){
+  const ext = (String(name||"").split(".").pop()||"").toLowerCase();
+  return ["png","jpg","jpeg","gif","bmp","webp","pdf","doc","docx","xls","xlsx","ppt","pptx"].includes(ext);
+}
+function attachmentThumbUrl(a){
+  const th = a.thumbnails && a.thumbnails[0];
+  return (th && ((th.medium && th.medium.url) || (th.large && th.large.url))) || "";
 }
 
 // Always goes through a resumable upload session (not just a simple PUT) —
@@ -2071,13 +2109,18 @@ function renderTicketDetail(){
       <div class="attach-status" id="attachStatus_${t.id}"></div>
       ${attachState.status === "error" ? `<div class="empty">Couldn't load attachments: ${esc(attachState.error)}</div>` :
         attachState.items.length ? `
-      <div class="attach-list">
+      <div class="attach-grid">
         ${attachState.items.map(a => `
-          <div class="attach-row">
-            <span class="attach-icon">${attachmentIcon(a.name)}</span>
-            <a class="attach-name" href="${esc(a.webUrl)}" target="_blank" rel="noopener">${esc(a.name)}</a>
-            <span class="attach-meta">${fmtBytes(a.size)} · ${esc(a.createdBy?.user?.displayName||"—")} · ${fmtDateTime(a.createdDateTime)}</span>
-            <button class="btn btn-sm btn-danger" onclick="confirmDeleteAttachment(this,'${t.id}','${a.id}')">🗑</button>
+          <div class="attach-tile">
+            <a class="attach-thumb" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="Open ${esc(a.name)}">
+              <span class="attach-thumb-icon">${attachmentIcon(a.name)}</span>
+              ${attachmentThumbUrl(a) ? `<img src="${esc(attachmentThumbUrl(a))}" alt="${esc(a.name)}" loading="lazy" onerror="this.remove()">` : ""}
+            </a>
+            <div class="attach-tile-body">
+              <a class="attach-tile-name" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="${esc(a.name)}">${esc(a.name)}</a>
+              <div class="attach-tile-meta">${fmtBytes(a.size)} · ${esc(a.createdBy?.user?.displayName||"—")}<br>${fmtDateTime(a.createdDateTime)}</div>
+            </div>
+            <button class="btn btn-sm btn-danger attach-tile-del" title="Remove attachment" onclick="confirmDeleteAttachment(this,'${t.id}','${a.id}')">🗑</button>
           </div>
         `).join("")}
       </div>` : `<div class="empty">${attachState.status==="loading" ? "Loading attachments…" : "No attachments yet."}</div>`}
