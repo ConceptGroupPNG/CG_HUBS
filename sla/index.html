@@ -379,7 +379,9 @@ const msalConfig = {
   },
   cache: { cacheLocation: "sessionStorage" }
 };
-const graphScopes = ["Sites.ReadWrite.All", "Mail.Read.Shared", "Mail.Send.Shared", "User.Read"];
+// Mail.ReadWrite.Shared is needed to create drafts and in-thread replies in the
+// shared Helpdesk mailbox (so replies to ticket emails can be matched back).
+const graphScopes = ["Sites.ReadWrite.All", "Mail.ReadWrite.Shared", "Mail.Read.Shared", "Mail.Send.Shared", "User.Read"];
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -454,7 +456,13 @@ async function callGraph(url, options={}){
     throw new Error(`Graph ${options.method||"GET"} ${url} failed: ${res.status} ${body}`);
   }
   if(res.status === 204) return null;
-  return res.json();
+  // Some successful Graph calls (e.g. sendMail -> 202 Accepted) return an
+  // empty body; res.json() would throw "Unexpected end of JSON input" on
+  // those even though the call worked.
+  const text = await res.text();
+  if(!text) return null;
+  try{ return JSON.parse(text); }
+  catch(e){ return null; }
 }
 
 // Sends one email "from" the shared Helpdesk mailbox (requires the signed-in
