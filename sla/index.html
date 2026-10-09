@@ -484,18 +484,41 @@ async function sendGraphMail(toEmail, toName, subject, htmlBody){
 // is what lets Email Intake recognise a customer's reply and match it back
 // to the right ticket automatically. Used only for the ticket
 // acknowledgment email — see sendTicketAcknowledgment().
+//
+// Creating a draft needs mailbox *write* access (Mail.ReadWrite.Shared), which
+// is a bigger permission than the one-shot sendMail needs (Mail.Send.Shared).
+// If the draft route is refused, fall back to the plain one-shot send so the
+// email still goes out — it just can't report back a conversationId, so a
+// reply to that particular email won't be auto-matched to its ticket.
 async function sendGraphMailTracked(toEmail, toName, subject, htmlBody){
   if(!toEmail) return null;
-  const draft = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages`, {
-    method: "POST",
-    body: JSON.stringify({
-      subject,
-      body: { contentType: "HTML", content: htmlBody },
-      toRecipients: [{ emailAddress: { address: toEmail, name: toName || toEmail } }]
-    })
-  });
-  await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${draft.id}/send`, { method: "POST" });
-  return draft.conversationId || null;
+  try{
+    const draft = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        subject,
+        body: { contentType: "HTML", content: htmlBody },
+        toRecipients: [{ emailAddress: { address: toEmail, name: toName || toEmail } }]
+      })
+    });
+    await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${draft.id}/send`, { method: "POST" });
+    return draft.conversationId || null;
+  }catch(e){
+    console.warn("Tracked (draft-then-send) email failed — falling back to a plain send, so replies to it won't auto-match to the ticket:", e);
+    await sendGraphMail(toEmail, toName, subject, htmlBody);
+    return null;
+  }
+}
+
+// Boils a Graph failure down to something a person can read in a toast.
+function describeMailError(e){
+  const msg = String(e && e.message || e);
+  const status = (msg.match(/failed:\s*(\d{3})/) || [])[1];
+  const code = (msg.match(/"code"\s*:\s*"([^"]+)"/) || [])[1];
+  const hint = status === "403" || /AccessDenied/i.test(code||"")
+    ? " — this account may not have Send As / Send on Behalf permission on " + HELPDESK_MAILBOX + ", or the app lacks the Mail.Send.Shared permission"
+    : status === "401" ? " — sign out and back in, then retry" : "";
+  return [status, code].filter(Boolean).join(" ") + hint || msg.slice(0, 160);
 }
 
 // Same "draft then explicit send" pattern as sendGraphMailTracked() (so the
@@ -2459,6 +2482,7 @@ async function notifyTicketAssigned(t, toName, toEmail){
     return await sendGraphMailTracked(toEmail, toName, subject, html);
   }catch(e){
     console.warn("Couldn't send assignment notification email:", e);
+    toast("Assigned, but the assignment email to " + toEmail + " couldn't be sent: " + describeMailError(e), true);
     return null;
   }
 }
@@ -2514,6 +2538,7 @@ async function sendTicketAcknowledgment(t, sourceMessageGraphId){
     return await sendGraphMailTracked(toEmail, toName, subject, html);
   }catch(e){
     console.warn("Couldn't send ticket acknowledgment email:", e);
+    toast("Ticket saved, but the acknowledgment email to " + toEmail + " couldn't be sent: " + describeMailError(e), true);
     return null;
   }
 }
