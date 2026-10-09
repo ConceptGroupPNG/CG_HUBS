@@ -305,10 +305,23 @@
           </div>
         </div>
 
+        <div style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:12px;color:var(--text-muted);">
+          <span>Hours period:</span>
+          <select class="filter-select" id="hoursPeriodSelect">
+            <option value="all">All time</option>
+            <option value="year">This year</option>
+            <option value="month">This month</option>
+          </select>
+          <span>— includes all logged hours, billable or not</span>
+        </div>
         <div class="panel-grid">
-          <div class="panel card-milestones" style="grid-column:1 / -1;">
-            <h3>Top Resources by Hours Logged <span style="font-weight:400;color:var(--text-muted);text-transform:none;font-size:11px;">— this month</span></h3>
+          <div class="panel card-milestones">
+            <h3>Top Resources by Hours Logged</h3>
             <div id="topResourcesPanel"><div class="loader">Loading…</div></div>
+          </div>
+          <div class="panel card-details">
+            <h3>Top CSAs / Proposals by Hours Logged</h3>
+            <div id="topCsasPanel"><div class="loader">Loading…</div></div>
           </div>
         </div>
       </div>
@@ -1113,23 +1126,44 @@ function renderDashboard(){
       </div>
     `).join("") || `<div class="empty-state">No agreements yet</div>`;
 
-  // Top resources by hours logged this month
-  const monthEntries = allTimeEntries.filter(t => t.fields.WorkDate && t.fields.WorkDate >= monthStartStr && t.fields.WorkDate <= todayStr);
+  // Top resources and top CSAs/Proposals by hours logged (all hours, regardless of Billable flag)
+  const hoursPeriod = (document.getElementById("hoursPeriodSelect") || {}).value || "all";
+  const yearStartStr = `${today.getFullYear()}-01-01`;
+  const periodStart = hoursPeriod === "month" ? monthStartStr : (hoursPeriod === "year" ? yearStartStr : "");
+  const periodEntries = allTimeEntries.filter(t => {
+    const d = t.fields.WorkDate;
+    if(!d) return false;
+    return (!periodStart || d >= periodStart) && d <= todayStr;
+  });
+  const periodLabel = hoursPeriod === "month" ? "this month" : (hoursPeriod === "year" ? "this year" : "yet");
+
   const hoursByResourceLabel = {};
-  monthEntries.forEach(t => {
+  const hoursByCsa = {};
+  periodEntries.forEach(t => {
+    const hrs = parseFloat(t.fields.Hours)||0;
     const r = findResourceForEntry(t);
     const label = r ? r.fields.Title : (t.fields.EntryUser || "Unmatched");
-    hoursByResourceLabel[label] = (hoursByResourceLabel[label]||0) + (parseFloat(t.fields.Hours)||0);
+    hoursByResourceLabel[label] = (hoursByResourceLabel[label]||0) + hrs;
+    const key = (t.fields.CSA || "").trim() || "Unspecified";
+    hoursByCsa[key] = (hoursByCsa[key]||0) + hrs;
   });
-  const topResources = Object.entries(hoursByResourceLabel).sort((a,b)=> b[1]-a[1]).slice(0,5);
-  const maxResourceHours = Math.max(1, ...topResources.map(r=>r[1]));
-  document.getElementById("topResourcesPanel").innerHTML = topResources.length ? topResources.map(([label,hours]) => `
+
+  const renderTop = (map, panelId, labelFn, emptyMsg) => {
+    const top = Object.entries(map).sort((x,y)=> y[1]-x[1]).slice(0,5);
+    const maxH = Math.max(1, ...top.map(r=>r[1]));
+    document.getElementById(panelId).innerHTML = top.length ? top.map(([label,hours]) => `
       <div class="bu-row">
-        <span>${esc(label)}</span>
-        <div class="bu-bar-track"><div class="bu-bar-fill bu-bar-fill-teal" style="width:${(hours/maxResourceHours*100)}%"></div></div>
-        <span>${hours.toFixed(1)}</span>
+        <span>${labelFn(label)}</span>
+        <div class="bu-bar-track"><div class="bu-bar-fill bu-bar-fill-teal" style="width:${(hours/maxH*100)}%"></div></div>
+        <span>${hours.toFixed(2)}</span>
       </div>
-    `).join("") : `<div class="empty-state">No time logged this month yet</div>`;
+    `).join("") : `<div class="empty-state">${emptyMsg}</div>`;
+  };
+  renderTop(hoursByResourceLabel, "topResourcesPanel", l => esc(l), `No time logged ${periodLabel}`);
+  renderTop(hoursByCsa, "topCsasPanel", l => {
+    const d = descForCsaTitle(l);
+    return `${esc(l)}${d ? `<div style="font-size:11px;color:var(--text-muted);">${esc(d)}</div>` : ""}`;
+  }, `No time logged ${periodLabel}`);
 }
 
 /* ============================================================
@@ -1372,6 +1406,8 @@ function renderTimesheetsTable(){
     `;
   }).join("");
 }
+
+document.getElementById("hoursPeriodSelect").addEventListener("change", () => renderDashboard());
 
 document.querySelectorAll(".ts-tab").forEach(btn => {
   btn.addEventListener("click", () => {
