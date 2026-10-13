@@ -4718,6 +4718,7 @@ function renderAgreementsList(){
             <div class="record-card-badges">
               <span class="badge ${a.fields.Status==='Active'?'badge-good':'badge-neutral'}">${esc(a.fields.Status||"—")}</span>
               <button class="btn btn-sm" onclick="event.stopPropagation(); openAgreementForm('${a.id}')">Edit</button>
+              <button class="btn btn-sm btn-danger" title="Delete agreement" onclick="event.stopPropagation(); openDeleteAgreementDialog('${a.id}')">🗑</button>
             </div>
           </div>
         </div>`;
@@ -4755,6 +4756,7 @@ function renderAgreementDetail(){
         <button class="btn btn-sm" onclick="openDirectLogTimeForm('Agreement','${a.id}')">+ Log time directly</button>
         <button class="btn btn-sm" onclick="openTicketForm(); presetOwningEntity('Agreement','${a.id}');">+ New ticket under this agreement</button>
         <button class="btn btn-sm btn-gold" onclick="generateAgreementWordDocument('${a.id}')">📄 Generate Document (.docx)</button>
+        <button class="btn btn-sm btn-danger" onclick="openDeleteAgreementDialog('${a.id}')">🗑 Delete agreement</button>
       </div>
       <div class="kv">
         <b>Status</b><div>
@@ -4950,7 +4952,14 @@ async function updateAgreementRate(id, value){
   }catch(e){ console.error(e); toast("Couldn't update rate: " + e.message, true); }
 }
 
+// Guards against creating the same agreement more than once: a save takes
+// several seconds (create, number it, update it) and the modal stays open
+// meanwhile, so impatient extra clicks on Save used to each create a new row.
+let agreementSaveInFlight = false;
+let agreementDraftCreated = null; // row created by a save that then failed part-way, reused on retry
 function openAgreementForm(id){
+  agreementSaveInFlight = false;
+  agreementDraftCreated = null;
   const a = id ? state.agreements.find(x=>String(x.id)===String(id)) : null;
   const f = a?.fields || {};
   openModal(`
@@ -4987,14 +4996,18 @@ function openAgreementForm(id){
     <div class="form-grid">${priorityOverrideFields("agf", a)}</div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-accent" onclick="submitAgreementForm('${id||""}')">Save</button>
+      <button class="btn btn-accent" id="agfSaveBtn" onclick="submitAgreementForm('${id||""}')">Save</button>
     </div>
   `);
 }
 
 async function submitAgreementForm(id){
+  if(agreementSaveInFlight) return; // already saving — ignore repeat clicks
   const title = document.getElementById("agf_title").value.trim();
   if(!title){ toast("Title is required", true); return; }
+  agreementSaveInFlight = true;
+  const saveBtn = document.getElementById("agfSaveBtn");
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
   const clientId = document.getElementById("agf_client").value;
   const endClientId = document.getElementById("agf_endclient").value;
   const status = document.getElementById("agf_status").value;
@@ -5022,15 +5035,145 @@ async function submitAgreementForm(id){
       a = state.agreements.find(x=>String(x.id)===String(id));
       Object.assign(a.fields, fields);
     } else {
-      a = await graphCreateItem("SLA_Agreements", fields);
-      const num = await getNextAgreementNumber();
-      await graphUpdateItem("SLA_Agreements", a.id, { AgreementNumber: num });
-      a.fields.AgreementNumber = num;
-      state.agreements.push(a);
+      if(agreementDraftCreated){
+        // An earlier attempt created the row but failed before numbering it —
+        // finish that one rather than creating a second.
+        a = agreementDraftCreated;
+        await graphUpdateItem("SLA_Agreements", a.id, fields);
+        Object.assign(a.fields, fields);
+      } else {
+        a = await graphCreateItem("SLA_Agreements", fields);
+        agreementDraftCreated = a;
+      }
+      if(!a.fields.AgreementNumber){
+        const num = await getNextAgreementNumber();
+        await graphUpdateItem("SLA_Agreements", a.id, { AgreementNumber: num });
+        a.fields.AgreementNumber = num;
+      }
+      if(!state.agreements.some(x => String(x.id)===String(a.id))) state.agreements.push(a);
+      agreementDraftCreated = null;
     }
     closeModal(); toast("Agreement saved"); renderAgreementsList();
     syncActiveEntity("Agreement", activeEntityTitleFor("Agreement", a), a.fields.Title, false);
-  }catch(e){ console.error(e); toast("Couldn't save agreement: " + e.message, true); }
+  }catch(e){
+    console.error(e); toast("Couldn't save agreement: " + e.message, true);
+    const b = document.getElementById("agfSaveBtn");
+    if(b){ b.disabled = false; b.textContent = "Save"; }
+  }finally{
+    agreementSaveInFlight = false;
+  }
+}
+
+/* ---------- Delete an agreement and everything that hangs off it ----------
+   Removes the agreement plus its fee lines, scope items, subtasks and its row
+   in the shared CSA_ActiveEntities list (so CG Time's widget stops offering
+   it). Refuses if tickets or time entries are logged against it — those are
+   real work records, so they must be moved or removed first. Built mainly for
+   cleaning up duplicates created by an accidental double-save. */
+function agreementDeletionImpact(a){
+  const id = String(a.id);
+  const bucket = hoursForOwningEntity("Agreement", a);
+  return {
+    bucket,
+    tickets: state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id))),
+    directTime: bucket.direct,
+    external: bucket.external,
+    feeLines: state.agreementFeeLines.filter(x => String(ticketLookupId(x,"Agreement"))===id),
+    scopeItems: state.agreementScopeItems.filter(x => String(ticketLookupId(x,"Agreement"))===id),
+    subtasks: state.agreementSubtasks.filter(x => String(ticketLookupId(x,"Agreement"))===id)
+  };
+}
+
+function openDeleteAgreementDialog(id){
+  const a = state.agreements.find(x => String(x.id)===String(id));
+  if(!a) return;
+  const imp = agreementDeletionImpact(a);
+  const label = `${a.fields.AgreementNumber||("AGR-"+a.id)} — ${a.fields.Title||""}`;
+  const blockers = [];
+  if(imp.tickets.length) blockers.push(`${imp.tickets.length} ticket(s) are raised under it`);
+  if(imp.directTime.length) blockers.push(`${imp.directTime.length} time entr${imp.directTime.length===1?"y is":"ies are"} logged directly against it`);
+  const rows = [
+    ["Fee lines", imp.feeLines.length], ["Scope items", imp.scopeItems.length], ["Subtasks", imp.subtasks.length]
+  ].map(([n,c]) => `<li>${c} ${n.toLowerCase()}</li>`).join("");
+  openModal(`
+    <h3>🗑 Delete agreement</h3>
+    <p class="modal-sub"><b>${esc(label)}</b></p>
+    ${blockers.length ? `
+      <div class="empty" style="text-align:left;margin:10px 0;">
+        <b>This agreement can't be deleted yet</b> — ${esc(blockers.join(" and "))}.
+        Move those to another agreement (or delete them) first, then try again.
+      </div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div>
+    ` : `
+      <p>This permanently deletes the agreement and its related data:</p>
+      <ul style="margin:6px 0 10px 18px;">${rows}<li>its entry in CG Time's active list (if any)</li></ul>
+      ${imp.external.length ? `<p style="color:var(--ink-2);font-size:13px;">Note: ${imp.external.length} time entr${imp.external.length===1?"y":"ies"} in CG Time reference this agreement by name. They aren't deleted.</p>` : ""}
+      <p><b>This can't be undone.</b></p>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger" id="delAgrBtn" onclick="deleteAgreementCascade('${a.id}')">Delete agreement</button>
+      </div>
+    `}
+  `);
+}
+
+let agreementDeleteInFlight = false;
+async function deleteAgreementCascade(id){
+  if(agreementDeleteInFlight) return;
+  const a = state.agreements.find(x => String(x.id)===String(id));
+  if(!a) return;
+  const imp = agreementDeletionImpact(a);
+  if(imp.tickets.length || imp.directTime.length){ openDeleteAgreementDialog(id); return; } // re-check: data may have changed
+  agreementDeleteInFlight = true;
+  const btn = document.getElementById("delAgrBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Deleting…"; }
+  const activeTitle = activeEntityTitleFor("Agreement", a);
+  const failures = [];
+  try{
+    await withBatchedRefresh(async () => {
+      // Children first (subtasks → scope items → fee lines), then the agreement
+      // itself, so a partial failure never leaves orphans pointing at nothing.
+      const steps = [
+        ["SLA_AgreementSubtasks", imp.subtasks],
+        ["SLA_AgreementScopeItems", imp.scopeItems],
+        ["SLA_AgreementFeeLineItems", imp.feeLines]
+      ];
+      for(const [list, items] of steps){
+        for(const it of items){
+          try{ await graphDeleteItem(list, it.id); }
+          catch(e){
+            if(/\b404\b/.test(e.message)) continue; // already gone
+            throw e;
+          }
+        }
+      }
+      // Shared CG Time active-entity row (best effort — never blocks the delete).
+      try{
+        const rows = await fetchAllListItems("CSA_ActiveEntities");
+        for(const r of rows.filter(x => x.fields.Source==="SLA_HUB" && (x.fields.Title||"").trim()===activeTitle.trim())){
+          await graphDeleteItem("CSA_ActiveEntities", r.id);
+        }
+      }catch(e){ console.warn("Couldn't remove the agreement's CG Time active-entity row:", e); failures.push("CG Time active entry"); }
+      try{ await graphDeleteItem("SLA_Agreements", a.id); }
+      catch(e){ if(!/\b404\b/.test(e.message)) throw e; }
+    });
+    const gone = id => x => String(x.id)!==String(id);
+    state.agreements = state.agreements.filter(gone(a.id));
+    state.agreementSubtasks = state.agreementSubtasks.filter(x => String(ticketLookupId(x,"Agreement"))!==String(a.id));
+    state.agreementScopeItems = state.agreementScopeItems.filter(x => String(ticketLookupId(x,"Agreement"))!==String(a.id));
+    state.agreementFeeLines = state.agreementFeeLines.filter(x => String(ticketLookupId(x,"Agreement"))!==String(a.id));
+    if(String(agreementDetailId)===String(a.id)) agreementDetailId = null;
+    closeModal();
+    toast(failures.length ? `Agreement deleted (couldn't clear its ${failures.join(", ")} — remove it from the CSA_ActiveEntities list manually)` : "Agreement and related data deleted", !!failures.length);
+    renderAgreementsList();
+  }catch(e){
+    console.error(e);
+    toast("Couldn't finish deleting the agreement: " + e.message + " — nothing else was changed; try Delete again to continue.", true);
+    const b = document.getElementById("delAgrBtn");
+    if(b){ b.disabled = false; b.textContent = "Delete agreement"; }
+  }finally{
+    agreementDeleteInFlight = false;
+  }
 }
 
 /* ---------- Work Orders ---------- */
