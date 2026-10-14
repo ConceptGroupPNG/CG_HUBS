@@ -249,6 +249,11 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .attach-dropzone{border:2px dashed var(--border);border-radius:10px;padding:16px;text-align:center;font-size:13px;color:var(--ink-2);cursor:pointer;outline:none;transition:all .12s ease;}
 .attach-dropzone:focus{border-color:var(--accent);color:var(--ink);}
 .attach-dropzone.dragover{border-color:var(--accent);background:#eaf3fd;color:var(--ink);}
+.res-avatar{position:relative;width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:15px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;letter-spacing:.02em;}
+.res-avatar.lg{width:68px;height:68px;font-size:22px;}
+.res-avatar.contractor{background:#6b7280;}
+.res-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#eef0f3;}
 .attach-status{font-size:12px;color:var(--accent-dk);margin-top:8px;min-height:16px;}
 .attach-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
 /* Thumbnail tiles for ticket attachments */
@@ -3985,6 +3990,99 @@ function renderClients(){
 }
 
 /* ============================================================
+   PROFILE PHOTOS — the Office 365 photo for Staff resources that have an
+   email address. Read live from Microsoft Graph (/users/{email}/photo) with a
+   dedicated, optional token for the User.ReadBasic.All permission, so if
+   that permission hasn't been consented yet nothing breaks: avatars just
+   keep showing initials. Photos are cached for the session (a person with
+   no photo is remembered too, so Graph isn't asked again).
+   ============================================================ */
+const PHOTO_SCOPES = ["User.ReadBasic.All"];
+let _photosUnavailable = false;
+const profilePhotoCache = {};      // lowercased email -> blob URL | "none"
+const profilePhotoInflight = {};   // lowercased email -> Promise
+
+function resourcePhotoEmail(r){
+  const email = (r.fields.MatchEmail||"").trim().toLowerCase();
+  return (r.fields.ResourceType === "Staff" && /^[^@\s]+@[^@\s]+$/.test(email)) ? email : "";
+}
+
+async function getPhotoToken(){
+  const account = msalInstance.getAllAccounts()[0];
+  if(!account) return null;
+  try{
+    const result = await msalInstance.acquireTokenSilent({ scopes: PHOTO_SCOPES, account });
+    return result.accessToken;
+  }catch(e){
+    // Not consented yet (or not on the app registration) — never redirect for this.
+    return null;
+  }
+}
+
+async function fetchProfilePhotoUrl(email){
+  const token = await getPhotoToken();
+  if(!token){
+    if(!_photosUnavailable) console.info("Profile photos are off: the User.ReadBasic.All permission isn't available to SLA HUB yet (add it to the app registration and grant admin consent).");
+    _photosUnavailable = true;
+    return null;
+  }
+  // Prefer a small fixed size (fast); fall back to whatever the largest available is.
+  for(const path of ["photos/96x96/$value", "photo/$value"]){
+    const res = await fetch(`${GRAPH}/users/${encodeURIComponent(email)}/${path}`, { headers: { Authorization: "Bearer " + token } });
+    if(res.ok){
+      const blob = await res.blob();
+      return blob.size ? URL.createObjectURL(blob) : "none";
+    }
+    if(res.status === 404) continue;                       // no photo (or that size) — try the next
+    if(res.status === 401 || res.status === 403){ _photosUnavailable = true; return null; } // permission problem
+    return null;                                           // anything else: transient, try again later
+  }
+  return "none";
+}
+
+function profilePhotoUrl(email){
+  if(profilePhotoCache[email]) return Promise.resolve(profilePhotoCache[email]);
+  if(!profilePhotoInflight[email]){
+    profilePhotoInflight[email] = fetchProfilePhotoUrl(email)
+      .then(url => { if(url) profilePhotoCache[email] = url; return url; })
+      .catch(() => null)
+      .finally(() => { delete profilePhotoInflight[email]; });
+  }
+  return profilePhotoInflight[email];
+}
+
+// Round avatar for a resource: initials always, with the Office 365 photo laid
+// over them once it's loaded (instantly, if it's already cached).
+function resourceAvatarHtml(r, size){
+  const email = resourcePhotoEmail(r);
+  const cached = email && profilePhotoCache[email];
+  return `<span class="res-avatar ${size==="lg"?"lg":""} ${r.fields.ResourceType==="Contractor"?"contractor":""}" ${email?`data-photo-email="${esc(email)}"`:""} title="${esc(r.fields.Title||"")}">${esc(kanbanInitials(r.fields.Title))}${cached && cached!=="none" ? `<img src="${esc(cached)}" alt="" onerror="this.remove()">` : ""}</span>`;
+}
+
+// Fills in photos for any avatars on screen that don't have one yet.
+async function hydrateProfilePhotos(){
+  if(_photosUnavailable) return;
+  const emails = [...new Set([...document.querySelectorAll(".res-avatar[data-photo-email]")]
+    .filter(el => !el.querySelector("img")).map(el => el.dataset.photoEmail))]
+    .filter(em => profilePhotoCache[em] !== "none");
+  let next = 0;
+  async function worker(){
+    while(next < emails.length && !_photosUnavailable){
+      const email = emails[next++];
+      const url = await profilePhotoUrl(email);
+      if(!url || url === "none") continue;
+      document.querySelectorAll(".res-avatar[data-photo-email]").forEach(el => {
+        if(el.dataset.photoEmail !== email || el.querySelector("img")) return;
+        const img = document.createElement("img");
+        img.alt = ""; img.src = url; img.onerror = () => img.remove();
+        el.appendChild(img);
+      });
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, emails.length) }, worker));
+}
+
+/* ============================================================
    RESOURCES — SLA HUB's own roster (SLA_Resources), federated per the
    CG Time contract: MatchEmail on every row, read-only from CG Time's side.
    Powers the "Assigned to" picker on tickets (see resourceOptions() below)
@@ -4004,6 +4102,7 @@ function renderResources(){
   `;
   renderResourcesTable();
   renderResourceDetail();
+  hydrateProfilePhotos();
 }
 
 function renderResourcesTable(){
@@ -4026,12 +4125,15 @@ function renderResourcesTable(){
         return `
         <div class="record-card clickable ${active?"":"is-muted"}" onclick="openResourceForm('${r.id}')">
           <div class="record-card-top">
-            <div>
+            <div style="display:flex;gap:13px;align-items:center;min-width:0;">
+              ${resourceAvatarHtml(r)}
+              <div style="min-width:0;">
               <div class="record-card-title">${esc(r.fields.Title)}</div>
               <div class="record-card-sub-row">
                 <span>${esc(r.fields.ResourceType||"—")}${r.fields.BusinessUnit ? ` · ${esc(r.fields.BusinessUnit)}` : ""}</span>
                 ${r.fields.MatchEmail ? `<span><span class="m-label">Email</span>${esc(r.fields.MatchEmail)}</span>` : ""}
                 <span><span class="m-label">Open tickets</span>${openCount || "—"}</span>
+              </div>
               </div>
             </div>
             <div class="record-card-badges">
@@ -4043,6 +4145,7 @@ function renderResourcesTable(){
       }).join("")}
     </div>
   ` : `<div class="empty">No resources yet. Click "+ New resource" to add support staff or contractors — they'll then show up in every "Assigned to" picker.</div>`;
+  hydrateProfilePhotos();
 }
 
 // Every ticket currently assigned to this resource (by MatchEmail), open
@@ -4063,6 +4166,7 @@ function ticketsForResource(resource){
 function openResourceDetail(id){
   resourceDetailId = id;
   renderResourceDetail();
+  hydrateProfilePhotos();
   document.getElementById("resourceDetailWrap").scrollIntoView({behavior:"smooth"});
 }
 
@@ -4199,9 +4303,14 @@ function renderResourceDetail(){
   wrap.innerHTML = `
     <div class="detail-panel" style="margin-top:16px;">
       <button class="close" onclick="resourceDetailId=null; renderResourceDetail();">✕</button>
-      <h3 style="margin:0 0 4px;">${esc(r.fields.Title)}${active?"":` <span class="badge badge-neutral">Inactive</span>`}</h3>
-      <div style="color:var(--ink-2);font-size:13px;margin-bottom:14px;">
-        ${esc(r.fields.ResourceType||"—")}${r.fields.BusinessUnit?` · ${esc(r.fields.BusinessUnit)}`:""}${r.fields.MatchEmail?` · ${esc(r.fields.MatchEmail)}`:""}
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:14px;padding-right:34px;">
+        ${resourceAvatarHtml(r, "lg")}
+        <div style="min-width:0;">
+          <h3 style="margin:0 0 4px;">${esc(r.fields.Title)}${active?"":` <span class="badge badge-neutral">Inactive</span>`}</h3>
+          <div style="color:var(--ink-2);font-size:13px;">
+            ${esc(r.fields.ResourceType||"—")}${r.fields.BusinessUnit?` · ${esc(r.fields.BusinessUnit)}`:""}${r.fields.MatchEmail?` · ${esc(r.fields.MatchEmail)}`:""}
+          </div>
+        </div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
         <button class="btn btn-sm" onclick="openResourceForm('${r.id}')">✏️ Edit</button>
