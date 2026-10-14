@@ -159,7 +159,9 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .kanban-card-sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;}
 .kanban-card-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
 .kanban-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--gridline);font-size:10.5px;color:var(--ink-2);}
-.kanban-avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.kanban-avatar{position:relative;overflow:hidden;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.kanban-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#eef0f3;}
+.kanban-avatar.contractor{background:#6b7280;}
 .kanban-avatar.unassigned{background:var(--muted);}
 .kanban-card-foot .btn-sm{padding:3px 8px;font-size:10.5px;}
 
@@ -252,6 +254,8 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .res-avatar{position:relative;width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:15px;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;letter-spacing:.02em;}
 .res-avatar.lg{width:68px;height:68px;font-size:22px;}
+.res-avatar.sm{width:24px;height:24px;font-size:10px;}
+.assignee-chip{display:inline-flex;align-items:center;gap:7px;vertical-align:middle;}
 .res-avatar.contractor{background:#6b7280;}
 .res-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#eef0f3;}
 .attach-status{font-size:12px;color:var(--accent-dk);margin-top:8px;min-height:16px;}
@@ -1159,7 +1163,8 @@ function priorityBadge(p){
 }
 function assignedBadge(t){
   const name = t.fields.AssignedToName;
-  return name ? esc(name) : `<span class="badge badge-warning">Unassigned</span>`;
+  return name ? `<span class="assignee-chip">${assigneeAvatarHtml(t, "res-avatar sm")}<span>${esc(name)}</span></span>`
+              : `<span class="badge badge-warning">Unassigned</span>`;
 }
 // Ticket workflow Status, badge-styled instead of plain text so it's as
 // scannable in a list as Priority/Response/Resolution already are.
@@ -1784,7 +1789,7 @@ function kanbanCardHtml(t){
       ${worstBreach ? statusBadge(worstBreach) : ""}
     </div>
     <div class="kanban-card-foot">
-      <span class="kanban-avatar ${t.fields.AssignedToName?"":"unassigned"}" title="${esc(t.fields.AssignedToName||"Unassigned")}">${esc(kanbanInitials(t.fields.AssignedToName))}</span>
+      ${assigneeAvatarHtml(t, "kanban-avatar" + (t.fields.AssignedToName ? "" : " unassigned"))}
       <span>${fmtDate(t.fields.DateOpened)}</span>
       ${t.fields.Status==="Resolved" ? `<button class="btn btn-sm" onclick="event.stopPropagation(); updateTicketStatus('${t.id}','Closed')">Mark Closed</button>` : ""}
       <select class="kanban-move" aria-label="Move ticket to another status" onclick="event.stopPropagation()" onchange="moveTicketFromCard(this,'${t.id}')">
@@ -3992,12 +3997,16 @@ function renderClients(){
 /* ============================================================
    PROFILE PHOTOS — the Office 365 photo for Staff resources that have an
    email address. Read live from Microsoft Graph (/users/{email}/photo) with a
-   dedicated, optional token for the User.ReadBasic.All permission, so if
+   dedicated, optional token for a photo-capable permission, so if
    that permission hasn't been consented yet nothing breaks: avatars just
    keep showing initials. Photos are cached for the session (a person with
    no photo is remembered too, so Graph isn't asked again).
    ============================================================ */
-const PHOTO_SCOPES = ["User.ReadBasic.All"];
+// Any ONE of these Graph delegated permissions lets SLA HUB read colleagues' photos,
+// whichever is granted on the app registration (narrowest first). The first one that
+// gives a token is remembered for the session.
+const PHOTO_SCOPE_OPTIONS = [["ProfilePhoto.Read.All"], ["User.ReadBasic.All"], ["User.Read.All"]];
+let _photoScopeChosen = null;
 let _photosUnavailable = false;
 const profilePhotoCache = {};      // lowercased email -> blob URL | "none"
 const profilePhotoInflight = {};   // lowercased email -> Promise
@@ -4010,19 +4019,23 @@ function resourcePhotoEmail(r){
 async function getPhotoToken(){
   const account = msalInstance.getAllAccounts()[0];
   if(!account) return null;
-  try{
-    const result = await msalInstance.acquireTokenSilent({ scopes: PHOTO_SCOPES, account });
-    return result.accessToken;
-  }catch(e){
-    // Not consented yet (or not on the app registration) — never redirect for this.
-    return null;
+  const attempts = _photoScopeChosen ? [_photoScopeChosen] : PHOTO_SCOPE_OPTIONS;
+  for(const scopes of attempts){
+    try{
+      const result = await msalInstance.acquireTokenSilent({ scopes, account });
+      _photoScopeChosen = scopes;
+      return result.accessToken;
+    }catch(e){
+      // Not consented / not on the app registration — try the next option; never redirect for this.
+    }
   }
+  return null;
 }
 
 async function fetchProfilePhotoUrl(email){
   const token = await getPhotoToken();
   if(!token){
-    if(!_photosUnavailable) console.info("Profile photos are off: the User.ReadBasic.All permission isn't available to SLA HUB yet (add it to the app registration and grant admin consent).");
+    if(!_photosUnavailable) console.info("Profile photos are off: none of " + PHOTO_SCOPE_OPTIONS.map(o => o[0]).join(" / ") + " is available to SLA HUB yet (add one to the app registration and grant admin consent).");
     _photosUnavailable = true;
     return null;
   }
@@ -4034,35 +4047,64 @@ async function fetchProfilePhotoUrl(email){
       return blob.size ? URL.createObjectURL(blob) : "none";
     }
     if(res.status === 404) continue;                       // no photo (or that size) — try the next
-    if(res.status === 401 || res.status === 403){ _photosUnavailable = true; return null; } // permission problem
+    if(res.status === 401 || res.status === 403){ _photosUnavailable = true; console.info("Profile photos: Graph refused the photo request (" + res.status + ")."); return null; } // permission problem
     return null;                                           // anything else: transient, try again later
   }
   return "none";
 }
 
+const profilePhotoFailedAt = {};   // lowercased email -> time of last transient failure
 function profilePhotoUrl(email){
   if(profilePhotoCache[email]) return Promise.resolve(profilePhotoCache[email]);
+  if(Date.now() - (profilePhotoFailedAt[email]||0) < 60000) return Promise.resolve(null); // don't hammer after a failure
   if(!profilePhotoInflight[email]){
     profilePhotoInflight[email] = fetchProfilePhotoUrl(email)
-      .then(url => { if(url) profilePhotoCache[email] = url; return url; })
-      .catch(() => null)
+      .then(url => { if(url) profilePhotoCache[email] = url; else profilePhotoFailedAt[email] = Date.now(); return url; })
+      .catch(() => { profilePhotoFailedAt[email] = Date.now(); return null; })
       .finally(() => { delete profilePhotoInflight[email]; });
   }
   return profilePhotoInflight[email];
 }
 
-// Round avatar for a resource: initials always, with the Office 365 photo laid
-// over them once it's loaded (instantly, if it's already cached).
-function resourceAvatarHtml(r, size){
-  const email = resourcePhotoEmail(r);
-  const cached = email && profilePhotoCache[email];
-  return `<span class="res-avatar ${size==="lg"?"lg":""} ${r.fields.ResourceType==="Contractor"?"contractor":""}" ${email?`data-photo-email="${esc(email)}"`:""} title="${esc(r.fields.Title||"")}">${esc(kanbanInitials(r.fields.Title))}${cached && cached!=="none" ? `<img src="${esc(cached)}" alt="" onerror="this.remove()">` : ""}</span>`;
+// Round avatar: initials always, with the Office 365 photo laid over them once
+// it's loaded (instantly, if it's already cached). `photoEmail` is only set for
+// Staff with an email — everyone else just keeps their initials.
+function avatarHtml(o){
+  const cached = o.photoEmail && profilePhotoCache[o.photoEmail];
+  return `<span class="${o.cls}" ${o.photoEmail?`data-photo-email="${esc(o.photoEmail)}"`:""} title="${esc(o.title||"")}">${esc(kanbanInitials(o.name))}${cached && cached!=="none" ? `<img src="${esc(cached)}" alt="" onerror="this.remove()">` : ""}</span>`;
 }
+function resourceAvatarHtml(r, size){
+  return avatarHtml({ name: r.fields.Title, photoEmail: resourcePhotoEmail(r), title: r.fields.Title,
+    cls: `res-avatar ${size==="lg"?"lg":""} ${r.fields.ResourceType==="Contractor"?"contractor":""}` });
+}
+// A ticket's assignee is matched to a Resource by email (that's how the
+// "Assigned to" picker stores them), which tells us Staff vs Contractor.
+function assigneeResource(t){
+  const email = (t.fields.AssignedToEmail||"").trim().toLowerCase();
+  return email ? state.resources.find(r => (r.fields.MatchEmail||"").trim().toLowerCase() === email) : null;
+}
+function assigneeAvatarHtml(t, cls){
+  const r = assigneeResource(t), name = t.fields.AssignedToName;
+  return avatarHtml({ name, photoEmail: r ? resourcePhotoEmail(r) : "", title: name || "Unassigned",
+    cls: cls + (r && r.fields.ResourceType==="Contractor" ? " contractor" : "") });
+}
+
+// Watches the page so ANY view that renders an avatar (resources, ticket board,
+// ticket dialog, ticket lists, agreement pages…) gets its photos filled in, without
+// each renderer having to remember to ask.
+let _photoObserverTimer = null;
+new MutationObserver(muts => {
+  const relevant = muts.some(m => [...m.addedNodes].some(n => n.nodeType === 1 &&
+    ((n.matches && n.matches("[data-photo-email]")) || (n.querySelector && n.querySelector("[data-photo-email]")))));
+  if(!relevant) return;
+  clearTimeout(_photoObserverTimer);
+  _photoObserverTimer = setTimeout(() => hydrateProfilePhotos(), 80);
+}).observe(document.body, { childList: true, subtree: true });
 
 // Fills in photos for any avatars on screen that don't have one yet.
 async function hydrateProfilePhotos(){
   if(_photosUnavailable) return;
-  const emails = [...new Set([...document.querySelectorAll(".res-avatar[data-photo-email]")]
+  const emails = [...new Set([...document.querySelectorAll("[data-photo-email]")]
     .filter(el => !el.querySelector("img")).map(el => el.dataset.photoEmail))]
     .filter(em => profilePhotoCache[em] !== "none");
   let next = 0;
@@ -4071,7 +4113,7 @@ async function hydrateProfilePhotos(){
       const email = emails[next++];
       const url = await profilePhotoUrl(email);
       if(!url || url === "none") continue;
-      document.querySelectorAll(".res-avatar[data-photo-email]").forEach(el => {
+      document.querySelectorAll("[data-photo-email]").forEach(el => {
         if(el.dataset.photoEmail !== email || el.querySelector("img")) return;
         const img = document.createElement("img");
         img.alt = ""; img.src = url; img.onerror = () => img.remove();
