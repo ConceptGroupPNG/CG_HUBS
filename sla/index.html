@@ -283,6 +283,8 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .agr-section > .section-title{margin-top:0;border-left:none;padding-left:0;}
 .agr-section.c-notes{border-color:var(--brand-gold);}
 .agr-section.c-notes > .section-title{color:var(--brand-gold-dk);}
+.agr-section.c-docs{border-color:#0f8b8d;}
+.agr-section.c-docs > .section-title{color:#0f8b8d;}
 .agr-section.c-fee{border-color:var(--accent);}
 .agr-section.c-fee > .section-title{color:var(--accent-dk);}
 .agr-section.c-scope{border-color:#0f8b8d;}
@@ -781,6 +783,28 @@ async function resolveAttachmentsDriveId(){
 function ticketAttachmentFolder(t){
   return t.fields.TicketNumber || `Ticket-${t.id}`;
 }
+// Agreement documents (signed contract, amendments, ...) go in the same
+// library under an "Agreements" folder, one subfolder per agreement number —
+// no new library or provisioning needed. Ticket folders sit at the library
+// root, so the two can never clash.
+function agreementAttachmentFolder(a){
+  const seg = String(a.fields.AgreementNumber || ("AGR-"+a.id)).replace(/["*:<>?/\\|#%]/g, "_").trim() || ("AGR-"+a.id);
+  return "Agreements/" + seg;
+}
+// A drive path with each folder/file name encoded separately (so "/" stays a
+// path separator but spaces etc. are escaped).
+function encodeDrivePath(path){ return String(path).split("/").map(encodeURIComponent).join("/"); }
+// Attachment "refs": a ticket is just its id ("42"); an agreement is "agr:7".
+// The ref is the key for the per-owner state cache, DOM ids and handlers.
+function attachOwnerFor(ref){
+  ref = String(ref);
+  if(ref.startsWith("agr:")){
+    const a = state.agreements.find(x => String(x.id)===ref.slice(4));
+    return a ? { kind:"agreement", folder: agreementAttachmentFolder(a) } : null;
+  }
+  const t = state.tickets.find(x => String(x.id)===ref);
+  return t ? { kind:"ticket", folder: ticketAttachmentFolder(t) } : null;
+}
 
 // SharePoint/OneDrive disallow a handful of characters in file names.
 function sanitizeAttachmentFileName(name){
@@ -810,16 +834,17 @@ function attachmentIcon(name){
 let ticketAttachmentsState = {};
 
 async function ensureTicketAttachmentsLoaded(ticketId, force, isRecheck){
+  ticketId = String(ticketId); // a ticket id, or "agr:<id>" for an agreement's documents
   const cur = ticketAttachmentsState[ticketId];
   // "error" counts too: the catch below re-renders the ticket, which calls this
   // again — without this, a failing attachment listing retried in an endless loop
   // (hammering Graph). A retry happens when the ticket is re-opened instead.
   if(!force && cur && (cur.status==="loading" || cur.status==="loaded" || cur.status==="error")) return;
-  const t = state.tickets.find(x=>String(x.id)===String(ticketId));
-  if(!t) return;
+  const owner = attachOwnerFor(ticketId);
+  if(!owner) return;
   ticketAttachmentsState[ticketId] = { status:"loading", items: cur?.items||[], error:null };
   try{
-    const items = await listTicketAttachments(t);
+    const items = await listAttachmentsInFolder(owner.folder);
     ticketAttachmentsState[ticketId] = { status:"loaded", items, error:null };
     // One delayed re-check if some previewable files don't have a thumbnail yet
     // (e.g. a screenshot pasted a moment ago) — never chained, so it can't loop.
@@ -830,13 +855,14 @@ async function ensureTicketAttachmentsLoaded(ticketId, force, isRecheck){
     console.warn("Couldn't load attachments for ticket", ticketId, e);
     ticketAttachmentsState[ticketId] = { status:"error", items:[], error: e.message };
   }
-  if(String(ticketDetailId)===String(ticketId)) renderTicketDetail();
+  if(ticketId.startsWith("agr:")){
+    if(String(agreementDetailId)===ticketId.slice(4)) renderAgreementDetail();
+  } else if(String(ticketDetailId)===ticketId) renderTicketDetail();
 }
 
-async function listTicketAttachments(t){
+async function listAttachmentsInFolder(folder){
   const driveId = await resolveAttachmentsDriveId();
-  const folder = ticketAttachmentFolder(t);
-  const base = `${GRAPH}/drives/${driveId}/root:/${encodeURIComponent(folder)}:/children?$select=id,name,size,webUrl,createdDateTime,createdBy&$orderby=name`;
+  const base = `${GRAPH}/drives/${driveId}/root:/${encodeDrivePath(folder)}:/children?$select=id,name,size,webUrl,createdDateTime,createdBy&$orderby=name`;
   const isMissingFolder = e => /\s404\s/.test(` ${e.message} `); // no attachments uploaded yet — folder doesn't exist
   try{
     // Ask for Graph's pre-generated thumbnails too (images, PDFs, Office docs).
@@ -871,14 +897,14 @@ function attachmentThumbUrl(a){
 // works identically for a tiny screenshot or a large file, and Graph will
 // auto-rename on a filename clash (e.g. two pasted "image.png" screenshots)
 // instead of silently overwriting an earlier attachment.
-async function uploadOneAttachment(t, file){
+async function uploadOneAttachment(owner, file){
   if(!file.size) throw new Error("That file is empty.");
   if(file.size > ATTACH_MAX_BYTES) throw new Error(`That file is larger than the ${fmtBytes(ATTACH_MAX_BYTES)} limit.`);
   const driveId = await resolveAttachmentsDriveId();
-  const folder = ticketAttachmentFolder(t);
+  const folder = owner.folder;
   const fileName = sanitizeAttachmentFileName(file.name || `pasted-${Date.now()}.png`);
   const path = `${folder}/${fileName}`;
-  const session = await callGraph(`${GRAPH}/drives/${driveId}/root:/${encodeURIComponent(path)}:/createUploadSession`, {
+  const session = await callGraph(`${GRAPH}/drives/${driveId}/root:/${encodeDrivePath(path)}:/createUploadSession`, {
     method: "POST", body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } })
   });
   const uploadUrl = session.uploadUrl;
@@ -904,12 +930,12 @@ function setAttachStatus(ticketId, text){
 }
 
 async function processAttachmentFiles(ticketId, files){
-  const t = state.tickets.find(x=>String(x.id)===String(ticketId));
-  if(!t || !files || !files.length) return;
+  const owner = attachOwnerFor(ticketId);
+  if(!owner || !files || !files.length) return;
   for(const file of files){
     setAttachStatus(ticketId, `Uploading ${file.name||"file"}…`);
     try{
-      await uploadOneAttachment(t, file);
+      await uploadOneAttachment(owner, file);
     }catch(e){
       console.error(e);
       toast(`Couldn't attach "${file.name||"file"}": ${e.message}`, true);
@@ -935,6 +961,45 @@ function onAttachFilesChosen(e, ticketId){
   const files = Array.from(e.target.files || []);
   e.target.value = ""; // so choosing the exact same file again later still fires onchange
   processAttachmentFiles(ticketId, files);
+}
+
+
+// The attachments / documents card — thumbnails, drag & drop zone, browse and
+// delete. Shared by the ticket dialog ("Attachments") and the agreement detail
+// ("Documents"); `ref` is a ticket id or "agr:<id>" (see attachOwnerFor).
+function attachmentsSectionHtml(ref, cls, title, opts={}){
+  const attachState = ticketAttachmentsState[ref] || { status:"loading", items:[] };
+  const noun = opts.noun || "attachments";
+  const hint = opts.hint || "📎 Drag &amp; drop files here, paste a screenshot (click here first, then Ctrl+V), or";
+  return `
+      <div class="${cls}">
+      <div class="section-title">${esc(title)}${attachState.items.length ? ` (${attachState.items.length})` : ""}</div>
+      <div class="attach-dropzone" id="attachZone_${ref}" tabindex="0"
+           ondragover="onAttachDragOver(event)" ondragleave="onAttachDragLeave(event)"
+           ondrop="onAttachDrop(event,'${ref}')" onpaste="onAttachPaste(event,'${ref}')">
+        ${hint}
+        <button type="button" class="btn btn-sm" onclick="event.stopPropagation(); document.getElementById('attachFile_${ref}').click();">browse…</button>
+        <input type="file" id="attachFile_${ref}" multiple style="display:none;" onchange="onAttachFilesChosen(event,'${ref}')">
+      </div>
+      <div class="attach-status" id="attachStatus_${ref}"></div>
+      ${attachState.status === "error" ? `<div class="empty">Couldn't load ${noun}: ${esc(attachState.error)}</div>` :
+        attachState.items.length ? `
+      <div class="attach-grid">
+        ${attachState.items.map(a => `
+          <div class="attach-tile">
+            <a class="attach-thumb" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="Open ${esc(a.name)}">
+              <span class="attach-thumb-icon">${attachmentIcon(a.name)}</span>
+              ${attachmentThumbUrl(a) ? `<img src="${esc(attachmentThumbUrl(a))}" alt="${esc(a.name)}" loading="lazy" onerror="this.remove()">` : ""}
+            </a>
+            <div class="attach-tile-body">
+              <a class="attach-tile-name" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="${esc(a.name)}">${esc(a.name)}</a>
+              <div class="attach-tile-meta">${fmtBytes(a.size)} · ${esc(a.createdBy?.user?.displayName||"—")}<br>${fmtDateTime(a.createdDateTime)}</div>
+            </div>
+            <button class="btn btn-sm btn-danger attach-tile-del" title="Remove" onclick="confirmDeleteAttachment(this,'${ref}','${a.id}')">🗑</button>
+          </div>
+        `).join("")}
+      </div>` : `<div class="empty">${attachState.status==="loading" ? `Loading ${noun}…` : `No ${noun} yet.`}</div>`}
+      </div>`;
 }
 
 // Two-click confirm on the delete button itself, rather than a native
@@ -2339,7 +2404,6 @@ function renderTicketDetail(){
   ].sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
   const totalHours = myEntries.reduce((s,e)=> s + (Number(e.fields.Hours)||0), 0);
   ensureTicketAttachmentsLoaded(t.id); // fire and forget — re-renders this panel once loaded
-  const attachState = ticketAttachmentsState[t.id] || { status:"loading", items:[] };
 
   wrap.innerHTML = `
     <div class="detail-panel">
@@ -2397,34 +2461,7 @@ function renderTicketDetail(){
       ` : `<div class="empty">No notes logged yet.</div>`; })()}
       </div>
 
-      <div class="tkt-section c-attach">
-      <div class="section-title">Attachments${attachState.items.length ? ` (${attachState.items.length})` : ""}</div>
-      <div class="attach-dropzone" id="attachZone_${t.id}" tabindex="0"
-           ondragover="onAttachDragOver(event)" ondragleave="onAttachDragLeave(event)"
-           ondrop="onAttachDrop(event,'${t.id}')" onpaste="onAttachPaste(event,'${t.id}')">
-        📎 Drag &amp; drop files here, paste a screenshot (click here first, then Ctrl+V), or
-        <button type="button" class="btn btn-sm" onclick="event.stopPropagation(); document.getElementById('attachFile_${t.id}').click();">browse…</button>
-        <input type="file" id="attachFile_${t.id}" multiple style="display:none;" onchange="onAttachFilesChosen(event,'${t.id}')">
-      </div>
-      <div class="attach-status" id="attachStatus_${t.id}"></div>
-      ${attachState.status === "error" ? `<div class="empty">Couldn't load attachments: ${esc(attachState.error)}</div>` :
-        attachState.items.length ? `
-      <div class="attach-grid">
-        ${attachState.items.map(a => `
-          <div class="attach-tile">
-            <a class="attach-thumb" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="Open ${esc(a.name)}">
-              <span class="attach-thumb-icon">${attachmentIcon(a.name)}</span>
-              ${attachmentThumbUrl(a) ? `<img src="${esc(attachmentThumbUrl(a))}" alt="${esc(a.name)}" loading="lazy" onerror="this.remove()">` : ""}
-            </a>
-            <div class="attach-tile-body">
-              <a class="attach-tile-name" href="${esc(a.webUrl)}" target="_blank" rel="noopener" title="${esc(a.name)}">${esc(a.name)}</a>
-              <div class="attach-tile-meta">${fmtBytes(a.size)} · ${esc(a.createdBy?.user?.displayName||"—")}<br>${fmtDateTime(a.createdDateTime)}</div>
-            </div>
-            <button class="btn btn-sm btn-danger attach-tile-del" title="Remove attachment" onclick="confirmDeleteAttachment(this,'${t.id}','${a.id}')">🗑</button>
-          </div>
-        `).join("")}
-      </div>` : `<div class="empty">${attachState.status==="loading" ? "Loading attachments…" : "No attachments yet."}</div>`}
-      </div>
+      ${attachmentsSectionHtml(String(t.id), "tkt-section c-attach", "Attachments")}
 
       <div class="tkt-section c-convo">
       <div class="section-title">Conversation${(() => { const n = ticketConversation(t.id).length; return n ? ` (${n})` : ""; })()}</div>
@@ -5000,6 +5037,7 @@ function renderAgreementsList(){
 
 function openAgreementDetail(id){
   agreementsTab = 'agreements'; agreementDetailId = id;
+  ensureTicketAttachmentsLoaded("agr:" + id, true); // always re-list the folder when opening an agreement (others may have added files)
   scopeUIState = { editingId: null, addSubtaskOpenId: null };
   navigate('agreements');
   document.getElementById("page-agreements").scrollIntoView({behavior:"smooth"});
@@ -5015,6 +5053,7 @@ function renderAgreementDetail(){
   const endClient = state.endClients.find(c=>String(c.id)===String(ticketLookupId(a,"EndClient")));
   const bucket = hoursForOwningEntity("Agreement", a);
   const tickets = state.tickets.filter(t => bucket.ownedTicketIds.has(String(t.id)));
+  ensureTicketAttachmentsLoaded("agr:" + a.id); // fire and forget — re-renders this panel once loaded
 
   wrap.innerHTML = `
     <div class="detail-panel" style="margin-top:16px;">
@@ -5038,6 +5077,11 @@ function renderAgreementDetail(){
         <b>Hours logged</b><div>${bucket.total.toFixed(2)} hrs across ${tickets.length} ticket(s)</div>
       </div>
       ${a.fields.Notes ? `<div class="agr-section c-notes"><div class="section-title">Notes</div><div>${esc(a.fields.Notes).replace(/\n/g,"<br>")}</div></div>` : ""}
+
+      ${attachmentsSectionHtml("agr:" + a.id, "agr-section c-docs", "Documents", {
+        noun: "documents",
+        hint: "📎 Drag &amp; drop the signed agreement, amendments or other documents here, or"
+      })}
 
       ${renderAgreementFeeSchedule(a)}
 
@@ -5375,7 +5419,7 @@ function openDeleteAgreementDialog(id){
       <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div>
     ` : `
       <p>This permanently deletes the agreement and its related data:</p>
-      <ul style="margin:6px 0 10px 18px;">${rows}<li>its entry in CG Time's active list (if any)</li></ul>
+      <ul style="margin:6px 0 10px 18px;">${rows}<li id="delAgrDocs">documents uploaded to it: checking…</li><li>its entry in CG Time's active list (if any)</li></ul>
       ${imp.external.length ? `<p style="color:var(--ink-2);font-size:13px;">Note: ${imp.external.length} time entr${imp.external.length===1?"y":"ies"} in CG Time reference this agreement by name. They aren't deleted.</p>` : ""}
       <p><b>This can't be undone.</b></p>
       <div class="modal-actions">
@@ -5384,6 +5428,16 @@ function openDeleteAgreementDialog(id){
       </div>
     `}
   `);
+  if(!blockers.length){
+    // Count the documents in its SharePoint folder so the warning is accurate.
+    listAttachmentsInFolder(agreementAttachmentFolder(a)).then(items => {
+      const el = document.getElementById("delAgrDocs");
+      if(el) el.textContent = items.length ? `${items.length} uploaded document${items.length===1?"":"s"} (moved to the SharePoint Recycle Bin)` : "no uploaded documents";
+    }).catch(() => {
+      const el = document.getElementById("delAgrDocs");
+      if(el) el.textContent = "its uploaded documents folder (couldn't check what's in it)";
+    });
+  }
 }
 
 let agreementDeleteInFlight = false;
@@ -5416,6 +5470,15 @@ async function deleteAgreementCascade(id){
           }
         }
       }
+      // Its documents folder in the attachments library (best effort; SharePoint
+      // keeps the files in the Recycle Bin, so this stays recoverable).
+      try{
+        const driveId = await resolveAttachmentsDriveId();
+        await callGraph(`${GRAPH}/drives/${driveId}/root:/${encodeDrivePath(agreementAttachmentFolder(a))}`, { method: "DELETE" });
+      }catch(e){
+        if(!/\b404\b/.test(e.message)){ console.warn("Couldn't remove the agreement's documents folder:", e); failures.push("documents folder"); }
+      }
+      delete ticketAttachmentsState["agr:" + a.id];
       // Shared CG Time active-entity row (best effort — never blocks the delete).
       try{
         const rows = await fetchAllListItems("CSA_ActiveEntities");
@@ -5433,7 +5496,7 @@ async function deleteAgreementCascade(id){
     state.agreementFeeLines = state.agreementFeeLines.filter(x => String(ticketLookupId(x,"Agreement"))!==String(a.id));
     if(String(agreementDetailId)===String(a.id)) agreementDetailId = null;
     closeModal();
-    toast(failures.length ? `Agreement deleted (couldn't clear its ${failures.join(", ")} — remove it from the CSA_ActiveEntities list manually)` : "Agreement and related data deleted", !!failures.length);
+    toast(failures.length ? `Agreement deleted (couldn't clear its ${failures.join(", ")} — remove it from SharePoint manually)` : "Agreement and related data deleted", !!failures.length);
     renderAgreementsList();
   }catch(e){
     console.error(e);
