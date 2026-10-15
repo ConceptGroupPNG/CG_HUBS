@@ -642,11 +642,38 @@
    this page's own URL just needs to be added as a redirect URI
    on that app registration before sign-in will work from here.
    ============================================================ */
+// Microsoft sign-in endpoints are supplied inline (cloudDiscoveryMetadata +
+// authorityMetadata) rather than looked up at runtime. Without them MSAL first
+// fetches login.microsoftonline.com/common/discovery/instance and the
+// tenant's openid-configuration before it will even start sign-in — and
+// ad/tracker-blocking extensions and some strict browser privacy settings
+// block those lookups (ERR_BLOCKED_BY_CLIENT), which left the Sign in button
+// silently doing nothing (Oct 2026). These values are Microsoft's fixed,
+// public endpoints for this tenant and don't change.
+const MS_LOGIN_HOST = "https://login.microsoftonline.com";
+const TENANT_ID = "ea9e105c-2df6-47ef-a8e3-b4aa1d788423";
 const msalConfig = {
   auth: {
     clientId: "d5aef866-584f-4226-ab11-c941888fb519",
-    authority: "https://login.microsoftonline.com/ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
-    redirectUri: window.location.origin + window.location.pathname
+    authority: `${MS_LOGIN_HOST}/${TENANT_ID}`,
+    redirectUri: window.location.origin + window.location.pathname,
+    knownAuthorities: ["login.microsoftonline.com"],
+    cloudDiscoveryMetadata: JSON.stringify({
+      tenant_discovery_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/v2.0/.well-known/openid-configuration`,
+      "api-version": "1.1",
+      metadata: [{
+        preferred_network: "login.microsoftonline.com",
+        preferred_cache: "login.windows.net",
+        aliases: ["login.microsoftonline.com", "login.windows.net", "login.microsoft.com", "sts.windows.net"]
+      }]
+    }),
+    authorityMetadata: JSON.stringify({
+      authorization_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/authorize`,
+      token_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/token`,
+      end_session_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/logout`,
+      issuer: `${MS_LOGIN_HOST}/${TENANT_ID}/v2.0`,
+      jwks_uri: `${MS_LOGIN_HOST}/${TENANT_ID}/discovery/v2.0/keys`
+    })
   },
   cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
 };
@@ -731,13 +758,21 @@ async function initAuth(){
   }
 }
 
-document.getElementById("loginBtn").addEventListener("click", ()=>{
+// Every sign-in/out call is caught and shown on screen — previously a
+// failure here was an unhandled promise, so the button just did nothing.
+function startSignInRedirect(){
   clearAuthRedirectMarker();
   markAuthRedirect();
-  msalInstance.loginRedirect({ scopes: graphScopes });
-});
+  const el = document.getElementById("loginError");
+  if(el){ el.textContent = ""; el.style.display = "none"; }
+  msalInstance.loginRedirect({ scopes: graphScopes }).catch(err => {
+    clearAuthRedirectMarker();
+    showLoginError(err);
+  });
+}
+document.getElementById("loginBtn").addEventListener("click", startSignInRedirect);
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
-  msalInstance.logoutRedirect();
+  msalInstance.logoutRedirect().catch(err => { console.error(err); alert(describeAuthError(err)); });
 });
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
@@ -780,11 +815,24 @@ document.querySelectorAll(".nav-item[data-view]").forEach(item => {
   });
 });
 
+// Turns a sign-in failure into something a user can act on. Network-type
+// failures reaching login.microsoftonline.com are almost always a blocker
+// extension or strict privacy setting, so say so plainly.
+function describeAuthError(e){
+  const raw = e ? `${e.errorCode || ""} ${e.message || e}`.trim() : "unknown error";
+  if(/endpoints_resolution_error|untrusted_authority|network_error|no_network_connectivity|post_request_failed|get_request_failed|Failed to fetch|ERR_BLOCKED/i.test(raw)){
+    return "Couldn't sign in — your browser blocked CG Time from reaching Microsoft sign-in (login.microsoftonline.com). " +
+      "This is usually an ad/tracker-blocking extension or a strict privacy setting. Allow login.microsoftonline.com " +
+      "(or switch the blocker off for this site), then refresh and try again. Technical detail: " + raw;
+  }
+  return "Couldn't sign in — " + raw;
+}
+
 function showLoginError(e){
   console.error(e);
   document.getElementById("loginScreen").style.display = "flex";
   const el = document.getElementById("loginError");
-  el.textContent = "Couldn't sign in — " + (e && e.message ? e.message : e);
+  el.textContent = describeAuthError(e);
   el.style.display = "block";
 }
 
@@ -838,7 +886,11 @@ function showSessionExpiredBanner(){
 document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
   clearAuthRedirectMarker();
   markAuthRedirect();
-  msalInstance.loginRedirect({ scopes: graphScopes });
+  msalInstance.loginRedirect({ scopes: graphScopes }).catch(err => {
+    clearAuthRedirectMarker();
+    console.error(err);
+    alert(describeAuthError(err));
+  });
 });
 
 /* ============================================================
