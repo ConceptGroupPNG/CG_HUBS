@@ -4607,6 +4607,12 @@ function renderEmployeePayrollBody(){
 let teFilters = { from: "", to: "", resourceEmail: "", billable: "all", search: "" };
 const TIME_ENTRIES_ROW_CAP = 200;
 
+// "2026-10-15" -> "15-10-2026" (Time Entries list + its printout).
+function fmtDateDashDMY(str){
+  const m = String(str || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (str || "");
+}
+
 function filteredTimeEntries(){
   return allTimeEntries.filter(t => {
     const f = t.fields;
@@ -4665,11 +4671,12 @@ function renderTimeEntriesView(){
       </div>
       <div class="filter-field"><label>Search</label><input type="search" id="teSearch" placeholder="resource or CSA…" value="${esc(teFilters.search)}"></div>
       <div class="filter-count" id="teCount"></div>
+      <button class="print-btn" id="tePrintBtn" title="Opens every entry matching these filters as a printable document">Print list</button>
     </div>
     <div class="panel">
       <table>
         <thead>
-          <tr><th>Work date</th><th>Logged at</th><th>Resource</th><th>Logged against</th><th title="The HUB that logged this entry — read from the Source column where it's set; an entry that predates that column (or came from a writer not yet updated to set it) falls back to a naming-pattern guess, shown in italics.">Source</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
+          <tr><th style="white-space:nowrap;min-width:92px;">Work date</th><th style="white-space:nowrap;">Logged at</th><th>Resource</th><th>Logged against</th><th title="The HUB that logged this entry — read from the Source column where it's set; an entry that predates that column (or came from a writer not yet updated to set it) falls back to a naming-pattern guess, shown in italics.">Source</th><th>Hours</th><th>Activity detail</th><th>Entry method</th><th>Billable</th></tr>
         </thead>
         <tbody id="teResultsBody"></tbody>
       </table>
@@ -4683,6 +4690,9 @@ function renderTimeEntriesView(){
   document.getElementById("teResource").addEventListener("change", e => { teFilters.resourceEmail = e.target.value; renderTimeEntriesResults(); });
   document.getElementById("teBillable").addEventListener("change", e => { teFilters.billable = e.target.value; renderTimeEntriesResults(); });
   document.getElementById("teSearch").addEventListener("input", e => { teFilters.search = e.target.value; renderTimeEntriesResults(); });
+  document.getElementById("tePrintBtn").addEventListener("click", () => {
+    openDocInNewTab(buildTimeEntriesListDocHtml(filteredTimeEntries()));
+  });
 
   renderTimeEntriesResults();
 }
@@ -4710,8 +4720,8 @@ function renderTimeEntriesResults(){
     const sourceIsInferred = !f.Source && !!inferHubForEntry(f.CSA);
     return `
       <tr>
-        <td>${esc(f.WorkDate || "—")}</td>
-        <td>${esc(fmtTimeOfDay(t.createdDateTime))}</td>
+        <td style="white-space:nowrap;">${esc(fmtDateDashDMY(f.WorkDate) || "—")}</td>
+        <td style="white-space:nowrap;">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
         <td ${sourceIsInferred ? 'style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — this entry predates the Source column (or came from a writer not yet updated to set it)."' : ''}>${esc(sourceLabel)}</td>
@@ -4722,6 +4732,88 @@ function renderTimeEntriesResults(){
       </tr>
     `;
   }).join("");
+}
+
+// Printable version of the Time Entries list — every entry matching the
+// current filters (not capped at the on-screen 200), same columns and
+// order as the screen. Uses the shared DOC_STYLE / openDocInNewTab()
+// pattern of every other CG Time document.
+function buildTimeEntriesListDocHtml(entries){
+  const hrs = t => parseFloat(t.fields.Hours) || 0;
+  const total = entries.reduce((sum,t)=> sum + hrs(t), 0);
+  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
+
+  const parts = [];
+  if(teFilters.from || teFilters.to) parts.push(`${fmtDateDashDMY(teFilters.from) || "start"} to ${fmtDateDashDMY(teFilters.to) || "today"}`);
+  if(teFilters.resourceEmail){
+    const r = findResourceByEmail(teFilters.resourceEmail);
+    parts.push(r ? r.fields.Title : teFilters.resourceEmail);
+  }
+  if(teFilters.billable === "billable") parts.push("Billable only");
+  if(teFilters.billable === "not-billable") parts.push("Non-billable only");
+  if(teFilters.billable === "not-set") parts.push("Billable not set only");
+  if(teFilters.search) parts.push(`search "${teFilters.search}"`);
+  const filterDesc = parts.length ? parts.join(" · ") : "All entries, all resources, all dates";
+
+  const rowsHtml = entries.length ? entries.map(t => {
+    const f = t.fields;
+    const r = resourceForEntry(t);
+    const hub = hubForEntry(t);
+    return `
+    <tr>
+      <td style="white-space:nowrap">${esc(fmtDateDashDMY(f.WorkDate) || "—")}</td>
+      <td style="white-space:nowrap">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
+      <td>${esc(r ? r.fields.Title : (f.EntryUser || "—"))}</td>
+      <td>${esc(f.CSA || "—")}</td>
+      <td>${esc(hub ? hubLabelFor(hub) : "—")}</td>
+      <td style="text-align:right">${hrs(t).toFixed(2)}</td>
+      <td>${esc(f.ActivityDetail || "—")}</td>
+      <td>${esc(f.EntryMethod || "—")}</td>
+      <td>${esc(reportBillableText(t))}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="9" style="text-align:center;color:#666;">No entries match these filters.</td></tr>`;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Time Entries — CG Time</title>
+<style>${DOC_STYLE}
+  table.rpt-table.te-list{font-size:9.5px;}
+  table.rpt-table.te-list th{font-size:8.5px;padding:5px 5px;}
+  table.rpt-table.te-list td{padding:5px 5px;}
+</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
+
+<div class="doc-header">Time Entries</div>
+<div class="doc-sub">CG Time &middot; group-wide time log</div>
+
+<div class="meta-row">
+  <div><b>Filter:</b> ${esc(filterDesc)}</div>
+  <div><b>Entries:</b> ${entries.length}</div>
+</div>
+
+<table class="rpt-table te-list">
+  <thead>
+    <tr><th style="width:10%">Work Date</th><th style="width:8%">Logged At</th><th style="width:12%">Resource</th><th style="width:19%">Logged Against</th><th style="width:8%">Source</th><th style="width:6%;text-align:right">Hours</th><th>Activity Detail</th><th style="width:7%">Method</th><th style="width:7%">Billable</th></tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+
+<div class="summary-row">
+  <div><b>Total Hours:</b> ${total.toFixed(2)}</div>
+  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
+  <div><b>Non-Billable Hours:</b> ${(total-billableTotal).toFixed(2)}</div>
+</div>
+
+<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+
+</body>
+</html>
+`;
 }
 
 /* ============================================================
