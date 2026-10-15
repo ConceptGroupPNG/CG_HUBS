@@ -4783,6 +4783,11 @@ const REPORT_STYLE = `
   table.rpt tr.daytotal td{ font-weight:600; color:#5e491f; border-bottom:1px solid #d9cfbd; }
   table.rpt tr.grand td{ font-weight:700; border-top:1.5px solid #5e491f; border-bottom:none; padding-top:7px; color:#2b2418; }
   table.rpt tr.day{ break-after:avoid; page-break-after:avoid; }
+  table.sub-simple{ width:72%; border-collapse:collapse; font-size:11px; margin-bottom:18px; }
+  table.sub-simple td{ border:1px solid #9a9a9a; padding:7px 10px; }
+  table.sub-simple td.num{ text-align:right; width:22%; font-variant-numeric:tabular-nums; }
+  table.sub-simple tr{ break-inside:avoid; page-break-inside:avoid; }
+  table.sub-simple tr.grand td{ font-weight:700; background:#f4f4f4; }
   .tag{ display:inline-block; font-size:8px; padding:0 5px; border-radius:3px; border:1px solid #d9cfbd; color:#5e491f; }
   .bar{ height:5px; background:#ece5d7; border-radius:3px; overflow:hidden; margin-top:3px; }
   .bar > span{ display:block; height:100%; background:#b4934f; }
@@ -4921,62 +4926,29 @@ function buildTimeEntriesListDocHtml(entries){
   return teReportShell("Time Entries — Detail Report", ctx, entries.length, body);
 }
 
-// Summary: one line per "Logged against", largest first, with who
-// contributed and how the hours split by billable status.
+// Summary: a plain "Subtotals by CSA" table — one row per Logged
+// against value (A–Z) with its hours, and a Grand Total.
 function buildTimeEntriesSummaryDocHtml(entries){
   const ctx = teReportContext(entries);
-  const groups = {};
+  const byCsa = {};
   entries.forEach(t => {
     const key = (t.fields.CSA || "").trim() || "Unspecified";
-    const g = groups[key] || (groups[key] = { label: key, hubs: new Set(), people: {}, count: 0, total: 0, billable: 0, notBillable: 0, notSet: 0, first: "", last: "" });
-    const h = ctx.hrs(t);
-    const hub = hubForEntry(t);
-    if(hub) g.hubs.add(hubLabelFor(hub));
-    const r = resourceForEntry(t);
-    const who = r ? r.fields.Title : (t.fields.EntryUser || "Unknown");
-    g.people[who] = (g.people[who] || 0) + h;
-    g.count++; g.total += h;
-    if(t.fields.Billable === true) g.billable += h;
-    else if(t.fields.Billable === false) g.notBillable += h;
-    else g.notSet += h;
-    const wd = t.fields.WorkDate || "";
-    if(wd && (!g.first || wd < g.first)) g.first = wd;
-    if(wd && (!g.last || wd > g.last)) g.last = wd;
+    byCsa[key] = (byCsa[key] || 0) + ctx.hrs(t);
   });
-  const list = Object.values(groups).sort((a,b) => b.total - a.total || a.label.localeCompare(b.label));
-  const max = list.length ? list[0].total : 0;
+  const labels = Object.keys(byCsa).sort((a,b) => a.localeCompare(b));
 
-  const rowsHtml = list.map(g => {
-    const share = ctx.total ? g.total / ctx.total * 100 : 0;
-    const people = Object.entries(g.people).sort((a,b)=> b[1]-a[1]).map(([n,h]) => `${esc(n)} ${h.toFixed(2)}`).join(" &middot; ");
-    const span = g.first ? (g.first === g.last ? fmtDateDashDMY(g.first) : `${fmtDateDashDMY(g.first)} to ${fmtDateDashDMY(g.last)}`) : "";
-    return `
-      <tr>
-        <td>
-          <div style="font-weight:600">${esc(g.label)}</div>
-          <div class="muted small">${[...g.hubs].map(esc).join(", ")}${g.hubs.size && span ? " &middot; " : ""}${esc(span)}</div>
-          <div class="muted small">${people}</div>
-        </td>
-        <td class="num">${g.count}</td>
-        <td class="num">${g.billable.toFixed(2)}</td>
-        <td class="num">${g.notBillable.toFixed(2)}</td>
-        <td class="num">${g.notSet.toFixed(2)}</td>
-        <td class="num" style="font-weight:700">${g.total.toFixed(2)}</td>
-        <td class="num">${share.toFixed(1)}%<div class="bar"><span style="width:${max ? (g.total/max*100).toFixed(1) : 0}%"></span></div></td>
-      </tr>`;
-  }).join("");
+  const rowsHtml = labels.map(l => `
+      <tr><td>${esc(l)}</td><td class="num">${byCsa[l].toFixed(2)}</td></tr>`).join("");
 
   const body = `
-<h2 class="rpt-h">Hours by logged against</h2>
-<table class="rpt">
-  <thead>
-    <tr><th>Logged against</th><th class="num" style="width:8%">Entries</th><th class="num" style="width:10%">Billable</th><th class="num" style="width:11%">Non-billable</th><th class="num" style="width:9%">Not set</th><th class="num" style="width:9%">Total</th><th class="num" style="width:11%">Share</th></tr>
-  </thead>
-  <tbody>${rowsHtml || '<tr><td colspan="7" class="muted" style="text-align:center;padding:14px;">No entries match these filters.</td></tr>'}
-  ${list.length ? `<tr class="grand"><td>Total &middot; ${list.length} item${list.length===1?"":"s"}</td><td class="num">${entries.length}</td><td class="num">${ctx.billable.toFixed(2)}</td><td class="num">${ctx.notBillable.toFixed(2)}</td><td class="num">${ctx.notSet.toFixed(2)}</td><td class="num">${ctx.total.toFixed(2)}</td><td class="num">100%</td></tr>` : ""}</tbody>
-</table>
-<div class="rpt-note">Sorted by total hours. Names under each line are the resources who logged time against it, with their hours.</div>`;
-  return teReportShell("Time Entries — Summary by Logged Against", ctx, entries.length, body);
+<h2 class="rpt-h" style="text-transform:none;letter-spacing:0;font-size:13px;">Subtotals by CSA</h2>
+<table class="sub-simple">
+  <tbody>
+    ${rowsHtml || '<tr><td colspan="2" style="text-align:center;color:#666;">No entries match these filters.</td></tr>'}
+    ${labels.length ? `<tr class="grand"><td>Grand Total</td><td class="num">${ctx.total.toFixed(2)}</td></tr>` : ""}
+  </tbody>
+</table>`;
+  return teReportShell("Time Entries — Summary", ctx, entries.length, body);
 }
 
 /* ============================================================
