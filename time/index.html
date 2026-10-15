@@ -666,23 +666,74 @@ let timeSiteId = null;
 /* ============================================================
    AUTH
    ============================================================ */
+// Sign-in uses full-page redirects only — no popups anywhere. Popups were
+// the cause of the Oct 2026 "sign-in window keeps opening again and again"
+// loop: when the silent token call failed right after sign-in, CG Time fell
+// back to acquireTokenPopup; the popup then loaded the whole CG Time app
+// inside itself (the redirect URI is this page), which ran initAuth again,
+// failed silently again and tried to open yet another popup — over and over,
+// with Edge eventually blocking them. Now:
+//   - if this page is only being loaded as MSAL's own return page inside a
+//     popup or hidden iframe, it does nothing and leaves the response for
+//     the parent window to read (see isMsalReturnInChildWindow),
+//   - an interactive fallback is a same-window redirect, tried at most once
+//     every 2 minutes; if Microsoft sign-in succeeds but a token still can't
+//     be obtained, the real Microsoft error is shown on the sign-in screen
+//     instead of looping.
+const AUTH_REDIRECT_MARKER = "cgtime.authRedirectAt";
+function markAuthRedirect(){ try{ sessionStorage.setItem(AUTH_REDIRECT_MARKER, String(Date.now())); }catch(e){} }
+function clearAuthRedirectMarker(){ try{ sessionStorage.removeItem(AUTH_REDIRECT_MARKER); }catch(e){} }
+function authRedirectRecentlyTried(){
+  try{
+    const t = parseInt(sessionStorage.getItem(AUTH_REDIRECT_MARKER) || "0", 10);
+    return !!t && (Date.now() - t) < 2*60*1000;
+  }catch(e){ return false; }
+}
+
+function isMsalReturnInChildWindow(){
+  const frag = "&" + window.location.hash.replace(/^#/, "");
+  const hasAuthResponse = /&(code|error)=/.test(frag);
+  let inFrame = false;
+  try{ inFrame = window.self !== window.top; }catch(e){ inFrame = true; }
+  const inPopup = !!window.opener && window.opener !== window;
+  return hasAuthResponse && (inFrame || inPopup);
+}
+
 async function initAuth(){
-  await msalInstance.handleRedirectPromise().catch(err=>console.error(err));
+  if(isMsalReturnInChildWindow()) return;
+
+  let redirectResult = null;
+  try{
+    redirectResult = await msalInstance.handleRedirectPromise();
+  }catch(err){
+    clearAuthRedirectMarker();
+    showLoginError(err);
+    return;
+  }
+
   const accounts = msalInstance.getAllAccounts();
-  if(accounts.length > 0){
-    msalInstance.setActiveAccount(accounts[0]);
-    try{
-      await acquireToken();
-      await startApp();
-    }catch(e){
-      showLoginError(e);
-    }
+  if(redirectResult && redirectResult.account){
+    msalInstance.setActiveAccount(redirectResult.account);
+  } else if(accounts.length > 0){
+    msalInstance.setActiveAccount(msalInstance.getActiveAccount() || accounts[0]);
   } else {
     document.getElementById("loginScreen").style.display = "flex";
+    return;
+  }
+
+  try{
+    const token = await acquireToken({ interactive: true });
+    if(!token) return; // navigating away to Microsoft sign-in
+    clearAuthRedirectMarker();
+    await startApp();
+  }catch(e){
+    showLoginError(e);
   }
 }
 
 document.getElementById("loginBtn").addEventListener("click", ()=>{
+  clearAuthRedirectMarker();
+  markAuthRedirect();
   msalInstance.loginRedirect({ scopes: graphScopes });
 });
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
@@ -737,15 +788,29 @@ function showLoginError(e){
   el.style.display = "block";
 }
 
-async function acquireToken(){
+// interactive:false (background refresh, 401 retry) never leaves the page —
+// it just throws, and graphRequest shows the "session expired" banner.
+// interactive:true (page load only) falls back to ONE same-window redirect.
+async function acquireToken({ interactive = false } = {}){
   const account = msalInstance.getActiveAccount();
   const request = { scopes: graphScopes, account };
   try{
     const result = await msalInstance.acquireTokenSilent(request);
     accessToken = result.accessToken;
+    return accessToken;
   }catch(e){
-    const result = await msalInstance.acquireTokenPopup(request);
-    accessToken = result.accessToken;
+    if(!interactive) throw e;
+    if(authRedirectRecentlyTried()){
+      clearAuthRedirectMarker();
+      const who = account && account.username ? account.username : "this account";
+      const code = e && (e.errorCode || e.name) ? (e.errorCode || e.name) : "unknown_error";
+      const detail = e && (e.errorMessage || e.message) ? (e.errorMessage || e.message) : String(e);
+      throw new Error(`Microsoft sign-in worked for ${who}, but CG Time still couldn't get permission to read SharePoint (${code}). ${detail} — please send a screenshot of this message to IT.`);
+    }
+    markAuthRedirect();
+    accessToken = null;
+    await msalInstance.acquireTokenRedirect(request);
+    return null;
   }
 }
 
@@ -771,6 +836,8 @@ function showSessionExpiredBanner(){
   if(banner) banner.style.display = "flex";
 }
 document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
+  clearAuthRedirectMarker();
+  markAuthRedirect();
   msalInstance.loginRedirect({ scopes: graphScopes });
 });
 
@@ -783,7 +850,7 @@ document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
 // token's lifetime got a raw "InvalidAuthenticationToken ... Lifetime
 // validation failed" error dumped straight into whatever form the person
 // was using. Every read/write funnels through here now, so on a 401 we
-// try one silent (or popup, if silent fails) token refresh and replay the
+// try one silent token refresh (never a popup or redirect) and replay the
 // request once before giving up. Only if that retry also fails do we
 // surface an error — and if the failure was auth-related, it's a plain
 // "please sign in again" message plus a banner with a Sign In button,
