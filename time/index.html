@@ -822,8 +822,10 @@ function describeAuthError(e){
   const raw = e ? `${e.errorCode || ""} ${e.message || e}`.trim() : "unknown error";
   if(/endpoints_resolution_error|untrusted_authority|network_error|no_network_connectivity|post_request_failed|get_request_failed|Failed to fetch|ERR_BLOCKED/i.test(raw)){
     return "Couldn't sign in — your browser blocked CG Time from reaching Microsoft sign-in (login.microsoftonline.com). " +
-      "This is usually an ad/tracker-blocking extension or a strict privacy setting. Allow login.microsoftonline.com " +
-      "(or switch the blocker off for this site), then refresh and try again. Technical detail: " + raw;
+      "In Microsoft Edge this is usually Tracking prevention set to Strict: go to Settings → Privacy, search, and services → " +
+      "Tracking prevention, and either choose Balanced or add " + window.location.hostname + " under Exceptions. " +
+      "Otherwise it's an ad/tracker-blocking extension — switch it off for this site. Then refresh and sign in again. " +
+      "(InPrivate windows use Strict by default, so they won't help.) Technical detail: " + raw;
   }
   return "Couldn't sign in — " + raw;
 }
