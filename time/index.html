@@ -656,7 +656,13 @@ const msalConfig = {
   auth: {
     clientId: "d5aef866-584f-4226-ab11-c941888fb519",
     authority: `${MS_LOGIN_HOST}/${TENANT_ID}`,
-    redirectUri: window.location.origin + window.location.pathname,
+    // Always the folder URL (…/CG-Time/), even if the page was opened as
+    // …/CG-Time/index.html — so it matches the one Single-page application
+    // redirect URI registered in Entra. A different spelling that happens
+    // to be registered under the Web platform instead would get through
+    // Microsoft's sign-in page and then fail the token step with exactly
+    // the same 'Failed to fetch' a browser blocker causes.
+    redirectUri: window.location.origin + window.location.pathname.replace(/index\.html$/i, ""),
     knownAuthorities: ["login.microsoftonline.com"],
     cloudDiscoveryMetadata: JSON.stringify({
       tenant_discovery_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/v2.0/.well-known/openid-configuration`,
