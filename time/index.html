@@ -4671,7 +4671,8 @@ function renderTimeEntriesView(){
       </div>
       <div class="filter-field"><label>Search</label><input type="search" id="teSearch" placeholder="resource or CSA…" value="${esc(teFilters.search)}"></div>
       <div class="filter-count" id="teCount"></div>
-      <button class="print-btn" id="tePrintBtn" title="Opens every entry matching these filters as a printable document">Print list</button>
+      <button class="print-btn" id="tePrintBtn" title="Every entry matching these filters, grouped by day, as a printable report">Print detail report</button>
+      <button class="print-btn" id="tePrintSummaryBtn" title="Hours matching these filters, grouped and totalled by what they were logged against">Print summary</button>
     </div>
     <div class="panel">
       <table>
@@ -4692,6 +4693,9 @@ function renderTimeEntriesView(){
   document.getElementById("teSearch").addEventListener("input", e => { teFilters.search = e.target.value; renderTimeEntriesResults(); });
   document.getElementById("tePrintBtn").addEventListener("click", () => {
     openDocInNewTab(buildTimeEntriesListDocHtml(filteredTimeEntries()));
+  });
+  document.getElementById("tePrintSummaryBtn").addEventListener("click", () => {
+    openDocInNewTab(buildTimeEntriesSummaryDocHtml(filteredTimeEntries()));
   });
 
   renderTimeEntriesResults();
@@ -4734,86 +4738,238 @@ function renderTimeEntriesResults(){
   }).join("");
 }
 
-// Printable version of the Time Entries list — every entry matching the
-// current filters (not capped at the on-screen 200), same columns and
-// order as the screen. Uses the shared DOC_STYLE / openDocInNewTab()
-// pattern of every other CG Time document.
-function buildTimeEntriesListDocHtml(entries){
+/* ------------------------------------------------------------
+   TIME ENTRIES — PRINTABLE REPORTS
+   Two documents from whatever the Time Entries filters currently
+   match (not capped at the on-screen 200 rows):
+     - Detail report: every entry, chronological, grouped by work
+       day with day subtotals.
+     - Summary: hours grouped and totalled by "Logged against".
+   Both use REPORT_STYLE (a report layout: branded header band,
+   parameter block, key-figure strip, ruled tables) rather than the
+   boxed-grid DOC_STYLE the timesheet-type documents use.
+   ------------------------------------------------------------ */
+const REPORT_STYLE = `
+  @page{ margin:16mm 14mm 18mm; @bottom-left{ content:"CG Time · Time Entries"; font:8px 'Segoe UI',Arial,sans-serif; color:#8a7f6e; } @bottom-right{ content:"Page " counter(page) " of " counter(pages); font:8px 'Segoe UI',Arial,sans-serif; color:#8a7f6e; } }
+  *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif; color:#22201c; font-size:10.5px; line-height:1.45; max-width:820px; margin:0 auto; padding:28px 36px; background:#fff; }
+  .rpt-band{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #5e491f; padding-bottom:10px; margin-bottom:4px; }
+  .rpt-org{ font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:#8a6d33; font-weight:700; }
+  .rpt-title{ font-size:21px; font-weight:700; color:#2b2418; margin-top:3px; letter-spacing:-.01em; }
+  .rpt-band-right{ text-align:right; font-size:9.5px; color:#6b6355; line-height:1.5; }
+  .rpt-subrule{ height:1px; background:#d9cfbd; margin-bottom:16px; }
+  .rpt-params{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px 18px; margin-bottom:16px; }
+  .rpt-params .k{ font-size:8px; text-transform:uppercase; letter-spacing:.1em; color:#8a7f6e; font-weight:600; }
+  .rpt-params .v{ font-size:10.5px; color:#22201c; margin-top:2px; }
+  .rpt-kpis{ display:grid; grid-template-columns:repeat(5,1fr); border:1px solid #d9cfbd; border-radius:4px; margin-bottom:20px; background:#faf7f1; }
+  .rpt-kpi{ padding:9px 12px; border-left:1px solid #e6dece; }
+  .rpt-kpi:first-child{ border-left:none; }
+  .rpt-kpi .k{ font-size:8px; text-transform:uppercase; letter-spacing:.1em; color:#8a7f6e; font-weight:600; }
+  .rpt-kpi .v{ font-size:16px; font-weight:700; color:#2b2418; margin-top:2px; font-variant-numeric:tabular-nums; }
+  h2.rpt-h{ font-size:11.5px; font-weight:700; color:#2b2418; margin:0 0 6px; text-transform:uppercase; letter-spacing:.06em; }
+  table.rpt{ width:100%; border-collapse:collapse; font-size:9.5px; margin-bottom:18px; }
+  table.rpt thead{ display:table-header-group; }
+  table.rpt th{ text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#5e491f; font-weight:700; padding:6px 6px; border-bottom:1.5px solid #5e491f; }
+  table.rpt td{ padding:5px 6px; border-bottom:1px solid #ece5d7; vertical-align:top; }
+  table.rpt tr{ page-break-inside:avoid; break-inside:avoid; }
+  table.rpt .num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  table.rpt .muted{ color:#8a7f6e; }
+  table.rpt .small{ font-size:8.5px; }
+  table.rpt tr.day td{ background:#f3eee4; font-weight:700; color:#2b2418; border-bottom:1px solid #d9cfbd; padding-top:6px; }
+  table.rpt tr.daytotal td{ font-weight:600; color:#5e491f; border-bottom:1px solid #d9cfbd; }
+  table.rpt tr.grand td{ font-weight:700; border-top:1.5px solid #5e491f; border-bottom:none; padding-top:7px; color:#2b2418; }
+  table.rpt tr.day{ break-after:avoid; page-break-after:avoid; }
+  .tag{ display:inline-block; font-size:8px; padding:0 5px; border-radius:3px; border:1px solid #d9cfbd; color:#5e491f; }
+  .bar{ height:5px; background:#ece5d7; border-radius:3px; overflow:hidden; margin-top:3px; }
+  .bar > span{ display:block; height:100%; background:#b4934f; }
+  .rpt-note{ font-size:8.5px; color:#8a7f6e; margin-top:6px; }
+  .rpt-foot{ margin-top:22px; padding-top:8px; border-top:1px solid #d9cfbd; display:flex; justify-content:space-between; font-size:8.5px; color:#8a7f6e; }
+  .no-print{ position:fixed; top:14px; right:14px; text-align:right; }
+  .no-print button{ background:#5e491f; color:#fff8e8; border:none; border-radius:6px; padding:9px 16px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .no-print .print-hint{ margin-top:5px; font-size:10px; color:#5e491f; }
+  @media print{ .no-print{ display:none; } body{ padding:0; max-width:none; } }
+`;
+
+function teReportContext(entries){
   const hrs = t => parseFloat(t.fields.Hours) || 0;
   const total = entries.reduce((sum,t)=> sum + hrs(t), 0);
-  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
+  const billable = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
+  const notBillable = entries.filter(t=>t.fields.Billable===false).reduce((sum,t)=> sum + hrs(t), 0);
+  const notSet = total - billable - notBillable;
+  const people = new Set(entries.map(t => { const r = resourceForEntry(t); return r ? r.fields.Title : (t.fields.EntryUser || "Unknown"); }));
+  const dates = entries.map(t => t.fields.WorkDate).filter(Boolean).sort();
 
-  const parts = [];
-  if(teFilters.from || teFilters.to) parts.push(`${fmtDateDashDMY(teFilters.from) || "start"} to ${fmtDateDashDMY(teFilters.to) || "today"}`);
+  let resourceLabel = "All resources";
   if(teFilters.resourceEmail){
     const r = findResourceByEmail(teFilters.resourceEmail);
-    parts.push(r ? r.fields.Title : teFilters.resourceEmail);
+    resourceLabel = r ? r.fields.Title : teFilters.resourceEmail;
   }
-  if(teFilters.billable === "billable") parts.push("Billable only");
-  if(teFilters.billable === "not-billable") parts.push("Non-billable only");
-  if(teFilters.billable === "not-set") parts.push("Billable not set only");
-  if(teFilters.search) parts.push(`search "${teFilters.search}"`);
-  const filterDesc = parts.length ? parts.join(" · ") : "All entries, all resources, all dates";
+  const periodLabel = (teFilters.from || teFilters.to)
+    ? `${fmtDateDashDMY(teFilters.from) || "Start"} to ${fmtDateDashDMY(teFilters.to) || "Today"}`
+    : (dates.length ? `${fmtDateDashDMY(dates[0])} to ${fmtDateDashDMY(dates[dates.length-1])}` : "All dates");
+  const billableLabel = { "billable":"Billable only", "not-billable":"Non-billable only", "not-set":"Not set only" }[teFilters.billable] || "All";
+  const account = msalInstance.getActiveAccount && msalInstance.getActiveAccount();
+  const preparedBy = account ? (account.name || account.username || "") : "";
+  const now = new Date();
+  const generated = `${fmtDateDashDMY(todayStr())} ${fmtTimeOfDay(now.toISOString())}`;
+  return { hrs, total, billable, notBillable, notSet, peopleCount: people.size, resourceLabel, periodLabel, billableLabel, preparedBy, generated };
+}
 
-  const rowsHtml = entries.length ? entries.map(t => {
-    const f = t.fields;
-    const r = resourceForEntry(t);
-    const hub = hubForEntry(t);
-    return `
-    <tr>
-      <td style="white-space:nowrap">${esc(fmtDateDashDMY(f.WorkDate) || "—")}</td>
-      <td style="white-space:nowrap">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
-      <td>${esc(r ? r.fields.Title : (f.EntryUser || "—"))}</td>
-      <td>${esc(f.CSA || "—")}</td>
-      <td>${esc(hub ? hubLabelFor(hub) : "—")}</td>
-      <td style="text-align:right">${hrs(t).toFixed(2)}</td>
-      <td>${esc(f.ActivityDetail || "—")}</td>
-      <td>${esc(f.EntryMethod || "—")}</td>
-      <td>${esc(reportBillableText(t))}</td>
-    </tr>`;
-  }).join("") : `<tr><td colspan="9" style="text-align:center;color:#666;">No entries match these filters.</td></tr>`;
-
+function teReportShell(title, ctx, entriesCount, bodyHtml){
+  const pct = ctx.total ? Math.round(ctx.billable / ctx.total * 100) : 0;
   return `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Time Entries — CG Time</title>
-<style>${DOC_STYLE}
-  table.rpt-table.te-list{font-size:9.5px;}
-  table.rpt-table.te-list th{font-size:8.5px;padding:5px 5px;}
-  table.rpt-table.te-list td{padding:5px 5px;}
-</style>
+<title>${esc(title)} — CG Time</title>
+<style>${REPORT_STYLE}</style>
 </head>
 <body>
 <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
-<div class="doc-header">Time Entries</div>
-<div class="doc-sub">CG Time &middot; group-wide time log</div>
+<div class="rpt-band">
+  <div>
+    <div class="rpt-org">Concept Group &middot; CG Time</div>
+    <div class="rpt-title">${esc(title)}</div>
+  </div>
+  <div class="rpt-band-right">
+    Generated ${esc(ctx.generated)}${ctx.preparedBy ? `<br>Prepared by ${esc(ctx.preparedBy)}` : ""}
+  </div>
+</div>
+<div class="rpt-subrule"></div>
 
-<div class="meta-row">
-  <div><b>Filter:</b> ${esc(filterDesc)}</div>
-  <div><b>Entries:</b> ${entries.length}</div>
+<div class="rpt-params">
+  <div><div class="k">Period</div><div class="v">${esc(ctx.periodLabel)}</div></div>
+  <div><div class="k">Resource</div><div class="v">${esc(ctx.resourceLabel)}</div></div>
+  <div><div class="k">Billable</div><div class="v">${esc(ctx.billableLabel)}</div></div>
+  <div><div class="k">Search</div><div class="v">${teFilters.search ? esc(`"${teFilters.search}"`) : "None"}</div></div>
 </div>
 
-<table class="rpt-table te-list">
-  <thead>
-    <tr><th style="width:10%">Work Date</th><th style="width:8%">Logged At</th><th style="width:12%">Resource</th><th style="width:19%">Logged Against</th><th style="width:8%">Source</th><th style="width:6%;text-align:right">Hours</th><th>Activity Detail</th><th style="width:7%">Method</th><th style="width:7%">Billable</th></tr>
-  </thead>
-  <tbody>${rowsHtml}</tbody>
-</table>
-
-<div class="summary-row">
-  <div><b>Total Hours:</b> ${total.toFixed(2)}</div>
-  <div><b>Billable Hours:</b> ${billableTotal.toFixed(2)}</div>
-  <div><b>Non-Billable Hours:</b> ${(total-billableTotal).toFixed(2)}</div>
+<div class="rpt-kpis">
+  <div class="rpt-kpi"><div class="k">Entries</div><div class="v">${entriesCount}</div></div>
+  <div class="rpt-kpi"><div class="k">Resources</div><div class="v">${ctx.peopleCount}</div></div>
+  <div class="rpt-kpi"><div class="k">Total hours</div><div class="v">${ctx.total.toFixed(2)}</div></div>
+  <div class="rpt-kpi"><div class="k">Billable hours</div><div class="v">${ctx.billable.toFixed(2)}</div></div>
+  <div class="rpt-kpi"><div class="k">Billable share</div><div class="v">${pct}%</div></div>
 </div>
 
-<div class="footer-stamp">Generated ${esc(fmtDateDMY(todayStr()))} &middot; CG Time</div>
+${bodyHtml}
 
+<div class="rpt-foot">
+  <div>Source: time entries federated from each HUB's TimeEntries list. Read-only report.</div>
+  <div>Hours: billable ${ctx.billable.toFixed(2)} &middot; non-billable ${ctx.notBillable.toFixed(2)} &middot; not set ${ctx.notSet.toFixed(2)}</div>
+</div>
 </body>
 </html>
 `;
+}
+
+// Detail report: chronological, grouped by work day with day subtotals.
+function buildTimeEntriesListDocHtml(entries){
+  const ctx = teReportContext(entries);
+  const sorted = entries.slice().sort((a,b) =>
+    (a.fields.WorkDate||"").localeCompare(b.fields.WorkDate||"") ||
+    (a.createdDateTime||"").localeCompare(b.createdDateTime||""));
+
+  const byDay = [];
+  sorted.forEach(t => {
+    const d = t.fields.WorkDate || "";
+    if(!byDay.length || byDay[byDay.length-1].date !== d) byDay.push({ date: d, rows: [] });
+    byDay[byDay.length-1].rows.push(t);
+  });
+  const dayName = d => d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday:"long" }) : "";
+
+  const rowsHtml = byDay.map(g => {
+    const dayTotal = g.rows.reduce((sum,t)=> sum + ctx.hrs(t), 0);
+    const lines = g.rows.map(t => {
+      const f = t.fields;
+      const r = resourceForEntry(t);
+      const hub = hubForEntry(t);
+      return `
+      <tr>
+        <td class="muted num" style="text-align:left">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
+        <td>${esc(r ? r.fields.Title : (f.EntryUser || "—"))}</td>
+        <td>${esc(f.CSA || "—")}${hub ? `<div class="muted small">${esc(hubLabelFor(hub))}</div>` : ""}</td>
+        <td>${f.ActivityDetail ? esc(f.ActivityDetail) : '<span class="muted">—</span>'}</td>
+        <td><span class="tag">${esc(f.EntryMethod || "—")}</span></td>
+        <td>${esc(reportBillableText(t))}</td>
+        <td class="num">${ctx.hrs(t).toFixed(2)}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <tr class="day"><td colspan="6">${esc(fmtDateDashDMY(g.date) || "No date")} <span class="muted" style="font-weight:400">&nbsp;${esc(dayName(g.date))} &middot; ${g.rows.length} entr${g.rows.length===1?"y":"ies"}</span></td><td class="num">${dayTotal.toFixed(2)}</td></tr>
+      ${lines}`;
+  }).join("");
+
+  const body = `
+<h2 class="rpt-h">Entries by day</h2>
+<table class="rpt">
+  <thead>
+    <tr><th style="width:9%">Logged</th><th style="width:15%">Resource</th><th style="width:26%">Logged against</th><th>Activity detail</th><th style="width:8%">Method</th><th style="width:8%">Billable</th><th class="num" style="width:7%">Hours</th></tr>
+  </thead>
+  <tbody>${rowsHtml || '<tr><td colspan="7" class="muted" style="text-align:center;padding:14px;">No entries match these filters.</td></tr>'}
+  ${entries.length ? `<tr class="grand"><td colspan="6">Total &middot; ${entries.length} entr${entries.length===1?"y":"ies"} over ${byDay.length} day${byDay.length===1?"":"s"}</td><td class="num">${ctx.total.toFixed(2)}</td></tr>` : ""}</tbody>
+</table>`;
+  return teReportShell("Time Entries — Detail Report", ctx, entries.length, body);
+}
+
+// Summary: one line per "Logged against", largest first, with who
+// contributed and how the hours split by billable status.
+function buildTimeEntriesSummaryDocHtml(entries){
+  const ctx = teReportContext(entries);
+  const groups = {};
+  entries.forEach(t => {
+    const key = (t.fields.CSA || "").trim() || "Unspecified";
+    const g = groups[key] || (groups[key] = { label: key, hubs: new Set(), people: {}, count: 0, total: 0, billable: 0, notBillable: 0, notSet: 0, first: "", last: "" });
+    const h = ctx.hrs(t);
+    const hub = hubForEntry(t);
+    if(hub) g.hubs.add(hubLabelFor(hub));
+    const r = resourceForEntry(t);
+    const who = r ? r.fields.Title : (t.fields.EntryUser || "Unknown");
+    g.people[who] = (g.people[who] || 0) + h;
+    g.count++; g.total += h;
+    if(t.fields.Billable === true) g.billable += h;
+    else if(t.fields.Billable === false) g.notBillable += h;
+    else g.notSet += h;
+    const wd = t.fields.WorkDate || "";
+    if(wd && (!g.first || wd < g.first)) g.first = wd;
+    if(wd && (!g.last || wd > g.last)) g.last = wd;
+  });
+  const list = Object.values(groups).sort((a,b) => b.total - a.total || a.label.localeCompare(b.label));
+  const max = list.length ? list[0].total : 0;
+
+  const rowsHtml = list.map(g => {
+    const share = ctx.total ? g.total / ctx.total * 100 : 0;
+    const people = Object.entries(g.people).sort((a,b)=> b[1]-a[1]).map(([n,h]) => `${esc(n)} ${h.toFixed(2)}`).join(" &middot; ");
+    const span = g.first ? (g.first === g.last ? fmtDateDashDMY(g.first) : `${fmtDateDashDMY(g.first)} to ${fmtDateDashDMY(g.last)}`) : "";
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:600">${esc(g.label)}</div>
+          <div class="muted small">${[...g.hubs].map(esc).join(", ")}${g.hubs.size && span ? " &middot; " : ""}${esc(span)}</div>
+          <div class="muted small">${people}</div>
+        </td>
+        <td class="num">${g.count}</td>
+        <td class="num">${g.billable.toFixed(2)}</td>
+        <td class="num">${g.notBillable.toFixed(2)}</td>
+        <td class="num">${g.notSet.toFixed(2)}</td>
+        <td class="num" style="font-weight:700">${g.total.toFixed(2)}</td>
+        <td class="num">${share.toFixed(1)}%<div class="bar"><span style="width:${max ? (g.total/max*100).toFixed(1) : 0}%"></span></div></td>
+      </tr>`;
+  }).join("");
+
+  const body = `
+<h2 class="rpt-h">Hours by logged against</h2>
+<table class="rpt">
+  <thead>
+    <tr><th>Logged against</th><th class="num" style="width:8%">Entries</th><th class="num" style="width:10%">Billable</th><th class="num" style="width:11%">Non-billable</th><th class="num" style="width:9%">Not set</th><th class="num" style="width:9%">Total</th><th class="num" style="width:11%">Share</th></tr>
+  </thead>
+  <tbody>${rowsHtml || '<tr><td colspan="7" class="muted" style="text-align:center;padding:14px;">No entries match these filters.</td></tr>'}
+  ${list.length ? `<tr class="grand"><td>Total &middot; ${list.length} item${list.length===1?"":"s"}</td><td class="num">${entries.length}</td><td class="num">${ctx.billable.toFixed(2)}</td><td class="num">${ctx.notBillable.toFixed(2)}</td><td class="num">${ctx.notSet.toFixed(2)}</td><td class="num">${ctx.total.toFixed(2)}</td><td class="num">100%</td></tr>` : ""}</tbody>
+</table>
+<div class="rpt-note">Sorted by total hours. Names under each line are the resources who logged time against it, with their hours.</div>`;
+  return teReportShell("Time Entries — Summary by Logged Against", ctx, entries.length, body);
 }
 
 /* ============================================================
