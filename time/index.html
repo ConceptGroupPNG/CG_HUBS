@@ -4802,6 +4802,10 @@ function findResourceByEmail(email){
   return allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === email);
 }
 
+// Resource dropdown value meaning "every resource" — any value that can't
+// be a real MatchEmail works.
+const ALL_RESOURCES = "__all__";
+
 function renderTimesheetReportTab(){
   const container = document.getElementById("tsTabContent");
   if(!tsReportFilters.resourceEmail && allResources.length){
@@ -4815,13 +4819,13 @@ function renderTimesheetReportTab(){
     .map(r => `<option value="${esc((r.fields.MatchEmail||"").toLowerCase().trim())}">${esc(r.fields.Title||"—")}</option>`)
     .join("");
 
-  // CSA choices = whatever this resource has actually logged time
-  // against (any date), so every option is guaranteed to match at
-  // least one entry rather than offering the full CSA catalogue.
-  const resource = findResourceByEmail(tsReportFilters.resourceEmail);
-  const csaValues = resource
-    ? [...new Set(entriesForResourceAndPeriod(resource, "", "").map(t => (t.fields.CSA||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
-    : [];
+  // CSA choices = whatever the chosen resource (or, for All resources,
+  // anyone) has actually logged time against, any date — so every option
+  // is guaranteed to match at least one entry.
+  const isAll = tsReportFilters.resourceEmail === ALL_RESOURCES;
+  const resource = isAll ? null : findResourceByEmail(tsReportFilters.resourceEmail);
+  const csaSource = isAll ? allTimeEntries : (resource ? entriesForResourceAndPeriod(resource, "", "") : []);
+  const csaValues = [...new Set(csaSource.map(t => (t.fields.CSA||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   if(tsReportFilters.csa && !csaValues.includes(tsReportFilters.csa)) tsReportFilters.csa = "";
   const csaOptions = csaValues.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
 
@@ -4830,6 +4834,7 @@ function renderTimesheetReportTab(){
       <div class="filter-field"><label>Resource</label>
         <select id="tsrResource">
           <option value="">Select a resource…</option>
+          <option value="${ALL_RESOURCES}">All resources</option>
           ${resourceOptions}
         </select>
       </div>
@@ -4877,6 +4882,10 @@ function renderTimesheetReportTab(){
   });
   document.getElementById("tsrPrintBtn").addEventListener("click", () => {
     if(!tsReportFilters.resourceEmail){ alert("Please select a resource first."); return; }
+    if(tsReportFilters.resourceEmail === ALL_RESOURCES){
+      openDocInNewTab(buildTimeEntriesReportDocHtml(null, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable));
+      return;
+    }
     const r = findResourceByEmail(tsReportFilters.resourceEmail);
     if(!r) return;
     openDocInNewTab(buildTimeEntriesReportDocHtml(r, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable));
@@ -4889,21 +4898,24 @@ function renderTimesheetReportBody(){
   const body = document.getElementById("tsrBody");
   if(!body) return;
   if(!tsReportFilters.resourceEmail){
-    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a resource to see their Time Entries Report.</div></div>`;
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a resource (or All resources) to see the Time Entries Report.</div></div>`;
     return;
   }
-  const resource = findResourceByEmail(tsReportFilters.resourceEmail);
-  if(!resource){
+  const isAll = tsReportFilters.resourceEmail === ALL_RESOURCES;
+  const resource = isAll ? null : findResourceByEmail(tsReportFilters.resourceEmail);
+  if(!isAll && !resource){
     body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Resource not found.</div></div>`;
     return;
   }
   const d = timeEntriesReportData(resource, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable);
+  const colCount = isAll ? 7 : 6;
 
   const rowsHtml = d.entries.length ? d.entries.map(t => {
     const f = t.fields;
     return `
       <tr>
         <td style="white-space:nowrap;">${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
+        ${isAll ? `<td style="white-space:nowrap;">${esc(reportResourceName(t))}</td>` : ""}
         <td>${esc(f.CSA || "—")}</td>
         <td class="hrs" style="text-align:right;">${parseFloat(f.Hours||0).toFixed(2)}</td>
         <td>${esc(reportBillableText(t))}</td>
@@ -4911,21 +4923,25 @@ function renderTimesheetReportBody(){
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="6" style="color:var(--ink-muted);">No entries match this filter.</td></tr>`;
+  }).join("") : `<tr><td colspan="${colCount}" style="color:var(--ink-muted);">No entries match this filter.</td></tr>`;
 
-  const subtotalRows = d.csaLabels.map(label => `
-    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${d.byCSA[label].toFixed(2)}</div></div>
+  const subtotalRows = (labels, map) => labels.map(label => `
+    <div class="ts-group-row"><div>${esc(label)}</div><div></div><div>${map[label].toFixed(2)}</div></div>
   `).join("");
+  const grandTotalRow = d.entries.length ? `<div class="ts-group-row total"><div>Grand Total</div><div></div><div>${d.grandTotal.toFixed(2)}</div></div>` : "";
+  const emptyNote = '<div style="font-size:12px;color:var(--ink-muted);">No entries match this filter.</div>';
+  const title = isAll ? "All resources" : (resource.fields.Title || "—");
+  const subParts = [
+    `<b>Filter:</b> ${esc(d.filterDesc)}`,
+    `<b>Period:</b> ${esc(d.periodLabel)}`,
+    `<b>Entries:</b> ${d.entries.length}`,
+    isAll ? `<b>Resources:</b> ${d.resourceLabels.length}` : esc(resource._sourceHubLabel || "—"),
+  ];
 
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#9776;</span>Time Entries Report &mdash; ${esc(resource.fields.Title||"—")}</h3>
-      <div class="panel-sub">
-        <b>Filter:</b> ${esc(d.filterDesc)} &middot;
-        <b>Period:</b> ${esc(d.periodLabel)} &middot;
-        <b>Entries:</b> ${d.entries.length} &middot;
-        ${esc(resource._sourceHubLabel||"—")}
-      </div>
+      <h3><span>&#9776;</span>Time Entries Report &mdash; ${esc(title)}</h3>
+      <div class="panel-sub">${subParts.join(" &middot; ")}</div>
     </div>
     <div class="ts-stat-row">
       <div class="ts-stat"><div class="lbl">Entries</div><div class="val">${d.entries.length}</div></div>
@@ -4937,15 +4953,21 @@ function renderTimesheetReportBody(){
       <h3><span>&#9998;</span>Entries</h3>
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>Date</th><th>CSA</th><th style="text-align:right;">Hours</th><th>Billable</th><th>Activity Detail</th><th>Method</th></tr></thead>
+          <thead><tr><th>Date</th>${isAll ? "<th>Resource</th>" : ""}<th>CSA</th><th style="text-align:right;">Hours</th><th>Billable</th><th>Activity Detail</th><th>Method</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
     </div>
+    ${isAll ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#931;</span>Subtotals by Resource</h3>
+      ${subtotalRows(d.resourceLabels, d.byResource) || emptyNote}
+      ${grandTotalRow}
+    </div>` : ""}
     <div class="panel">
       <h3><span>&#931;</span>Subtotals by CSA</h3>
-      ${subtotalRows || '<div style="font-size:12px;color:var(--ink-muted);">No entries match this filter.</div>'}
-      ${d.entries.length ? `<div class="ts-group-row total"><div>Grand Total</div><div></div><div>${d.grandTotal.toFixed(2)}</div></div>` : ""}
+      ${subtotalRows(d.csaLabels, d.byCSA) || emptyNote}
+      ${grandTotalRow}
     </div>
   `;
 }
@@ -5254,8 +5276,26 @@ ${gridHtml}
    start/end means "no limit" on that side. Period shown is the
    chosen From/To where set, otherwise the first/last entry's date
    (same as CSA HUB's own report when run over "all entries"). */
+function reportResourceName(t){
+  const r = resourceForEntry(t);
+  return (r && r.fields.Title) || (t.fields.EntryUser || "").trim() || "Unknown";
+}
+
+// resource = null means All resources: every time entry on file, including
+// any whose EntryUser doesn't match a CG_Resources record (shown under the
+// raw EntryUser value so nothing silently drops out of the totals).
 function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFilter){
-  let entries = entriesForResourceAndPeriod(resource, start || "", end || "");
+  let entries;
+  if(resource){
+    entries = entriesForResourceAndPeriod(resource, start || "", end || "");
+  } else {
+    entries = allTimeEntries.filter(t => {
+      const wd = t.fields.WorkDate;
+      return wd && (!start || wd >= start) && (!end || wd <= end);
+    }).sort((a,b) =>
+      (a.fields.WorkDate||"").localeCompare(b.fields.WorkDate||"") ||
+      reportResourceName(a).localeCompare(reportResourceName(b)));
+  }
   if(csaFilterTitle) entries = entries.filter(t => (t.fields.CSA||"").trim() === csaFilterTitle);
   if(billableFilter === "billable") entries = entries.filter(t => t.fields.Billable === true);
   if(billableFilter === "not-billable") entries = entries.filter(t => t.fields.Billable === false);
@@ -5267,15 +5307,20 @@ function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFil
     ? `${fmtDateDMY(periodStart) || "start"} to ${fmtDateDMY(periodEnd) || "today"}`
     : "All dates";
 
-  const grandTotal = entries.reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
-  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+  const hrs = t => parseFloat(t.fields.Hours) || 0;
+  const grandTotal = entries.reduce((sum,t)=> sum + hrs(t), 0);
+  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
 
   const byCSA = {};
+  const byResource = {};
   entries.forEach(t => {
-    const label = (t.fields.CSA || "").trim() || "Unspecified";
-    byCSA[label] = (byCSA[label] || 0) + (parseFloat(t.fields.Hours)||0);
+    const csa = (t.fields.CSA || "").trim() || "Unspecified";
+    byCSA[csa] = (byCSA[csa] || 0) + hrs(t);
+    const who = reportResourceName(t);
+    byResource[who] = (byResource[who] || 0) + hrs(t);
   });
   const csaLabels = Object.keys(byCSA).sort((a,b)=>a.localeCompare(b));
+  const resourceLabels = Object.keys(byResource).sort((a,b)=>a.localeCompare(b));
 
   const filterDescParts = [];
   if(csaFilterTitle) filterDescParts.push(csaFilterTitle);
@@ -5284,7 +5329,7 @@ function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFil
   if(billableFilter === "not-set") filterDescParts.push("Not set only");
   const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
 
-  return { entries, periodLabel, grandTotal, billableTotal, byCSA, csaLabels, filterDesc };
+  return { entries, periodLabel, grandTotal, billableTotal, byCSA, csaLabels, byResource, resourceLabels, filterDesc };
 }
 
 function reportBillableText(t){
@@ -5292,62 +5337,68 @@ function reportBillableText(t){
 }
 
 function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, billableFilter){
+  const isAll = !resource;
   const d = timeEntriesReportData(resource, csaFilterTitle, start, end, billableFilter);
+  const who = isAll ? "All resources" : resource.fields.Title;
 
   const rowsHtml = d.entries.length ? d.entries.map(t => `
     <tr>
       <td style="white-space:nowrap">${esc(fmtDateDMY(t.fields.WorkDate) || "—")}</td>
+      ${isAll ? `<td>${esc(reportResourceName(t))}</td>` : ""}
       <td>${esc(t.fields.CSA || "—")}</td>
       <td style="text-align:right">${parseFloat(t.fields.Hours||0).toFixed(2)}</td>
       <td>${esc(reportBillableText(t))}</td>
       <td>${esc(t.fields.ActivityDetail || "—")}</td>
       <td>${esc(t.fields.EntryMethod || "—")}</td>
     </tr>
-  `).join("") : `<tr><td colspan="6" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
+  `).join("") : `<tr><td colspan="${isAll ? 7 : 6}" style="text-align:center;color:#666;">No entries match this filter.</td></tr>`;
 
-  const subtotalsHtml = d.csaLabels.map(label => `
-    <tr><td>${esc(label)}</td><td style="text-align:right">${d.byCSA[label].toFixed(2)}</td></tr>
-  `).join("");
+  const subtotalBlock = (heading, labels, map) => labels.length ? `
+<div style="break-inside:avoid;page-break-inside:avoid;">
+<div style="font-size:12px;font-weight:700;margin:6px 0 8px;">${heading}</div>
+<table class="subtotal-table">
+  <tbody>
+    ${labels.map(label => `<tr><td>${esc(label)}</td><td style="text-align:right">${map[label].toFixed(2)}</td></tr>`).join("")}
+    <tr><td>Grand Total</td><td style="text-align:right">${d.grandTotal.toFixed(2)}</td></tr>
+  </tbody>
+</table>
+</div>` : "";
+
+  const headCols = isAll
+    ? `<th style="width:10%">Date</th><th style="width:14%">Resource</th><th style="width:22%">CSA</th><th style="width:7%;text-align:right">Hours</th><th style="width:8%">Billable</th><th>Activity Detail</th><th style="width:9%">Method</th>`
+    : `<th style="width:11%">Date</th><th style="width:27%">CSA</th><th style="width:8%;text-align:right">Hours</th><th style="width:9%">Billable</th><th>Activity Detail</th><th style="width:10%">Method</th>`;
 
   return `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Time Entries Report — ${esc(resource.fields.Title)}</title>
+<title>Time Entries Report — ${esc(who)}</title>
 <style>${DOC_STYLE}</style>
 </head>
 <body>
 <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button><div class="print-hint">In the print dialog: Layout &rarr; Portrait, Paper &rarr; A4</div></div>
 
 <div class="doc-header">Time Entries Report</div>
-<div class="doc-sub">${esc(resource.fields.Title)}</div>
+<div class="doc-sub">${esc(who)}</div>
 
 <div class="meta-row">
-  <div><b>Resource:</b> ${esc(resource.fields.Title)}</div>
+  <div><b>Resource:</b> ${esc(who)}</div>
   <div><b>Filter:</b> ${esc(d.filterDesc)}</div>
   <div><b>Period:</b> ${esc(d.periodLabel)}</div>
   <div><b>Entries:</b> ${d.entries.length}</div>
+  ${isAll ? `<div><b>Resources:</b> ${d.resourceLabels.length}</div>` : ""}
 </div>
 
 <table class="rpt-table">
   <thead>
-    <tr><th style="width:11%">Date</th><th style="width:27%">CSA</th><th style="width:8%;text-align:right">Hours</th><th style="width:9%">Billable</th><th>Activity Detail</th><th style="width:10%">Method</th></tr>
+    <tr>${headCols}</tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
 </table>
 
-${d.csaLabels.length ? `
-<div style="break-inside:avoid;page-break-inside:avoid;">
-<div style="font-size:12px;font-weight:700;margin:6px 0 8px;">Subtotals by CSA</div>
-<table class="subtotal-table">
-  <tbody>
-    ${subtotalsHtml}
-    <tr><td>Grand Total</td><td style="text-align:right">${d.grandTotal.toFixed(2)}</td></tr>
-  </tbody>
-</table>
-</div>
-` : ""}
+${isAll ? subtotalBlock("Subtotals by Resource", d.resourceLabels, d.byResource) : ""}
+${subtotalBlock("Subtotals by CSA", d.csaLabels, d.byCSA)}
 
 <div class="summary-row">
   <div><b>Total Hours:</b> ${d.grandTotal.toFixed(2)}</div>
