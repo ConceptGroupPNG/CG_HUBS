@@ -49,5 +49,15 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "off" }
 ];
 
+/* ---------------------------------------------------------------------
+   The launcher (the CG HUBS front page). It has its own small Entra app
+   registration, "CG HUBS Launcher", with only User.Read - it needs to
+   know who is signed in, not read any SharePoint data.
+   --------------------------------------------------------------------- */
+const CG_LAUNCHER = {
+  clientId: "447f8eb4-833f-4a54-868b-19d0dd821124",
+  scopes: ["User.Read"]
+};
+
 // Sign-in emails that can see apps set to "preview"
 const CG_PREVIEW = ["mscully@concept.com.pg"];
