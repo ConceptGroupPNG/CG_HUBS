@@ -17,8 +17,8 @@
 
   header { background:var(--navy); color:#fff; }
   .bar { max-width:1100px; margin:0 auto; padding:14px 16px; display:flex; align-items:center; gap:16px; }
-  .bar img { height:40px; width:auto; }
-  .bar .brand { font-size:20px; font-weight:700; letter-spacing:.5px; }
+  .bar img { height:52px; width:auto; }
+  .bar .brand { font-size:20px; font-weight:700; letter-spacing:.5px; padding-left:16px; border-left:1px solid rgba(255,255,255,.25); }
   .bar .brand span { color:var(--gold); }
   .bar .who { margin-left:auto; display:flex; align-items:center; gap:12px; font-size:14px; color:#DDE6F5; }
   .bar .who[hidden] { display:none; }
@@ -44,8 +44,11 @@
   .pv { background:var(--gold-soft); color:#7A5F0E; font-size:11px; font-weight:700; text-transform:uppercase;
         letter-spacing:.5px; padding:2px 8px; border-radius:999px; }
 
-  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:36px 24px;
-          max-width:460px; margin:40px auto 0; text-align:center; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:0 0 32px;
+          max-width:460px; margin:40px auto 0; text-align:center; overflow:hidden; }
+  .card > :not(.hero) { margin-left:24px; margin-right:24px; }
+  .card .hero { background:var(--navy); padding:36px 24px 30px; margin:0 0 28px; border-bottom:4px solid var(--gold); }
+  .card .hero img { width:208px; max-width:80%; height:auto; display:block; margin:0 auto; }
   .card h2 { margin:0 0 10px; color:var(--navy); font-size:22px; }
   .card p { color:var(--muted); line-height:1.5; margin:0 0 18px; }
   .card .err { color:var(--bad); background:#FBECEC; border-radius:8px; padding:10px 12px; text-align:left;
@@ -53,13 +56,13 @@
   .card .btn.gold { background:var(--navy); color:#fff; }
   .card .btn.gold:hover { background:var(--navy-2); }
   footer { text-align:center; color:var(--muted); font-size:12px; padding:0 16px 24px; }
-  @media (max-width:560px) { .bar .brand { display:none; } .bar img { height:34px; } main { padding-top:24px; } }
+  @media (max-width:560px) { .bar .brand { display:none; } .bar img { height:42px; } main { padding-top:24px; } }
 </style>
 </head>
 <body>
 <header>
   <div class="bar">
-    <img src="shared/img/concept-logo-white.png" alt="Concept Group">
+    <img src="shared/img/concept-logo-gold.png" alt="Concept Group">
     <div class="brand">CG <span>HUBS</span></div>
     <div class="who" id="who" hidden>
       <span id="whoName"></span>
@@ -85,6 +88,7 @@
   function signInCard(errorText) {
     main.innerHTML = `
       <div class="card">
+        <div class="hero"><img src="shared/img/concept-logo-gold.png" alt="Concept Group"></div>
         <h2>Welcome to CG HUBS</h2>
         <p>Sign in with your Concept Group Microsoft account to see the Hubs available to you.</p>
         <button class="btn gold" id="signIn" type="button">Sign in</button>
@@ -97,6 +101,7 @@
   function notReadyCard() {
     main.innerHTML = `
       <div class="card">
+        <div class="hero"><img src="shared/img/concept-logo-gold.png" alt="Concept Group"></div>
         <h2>CG HUBS is being prepared</h2>
         <p>The new home for the Concept Group Hubs isn't switched on yet.
            Please continue to use your usual Hub links for now.</p>
