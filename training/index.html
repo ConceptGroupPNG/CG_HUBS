@@ -987,6 +987,9 @@ select:focus{border-color:var(--teal)}
 
 <div class="toast-container" id="toast-container"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
 <script>
 // ============================================================
 // CONFIG
@@ -994,17 +997,11 @@ select:focus{border-color:var(--teal)}
 // ============================================================
 // APP CONFIGURATION — update these values if anything changes
 // ============================================================
-const CLIENT_ID = 'd5aef866-584f-4226-ab11-c941888fb519'; // Azure AD App Registration Client ID
-const TENANT_ID = 'ea9e105c-2df6-47ef-a8e3-b4aa1d788423'; // Azure AD Directory (Tenant) ID
-const SP_SITE   = 'conceptcompg.sharepoint.com';           // SharePoint hostname
-const SP_PATH   = '/sites/training.admin';                 // SharePoint site path
+// Client ID, tenant, SharePoint site and on/off switch come from
+// ../shared/cg-config.js; sign-in and Graph calls from ../shared/cg-core.js.
+const SP_SITE   = CG_TENANT.SP_HOST;                       // SharePoint hostname
+const SP_PATH   = CG.app('training').site;                 // /sites/training.admin
 const SITE_URL  = `https://${SP_SITE}${SP_PATH}`;
-
-// REDIRECT_URI is auto-detected from the browser URL — no manual config needed.
-// After deploying to Azure Blob Static Website, add the Azure URL as a
-// Single-page application (SPA) Redirect URI in the Azure App Registration.
-// Example: https://cgtrainingapp.z26.web.core.windows.net
-// ============================================================
 
 const LISTS = {
   courses:      'CG_Courses',
@@ -1024,11 +1021,7 @@ const LISTS = {
   invoiceallocations: 'CG_InvoiceAllocations',
 };
 
-const SCOPES       = 'https://graph.microsoft.com/Sites.ReadWrite.All User.Read offline_access';
-// Auto-detect the base URL — works on GitHub Pages, Azure, or any host
-const REDIRECT_URI  = window.location.origin + window.location.pathname.replace(/\/+$/, '') || window.location.href.split('?')[0].split('#')[0];
-const AUTH_ENDPOINT = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0`;
-const STORE_KEY     = 'cg_training_auth';
+const SCOPES = ['Sites.ReadWrite.All', 'User.Read'];
 let currentUser = null;
 let siteId = null;
 let listIds = {};
@@ -1041,43 +1034,10 @@ let revChart = null;
 let statusChart = null;
 
 // ============================================================
-// AUTH — OAuth2 PKCE full-page redirect (standalone browser, no iframe)
+// AUTH — Microsoft sign-in via the CG HUBS shared core (MSAL, PKCE,
+// full-page redirect). Replaces this app's own hand-written OAuth code.
 // ============================================================
 
-let _accessToken  = null;
-let _tokenExpiry  = 0;
-let _refreshToken = null;
-
-// Storage wrapper — tries localStorage, falls back to memory
-const store = {
-  _m:{},
-  set(k,v){ try{localStorage.setItem(k,v);}catch{this._m[k]=v;} },
-  get(k){   try{return localStorage.getItem(k);}catch{return this._m[k]||null;} },
-  del(k){   try{localStorage.removeItem(k);}catch{delete this._m[k];} },
-  clear(){
-    ['cg_access_token','cg_refresh_token','cg_token_expiry','cg_user',
-     'cg_pkce_verifier','cg_pkce_state'].forEach(k=>{
-      try{localStorage.removeItem(k);}catch{}
-      delete this._m[k];
-    });
-  }
-};
-
-function b64url(buf){
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-async function pkceChallenge(){
-  const arr = new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  const verifier = b64url(arr);
-  const digest   = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
-  return {verifier, challenge:b64url(digest)};
-}
-function parseJwt(t){
-  try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));}
-  catch{return {};}
-}
 // The Audit Reconciliation tool writes bulk changes to production data, so
 // it stays hidden from the tab bar for everyone except this one account.
 // This hides it from casual view for other staff - it is not a hardened
@@ -1097,37 +1057,19 @@ function updateAuditTabVisibility(){
   }
 }
 
-function saveTokens(data){
-  _accessToken  = data.access_token;
-  _refreshToken = data.refresh_token || _refreshToken;
-  _tokenExpiry  = Date.now() + (+(data.expires_in)||3600)*1000;
-  store.set('cg_access_token',  _accessToken);
-  store.set('cg_refresh_token', _refreshToken||'');
-  store.set('cg_token_expiry',  String(_tokenExpiry));
-  if(data.id_token){
-    const c = parseJwt(data.id_token);
-    // Try all possible name claims in order of preference
-    const name = c.name || c.given_name && c.family_name ? (c.given_name+' '+c.family_name).trim()
-      : c.given_name || c.unique_name || c.preferred_username || c.upn || c.email || '';
-    const username = c.preferred_username || c.upn || c.unique_name || c.email || '';
-    currentUser = {name: name||username, username};
-    store.set('cg_user', JSON.stringify(currentUser));
-    updateAuditTabVisibility();
-  }
+// The signed-in Microsoft account -> this app's currentUser { name, username }
+function setUserFromAccount(account){
+  const username = account.username || '';
+  currentUser = { name: account.name || username, username };
+  updateAuditTabVisibility();
 }
 
 // Called after initApp to fetch real display name from Graph /me
 async function fetchUserProfile(){
   try {
-    const token = await getToken();
-    const r = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,userPrincipalName,givenName,surname',{
-      headers:{'Authorization':'Bearer '+token}
-    });
-    if(!r.ok) return;
-    const me = await r.json();
+    const me = await CG.graph('GET', '/me?$select=displayName,userPrincipalName,givenName,surname');
     const name = me.displayName || (me.givenName&&me.surname ? me.givenName+' '+me.surname : '') || me.userPrincipalName || 'User';
     currentUser = {name, username: me.userPrincipalName||''};
-    store.set('cg_user', JSON.stringify(currentUser));
     updateAuditTabVisibility();
     // Update UI
     const ini = name.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
@@ -1144,18 +1086,7 @@ async function signIn(){
   statusEl.textContent = 'Redirecting to Microsoft login...';
   document.getElementById('signin-btn').disabled = true;
   try {
-    const {verifier, challenge} = await pkceChallenge();
-    const stArr = new Uint8Array(16);
-    crypto.getRandomValues(stArr);
-    const state = b64url(stArr);
-    store.set('cg_pkce_verifier', verifier);
-    store.set('cg_pkce_state',    state);
-    const params = new URLSearchParams({
-      client_id:CLIENT_ID, response_type:'code', redirect_uri:REDIRECT_URI,
-      scope:SCOPES, response_mode:'query', state,
-      code_challenge:challenge, code_challenge_method:'S256', prompt:'select_account',
-    });
-    window.location.href = AUTH_ENDPOINT + '/authorize?' + params.toString();
+    await CG.auth.signIn();
   } catch(e){
     errEl.textContent = e.message||'Sign-in failed.';
     statusEl.textContent = '';
@@ -1163,38 +1094,13 @@ async function signIn(){
   }
 }
 
-async function exchangeCode(code, verifier){
-  const body = new URLSearchParams({
-    client_id:CLIENT_ID, grant_type:'authorization_code',
-    code, redirect_uri:REDIRECT_URI, code_verifier:verifier, scope:SCOPES,
-  });
-  const r = await fetch(AUTH_ENDPOINT+'/token',{
-    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()
-  });
-  const data = await r.json();
-  if(data.error) throw new Error(data.error_description||data.error);
-  return data;
-}
-
+// Token for any call that doesn't go through graph() below.
 async function getToken(){
-  if(_accessToken && Date.now() < _tokenExpiry - 60000) return _accessToken;
-  const refresh = _refreshToken || store.get('cg_refresh_token');
-  if(!refresh){ handleExpired(); throw new Error('Session expired'); }
-  const body = new URLSearchParams({
-    client_id:CLIENT_ID, grant_type:'refresh_token', refresh_token:refresh, scope:SCOPES,
-  });
-  const r = await fetch(AUTH_ENDPOINT+'/token',{
-    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()
-  });
-  const data = await r.json();
-  if(data.error){ handleExpired(); throw new Error('Session expired — please sign in again.'); }
-  saveTokens(data);
-  return _accessToken;
+  try { return await CG.auth.token(); }
+  catch(e){ handleExpired(); throw new Error('Session expired — please sign in again.'); }
 }
 
 function handleExpired(){
-  store.clear();
-  _accessToken=null;_refreshToken=null;_tokenExpiry=0;
   currentUser=null;cache={};siteId=null;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
@@ -1204,17 +1110,13 @@ function handleExpired(){
 }
 
 function signOut(){
-  const hint = currentUser ? currentUser.username : '';
-  store.clear();
-  _accessToken=null;_refreshToken=null;_tokenExpiry=0;
   currentUser=null;cache={};siteId=null;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('login-err').textContent='';
   document.getElementById('signin-btn').disabled=false;
   document.getElementById('login-status').textContent='';
-  window.location.href = AUTH_ENDPOINT+'/logout?post_logout_redirect_uri='
-    +encodeURIComponent(REDIRECT_URI)+(hint?'&logout_hint='+encodeURIComponent(hint):'');
+  CG.auth.signOut();
 }
 
 async function initApp(){
@@ -1236,81 +1138,40 @@ async function initApp(){
 }
 
 window.addEventListener('load', async()=>{
-  const params   = new URLSearchParams(window.location.search);
-  const code     = params.get('code');
-  const state    = params.get('state');
-  const errParam = params.get('error');
-
-  // Returning from Microsoft login
-  if(code || errParam){
-    window.history.replaceState({},document.title,REDIRECT_URI);
-    if(errParam){
-      document.getElementById('login-err').textContent = params.get('error_description')||errParam;
-      return;
-    }
-    const savedState    = store.get('cg_pkce_state');
-    const savedVerifier = store.get('cg_pkce_verifier');
-    store.del('cg_pkce_state');
-    store.del('cg_pkce_verifier');
-    if(!savedState || state !== savedState){
-      document.getElementById('login-err').textContent='State mismatch — please try again.';
-      return;
-    }
-    document.getElementById('login-status').textContent='Completing sign-in...';
-    try {
-      const tokens = await exchangeCode(code, savedVerifier);
-      saveTokens(tokens);
-      await initApp();
-    } catch(e){
-      document.getElementById('login-err').textContent='Sign-in failed: '+e.message;
-      document.getElementById('login-status').textContent='';
-    }
+  let account = null;
+  try {
+    // Stays signed in between visits, as this app always has (localStorage).
+    account = await CG.auth.init({ app: 'training', scopes: SCOPES, cacheLocation: 'localStorage' });
+  } catch(e){
+    document.getElementById('login-err').textContent = e.message;
+    document.getElementById('login-status').textContent = '';
     return;
   }
-
-  // Restore existing session
-  const storedToken   = store.get('cg_access_token');
-  const storedRefresh = store.get('cg_refresh_token');
-  const storedExpiry  = +(store.get('cg_token_expiry'))||0;
-  const storedUser    = store.get('cg_user');
-
-  if(storedToken && storedExpiry > Date.now()){
-    _accessToken=storedToken; _refreshToken=storedRefresh; _tokenExpiry=storedExpiry;
-    currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
-    updateAuditTabVisibility();
-    await initApp();
+  if(!account) return;   // not signed in - login screen already visible
+  if(!CG.appAllowed('training', CG.auth.email())){
+    document.getElementById('login-err').textContent = "CG Training HUB isn't available here yet. Please keep using your usual link.";
     return;
   }
-  if(storedRefresh){
-    _refreshToken = storedRefresh;
-    try {
-      await getToken();
-      currentUser = storedUser ? JSON.parse(storedUser) : {name:'User',username:''};
-      updateAuditTabVisibility();
-      await initApp();
-      return;
-    } catch(e){}
-  }
-  // No session — login screen already visible
+  setUserFromAccount(account);
+  await initApp();
 });
 
 // ============================================================
-// GRAPH API// ============================================================
-// GRAPH API// ============================================================
-// GRAPH API// ============================================================
 // GRAPH API
 // ============================================================
+// Every SharePoint call goes through here. The shared core adds token refresh
+// after expiry, wait-and-retry when SharePoint is busy, and the session banner.
+// Error wording kept as before: Graph's own message, else "HTTP <status>" -
+// saveWithFieldFallback relies on Graph's "Field 'X' is not recognized" text.
 async function graph(path, method='GET', body=null){
-  const token = await getToken();
-  const opts = {method, headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'}};
-  if(body) opts.body = JSON.stringify(body);
-  const r = await fetch('https://graph.microsoft.com/v1.0'+path, opts);
-  if(!r.ok){
-    const err = await r.json().catch(()=>({}));
-    throw new Error(err.error?.message || `HTTP ${r.status}`);
+  try {
+    return await CG.graph(method, path, body || undefined);
+  } catch(e){
+    if(e.status === 401 && !e.body) throw e;   // session expired - plain message from the core
+    let msg = '';
+    try { msg = JSON.parse(e.body||'{}').error?.message || ''; } catch(_){}
+    throw new Error(msg || `HTTP ${e.status}`);
   }
-  if(r.status===204) return null;
-  return r.json();
 }
 
 async function resolveSite(){
