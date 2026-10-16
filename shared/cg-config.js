@@ -43,7 +43,7 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
-    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "off" },
+    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview" },
 
   { key: "attendance", folder: "attendance/", name: "CG Time Attendance",  unit: "Clock in / out",
     site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "off" }
