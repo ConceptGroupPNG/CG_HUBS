@@ -27,6 +27,21 @@ time, then switched on for everyone on a single switch-over day.
 
 Nobody uploads files directly to `main`.
 
+## Shared core library
+
+Every app loads `shared/cg-config.js` then `shared/cg-core.js`, which provides one global, `CG`:
+
+| Part | What it does |
+|---|---|
+| `CG.auth` | Microsoft sign-in (MSAL 3.x, redirect only — no popups), token keep-alive, clear error messages |
+| `CG.graph` | Microsoft Graph calls with automatic retry after an expired token or when SharePoint is busy |
+| `CG.sp` | SharePoint lists: read every page, create, update, delete, and `save` (skips unknown columns) |
+| `CG.date` | Local-date helpers (never `toISOString()`) |
+| `CG.appAllowed` | On / off / preview switches from `cg-config.js` |
+
+The tests in `tests/` run automatically on every pull request (green tick = passed).
+To run them yourself: `node --test tests/*.test.js`
+
 ## Rules for this repository
 
 - **This repository is public.** Only IDs and addresses belong here — never passwords,
