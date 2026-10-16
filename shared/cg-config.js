@@ -28,7 +28,7 @@ const CG_TENANT = {
    --------------------------------------------------------------------- */
 const CG_APPS = [
   { key: "training",   folder: "training/",   name: "CG Training HUB",     unit: "Concept Training Services",
-    site: "/sites/training.admin", clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
+    site: "/sites/training.admin", clientId: "ebbfa226-c073-4421-a02a-606f8341e4ae", status: "preview" },
 
   { key: "psp",        folder: "psp/",        name: "PSP HUB",             unit: "Payroll Services PNG",
     site: "/sites/PSP_Test",       clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
