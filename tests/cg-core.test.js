@@ -248,3 +248,13 @@ test("tokenFor() quietly returns a token, or null when the extra permission isn'
   assert.equal(await no.CG.auth.tokenFor(["ProfilePhoto.Read.All"]), null);
   assert.equal(no.calls.redirects, 0);
 });
+
+/* ---------------- added in 1.3.0 ---------------- */
+test("an app can use its own session-expired banner instead of the core's", async () => {
+  const { CG } = await signedIn({ fetchQueue: [res(401, {}), res(401, {}), res(200, { ok: 1 })] });
+  const seen = [];
+  CG.onSessionExpired = { show: () => seen.push("show"), hide: () => seen.push("hide") };
+  await assert.rejects(CG.graph("GET", "/me"), e => e.status === 401);
+  await CG.graph("GET", "/me");               // a later success clears it
+  assert.deepEqual([...seen], ["show", "hide"]);
+});
