@@ -1,5 +1,5 @@
 // Concept Time — minimal app-shell service worker.
-// Only caches this app's own files (so it opens instantly and is
+// Only caches this app's own files (and the shared CG HUBS core it needs) (so it opens instantly and is
 // installable). Never touches Microsoft Graph, sign-in, or the MSAL CDN
 // script — those always go straight to the network.
 // Bump this version string any time index.html (or any other shell file)
@@ -7,7 +7,7 @@
 // the new service worker, and evict the old cached copy. Without a bump,
 // phones that already visited keep serving the stale cached index.html
 // indefinitely, even after the repo itself is updated.
-const CACHE_NAME = "concept-time-shell-v7";
+const CACHE_NAME = "cg-hubs-mobile-v1";
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -18,6 +18,8 @@ const SHELL_FILES = [
   "./icons/icon-512.png",
   "./icons/icon-512-maskable.png",
   "./icons/apple-touch-icon.png",
+  "../shared/cg-config.js",
+  "../shared/cg-core.js",
 ];
 
 self.addEventListener("install", (event) => {

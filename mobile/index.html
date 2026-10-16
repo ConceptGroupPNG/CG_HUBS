@@ -13,7 +13,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Concept Time" />
 <meta name="mobile-web-app-capable" content="yes" />
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
 <style>
   :root{
     --page-bg:#ece1c8;
@@ -242,28 +244,12 @@
   "use strict";
 
   // ---------------------------------------------------------------------
-  // Configuration
+  // Configuration - tenant, client ID and switches come from
+  // ../shared/cg-config.js; sign-in and SharePoint from ../shared/cg-core.js.
   // ---------------------------------------------------------------------
-  // Same tenant and SharePoint site as every other Hub and as the desktop
-  // Concept Time widget. CLIENT_ID defaults to the desktop widget's own
-  // app registration — see README.md "Azure AD setup" for what you need
-  // to add there (a redirect URI for wherever this page ends up hosted),
-  // or swap in a dedicated client ID if you'd rather this app have its
-  // own registration.
-  const CONFIG = {
-    tenantId: "ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
-    clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c",
-    siteHostname: "conceptcompg.sharepoint.com",
-    sitePath: "/sites/CG_Time",
-    activeEntitiesListName: "CSA_ActiveEntities",
-    timeEntriesListName: "CSA_TimeEntries",
-    scopes: ["Sites.ReadWrite.All", "User.Read"],
-  };
-
-  // Use the page's actual path as-is (GitHub Pages serves this folder with a
-  // trailing slash, e.g. https://marcusappdev.github.io/CG_Training/cg-time-mobile/,
-  // and that's what must be registered in Azure AD too — don't strip it here.)
-  const REDIRECT_URI = window.location.origin + window.location.pathname;
+  const APP = CG.app("mobile");
+  const SITE = APP.site;                               // /sites/CG_Time
+  const LISTS = { active: "CSA_ActiveEntities", time: "CSA_TimeEntries" };
 
   // ---------------------------------------------------------------------
   // Elements
@@ -297,127 +283,43 @@
   const pendingDiscardBtn = document.getElementById("pendingDiscardBtn");
 
   // ---------------------------------------------------------------------
-  // Auth (MSAL Browser, PKCE + redirect — matches CG Time / CSA HUB / SLA HUB)
+  // SharePoint (CG_Time site) - same lists and field names the desktop
+  // widget writes, so phone and desktop entries are indistinguishable.
   // ---------------------------------------------------------------------
-  const msalInstance = new msal.PublicClientApplication({
-    auth: {
-      clientId: CONFIG.clientId,
-      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: REDIRECT_URI,
-    },
-    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
-  });
-
-  async function getAccessToken() {
-    const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
-    if (!account) throw new Error("Not signed in");
-    try {
-      const result = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account });
-      return result.accessToken;
-    } catch (e) {
-      // Silent refresh failed — normally we'd fall back to an interactive
-      // redirect, but doing that from deep inside an async action (e.g.
-      // stopping a timer or saving a manual entry) rather than directly
-      // from a click handler can fail to actually navigate on some mobile
-      // browsers. If we then returned a promise that never resolves, the
-      // whole action just hangs forever with no error and nothing saved —
-      // indistinguishable from a dead button. Fail loudly instead, so the
-      // user gets a clear, actionable message rather than silence.
-      throw new Error(
-        "Your sign-in session needs refreshing — please sign out and sign in again."
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // Graph calls against the CG_Time SharePoint site — same site, lists and
-  // field names as the desktop widget writes, so entries from phone and
-  // desktop are indistinguishable in reporting.
-  // ---------------------------------------------------------------------
-  const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-  let siteId = null, activeEntitiesListId = null, timeListId = null, currentUserLabel = null;
-
-  async function graphFetch(path, options = {}) {
-    const token = await getAccessToken();
-    const res = await fetch(`${GRAPH_BASE}${path}`, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Graph API error ${res.status}: ${text}`);
-    }
-    return res.status === 204 ? null : res.json();
-  }
-
-  async function ensureSiteAndLists() {
-    if (siteId && activeEntitiesListId && timeListId) return;
-    const site = await graphFetch(`/sites/${CONFIG.siteHostname}:${CONFIG.sitePath}`);
-    siteId = site.id;
-    const lists = await graphFetch(`/sites/${siteId}/lists?$select=id,displayName`);
-    const activeList = lists.value.find((l) => l.displayName === CONFIG.activeEntitiesListName);
-    const timeList = lists.value.find((l) => l.displayName === CONFIG.timeEntriesListName);
-    if (!activeList || !timeList) {
-      throw new Error(`Could not find "${CONFIG.activeEntitiesListName}" and/or "${CONFIG.timeEntriesListName}" on the site.`);
-    }
-    activeEntitiesListId = activeList.id;
-    timeListId = timeList.id;
-  }
+  let currentUserLabel = null;
 
   async function getCurrentUserLabel() {
     if (currentUserLabel) return currentUserLabel;
-    const me = await graphFetch("/me?$select=displayName,mail,userPrincipalName");
+    const me = await CG.graph("GET", "/me?$select=displayName,mail,userPrincipalName");
     currentUserLabel = me.displayName || me.mail || me.userPrincipalName;
     return currentUserLabel;
   }
 
   async function getActiveEntities() {
-    await ensureSiteAndLists();
-    const result = await graphFetch(
-      `/sites/${siteId}/lists/${activeEntitiesListId}/items?expand=fields(select=Title,Description,IsActive,Source)&$top=200`
-    );
-    return result.value
-      .filter((item) => item.fields && item.fields.IsActive)
-      .map((item) => ({
-        code: item.fields.Title,
-        description: item.fields.Description || "",
-        source: item.fields.Source || "",
-      }));
+    const items = await CG.sp.items(SITE, LISTS.active);
+    return items
+      .filter((f) => f.IsActive)
+      .map((f) => ({ code: f.Title, description: f.Description || "", source: f.Source || "" }));
   }
 
   async function addTimeEntry(entry) {
-    await ensureSiteAndLists();
     const user = await getCurrentUserLabel();
-    const body = {
-      fields: {
-        Title: entry.csa,
-        CSA: entry.csa,
-        WorkDate: entry.date,
-        TimeStarted: entry.timeStarted || "",
-        TimeStopped: entry.timeStopped || "",
-        Hours: entry.hours,
-        EntryMethod: entry.method,
-        EntryUser: user,
-        Source: entry.source || "",
-      },
-    };
-    const created = await graphFetch(`/sites/${siteId}/lists/${timeListId}/items`, {
-      method: "POST",
-      body: JSON.stringify(body),
+    const created = await CG.sp.create(SITE, LISTS.time, {
+      Title: entry.csa,
+      CSA: entry.csa,
+      WorkDate: entry.date,
+      TimeStarted: entry.timeStarted || "",
+      TimeStopped: entry.timeStopped || "",
+      Hours: entry.hours,
+      EntryMethod: entry.method,
+      EntryUser: user,
+      Source: entry.source || "",
     });
     return { ...entry, user, itemId: created.id };
   }
 
   async function updateActivityDetail(itemId, detailText) {
-    await ensureSiteAndLists();
-    await graphFetch(`/sites/${siteId}/lists/${timeListId}/items/${itemId}/fields`, {
-      method: "PATCH",
-      body: JSON.stringify({ ActivityDetail: detailText }),
-    });
+    await CG.sp.update(SITE, LISTS.time, itemId, { ActivityDetail: detailText });
   }
 
   // ---------------------------------------------------------------------
@@ -463,7 +365,7 @@
     if (!pendingEntry) { pendingEntryBanner.hidden = true; return; }
     const e = pendingEntry;
     const timeLabel = e.method === "Timer" ? `${e.timeStarted}–${e.timeStopped}` : "Manual";
-    pendingEntryText.innerHTML = `Not saved yet: <strong>${e.csa}</strong> · ${e.hours}h (${timeLabel})`;
+    pendingEntryText.innerHTML = `Not saved yet: <strong>${CG.esc(e.csa)}</strong> · ${e.hours}h (${timeLabel})`;
     pendingEntryBanner.hidden = false;
   }
 
@@ -493,14 +395,7 @@
   function roundUpToQuarterHour(hoursDecimal) {
     return Math.max(0.25, Math.ceil(hoursDecimal * 4) / 4);
   }
-  // Local calendar components, never toISOString()/new Date(string) — avoids
-  // the UTC-shift bug in PNG's UTC+10 timezone (same pattern as every other Hub).
-  function toLocalDateOnly(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
+  const toLocalDateOnly = CG.date.ymd;   // local calendar date, never toISOString()
 
   async function loadEntities() {
     entitySelect.disabled = true;
@@ -514,7 +409,7 @@
       entitySourceMap = new Map(entities.map((e) => [e.code, e.source]));
       // Show just the description in the picker — the code (e.g. CSA-1042)
       // is still recorded on the time entry itself, just not shown here.
-      entitySelect.innerHTML = entities.map((e) => `<option value="${e.code}">${e.description || e.code}</option>`).join("");
+      entitySelect.innerHTML = entities.map((e) => `<option value="${CG.esc(e.code)}">${CG.esc(e.description || e.code)}</option>`).join("");
       entitySelect.disabled = false;
       timerBtn.disabled = false;
       manualLogBtn.disabled = false;
@@ -573,7 +468,7 @@
         savePendingEntry(null);
       }
       const timeLabel = entry.method === "Timer" ? `${entry.timeStarted}–${entry.timeStopped}` : "Manual";
-      openDetailOpportunity(result.itemId, entry.csa, `<strong>${entry.csa}</strong> · ${entry.hours}h (${timeLabel})`);
+      openDetailOpportunity(result.itemId, entry.csa, `<strong>${CG.esc(entry.csa)}</strong> · ${entry.hours}h (${timeLabel})`);
     } catch (e) {
       // Keep the calculated entry rather than losing it — see
       // savePendingEntry's comment above for why.
@@ -667,32 +562,32 @@
     signInBtn.disabled = true;
     signInBtn.textContent = "Signing in…";
     try {
-      await msalInstance.loginRedirect({ scopes: CONFIG.scopes });
+      await CG.auth.signIn();
     } catch (e) {
-      signinError.textContent = "Sign-in failed. Please try again.";
+      signinError.textContent = e.message;
       signInBtn.disabled = false;
       signInBtn.textContent = "Sign in with Microsoft";
     }
   });
 
-  signOutBtn.addEventListener("click", () => {
-    const account = msalInstance.getActiveAccount();
-    msalInstance.logoutRedirect({ account });
-  });
+  signOutBtn.addEventListener("click", () => CG.auth.signOut());
+
+  function showUnavailable() {
+    showSignedOut();
+    signInBtn.hidden = true;
+    signinError.textContent = "Concept Time Mobile isn't available here yet. Please keep using your usual Concept Time link.";
+  }
 
   (async function boot() {
     try {
-      const resp = await msalInstance.handleRedirectPromise();
-      let account = (resp && resp.account) || msalInstance.getAllAccounts()[0];
-      if (account) {
-        msalInstance.setActiveAccount(account);
-        showSignedIn(account);
-        await loadEntities();
-      } else {
-        showSignedOut();
-      }
+      // Phone app: stay signed in after the app is closed (as before).
+      const account = await CG.auth.init({ app: "mobile", cacheLocation: "localStorage" });
+      if (!account) { if (!CG.isAuthReturnInChildWindow()) showSignedOut(); return; }
+      if (!CG.appAllowed("mobile", CG.auth.email())) { showUnavailable(); return; }
+      showSignedIn(account);
+      await loadEntities();
     } catch (e) {
-      signinError.textContent = "Sign-in failed. Please try again.";
+      signinError.textContent = e.message;
       showSignedOut();
     }
   })();

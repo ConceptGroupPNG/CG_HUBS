@@ -19,7 +19,7 @@ below.
 ## What's in this folder
 
 ```
-cg-time-mobile/
+mobile/
   index.html          the entire app — one page, inline styles & script
   manifest.json        PWA metadata (name, icon, colors)
   sw.js                 tiny service worker so the app shell opens instantly
@@ -61,42 +61,28 @@ it normally. That pending entry is also remembered if the page gets
 closed or reloaded before you get to retry it, so it's still there next
 time you open the app.
 
-## Azure AD setup
+## Sign-in and settings
 
-This app has its own dedicated App Registration, **"CG Time Mobile"**
-(client ID `ec5454e0-c794-419b-9ec9-464e9917ef3c`) — matching the pattern
-SLA HUB, the ZKTeco Bridge, and the desktop Widget each already follow
-(one registration per component), which the strategic review recommended
-as the long-term target for the whole platform, rather than the four Hubs
-currently sharing one registration. `index.html`'s `CONFIG.clientId` is
-already set to this ID — nothing to change there.
+Sign-in and SharePoint access come from the CG HUBS shared core
+(`../shared/cg-core.js`); the client ID, SharePoint site and on/off/preview
+switch come from `../shared/cg-config.js`. Nothing is configured in this
+folder.
 
-Registration details, for reference (already done):
+This app has its own App Registration, **"CG Time Mobile"**
+(client ID `ec5454e0-c794-419b-9ec9-464e9917ef3c`):
 - Platform: **Single-page application**, redirect URI
-  `https://marcusappdev.github.io/CG_Training/cg-time-mobile/` (note the
-  trailing slash — GitHub Pages serves this folder with one, and the
-  registered redirect URI has to match exactly, slash and all).
+  `https://conceptgrouppng.github.io/CG_HUBS/mobile/` (with the trailing slash).
 - API permissions: Microsoft Graph → Delegated → `Sites.ReadWrite.All`
   and `User.Read`, with admin consent granted.
 
-If this page ever gets hosted at a different URL, add that as an
-additional redirect URI on the same registration (Authentication → Add a
-platform → Single-page application, or just add another redirect URI
-under the existing SPA platform) rather than creating a new registration.
+Unlike the desktop Hubs, this phone app keeps people signed in after the
+app is closed (`cacheLocation: "localStorage"`).
 
-## Where to host it
+## Where it lives
 
-Same pattern as every other Hub: a folder inside the
-`marcusappdev/CG_Training` GitHub repository, published by GitHub Pages.
-
-1. Copy the whole `cg-time-mobile/` folder into the repo (alongside
-   `CG-Time/`, `csa-hub/`, `psp-hub/`, `sla-hub/`).
-2. Commit and push.
-3. It'll be live at
-   `https://marcusappdev.github.io/CG_Training/cg-time-mobile/` — that's
-   the exact URL to use as the redirect URI above. (If you'd rather use a
-   different folder name, the URL changes to match — just use whatever
-   you actually deploy to as the redirect URI.)
+`ConceptGroupPNG/CG_HUBS`, folder `mobile/`, published by GitHub Pages at
+`https://conceptgrouppng.github.io/CG_HUBS/mobile/`. Changes are made by
+pull request, like every other CG Hub.
 
 ## Adding it to a phone's home screen
 
