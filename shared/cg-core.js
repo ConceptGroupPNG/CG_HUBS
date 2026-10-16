@@ -89,6 +89,57 @@
   };
 
   /* -----------------------------------------------------------------
+     "Mobile view coming soon" - for apps marked phone: "coming-soon"
+     in cg-config.js. Shown automatically on a phone; nothing to add to
+     the app itself. "Continue anyway" hides it for the rest of the visit.
+     ----------------------------------------------------------------- */
+  // The app whose folder this page is in (null on the launcher).
+  CG.currentApp = () => {
+    if (!global.location || !CG.ROOT_URL) return null;
+    const here = global.location.href.split(/[?#]/)[0];
+    return CG.apps().find(a => a.folder && here.startsWith(CG.ROOT_URL + a.folder)) || null;
+  };
+  // A phone: the screen's short side is under 600px (tablets and laptops are wider).
+  CG.isPhone = () => !!global.screen && Math.min(global.screen.width, global.screen.height) < 600;
+
+  CG.showPhoneNotice = app => {
+    if (!global.document || document.getElementById("cg-phone-notice")) return;
+    const box = document.createElement("div");
+    box.id = "cg-phone-notice";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:#1F3864;color:#fff;display:flex;" +
+      "flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;" +
+      "font:16px 'Segoe UI',Calibri,Arial,sans-serif;overflow:auto";
+    box.innerHTML =
+      '<img src="' + CG.esc(SHARED_URL + "img/concept-logo-gold.png") + '" alt="Concept Group" style="width:180px;max-width:70%;height:auto;margin-bottom:28px">' +
+      '<div style="width:56px;height:4px;background:#C9A227;border-radius:2px;margin:0 auto 24px"></div>' +
+      '<div style="color:#C9A227;font-weight:700;letter-spacing:.5px;margin-bottom:8px">' + CG.esc(app.name) + "</div>" +
+      '<h1 style="font-size:24px;margin:0 0 14px;color:#fff">Mobile view coming soon</h1>' +
+      '<p style="margin:0 0 28px;line-height:1.5;color:#DDE6F5;max-width:340px">' + CG.esc(app.name) +
+      " is designed for a computer screen. A phone version is on its way &mdash; for now, please use a computer or laptop.</p>" +
+      '<a href="' + CG.esc(CG.ROOT_URL) + '" style="background:#C9A227;color:#1F3864;font-weight:700;text-decoration:none;' +
+      'border-radius:8px;padding:12px 28px;margin-bottom:20px">Back to CG HUBS</a>' +
+      '<button type="button" style="background:none;border:0;color:#DDE6F5;text-decoration:underline;font:inherit;' +
+      'font-size:14px;cursor:pointer;padding:8px">Continue to the desktop version anyway</button>';
+    box.querySelector("button").onclick = () => {
+      store.set("cg-phone-continue-" + app.key, "1");
+      box.remove();
+      document.documentElement.style.overflow = "";
+    };
+    document.documentElement.style.overflow = "hidden";
+    document.body.appendChild(box);
+  };
+
+  CG.phoneCheck = () => {
+    const app = CG.currentApp();
+    if (!app || app.phone !== "coming-soon" || !CG.isPhone()) return;
+    if (CG.isAuthReturnInChildWindow()) return;
+    if (store.get("cg-phone-continue-" + app.key)) return;
+    CG.showPhoneNotice(app);
+  };
+
+  /* -----------------------------------------------------------------
      Sign-in (MSAL Browser 3.x, PKCE, full-page redirects only)
      ----------------------------------------------------------------- */
   let msalApp = null, scopes = DEFAULT_SCOPES, appKey = "", keepAliveTimer = null;
@@ -426,6 +477,11 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.3.0";
+  CG.VERSION = "1.4.0";
   global.CG = CG;
+  // Run the phone check as soon as the page has a body.
+  if (global.document && global.location) {
+    if (document.body) CG.phoneCheck();
+    else document.addEventListener("DOMContentLoaded", CG.phoneCheck);
+  }
 })(typeof window !== "undefined" ? window : globalThis);
