@@ -99,8 +99,15 @@
     const here = global.location.href.split(/[?#]/)[0];
     return CG.apps().find(a => a.folder && here.startsWith(CG.ROOT_URL + a.folder)) || null;
   };
-  // A phone: the screen's short side is under 600px (tablets and laptops are wider).
-  CG.isPhone = () => !!global.screen && Math.min(global.screen.width, global.screen.height) < 600;
+  // A phone: a touch screen with no mouse (so never a computer, even with
+  // Windows display scaling making the screen look small), whose short
+  // side is under 600px (so not a tablet).
+  CG.isPhone = () => {
+    if (!global.screen || !global.matchMedia) return false;
+    const touchOnly = global.matchMedia("(hover: none) and (pointer: coarse)").matches &&
+                      !global.matchMedia("(any-pointer: fine)").matches;   // no mouse or trackpad at all
+    return touchOnly && Math.min(global.screen.width, global.screen.height) < 600;
+  };
 
   CG.showPhoneNotice = app => {
     if (!global.document || document.getElementById("cg-phone-notice")) return;
@@ -477,7 +484,7 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.4.0";
+  CG.VERSION = "1.4.1";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {
