@@ -40,7 +40,7 @@ const CG_APPS = [
     site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "preview" },
 
   { key: "time",       folder: "time/",       name: "CG Time",             unit: "Time, attendance & payroll",
-    site: "/sites/CG_Time",        clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
+    site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "preview" },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
     site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview" },

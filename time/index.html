@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CG Time — Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
 <style>
   :root{
     color-scheme: light;
@@ -638,51 +640,12 @@
 <script>
 /* ============================================================
    CONFIG
-   Same Entra app registration as csa-hub (client ID + tenant) —
-   this page's own URL just needs to be added as a redirect URI
-   on that app registration before sign-in will work from here.
+   Sign-in, tokens and Graph calls come from the CG HUBS shared core
+   (../shared/cg-core.js); client ID and switches from ../shared/cg-config.js.
+   CG Time has its own Entra app registration, "CG Time".
    ============================================================ */
-// Microsoft sign-in endpoints are supplied inline (cloudDiscoveryMetadata +
-// authorityMetadata) rather than looked up at runtime. Without them MSAL first
-// fetches login.microsoftonline.com/common/discovery/instance and the
-// tenant's openid-configuration before it will even start sign-in — and
-// ad/tracker-blocking extensions and some strict browser privacy settings
-// block those lookups (ERR_BLOCKED_BY_CLIENT), which left the Sign in button
-// silently doing nothing (Oct 2026). These values are Microsoft's fixed,
-// public endpoints for this tenant and don't change.
-const MS_LOGIN_HOST = "https://login.microsoftonline.com";
-const TENANT_ID = "ea9e105c-2df6-47ef-a8e3-b4aa1d788423";
-const msalConfig = {
-  auth: {
-    clientId: "d5aef866-584f-4226-ab11-c941888fb519",
-    authority: `${MS_LOGIN_HOST}/${TENANT_ID}`,
-    // Always the folder URL (…/CG-Time/), even if the page was opened as
-    // …/CG-Time/index.html — so it matches the one Single-page application
-    // redirect URI registered in Entra. A different spelling that happens
-    // to be registered under the Web platform instead would get through
-    // Microsoft's sign-in page and then fail the token step with exactly
-    // the same 'Failed to fetch' a browser blocker causes.
-    redirectUri: window.location.origin + window.location.pathname.replace(/index\.html$/i, ""),
-    knownAuthorities: ["login.microsoftonline.com"],
-    cloudDiscoveryMetadata: JSON.stringify({
-      tenant_discovery_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/v2.0/.well-known/openid-configuration`,
-      "api-version": "1.1",
-      metadata: [{
-        preferred_network: "login.microsoftonline.com",
-        preferred_cache: "login.windows.net",
-        aliases: ["login.microsoftonline.com", "login.windows.net", "login.microsoft.com", "sts.windows.net"]
-      }]
-    }),
-    authorityMetadata: JSON.stringify({
-      authorization_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/authorize`,
-      token_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/token`,
-      end_session_endpoint: `${MS_LOGIN_HOST}/${TENANT_ID}/oauth2/v2.0/logout`,
-      issuer: `${MS_LOGIN_HOST}/${TENANT_ID}/v2.0`,
-      jwks_uri: `${MS_LOGIN_HOST}/${TENANT_ID}/discovery/v2.0/keys`
-    })
-  },
-  cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
-};
+// (Microsoft's sign-in endpoints are supplied inline by the shared core, so
+// browser blockers can't silently stop sign-in - see cg-core.js.)
 const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
 const SITE_HOST = "conceptcompg.sharepoint.com";
 const SITE_PATH = "/sites/Concept_CSA";       // CSA HUB's own site — CSA_Resources used to live here and be read directly (pre-v0.5); superseded by CG_Resources below, kept only for CSA_TimeEntries-adjacent references elsewhere.
@@ -691,7 +654,6 @@ const TIME_SITE_PATH = "/sites/CG_Time";      // CSA_TimeEntries (CSA HUB's own)
 // Lists that live on the CG_Time site rather than Concept_CSA
 const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries", "CG_ExceptionsQueue", "CG_ResourceHubAssignments", "CG_Hubs", "CG_PayGroups", "CG_PayPeriods", "CG_Employees", "CG_EmployeeTimeRecords", "CG_Shifts", "CG_ClockLocations", "CG_EmployeeLocationAssignments", "CG_Resources"]);
 
-const msalInstance = new msal.PublicClientApplication(msalConfig);
 let accessToken = null;
 let siteId = null;
 let timeSiteId = null;
@@ -713,72 +675,42 @@ let timeSiteId = null;
 //     every 2 minutes; if Microsoft sign-in succeeds but a token still can't
 //     be obtained, the real Microsoft error is shown on the sign-in screen
 //     instead of looping.
-const AUTH_REDIRECT_MARKER = "cgtime.authRedirectAt";
-function markAuthRedirect(){ try{ sessionStorage.setItem(AUTH_REDIRECT_MARKER, String(Date.now())); }catch(e){} }
-function clearAuthRedirectMarker(){ try{ sessionStorage.removeItem(AUTH_REDIRECT_MARKER); }catch(e){} }
-function authRedirectRecentlyTried(){
-  try{
-    const t = parseInt(sessionStorage.getItem(AUTH_REDIRECT_MARKER) || "0", 10);
-    return !!t && (Date.now() - t) < 2*60*1000;
-  }catch(e){ return false; }
-}
-
-function isMsalReturnInChildWindow(){
-  const frag = "&" + window.location.hash.replace(/^#/, "");
-  const hasAuthResponse = /&(code|error)=/.test(frag);
-  let inFrame = false;
-  try{ inFrame = window.self !== window.top; }catch(e){ inFrame = true; }
-  const inPopup = !!window.opener && window.opener !== window;
-  return hasAuthResponse && (inFrame || inPopup);
-}
-
+// The redirect-only rules above (child-window guard, at most one automatic
+// redirect every 2 minutes, real error shown instead of looping) now live in
+// the shared core - see CG.auth in ../shared/cg-core.js.
 async function initAuth(){
-  if(isMsalReturnInChildWindow()) return;
-
-  let redirectResult = null;
+  let account;
   try{
-    redirectResult = await msalInstance.handleRedirectPromise();
-  }catch(err){
-    clearAuthRedirectMarker();
-    showLoginError(err);
+    account = await CG.auth.init({ app: "time", scopes: graphScopes });
+  }catch(e){
+    showLoginError(e);
     return;
   }
-
-  const accounts = msalInstance.getAllAccounts();
-  if(redirectResult && redirectResult.account){
-    msalInstance.setActiveAccount(redirectResult.account);
-  } else if(accounts.length > 0){
-    msalInstance.setActiveAccount(msalInstance.getActiveAccount() || accounts[0]);
-  } else {
-    document.getElementById("loginScreen").style.display = "flex";
+  if(!account){
+    if(!CG.isAuthReturnInChildWindow()) document.getElementById("loginScreen").style.display = "flex";
     return;
   }
-
+  if(!CG.appAllowed("time", CG.auth.email())){
+    showLoginError(new Error("CG Time isn't available here yet. Please keep using your usual CG Time link."));
+    return;
+  }
   try{
-    const token = await acquireToken({ interactive: true });
-    if(!token) return; // navigating away to Microsoft sign-in
-    clearAuthRedirectMarker();
+    await acquireToken();
     await startApp();
   }catch(e){
     showLoginError(e);
   }
 }
 
-// Every sign-in/out call is caught and shown on screen — previously a
-// failure here was an unhandled promise, so the button just did nothing.
+// Every sign-in/out call is caught and shown on screen.
 function startSignInRedirect(){
-  clearAuthRedirectMarker();
-  markAuthRedirect();
   const el = document.getElementById("loginError");
   if(el){ el.textContent = ""; el.style.display = "none"; }
-  msalInstance.loginRedirect({ scopes: graphScopes }).catch(err => {
-    clearAuthRedirectMarker();
-    showLoginError(err);
-  });
+  CG.auth.signIn().catch(err => showLoginError(err));
 }
 document.getElementById("loginBtn").addEventListener("click", startSignInRedirect);
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
-  msalInstance.logoutRedirect().catch(err => { console.error(err); alert(describeAuthError(err)); });
+  CG.auth.signOut().catch(err => { console.error(err); alert(describeAuthError(err)); });
 });
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
@@ -840,34 +772,16 @@ function showLoginError(e){
   console.error(e);
   document.getElementById("loginScreen").style.display = "flex";
   const el = document.getElementById("loginError");
-  el.textContent = describeAuthError(e);
+  // Messages from the shared core are already written for people - show them as they are.
+  const m = (e && e.message) || "";
+  el.textContent = /^Couldn't sign in|isn't available here yet|Microsoft sign-in worked|didn't load/.test(m) ? m : describeAuthError(e);
   el.style.display = "block";
 }
 
-// interactive:false (background refresh, 401 retry) never leaves the page —
-// it just throws, and graphRequest shows the "session expired" banner.
-// interactive:true (page load only) falls back to ONE same-window redirect.
-async function acquireToken({ interactive = false } = {}){
-  const account = msalInstance.getActiveAccount();
-  const request = { scopes: graphScopes, account };
-  try{
-    const result = await msalInstance.acquireTokenSilent(request);
-    accessToken = result.accessToken;
-    return accessToken;
-  }catch(e){
-    if(!interactive) throw e;
-    if(authRedirectRecentlyTried()){
-      clearAuthRedirectMarker();
-      const who = account && account.username ? account.username : "this account";
-      const code = e && (e.errorCode || e.name) ? (e.errorCode || e.name) : "unknown_error";
-      const detail = e && (e.errorMessage || e.message) ? (e.errorMessage || e.message) : String(e);
-      throw new Error(`Microsoft sign-in worked for ${who}, but CG Time still couldn't get permission to read SharePoint (${code}). ${detail} — please send a screenshot of this message to IT.`);
-    }
-    markAuthRedirect();
-    accessToken = null;
-    await msalInstance.acquireTokenRedirect(request);
-    return null;
-  }
+// Gets a token from the shared core (which never leaves the page here).
+async function acquireToken({ forceRefresh = false } = {}){
+  accessToken = await CG.auth.token({ forceRefresh });
+  return accessToken;
 }
 
 // Keeps the in-memory accessToken fresh in the background so a long-idle
@@ -877,7 +791,7 @@ async function acquireToken({ interactive = false } = {}){
 // is a no-op most of the time. Failures here are swallowed — the reactive
 // retry in graphRequest() below is the real safety net if this ever misses.
 function startTokenKeepAlive(){
-  setInterval(()=>{ acquireToken().catch(err => console.warn("Background token refresh failed — will retry on next request.", err)); }, 10*60*1000);
+  CG.auth.startKeepAlive();   // shared core: refreshes every 10 minutes (started once)
 }
 
 function isAuthErrorStatus(status){
@@ -891,14 +805,15 @@ function showSessionExpiredBanner(){
   const banner = document.getElementById("sessionBanner");
   if(banner) banner.style.display = "flex";
 }
+function hideSessionExpiredBanner(){
+  sessionExpiredShown = false;
+  const banner = document.getElementById("sessionBanner");
+  if(banner) banner.style.display = "none";
+}
+// CG Time keeps its own banner; the shared core calls these instead of showing its own.
+CG.onSessionExpired = { show: showSessionExpiredBanner, hide: hideSessionExpiredBanner };
 document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
-  clearAuthRedirectMarker();
-  markAuthRedirect();
-  msalInstance.loginRedirect({ scopes: graphScopes }).catch(err => {
-    clearAuthRedirectMarker();
-    console.error(err);
-    alert(describeAuthError(err));
-  });
+  CG.auth.signIn().catch(err => { console.error(err); alert(describeAuthError(err)); });
 });
 
 /* ============================================================
@@ -916,44 +831,17 @@ document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
 // "please sign in again" message plus a banner with a Sign In button,
 // never the raw Graph JSON.
 async function graphRequest(method, url, body){
-  const doFetch = () => fetch(url, {
-    method,
-    headers: Object.assign(
-      { Authorization: `Bearer ${accessToken}` },
-      method === "GET" ? {} : { "Content-Type": "application/json" }
-    ),
-    body: (method !== "GET" && body) ? JSON.stringify(body) : undefined
-  });
-
-  let res = await doFetch();
-
-  if(isAuthErrorStatus(res.status)){
-    try{
-      await acquireToken();
-      res = await doFetch();
-    }catch(refreshErr){
-      console.warn("Token refresh after 401 failed.", refreshErr);
-    }
-  }
-
-  if(!res.ok){
-    if(isAuthErrorStatus(res.status)){
-      showSessionExpiredBanner();
+  // The shared core does the token refresh + replay after a 401, waits and
+  // retries when SharePoint is busy, and raises the session banner (via
+  // CG.onSessionExpired above). Error wording is kept exactly as before.
+  try{
+    return await CG.graph(method, url, (method !== "GET" && body) ? body : undefined);
+  }catch(e){
+    if(e.status === 401 && !e.body){
       throw new Error("Your session has expired. Please sign in again to continue — use the banner at the top, or the Sign Out / sign back in link.");
     }
-    const errBody = await res.text();
-    throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
+    throw new Error(`Graph ${method} error ${e.status}: ${e.body || e.message}`);
   }
-
-  if(sessionExpiredShown){
-    // A successful call after the banner went up means a refresh (silent
-    // or via the banner's Sign In button) worked — clear it.
-    sessionExpiredShown = false;
-    const banner = document.getElementById("sessionBanner");
-    if(banner) banner.style.display = "none";
-  }
-  if(res.status === 204) return null;
-  return res.json().catch(()=>null);
 }
 
 async function graphGet(url){
@@ -1178,7 +1066,7 @@ async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("app").style.display = "block";
 
-  const account = msalInstance.getActiveAccount();
+  const account = CG.auth.account();
   if(account){
     const name = account.name || account.username || "Signed in";
     document.getElementById("signedInName").textContent = name;
@@ -3339,7 +3227,7 @@ async function toggleEmployeeActive(itemId, nextActive){
    the clock in/out device project lands, without a schema change.
    ============================================================ */
 function currentUserLabel(){
-  const acc = msalInstance.getActiveAccount();
+  const acc = CG.auth.account();
   return acc ? (acc.name || acc.username || "") : "";
 }
 
@@ -4817,7 +4705,7 @@ function teReportContext(entries){
     ? `${fmtDateDashDMY(teFilters.from) || "Start"} to ${fmtDateDashDMY(teFilters.to) || "Today"}`
     : (dates.length ? `${fmtDateDashDMY(dates[0])} to ${fmtDateDashDMY(dates[dates.length-1])}` : "All dates");
   const billableLabel = { "billable":"Billable only", "not-billable":"Non-billable only", "not-set":"Not set only" }[teFilters.billable] || "All";
-  const account = msalInstance.getActiveAccount && msalInstance.getActiveAccount();
+  const account = CG.auth.account();
   const preparedBy = account ? (account.name || account.username || "") : "";
   const now = new Date();
   const generated = `${fmtDateDashDMY(todayStr())} ${fmtTimeOfDay(now.toISOString())}`;
