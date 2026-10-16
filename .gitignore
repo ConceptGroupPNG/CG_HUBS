@@ -1,0 +1,9 @@
+# Never commit local settings, secrets or exports
+.env
+.env.*
+*.csv
+*.xlsx
+*.log
+node_modules/
+Thumbs.db
+.DS_Store
