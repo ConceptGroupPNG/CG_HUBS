@@ -229,6 +229,15 @@
       }
     },
 
+    /* A quiet token for an OPTIONAL extra permission (e.g. reading staff
+       photos). Never redirects; returns null if the permission isn't
+       granted, so the feature can simply switch itself off. */
+    async tokenFor(extraScopes) {
+      if (!msalApp || !msalApp.getActiveAccount()) return null;
+      try { return (await msalApp.acquireTokenSilent({ scopes: extraScopes, account: msalApp.getActiveAccount() })).accessToken; }
+      catch (e) { return null; }
+    },
+
     signIn() {
       clearRedirect(); markRedirect();
       return msalApp.loginRedirect({ scopes }).catch(e => { clearRedirect(); throw new Error(CG.describeAuthError(e)); });
@@ -277,12 +286,17 @@
   /* -----------------------------------------------------------------
      Microsoft Graph requests
      ----------------------------------------------------------------- */
-  // Readable message from a Graph error response
+  // Readable message from a Graph error response. The error also carries
+  // err.status (e.g. 404), err.code (Graph's code, e.g. "itemNotFound") and
+  // err.body (the raw response text) for apps that need the detail.
   async function graphError(res) {
-    let msg = `${res.status} ${res.statusText || ""}`.trim();
-    try { const j = await res.json(); if (j && j.error && j.error.message) msg = j.error.message; } catch (e) { /* not JSON */ }
+    let msg = `${res.status} ${res.statusText || ""}`.trim(), code = "", body = "";
+    try { body = await res.text(); } catch (e) { /* no body */ }
+    try { const j = JSON.parse(body); if (j && j.error) { if (j.error.message) msg = j.error.message; code = j.error.code || ""; } } catch (e) { /* not JSON */ }
     const err = new Error(msg);
     err.status = res.status;
+    err.code = code;
+    err.body = body;
     return err;
   }
 
@@ -294,7 +308,10 @@
      - Other errors throw with Graph's own message and err.status set. */
   CG.graph = async function (method, url, body, headers) {
     const full = /^https?:/i.test(url) ? url : GRAPH + url;
-    const isJson = body !== undefined && body !== null && !(global.Blob && body instanceof global.Blob);
+    // Objects are sent as JSON; a string is taken to be JSON already and sent
+    // as it is; a Blob/File is sent as raw content.
+    const isBlob = !!(global.Blob && body instanceof global.Blob);
+    const isJson = body !== undefined && body !== null && !isBlob;
     // If the sign-in can't be renewed quietly, show the banner and a plain
     // message - never Microsoft's technical error text.
     const tokenOrExpired = async forceRefresh => {
@@ -311,7 +328,7 @@
       method,
       headers: Object.assign({ Authorization: "Bearer " + await tokenOrExpired(forceRefresh) },
         isJson ? { "Content-Type": "application/json" } : {}, headers || {}),
-      body: body === undefined || body === null ? undefined : (isJson ? JSON.stringify(body) : body)
+      body: body === undefined || body === null ? undefined : (isJson && typeof body !== "string" ? JSON.stringify(body) : body)
     });
 
     let res, busy = 0;
@@ -402,6 +419,6 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.1.0";
+  CG.VERSION = "1.2.0";
   global.CG = CG;
 })(typeof window !== "undefined" ? window : globalThis);
