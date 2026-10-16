@@ -37,7 +37,7 @@ const CG_APPS = [
     site: "/sites/Concept_CSA",    clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
 
   { key: "sla",        folder: "sla/",        name: "SLA HUB",             unit: "Internal & Client Support",
-    site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "off" },
+    site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "preview" },
 
   { key: "time",       folder: "time/",       name: "CG Time",             unit: "Time, attendance & payroll",
     site: "/sites/CG_Time",        clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },

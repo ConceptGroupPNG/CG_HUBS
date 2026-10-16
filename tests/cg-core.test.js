@@ -57,7 +57,8 @@ function load({ hash = "", inFrame = false, opener = null, silent, fetchQueue = 
 const res = (status, body, headers = {}) => ({
   status, ok: status >= 200 && status < 300, statusText: "",
   headers: { get: k => headers[k] ?? null },
-  json: async () => body
+  json: async () => body,
+  text: async () => (body === null || body === undefined ? "" : JSON.stringify(body))
 });
 
 /* ---------------- dates ---------------- */
@@ -224,4 +225,26 @@ test("if the token can't be renewed quietly, Graph calls give the plain 'session
   await CG.auth.init({ app: "psp" });
   await assert.rejects(CG.graph("GET", "/me"), e => e.status === 401 && /session has expired/.test(e.message) && !/AADSTS/.test(e.message));
   assert.equal(calls.fetches.length, 0);
+});
+
+/* ---------------- added in 1.2.0 ---------------- */
+test("errors also carry Graph's code and the raw response body", async () => {
+  const { CG } = await signedIn({ fetchQueue: [res(403, { error: { code: "ErrorAccessDenied", message: "Access is denied." } })] });
+  await assert.rejects(CG.graph("POST", "/users/x/sendMail", {}), e =>
+    e.status === 403 && e.code === "ErrorAccessDenied" && e.message === "Access is denied." && /"code":"ErrorAccessDenied"/.test(e.body));
+});
+
+test("a string body is sent as it is (not JSON-encoded twice)", async () => {
+  const { CG, calls } = await signedIn({ fetchQueue: [res(201, { id: "1" })] });
+  await CG.graph("POST", "/x", JSON.stringify({ a: 1 }));
+  assert.equal(calls.fetches[0].opts.body, '{"a":1}');
+  assert.equal(calls.fetches[0].opts.headers["Content-Type"], "application/json");
+});
+
+test("tokenFor() quietly returns a token, or null when the extra permission isn't granted", async () => {
+  const ok = await signedIn();
+  assert.match(await ok.CG.auth.tokenFor(["ProfilePhoto.Read.All"]), /^tok/);
+  const no = await signedIn({ silent: (req) => { if (req.scopes[0] === "ProfilePhoto.Read.All") throw new Error("consent_required"); return { accessToken: "t" }; } });
+  assert.equal(await no.CG.auth.tokenFor(["ProfilePhoto.Read.All"]), null);
+  assert.equal(no.calls.redirects, 0);
 });
