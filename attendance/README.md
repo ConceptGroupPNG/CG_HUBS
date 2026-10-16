@@ -11,7 +11,7 @@ staff Time & Attendance.
 ## What's in this folder
 
 ```
-cg-time-attendance/
+attendance/
   index.html          the entire app — one page, inline styles & script
   manifest.json        PWA metadata (name, icon, colors)
   sw.js                 tiny service worker so the app shell opens instantly
@@ -95,32 +95,28 @@ used to clock in from somewhere else later.
 This gate is a reasonable deterrent and an audit trail, not a hard
 security guarantee — the same trade-off as most mobile geofencing.
 
-## Azure AD setup
+## Sign-in and settings
 
-This app needs its own dedicated App Registration, same pattern as
-Concept Time Mobile:
+Sign-in and SharePoint access come from the CG HUBS shared core
+(`../shared/cg-core.js`); the client ID, SharePoint site and on/off/preview
+switch come from `../shared/cg-config.js`. Nothing is configured in this
+folder.
 
-1. **Entra ID → App registrations → New registration.** Name it
-   something like "CG Time Attendance".
-2. Platform: **Single-page application**. Redirect URI: the exact URL
-   this page will be hosted at (see "Where to host it" below), e.g.
-   `https://marcusappdev.github.io/CG_Training/cg-time-attendance/`
-   — note the trailing slash, GitHub Pages serves this folder with
-   one, and the registered redirect URI has to match exactly.
-3. **API permissions → Add a permission → Microsoft Graph → Delegated →**
-   add `Sites.ReadWrite.All` and `User.Read`, then **Grant admin consent**.
-4. Copy the new **Application (client) ID** and paste it into
-   `index.html`, replacing `REPLACE_WITH_YOUR_APP_CLIENT_ID`
-   (look for `CONFIG.clientId` near the top of the `<script>` block).
+This app has its own App Registration, **"CG Time Attendance"**
+(client ID `04c72756-916b-4fed-aa36-a6771ea4e8dc`):
+- Platform: **Single-page application**, redirect URI
+  `https://conceptgrouppng.github.io/CG_HUBS/attendance/` (with the trailing slash).
+- API permissions: Microsoft Graph → Delegated → `Sites.ReadWrite.All`
+  and `User.Read`, with admin consent granted.
 
-## Where to host it
+Like Concept Time Mobile, this phone app keeps people signed in after the
+app is closed (`cacheLocation: "localStorage"`).
 
-Same as every other Hub: drop this whole folder into the
-`marcusappdev/CG_Training` repo, alongside `cg-time-mobile/` and the
-rest, e.g. as `cg-time-attendance/`. It'll publish at
-`https://marcusappdev.github.io/CG_Training/cg-time-attendance/` —
-that exact URL (with trailing slash) is what goes in the Azure AD
-redirect URI above.
+## Where it lives
+
+`ConceptGroupPNG/CG_HUBS`, folder `attendance/`, published by GitHub Pages at
+`https://conceptgrouppng.github.io/CG_HUBS/attendance/`. Changes are made by
+pull request, like every other CG Hub.
 
 ## Home screen install
 

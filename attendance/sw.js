@@ -7,7 +7,7 @@
 // the new service worker, and evict the old cached copy. Without a bump,
 // phones that already visited keep serving the stale cached index.html
 // indefinitely, even after the repo itself is updated.
-const CACHE_NAME = "cg-time-attendance-shell-v5";
+const CACHE_NAME = "cg-hubs-attendance-v1";
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -18,6 +18,8 @@ const SHELL_FILES = [
   "./icons/icon-512.png",
   "./icons/icon-512-maskable.png",
   "./icons/apple-touch-icon.png",
+  "../shared/cg-config.js",
+  "../shared/cg-core.js",
 ];
 
 self.addEventListener("install", (event) => {

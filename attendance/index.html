@@ -13,7 +13,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="CG Time Attendance" />
 <meta name="mobile-web-app-capable" content="yes" />
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
 <style>
   :root{
     --page-bg:#ece1c8;
@@ -180,31 +182,20 @@
   "use strict";
 
   // ---------------------------------------------------------------------
-  // Configuration
+  // Configuration - tenant, client ID and switches come from
+  // ../shared/cg-config.js; sign-in and SharePoint from ../shared/cg-core.js.
   // ---------------------------------------------------------------------
-  // Same tenant and SharePoint site as every other Hub. This app has its
-  // OWN dedicated Azure AD app registration (matching the pattern set by
-  // Concept Time Mobile) — see README.md "Azure AD setup" for the steps to
-  // create it and paste the client ID in below.
-  const CONFIG = {
-    tenantId: "ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
-    clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc",
-    siteHostname: "conceptcompg.sharepoint.com",
-    sitePath: "/sites/CG_Time",
-    employeesListName: "CG_Employees",
-    timeRecordsListName: "CG_EmployeeTimeRecords",
-    payPeriodsListName: "CG_PayPeriods",
+  const SITE = CG.app("attendance").site;              // /sites/CG_Time
+  const LISTS = {
+    employees: "CG_Employees",
+    timeRecords: "CG_EmployeeTimeRecords",
+    payPeriods: "CG_PayPeriods",
     // Per-employee geofence locations, managed entirely from CG Time's
     // Employees → Locations tab — this app only ever reads them. See
     // "Clock locations" in README.md for the exact list shapes.
-    clockLocationsListName: "CG_ClockLocations",
-    employeeLocationAssignmentsListName: "CG_EmployeeLocationAssignments",
-    scopes: ["Sites.ReadWrite.All", "User.Read"],
+    clockLocations: "CG_ClockLocations",
+    employeeLocationAssignments: "CG_EmployeeLocationAssignments",
   };
-
-  // Use the page's actual path as-is (GitHub Pages serves this folder with
-  // a trailing slash, and that's what must be registered in Azure AD too).
-  const REDIRECT_URI = window.location.origin + window.location.pathname;
 
   // ---------------------------------------------------------------------
   // Elements
@@ -227,125 +218,28 @@
   const errorBanner = document.getElementById("errorBanner");
 
   // ---------------------------------------------------------------------
-  // Auth (MSAL Browser, PKCE + redirect — matches every other Hub)
+  // SharePoint (CG_Time site) - same site and field names as the CG Time
+  // dashboard itself, so entries made here show up there exactly like a
+  // Manual or Biometric row would. CG.sp.items() reads every page.
+  // The rest of this app works with { id, fields } items, as before.
   // ---------------------------------------------------------------------
-  const msalInstance = new msal.PublicClientApplication({
-    auth: {
-      clientId: CONFIG.clientId,
-      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: REDIRECT_URI,
-    },
-    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
-  });
+  const asItems = (rows) => rows.map((r) => ({ id: r.id, fields: r }));
+  async function readList(list) { return asItems(await CG.sp.items(SITE, list)); }
 
-  async function getAccessToken() {
-    const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
-    if (!account) throw new Error("Not signed in");
-    try {
-      const result = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account });
-      return result.accessToken;
-    } catch (e) {
-      // Silent refresh failed — normally we'd fall back to an interactive
-      // redirect, but doing that from deep inside an async action (e.g. a
-      // Clock In tap) rather than directly from the click handler can fail
-      // to actually navigate on some mobile browsers. If we then returned a
-      // promise that never resolves, the whole action just hangs forever
-      // with no error and no data written — exactly indistinguishable from
-      // a dead button. Fail loudly instead, so the user gets a clear,
-      // actionable message rather than silence.
-      throw new Error(
-        "Your sign-in session needs refreshing — please sign out and sign in again."
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // Graph calls against the CG_Time SharePoint site — same site and field
-  // names as the CG Time dashboard itself, so entries made here show up
-  // there exactly like a Manual or Biometric row would.
-  // ---------------------------------------------------------------------
-  const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-  let siteId = null, employeesListId = null, timeListId = null, payPeriodsListId = null;
-  let clockLocationsListId = null, employeeLocationAssignmentsListId = null, locationListsResolved = false;
-
-  // Low-level authenticated fetch against an absolute Graph URL. graphFetch()
-  // below is the normal entry point (path relative to GRAPH_BASE); this one
-  // also lets graphFetchAllPages follow a full "@odata.nextLink" URL as-is.
-  async function graphRequest(url, options = {}) {
-    const token = await getAccessToken();
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Graph API error ${res.status}: ${text}`);
-    }
-    return res.status === 204 ? null : res.json();
-  }
-
-  async function graphFetch(path, options = {}) {
-    return graphRequest(`${GRAPH_BASE}${path}`, options);
-  }
-
-  // SharePoint list reads are paged (500 items/page here, but Graph can page
-  // sooner on its own). CG_EmployeeTimeRecords in particular already holds
-  // years of biometric + manual entries, so it's well past one page — a
-  // single-page read (the bug this replaced) simply never sees today's most
-  // recently created rows, since Graph returns items oldest-first. Follow
-  // "@odata.nextLink" until it's gone, exactly like the CG Time dashboard's
-  // own fetchAllListItems does against this same site.
-  async function graphFetchAllPages(path) {
-    let url = `${GRAPH_BASE}${path}`;
-    let items = [];
-    while (url) {
-      const page = await graphRequest(url);
-      items = items.concat(page.value || []);
-      url = page["@odata.nextLink"] || null;
-    }
-    return items;
-  }
-
-  async function ensureSiteAndLists() {
-    if (siteId && employeesListId && timeListId && payPeriodsListId && locationListsResolved) return;
-    const site = await graphFetch(`/sites/${CONFIG.siteHostname}:${CONFIG.sitePath}`);
-    siteId = site.id;
-    const lists = await graphFetch(`/sites/${siteId}/lists?$select=id,displayName`);
-    const find = (name) => {
-      const l = lists.value.find((x) => x.displayName === name);
-      if (!l) throw new Error(`Could not find the "${name}" list on the site.`);
-      return l.id;
-    };
-    employeesListId = find(CONFIG.employeesListName);
-    timeListId = find(CONFIG.timeRecordsListName);
-    payPeriodsListId = find(CONFIG.payPeriodsListName);
-
-    // The two clock-location lists are treated as optional here — if CG
-    // Time's rollout of per-employee Locations hasn't happened yet (or the
-    // list names ever drift), this app degrades to "no assigned locations"
-    // for everyone rather than breaking sign-in and clock in/out entirely.
-    const findOptional = (name) => {
-      const l = lists.value.find((x) => x.displayName === name);
-      return l ? l.id : null;
-    };
-    clockLocationsListId = findOptional(CONFIG.clockLocationsListName);
-    employeeLocationAssignmentsListId = findOptional(CONFIG.employeeLocationAssignmentsListName);
-    locationListsResolved = true;
+  // The two clock-location lists are optional - if they don't exist yet,
+  // this app degrades to "no assigned locations" for everyone rather than
+  // breaking sign-in and clock in/out entirely.
+  async function readOptionalList(list) {
+    try { return await readList(list); }
+    catch (e) { if (CG.sp.isMissingList(e)) return []; throw e; }
   }
 
   async function getMe() {
-    return graphFetch("/me?$select=displayName,mail,userPrincipalName");
+    return CG.graph("GET", "/me?$select=displayName,mail,userPrincipalName");
   }
 
   async function fetchAllEmployees() {
-    await ensureSiteAndLists();
-    return graphFetchAllPages(
-      `/sites/${siteId}/lists/${employeesListId}/items?expand=fields(select=Title,EmployeeNumber,Email,IsActive)&$top=500`
-    );
+    return readList(LISTS.employees);
   }
 
   // Matches trimmed + case-insensitive, against either candidate email.
@@ -366,10 +260,7 @@
   }
 
   async function findCurrentPayPeriod(dateStr) {
-    await ensureSiteAndLists();
-    const items = await graphFetchAllPages(
-      `/sites/${siteId}/lists/${payPeriodsListId}/items?expand=fields(select=PayNumber,PPEStart,PPEEnd)&$top=500`
-    );
+    const items = await readList(LISTS.payPeriods);
     const match = items.find((item) => {
       const f = item.fields || {};
       const start = (f.PPEStart || "").slice(0, 10);
@@ -386,19 +277,11 @@
   // in/out from any one of them.
   // ---------------------------------------------------------------------
   async function fetchActiveClockLocations() {
-    await ensureSiteAndLists();
-    if (!clockLocationsListId) return [];
-    return graphFetchAllPages(
-      `/sites/${siteId}/lists/${clockLocationsListId}/items?expand=fields(select=Title,Latitude,Longitude,RadiusMeters,IsActive)&$top=500`
-    );
+    return readOptionalList(LISTS.clockLocations);
   }
 
   async function fetchEmployeeLocationAssignments(employeeNumber) {
-    await ensureSiteAndLists();
-    if (!employeeLocationAssignmentsListId) return [];
-    const items = await graphFetchAllPages(
-      `/sites/${siteId}/lists/${employeeLocationAssignmentsListId}/items?expand=fields(select=EmployeeNumber,LocationTitle)&$top=500`
-    );
+    const items = await readOptionalList(LISTS.employeeLocationAssignments);
     const target = (employeeNumber || "").trim().toLowerCase();
     return items
       .filter((item) => ((item.fields || {}).EmployeeNumber || "").trim().toLowerCase() === target)
@@ -435,10 +318,7 @@
   }
 
   async function findTodayRecord(employeeNumber, dateStr) {
-    await ensureSiteAndLists();
-    const items = await graphFetchAllPages(
-      `/sites/${siteId}/lists/${timeListId}/items?expand=fields(select=Title,EmployeeNumber,WorkDate,TimeIn,TimeOut,EntrySource)&$top=500`
-    );
+    const items = await readList(LISTS.timeRecords);
     return (
       items.find((item) => {
         const f = item.fields || {};
@@ -451,7 +331,6 @@
   }
 
   async function createClockIn(employee, dateStr, timeStr) {
-    await ensureSiteAndLists();
     const payNumber = await findCurrentPayPeriod(dateStr);
     const fields = {
       Title: `${employee.fields.EmployeeNumber} ${dateStr}`,
@@ -463,19 +342,12 @@
       EntrySource: "Mobile",
       EnteredBy: employee.fields.Title,
     };
-    const created = await graphFetch(`/sites/${siteId}/lists/${timeListId}/items`, {
-      method: "POST",
-      body: JSON.stringify({ fields }),
-    });
+    const created = await CG.sp.create(SITE, LISTS.timeRecords, fields);
     return created.id;
   }
 
   async function setClockOut(itemId, timeStr) {
-    await ensureSiteAndLists();
-    await graphFetch(`/sites/${siteId}/lists/${timeListId}/items/${itemId}/fields`, {
-      method: "PATCH",
-      body: JSON.stringify({ TimeOut: timeStr }),
-    });
+    await CG.sp.update(SITE, LISTS.timeRecords, itemId, { TimeOut: timeStr });
   }
 
   // ---------------------------------------------------------------------
@@ -531,25 +403,18 @@
     const d = new Date();
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
-  // Local calendar components, never toISOString()/new Date(string) —
-  // avoids the UTC-shift bug in PNG's UTC+10 timezone.
-  function toLocalDateOnly(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
+  const toLocalDateOnly = CG.date.ymd;   // local calendar date, never toISOString()
 
   function renderStatus() {
     if (todayRecord && todayRecord.fields.TimeIn && todayRecord.fields.TimeOut) {
       statusHeadline.textContent = "Today's attendance complete";
-      statusDetail.innerHTML = `In <b>${todayRecord.fields.TimeIn}</b> · Out <b>${todayRecord.fields.TimeOut}</b>`;
+      statusDetail.innerHTML = `In <b>${CG.esc(todayRecord.fields.TimeIn)}</b> · Out <b>${CG.esc(todayRecord.fields.TimeOut)}</b>`;
       clockBtn.textContent = "Clock In";
       clockBtn.classList.remove("out");
       clockBtn.disabled = true;
     } else if (todayRecord && todayRecord.fields.TimeIn) {
       statusHeadline.textContent = "Clocked in";
-      statusDetail.innerHTML = `Since <b>${todayRecord.fields.TimeIn}</b>${todayRecord.fields.EntrySource && todayRecord.fields.EntrySource !== "Mobile" ? ` (${todayRecord.fields.EntrySource})` : ""}`;
+      statusDetail.innerHTML = `Since <b>${CG.esc(todayRecord.fields.TimeIn)}</b>${todayRecord.fields.EntrySource && todayRecord.fields.EntrySource !== "Mobile" ? ` (${CG.esc(todayRecord.fields.EntrySource)})` : ""}`;
       clockBtn.textContent = "Clock Out";
       clockBtn.classList.add("out");
       clockBtn.disabled = !withinFence;
@@ -669,12 +534,12 @@
         const triedText = candidates.filter(Boolean).join(" or ");
         if (inactiveMatch) {
           notLinkedBanner.innerHTML =
-            `Found <b>${inactiveMatch.fields.Title || inactiveMatch.fields.EmployeeNumber}</b> in CG_Employees with a matching email, ` +
+            `Found <b>${CG.esc(inactiveMatch.fields.Title || inactiveMatch.fields.EmployeeNumber)}</b> in CG_Employees with a matching email, ` +
             `but that record isn't marked Active — ask your administrator to tick Active on it.`;
         } else {
           notLinkedBanner.innerHTML =
             `Your sign-in isn't linked to an Employee record yet. This app looked for ` +
-            `<b>${triedText || "(no email on your Microsoft account)"}</b> in CG_Employees' Email column and found no match. ` +
+            `<b>${CG.esc(triedText || "(no email on your Microsoft account)")}</b> in CG_Employees' Email column and found no match. ` +
             `Ask your administrator to check that column for extra spaces or a typo.`;
         }
         notLinkedBanner.hidden = false;
@@ -701,31 +566,31 @@
     signInBtn.disabled = true;
     signInBtn.textContent = "Signing in…";
     try {
-      await msalInstance.loginRedirect({ scopes: CONFIG.scopes });
+      await CG.auth.signIn();
     } catch (e) {
-      signinError.textContent = "Sign-in failed. Please try again.";
+      signinError.textContent = e.message;
       signInBtn.disabled = false;
       signInBtn.textContent = "Sign in with Microsoft";
     }
   });
 
-  signOutBtn.addEventListener("click", () => {
-    const account = msalInstance.getActiveAccount();
-    msalInstance.logoutRedirect({ account });
-  });
+  signOutBtn.addEventListener("click", () => CG.auth.signOut());
+
+  function showUnavailable() {
+    showSignedOut();
+    signInBtn.hidden = true;
+    signinError.textContent = "CG Time Attendance isn't available here yet. Please keep using your usual Attendance link.";
+  }
 
   (async function boot() {
     try {
-      const resp = await msalInstance.handleRedirectPromise();
-      let account = (resp && resp.account) || msalInstance.getAllAccounts()[0];
-      if (account) {
-        msalInstance.setActiveAccount(account);
-        await showSignedIn(account);
-      } else {
-        showSignedOut();
-      }
+      // Phone app: stay signed in after the app is closed (as before).
+      const account = await CG.auth.init({ app: "attendance", cacheLocation: "localStorage" });
+      if (!account) { if (!CG.isAuthReturnInChildWindow()) showSignedOut(); return; }
+      if (!CG.appAllowed("attendance", CG.auth.email())) { showUnavailable(); return; }
+      await showSignedIn(account);
     } catch (e) {
-      signinError.textContent = "Sign-in failed. Please try again.";
+      signinError.textContent = e.message;
       showSignedOut();
     }
   })();
