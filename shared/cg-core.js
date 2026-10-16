@@ -259,9 +259,15 @@
      "Session expired" banner - shown instead of raw errors
      ----------------------------------------------------------------- */
   let bannerShown = false;
+  // An app with its own "session expired" banner can set
+  //   CG.onSessionExpired = { show: fn, hide: fn }
+  // and the core will call those instead of showing its own.
+  CG.onSessionExpired = null;
   CG.showSessionExpired = () => {
-    if (bannerShown || !global.document) return;
+    if (bannerShown) return;
     bannerShown = true;
+    if (CG.onSessionExpired && CG.onSessionExpired.show) { CG.onSessionExpired.show(); return; }
+    if (!global.document) return;
     let b = document.getElementById("cg-session-banner");
     if (!b) {
       b = document.createElement("div");
@@ -279,6 +285,7 @@
   const hideSessionExpired = () => {
     if (!bannerShown) return;
     bannerShown = false;
+    if (CG.onSessionExpired && CG.onSessionExpired.hide) { CG.onSessionExpired.hide(); return; }
     const b = global.document && document.getElementById("cg-session-banner");
     if (b) b.style.display = "none";
   };
@@ -419,6 +426,6 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.2.0";
+  CG.VERSION = "1.3.0";
   global.CG = CG;
 })(typeof window !== "undefined" ? window : globalThis);
