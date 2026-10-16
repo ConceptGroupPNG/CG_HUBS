@@ -40,6 +40,11 @@
   .tile:hover, .tile:focus-visible { box-shadow:0 6px 20px rgba(31,56,100,.14); transform:translateY(-2px); outline:none; }
   .tile .name { font-size:18px; font-weight:700; color:var(--navy); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .tile .unit { color:var(--muted); font-size:14px; }
+  .tile { position:relative; }
+  .tile.is-mobile { padding-right:52px; }
+  .tile .device { position:absolute; top:10px; right:0; bottom:16px; width:30px; background:var(--navy); color:#fff;
+                  border-radius:4px 0 0 4px; writing-mode:vertical-rl; text-align:center; font-size:12px;
+                  font-weight:600; letter-spacing:1.5px; text-transform:uppercase; display:flex; align-items:center; justify-content:center; }
   .tile .open { margin-top:auto; color:var(--navy-2); font-weight:600; font-size:14px; }
   .pv { background:var(--gold-soft); color:#7A5F0E; font-size:11px; font-weight:700; text-transform:uppercase;
         letter-spacing:.5px; padding:2px 8px; border-radius:999px; }
@@ -127,10 +132,11 @@
     }
     main.innerHTML = hello + `<p class="sub">Choose a Hub to open.</p>
       <div class="grid">${apps.map(a => `
-        <a class="tile" href="${esc(CG.appUrl(a.key))}">
+        <a class="tile${a.device === "mobile" ? " is-mobile" : ""}" href="${esc(CG.appUrl(a.key))}">
           <div class="name">${esc(a.name)}${CG.appState(a.key) === "preview" ? '<span class="pv" title="Preview - only listed testers can see this">Preview</span>' : ""}</div>
           <div class="unit">${esc(a.unit)}</div>
           <div class="open">Open →</div>
+          ${a.device === "mobile" ? '<div class="device" title="Mainly used on a phone">Mobile</div>' : ""}
         </a>`).join("")}
       </div>`;
   }
