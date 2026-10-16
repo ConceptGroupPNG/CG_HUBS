@@ -99,8 +99,14 @@
     const here = global.location.href.split(/[?#]/)[0];
     return CG.apps().find(a => a.folder && here.startsWith(CG.ROOT_URL + a.folder)) || null;
   };
-  // A phone: the screen's short side is under 600px (tablets and laptops are wider).
-  CG.isPhone = () => !!global.screen && Math.min(global.screen.width, global.screen.height) < 600;
+  // A phone: mainly a touch screen, not a mouse (so never a computer, even with
+  // Windows display scaling making the screen look small), whose short
+  // side is under 600px (so not a tablet).
+  CG.isPhone = () => {
+    if (!global.screen || !global.matchMedia) return false;
+    const touchOnly = global.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    return touchOnly && Math.min(global.screen.width, global.screen.height) < 600;
+  };
 
   CG.showPhoneNotice = app => {
     if (!global.document || document.getElementById("cg-phone-notice")) return;
@@ -108,7 +114,7 @@
     box.id = "cg-phone-notice";
     box.setAttribute("role", "dialog");
     box.setAttribute("aria-modal", "true");
-    box.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:#1F3864;color:#fff;display:flex;" +
+    box.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483646;box-sizing:border-box;background:#1F3864;color:#fff;display:flex;" +
       "flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;" +
       "font:16px 'Segoe UI',Calibri,Arial,sans-serif;overflow:auto";
     box.innerHTML =
@@ -122,13 +128,26 @@
       'border-radius:8px;padding:12px 28px;margin-bottom:20px">Back to CG HUBS</a>' +
       '<button type="button" style="background:none;border:0;color:#DDE6F5;text-decoration:underline;font:inherit;' +
       'font-size:14px;cursor:pointer;padding:8px">Continue to the desktop version anyway</button>';
+    // While the message shows, the desktop page underneath is hidden
+    // completely. Otherwise its full width makes the phone zoom out to
+    // fit it, and the message ends up off-screen.
+    if (!document.getElementById("cg-phone-notice-style")) {
+      const st = document.createElement("style");
+      st.id = "cg-phone-notice-style";
+      st.textContent =
+        "html.cg-phone-notice-on body > *:not(#cg-phone-notice){display:none !important}" +
+        "html.cg-phone-notice-on, html.cg-phone-notice-on body{overflow:hidden !important;width:100% !important;" +
+        "min-width:0 !important;max-width:100% !important;height:100% !important;margin:0 !important;padding:0 !important}";
+      document.head.appendChild(st);
+    }
     box.querySelector("button").onclick = () => {
       store.set("cg-phone-continue-" + app.key, "1");
       box.remove();
-      document.documentElement.style.overflow = "";
+      document.documentElement.classList.remove("cg-phone-notice-on");
     };
-    document.documentElement.style.overflow = "hidden";
+    document.documentElement.classList.add("cg-phone-notice-on");
     document.body.appendChild(box);
+    global.scrollTo(0, 0);
   };
 
   CG.phoneCheck = () => {
@@ -477,7 +496,7 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.4.0";
+  CG.VERSION = "1.4.1";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {
