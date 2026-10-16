@@ -6,7 +6,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CSA Hub — Concept Group</title>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 <style>
@@ -244,7 +246,7 @@
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-card">
-    <img class="login-logo" src="https://marcusappdev.github.io/CG_Training/csa-hub/assets/Concept_Logo.jpg" alt="Concept Group" onerror="this.style.display='none'">
+    <img class="login-logo" src="assets/Concept_Logo.jpg" alt="Concept Group" onerror="this.style.display='none'">
     <h1>CSA HUB</h1>
     <p>Consulting Service Agreements — sign in with your<br>Concept Group account.</p>
     <button class="login-btn" id="loginBtn">Sign in with Microsoft</button>
@@ -611,111 +613,81 @@
 /* ============================================================
    CONFIG
    ============================================================ */
-const msalConfig = {
-  auth: {
-    clientId: "d5aef866-584f-4226-ab11-c941888fb519",
-    authority: "https://login.microsoftonline.com/ea9e105c-2df6-47ef-a8e3-b4aa1d788423",
-    redirectUri: "https://marcusappdev.github.io/CG_Training/csa-hub/"
-  },
-  cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
-};
+// Sign-in, tokens and Graph calls come from the CG HUBS shared core
+// (../shared/cg-core.js); client ID, site and switches from ../shared/cg-config.js.
 const graphScopes = ["Sites.ReadWrite.All", "User.Read"];
-const SITE_HOST = "conceptcompg.sharepoint.com";
-const SITE_PATH = "/sites/Concept_CSA";
-const TIME_SITE_HOST = "conceptcompg.sharepoint.com";
+const SITE_HOST = CG_TENANT.SP_HOST;
+const SITE_PATH = CG.app("csa").site;                 // /sites/Concept_CSA
+const TIME_SITE_HOST = CG_TENANT.SP_HOST;
 const TIME_SITE_PATH = "/sites/CG_Time";
 // Lists that now live on the CG_Time site instead of Concept_CSA
 const TIME_SITE_LISTS = new Set(["CSA_ActiveEntities", "CSA_TimeEntries"]);
 
-const msalInstance = new msal.PublicClientApplication(msalConfig);
-let accessToken = null;
+let accessToken = null;   // kept fresh by acquireToken(); used by the two document uploads
 let siteId = null;
 let timeSiteId = null;
 
 /* ============================================================
    AUTH
    ============================================================ */
+// Sign-in uses full-page redirects only (no popups - popups caused CG Time's
+// Oct 2026 sign-in loop). See ../shared/cg-core.js.
 async function initAuth(){
-  await msalInstance.handleRedirectPromise().catch(err=>console.error(err));
-  const accounts = msalInstance.getAllAccounts();
-  if(accounts.length > 0){
-    msalInstance.setActiveAccount(accounts[0]);
-    await acquireToken();
-    startApp();
-  } else {
+  let account = null;
+  try{
+    account = await CG.auth.init({ app: "csa", scopes: graphScopes });
+  }catch(e){
+    console.error(e);
     document.getElementById("loginScreen").style.display = "flex";
+    alert(e.message);
+    return;
   }
+  if(!account){
+    if(!CG.isAuthReturnInChildWindow()) document.getElementById("loginScreen").style.display = "flex";
+    return;
+  }
+  if(!CG.appAllowed("csa", CG.auth.email())){
+    document.getElementById("loginScreen").style.display = "flex";
+    alert("CSA HUB isn't available here yet. Please keep using your usual CSA HUB link.");
+    return;
+  }
+  await acquireToken();
+  startApp();
 }
 
 document.getElementById("loginBtn").addEventListener("click", ()=>{
-  msalInstance.loginRedirect({ scopes: graphScopes });
+  CG.auth.signIn().catch(e => alert(e.message));
 });
 
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
-  msalInstance.logoutRedirect();
+  CG.auth.signOut();
 });
 
 async function acquireToken(){
-  const account = msalInstance.getActiveAccount();
-  const request = { scopes: graphScopes, account };
-  try{
-    const result = await msalInstance.acquireTokenSilent(request);
-    accessToken = result.accessToken;
-  }catch(e){
-    const result = await msalInstance.acquireTokenPopup(request);
-    accessToken = result.accessToken;
-  }
+  accessToken = await CG.auth.token();
+  return accessToken;
 }
 
 /* ============================================================
    GRAPH HELPERS
    ============================================================ */
-async function graphGet(url, _isRetry){
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if(!res.ok){
-    if(res.status === 401 && !_isRetry){
-      try{
-        await acquireToken();
-      }catch(refreshErr){
-        throw new Error("Your session has expired. Please refresh the page and sign in again.");
-      }
-      return graphGet(url, true);
-    }
-    if(res.status === 401){
-      throw new Error("Your session has expired. Please refresh the page and sign in again.");
-    }
-    const body = await res.text();
-    throw new Error(`Graph error ${res.status}: ${body}`);
+// Both helpers now run through the shared core (token refresh after expiry,
+// wait-and-retry when SharePoint is busy, session banner). Error wording is
+// kept exactly as before: "Graph error 404: {...}" / "Graph POST error 400: {...}".
+async function graphGet(url){
+  try{ return await CG.graph("GET", url); }
+  catch(e){
+    if(e.status === 401 && !e.body) throw e;   // session expired - plain message from the core
+    throw new Error(`Graph error ${e.status}: ${e.body || e.message}`);
   }
-  return res.json();
 }
 
-async function graphWrite(method, url, body, _isRetry){
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if(!res.ok){
-    if(res.status === 401 && !_isRetry){
-      try{
-        await acquireToken();
-      }catch(refreshErr){
-        throw new Error("Your session has expired. Please refresh the page and sign in again.");
-      }
-      return graphWrite(method, url, body, true);
-    }
-    if(res.status === 401){
-      throw new Error("Your session has expired. Please refresh the page and sign in again.");
-    }
-    const errBody = await res.text();
-    throw new Error(`Graph ${method} error ${res.status}: ${errBody}`);
+async function graphWrite(method, url, body){
+  try{ return await CG.graph(method, url, body || undefined); }
+  catch(e){
+    if(e.status === 401 && !e.body) throw e;
+    throw new Error(`Graph ${method} error ${e.status}: ${e.body || e.message}`);
   }
-  if(res.status === 204) return null;
-  return res.json().catch(()=>null);
 }
 
 function listItemsUrl(listName){
@@ -796,7 +768,7 @@ async function startApp(){
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("app").style.display = "block";
 
-  const account = msalInstance.getActiveAccount();
+  const account = CG.auth.account();
   document.getElementById("userChip").textContent = account ? (account.name || account.username) : "Signed in";
 
   try{
@@ -2617,6 +2589,7 @@ async function getProposalDocsDriveId(){
 
 async function uploadProposalDocument(file, proposalNumber){
   const driveId = await getProposalDocsDriveId();
+  await acquireToken();   // fresh token for the direct upload calls below
   const safeFileName = `${proposalNumber} - ${file.name}`.replace(/[#%*:<>?/\\{|}]/g, "-");
 
   if(file.size <= 4 * 1024 * 1024){
@@ -2696,6 +2669,7 @@ async function getCsaDocsDriveId(){
 
 async function uploadCsaDocument(file, csaNumber){
   const driveId = await getCsaDocsDriveId();
+  await acquireToken();   // fresh token for the direct upload calls below
   const safeFileName = `${csaNumber} - ${file.name}`.replace(/[#%*:<>?/\\{|}]/g, "-");
 
   if(file.size <= 4 * 1024 * 1024){
@@ -3586,13 +3560,13 @@ const BHC_ENTITY = {
   name: "BRIAN HART CONSULTING LIMITED",
   shortName: "BHC",
   address: "PO Box 190, Waigani, NCD.",
-  logoUrl: "https://marcusappdev.github.io/CG_Training/csa-hub/assets/Brian_Hart_Logo_Large.png",
+  logoUrl: new URL("assets/Brian_Hart_Logo_Large.png", location.href).href,
   contactLine: "Please do not hesitate to contact me (bcoombs@concept.com.pg) or Ms Pole Alova (palova@concept.com.pg) via email or by phoning 323 1920, if you have any feedback or questions."
 };
 // Header/footer branding for generated Word documents — BHC logo top-left,
 // Concept Consulting logo top-right, Korn Ferry logo centered in the footer.
-const CONCEPT_LOGO_URL = "https://marcusappdev.github.io/CG_Training/csa-hub/assets/Concept_Consulting_Logo.jpg";
-const KORNFERRY_LOGO_URL = "https://marcusappdev.github.io/CG_Training/csa-hub/assets/KornFerry_%20Logo.png";
+const CONCEPT_LOGO_URL = new URL("assets/Concept_Consulting_Logo.jpg", location.href).href;
+const KORNFERRY_LOGO_URL = new URL("assets/KornFerry_%20Logo.png", location.href).href;
 
 function getClientAbbreviation(title){
   if(!title) return "the Client";

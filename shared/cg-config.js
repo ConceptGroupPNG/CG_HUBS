@@ -34,7 +34,7 @@ const CG_APPS = [
     site: "/sites/PSP_Test",       clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
 
   { key: "csa",        folder: "csa/",        name: "CSA HUB",             unit: "Brian Hart Consulting",
-    site: "/sites/Concept_CSA",    clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
+    site: "/sites/Concept_CSA",    clientId: "06c6cde1-c805-4bdf-94c8-b36213b557e9", status: "preview" },
 
   { key: "sla",        folder: "sla/",        name: "SLA HUB",             unit: "Internal & Client Support",
     site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "preview" },
