@@ -31,7 +31,7 @@ const CG_APPS = [
     site: "/sites/training.admin", clientId: "ebbfa226-c073-4421-a02a-606f8341e4ae", status: "preview" },
 
   { key: "psp",        folder: "psp/",        name: "PSP HUB",             unit: "Payroll Services PNG",
-    site: "/sites/PSP_Test",       clientId: "d5aef866-584f-4226-ab11-c941888fb519", status: "off" },
+    site: "/sites/PSP_Test",       clientId: "29475230-5116-41fa-bca1-3c49c2e1dd95", status: "preview" },
 
   { key: "csa",        folder: "csa/",        name: "CSA HUB",             unit: "Brian Hart Consulting",
     site: "/sites/Concept_CSA",    clientId: "06c6cde1-c805-4bdf-94c8-b36213b557e9", status: "preview" },
