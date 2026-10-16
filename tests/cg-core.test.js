@@ -208,3 +208,20 @@ test("save() with an id updates; other errors are not swallowed", async () => {
   assert.equal(calls.fetches[1].opts.method, "PATCH");
   await assert.rejects(CG.sp.save("/sites/PSP_Test", "L", "5", { Title: "U" }), e => CG.sp.isForbidden(e));
 });
+
+/* ---------------- added in 1.1.0 ---------------- */
+test("sign-in is forgotten when the browser closes, unless the app asks to stay signed in", async () => {
+  const a = load(); await a.CG.auth.init({ app: "time" });
+  assert.equal(a.calls.config.cache.cacheLocation, "sessionStorage");
+  const b = load(); await b.CG.auth.init({ app: "mobile", cacheLocation: "localStorage" });
+  assert.equal(b.calls.config.cache.cacheLocation, "localStorage");
+  assert.equal(b.calls.config.auth.clientId, "ec5454e0-c794-419b-9ec9-464e9917ef3c");
+});
+
+test("if the token can't be renewed quietly, Graph calls give the plain 'session expired' message", async () => {
+  let n = 0;
+  const { CG, calls } = load({ silent: () => { if (++n > 1) { const e = new Error("AADSTS700082: refresh token expired"); e.errorCode = "interaction_required"; throw e; } return { accessToken: "t" }; } });
+  await CG.auth.init({ app: "psp" });
+  await assert.rejects(CG.graph("GET", "/me"), e => e.status === 401 && /session has expired/.test(e.message) && !/AADSTS/.test(e.message));
+  assert.equal(calls.fetches.length, 0);
+});

@@ -92,6 +92,7 @@
      Sign-in (MSAL Browser 3.x, PKCE, full-page redirects only)
      ----------------------------------------------------------------- */
   let msalApp = null, scopes = DEFAULT_SCOPES, appKey = "", keepAliveTimer = null;
+  let cacheLocation = "sessionStorage";
   const markerKey = () => `cg.authRedirectAt.${appKey}`;
   const markRedirect = () => store.set(markerKey(), String(Date.now()));
   const clearRedirect = () => store.del(markerKey());
@@ -143,7 +144,9 @@
           jwks_uri: `${LOGIN_HOST}/${tenantId}/discovery/v2.0/keys`
         })
       },
-      cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
+      // sessionStorage (default): signed out when the browser closes.
+      // Phone apps pass cacheLocation: "localStorage" to stay signed in.
+      cache: { cacheLocation, storeAuthStateInCookie: false }
     };
   }
 
@@ -163,6 +166,8 @@
   CG.auth = {
     /* Call once when the page loads.
          await CG.auth.init({ app: "psp" })
+       Options: scopes, clientId (if not in cg-config.js), and
+       cacheLocation: "localStorage" for phone apps that should stay signed in.
        Returns the signed-in account, or null if the person needs to click
        Sign in (show your sign-in screen). Throws only with a message that
        can be shown on screen as it is (use CG.describeAuthError). */
@@ -172,6 +177,7 @@
       const clientId = opts.clientId || (app && app.clientId);
       if (!clientId) throw new Error(`CG.auth.init: no client ID for app "${appKey}" in cg-config.js`);
       if (opts.scopes) scopes = opts.scopes;
+      if (opts.cacheLocation === "localStorage") cacheLocation = "localStorage";
       if (CG.isAuthReturnInChildWindow()) return null;   // leave the response for the parent window
       if (!global.msal || !global.msal.PublicClientApplication) {
         throw new Error("Microsoft sign-in library (MSAL) didn't load - check the internet connection or a browser blocker, then refresh.");
@@ -289,9 +295,21 @@
   CG.graph = async function (method, url, body, headers) {
     const full = /^https?:/i.test(url) ? url : GRAPH + url;
     const isJson = body !== undefined && body !== null && !(global.Blob && body instanceof global.Blob);
+    // If the sign-in can't be renewed quietly, show the banner and a plain
+    // message - never Microsoft's technical error text.
+    const tokenOrExpired = async forceRefresh => {
+      try { return await CG.auth.token({ forceRefresh }); }
+      catch (e) {
+        console.warn("Silent token renewal failed.", e);
+        CG.showSessionExpired();
+        const err = new Error("Your session has expired. Please sign in again to continue.");
+        err.status = 401;
+        throw err;
+      }
+    };
     const send = async (forceRefresh = false) => fetch(full, {
       method,
-      headers: Object.assign({ Authorization: "Bearer " + await CG.auth.token({ forceRefresh }) },
+      headers: Object.assign({ Authorization: "Bearer " + await tokenOrExpired(forceRefresh) },
         isJson ? { "Content-Type": "application/json" } : {}, headers || {}),
       body: body === undefined || body === null ? undefined : (isJson ? JSON.stringify(body) : body)
     });
@@ -384,6 +402,6 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.0.0";
+  CG.VERSION = "1.1.0";
   global.CG = CG;
 })(typeof window !== "undefined" ? window : globalThis);
