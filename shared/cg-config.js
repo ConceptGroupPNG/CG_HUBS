@@ -20,6 +20,8 @@ const CG_TENANT = {
      "on"      - shown on the launcher for everyone
      "off"     - hidden from the launcher; its address shows "not available"
      "preview" - shown only to the emails in CG_PREVIEW (for testing)
+   device: "mobile" (optional) - the launcher marks the tile MOBILE, for
+     apps that are mainly used on a phone
    This only hides an app. It is NOT security - SharePoint permissions
    still decide who can read or change data.
 
@@ -43,10 +45,10 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "preview" },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
-    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview" },
+    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview", device: "mobile" },
 
   { key: "attendance", folder: "attendance/", name: "CG Time Attendance",  unit: "Clock in / out",
-    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "preview" }
+    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "preview", device: "mobile" }
 ];
 
 /* ---------------------------------------------------------------------
