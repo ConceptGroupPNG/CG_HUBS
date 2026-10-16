@@ -94,7 +94,7 @@ test("redirect URI is always the folder, never index.html", async () => {
   const { CG, calls } = load();
   await CG.auth.init({ app: "psp" });
   assert.equal(calls.config.auth.redirectUri, "https://conceptgrouppng.github.io/CG_HUBS/psp/");
-  assert.equal(calls.config.auth.clientId, "d5aef866-584f-4226-ab11-c941888fb519");
+  assert.equal(calls.config.auth.clientId, CG.app("psp").clientId);   // taken from cg-config.js
   assert.ok(calls.config.auth.authorityMetadata.includes("ea9e105c-2df6-47ef-a8e3-b4aa1d788423"));
 });
 
