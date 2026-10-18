@@ -94,7 +94,7 @@ test("Hub groups: only members of the app's group can use it", () => {
   const { CG } = load();
   const G = "3f2a9c1e-0000-4000-8000-000000000001";
   CG.app("psp").status = "on"; CG.app("psp").group = G.toUpperCase();   // IDs compared case-insensitively
-  CG.app("mobile").status = "on";                                       // no group: everyone
+  CG.app("mobile").status = "on"; CG.app("mobile").group = "";           // no group: everyone
   assert.equal(CG.appAllowed("psp", "a@concept.com.pg", [G]), true);
   assert.equal(CG.appAllowed("psp", "a@concept.com.pg", ["other-group"]), false);
   assert.equal(CG.appAccess("psp", "a@concept.com.pg", []).reason, "group");

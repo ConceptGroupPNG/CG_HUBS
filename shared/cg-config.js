@@ -24,7 +24,9 @@ const CG_TENANT = {
      apps that are mainly used on a phone
    group: "<Object ID>" (optional) - only members of this Microsoft 365
      security group can see and open the app. Leave it out to let every
-     Concept Group account use the app (e.g. the time-logging phone apps).
+     Concept Group account use the app. (Concept Time Mobile and CG Time
+     Attendance use "CG Mobile Apps" while they are being trialled; remove
+     their group to open them to all staff.)
    phone: "coming-soon" (optional) - on a phone, the app shows a
      "Mobile view coming soon" screen instead of the squeezed desktop
      layout (with a "Continue anyway" link). Remove it once the app has
@@ -54,10 +56,10 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "preview", group: "52a5230b-11d6-4e8a-b9c4-133410636660" /* CG HUBS – CG Time */, phone: "coming-soon" },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
-    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview", device: "mobile" },
+    site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, device: "mobile" },
 
   { key: "attendance", folder: "attendance/", name: "CG Time Attendance",  unit: "Clock in / out",
-    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "preview", device: "mobile" }
+    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "preview", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, device: "mobile" }
 ];
 
 /* ---------------------------------------------------------------------
