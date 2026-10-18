@@ -691,7 +691,7 @@ async function initAuth(){
     return;
   }
   if(!CG.appAllowed("time", CG.auth.email())){
-    showLoginError(new Error("CG Time isn't available here yet. Please keep using your usual CG Time link."));
+    showLoginError(new Error(CG.appDeniedMessage("time", CG.auth.email())));
     return;
   }
   try{

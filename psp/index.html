@@ -8377,7 +8377,7 @@ async function initApp() {
   }
   if (!CG.appAllowed('psp', CG.auth.email())) {
     document.getElementById('auth-screen').style.display = 'flex';
-    showAuthError("PSP HUB isn't available here yet. Please keep using your usual link.");
+    showAuthError(CG.appDeniedMessage('psp', CG.auth.email()));
     return;
   }
   try {

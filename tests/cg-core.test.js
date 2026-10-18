@@ -80,6 +80,7 @@ test("esc escapes HTML", () => {
 /* ---------------- app switches ---------------- */
 test("on / off / preview switches", () => {
   const { CG } = load();
+  CG.apps().forEach(a => { a.group = ""; });   // this test is about the switches only (groups have their own test)
   CG.app("psp").status = "on"; CG.app("csa").status = "preview"; CG.app("sla").status = "off";
   assert.equal(CG.appAllowed("psp", "anyone@concept.com.pg"), true);
   assert.equal(CG.appAllowed("csa", "MSCULLY@concept.com.pg"), true);   // case-insensitive
@@ -87,6 +88,28 @@ test("on / off / preview switches", () => {
   assert.equal(CG.appAllowed("sla", "mscully@concept.com.pg"), false);
   assert.equal(CG.appState("nonexistent"), "off");
   assert.equal(CG.apps().length, 7);
+});
+
+test("Hub groups: only members of the app's group can use it", () => {
+  const { CG } = load();
+  const G = "3f2a9c1e-0000-4000-8000-000000000001";
+  CG.app("psp").status = "on"; CG.app("psp").group = G.toUpperCase();   // IDs compared case-insensitively
+  CG.app("mobile").status = "on";                                       // no group: everyone
+  assert.equal(CG.appAllowed("psp", "a@concept.com.pg", [G]), true);
+  assert.equal(CG.appAllowed("psp", "a@concept.com.pg", ["other-group"]), false);
+  assert.equal(CG.appAccess("psp", "a@concept.com.pg", []).reason, "group");
+  assert.equal(CG.appAccess("psp", "a@concept.com.pg", null).reason, "groups-unknown");   // sign-in had no groups claim
+  assert.equal(CG.appAllowed("mobile", "a@concept.com.pg", null), true);
+  assert.match(CG.appDeniedMessage("psp", "a@concept.com.pg", []), /You don't have access to PSP HUB.*Marcus Scully/);
+  assert.match(CG.appDeniedMessage("psp", "a@concept.com.pg", null), /couldn't check your access/);
+  // Preview apps need BOTH the preview list and the group
+  CG.app("csa").status = "preview"; CG.app("csa").group = G;
+  assert.equal(CG.appAllowed("csa", "mscully@concept.com.pg", [G]), true);
+  assert.equal(CG.appAllowed("csa", "mscully@concept.com.pg", []), false);
+  assert.equal(CG.appAllowed("csa", "someone.else@concept.com.pg", [G]), false);
+  assert.match(CG.appDeniedMessage("csa", "someone.else@concept.com.pg", [G]), /isn't available here yet/);
+  // Not signed in: no group information
+  assert.equal(CG.auth.groups(), null);
 });
 
 /* ---------------- sign-in ---------------- */

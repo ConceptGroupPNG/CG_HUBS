@@ -1251,7 +1251,7 @@ async function init(){
     const account = await CG.auth.init({ app: "sla", scopes: graphScopes });
     if(!account){ return; } // stay on login screen
     if(!CG.appAllowed("sla", CG.auth.email())){
-      toast("SLA HUB isn't available here yet. Please keep using your usual SLA HUB link.", true);
+      toast(CG.appDeniedMessage("sla", CG.auth.email()), true);
       return;
     }
     currentAccount = account;

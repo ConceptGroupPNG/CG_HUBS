@@ -579,7 +579,7 @@
   function showUnavailable() {
     showSignedOut();
     signInBtn.hidden = true;
-    signinError.textContent = "CG Time Attendance isn't available here yet. Please keep using your usual Attendance link.";
+    signinError.textContent = CG.appDeniedMessage("attendance", CG.auth.email());
   }
 
   (async function boot() {

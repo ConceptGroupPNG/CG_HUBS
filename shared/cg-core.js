@@ -77,15 +77,50 @@
     const v = String((CG.app(key) || {}).status || "off").trim().toLowerCase();
     return v === "on" || v === "preview" ? v : "off";
   };
-  // Can this email see / use the app?  (Hides an app - it is NOT security:
-  // SharePoint permissions still decide who can read or change data.)
-  CG.appAllowed = (key, email) => {
+  /* Can this person use the app?
+       1. status "off"     -> nobody
+          status "preview" -> only the emails in CG_PREVIEW
+          status "on"      -> everyone, subject to 2.
+       2. If the app has a `group` (a Microsoft 365 security group's
+          Object ID) the person must also be a member of it. Membership
+          comes from the "groups" claim in their Microsoft sign-in, which
+          is switched on per app registration in Entra (Token
+          configuration -> Add groups claim -> Security groups).
+          If the sign-in carries no group information, access is refused
+          with a clear message rather than guessed.
+     SharePoint permissions still decide what data a person can read or
+     change; this decides which Hubs they can open.
+     Returns { ok: true } or { ok: false, reason: "off" | "preview" | "group" | "groups-unknown" }. */
+  CG.appAccess = (key, email, groups) => {
+    const app = CG.app(key);
     const st = CG.appState(key);
-    if (st === "on") return true;
-    if (st === "off") return false;
-    const me = String(email || "").trim().toLowerCase();
-    const list = typeof CG_PREVIEW !== "undefined" ? CG_PREVIEW : [];
-    return !!me && list.some(e => String(e).trim().toLowerCase() === me);
+    if (st === "off") return { ok: false, reason: "off" };
+    if (st === "preview") {
+      const me = String(email || "").trim().toLowerCase();
+      const list = typeof CG_PREVIEW !== "undefined" ? CG_PREVIEW : [];
+      if (!me || !list.some(e => String(e).trim().toLowerCase() === me)) return { ok: false, reason: "preview" };
+    }
+    const need = String((app && app.group) || "").trim().toLowerCase();
+    if (!need) return { ok: true };
+    const mine = groups === undefined ? CG.auth.groups() : groups;
+    if (!Array.isArray(mine)) return { ok: false, reason: "groups-unknown" };
+    return mine.some(g => String(g).toLowerCase() === need) ? { ok: true } : { ok: false, reason: "group" };
+  };
+  CG.appAllowed = (key, email, groups) => CG.appAccess(key, email, groups).ok;
+
+  // The message to show when CG.appAllowed() says no.
+  CG.appDeniedMessage = (key, email, groups) => {
+    const app = CG.app(key) || { name: "This app" };
+    const who = typeof CG_ACCESS_CONTACT !== "undefined" ? CG_ACCESS_CONTACT : "your administrator";
+    switch (CG.appAccess(key, email, groups).reason) {
+      case "group":
+        return `You don't have access to ${app.name}. If you need it, please ask ${who} to add you.`;
+      case "groups-unknown":
+        return `${app.name} couldn't check your access - your Microsoft sign-in didn't include your group memberships. ` +
+               `Please send a screenshot of this message to ${who}.`;
+      default:
+        return `${app.name} isn't available here yet. Please keep using your usual link.`;
+    }
   };
 
   /* -----------------------------------------------------------------
@@ -273,6 +308,13 @@
     },
 
     account: () => (msalApp ? msalApp.getActiveAccount() : null),
+    // Group Object IDs from the sign-in ("groups" claim), lower-case, or
+    // null if the sign-in didn't include them (claim not switched on for
+    // this app registration, or the person is in more than 200 groups).
+    groups: () => {
+      const claims = (CG.auth.account() || {}).idTokenClaims || {};
+      return Array.isArray(claims.groups) ? claims.groups.map(g => String(g).toLowerCase()) : null;
+    },
     email: () => String((CG.auth.account() || {}).username || "").toLowerCase(),
 
     /* interactive:false (default) never leaves the page - it throws.
@@ -496,7 +538,7 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.4.1";
+  CG.VERSION = "1.5.0";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {

@@ -648,7 +648,7 @@ async function initAuth(){
   }
   if(!CG.appAllowed("csa", CG.auth.email())){
     document.getElementById("loginScreen").style.display = "flex";
-    alert("CSA HUB isn't available here yet. Please keep using your usual CSA HUB link.");
+    alert(CG.appDeniedMessage("csa", CG.auth.email()));
     return;
   }
   await acquireToken();
