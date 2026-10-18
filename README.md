@@ -15,8 +15,12 @@ The web apps used across Concept Group, served from
 | `attendance/` | CG Time Attendance | Phone clock in / out |
 | `shared/` | Shared core library, central settings (`cg-config.js`), shared styles and logos | — |
 
-Apps are brought across from the old `marcusappdev/CG_Training` repository one at a
-time, then switched on for everyone on a single switch-over day.
+All apps were brought across from the old `marcusappdev/CG_Training` repository and
+switched on for everyone on 18 October 2026. The old addresses now forward here.
+
+Who sees which Hub is decided by `status` and `group` in `shared/cg-config.js`: each
+business Hub requires membership of its "CG HUBS – …" Microsoft 365 security group,
+and the two phone apps require "CG Mobile Apps" while in trial.
 
 ## How changes are made
 
