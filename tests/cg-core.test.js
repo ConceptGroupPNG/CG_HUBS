@@ -80,6 +80,7 @@ test("esc escapes HTML", () => {
 /* ---------------- app switches ---------------- */
 test("on / off / preview switches", () => {
   const { CG } = load();
+  CG.apps().forEach(a => { a.group = ""; });   // this test is about the switches only (groups have their own test)
   CG.app("psp").status = "on"; CG.app("csa").status = "preview"; CG.app("sla").status = "off";
   assert.equal(CG.appAllowed("psp", "anyone@concept.com.pg"), true);
   assert.equal(CG.appAllowed("csa", "MSCULLY@concept.com.pg"), true);   // case-insensitive

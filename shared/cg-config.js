@@ -39,19 +39,19 @@ const CG_TENANT = {
    --------------------------------------------------------------------- */
 const CG_APPS = [
   { key: "training",   folder: "training/",   name: "CG Training HUB",     unit: "Concept Training Services",
-    site: "/sites/training.admin", clientId: "ebbfa226-c073-4421-a02a-606f8341e4ae", status: "preview", group: "", phone: "coming-soon" },
+    site: "/sites/training.admin", clientId: "ebbfa226-c073-4421-a02a-606f8341e4ae", status: "preview", group: "62168841-8dd9-49f6-b19d-d05f3c5933ab" /* CG HUBS – Training */, phone: "coming-soon" },
 
   { key: "psp",        folder: "psp/",        name: "PSP HUB",             unit: "Payroll Services PNG",
-    site: "/sites/PSP_Test",       clientId: "29475230-5116-41fa-bca1-3c49c2e1dd95", status: "preview", group: "", phone: "coming-soon" },
+    site: "/sites/PSP_Test",       clientId: "29475230-5116-41fa-bca1-3c49c2e1dd95", status: "preview", group: "2896ef88-bd01-4f15-8b61-1f5f40af44a6" /* CG HUBS – PSP */, phone: "coming-soon" },
 
   { key: "csa",        folder: "csa/",        name: "CSA HUB",             unit: "Brian Hart Consulting",
-    site: "/sites/Concept_CSA",    clientId: "06c6cde1-c805-4bdf-94c8-b36213b557e9", status: "preview", group: "", phone: "coming-soon" },
+    site: "/sites/Concept_CSA",    clientId: "06c6cde1-c805-4bdf-94c8-b36213b557e9", status: "preview", group: "274cdcba-c3f2-4d8d-aaee-815d42010a16" /* CG HUBS – CSA */, phone: "coming-soon" },
 
   { key: "sla",        folder: "sla/",        name: "SLA HUB",             unit: "Internal & Client Support",
-    site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "preview", group: "" },
+    site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "preview", group: "692052ae-b624-44c9-9a19-8b76376a0c38" /* CG HUBS – SLA */ },
 
   { key: "time",       folder: "time/",       name: "CG Time",             unit: "Time, attendance & payroll",
-    site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "preview", group: "", phone: "coming-soon" },
+    site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "preview", group: "52a5230b-11d6-4e8a-b9c4-133410636660" /* CG HUBS – CG Time */, phone: "coming-soon" },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
     site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "preview", device: "mobile" },
