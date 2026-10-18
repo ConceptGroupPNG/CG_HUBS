@@ -575,7 +575,7 @@
   function showUnavailable() {
     showSignedOut();
     signInBtn.hidden = true;
-    signinError.textContent = "Concept Time Mobile isn't available here yet. Please keep using your usual Concept Time link.";
+    signinError.textContent = CG.appDeniedMessage("mobile", CG.auth.email());
   }
 
   (async function boot() {

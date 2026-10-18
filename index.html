@@ -125,12 +125,15 @@
     document.getElementById("signOut").onclick = () => CG.auth.signOut();
 
     const apps = CG.apps().filter(a => CG.appAllowed(a.key, email));
+    const unknown = CG.apps().some(a => CG.appAccess(a.key, email).reason === "groups-unknown");
+    const who = typeof CG_ACCESS_CONTACT !== "undefined" ? CG_ACCESS_CONTACT : "your administrator";
     const hello = `<h1>Good ${greeting()}, ${esc(firstName(account))}</h1>`;
+    const note = unknown ? `<p class="sub" style="color:#B03030">Some Hubs couldn't check your access - your Microsoft sign-in didn't include your group memberships. Please send a screenshot of this page to ${esc(who)}.</p>` : "";
     if (!apps.length) {
-      main.innerHTML = hello + `<p class="sub">No Hubs are available to you here yet. Please continue to use your usual Hub links.</p>`;
+      main.innerHTML = hello + note + `<p class="sub">No Hubs are available to you yet. If you need one, please ask ${esc(who)}.</p>`;
       return;
     }
-    main.innerHTML = hello + `<p class="sub">Choose a Hub to open.</p>
+    main.innerHTML = hello + note + `<p class="sub">Choose a Hub to open.</p>
       <div class="grid">${apps.map(a => `
         <a class="tile${a.device === "mobile" ? " is-mobile" : ""}" href="${esc(CG.appUrl(a.key))}">
           <div class="name">${esc(a.name)}${CG.appState(a.key) === "preview" ? '<span class="pv" title="Preview - only listed testers can see this">Preview</span>' : ""}</div>

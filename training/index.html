@@ -1149,7 +1149,7 @@ window.addEventListener('load', async()=>{
   }
   if(!account) return;   // not signed in - login screen already visible
   if(!CG.appAllowed('training', CG.auth.email())){
-    document.getElementById('login-err').textContent = "CG Training HUB isn't available here yet. Please keep using your usual link.";
+    document.getElementById('login-err').textContent = CG.appDeniedMessage('training', CG.auth.email());
     return;
   }
   setUserFromAccount(account);
