@@ -136,7 +136,7 @@
     main.innerHTML = hello + note + `<p class="sub">Choose a Hub to open.</p>
       <div class="grid">${apps.map(a => `
         <a class="tile${a.device === "mobile" ? " is-mobile" : ""}" href="${esc(CG.appUrl(a.key))}">
-          <div class="name">${esc(a.name)}${CG.appState(a.key) === "preview" ? '<span class="pv" title="Preview - only listed testers can see this">Preview</span>' : ""}</div>
+          <div class="name">${esc(a.name)}${CG.appState(a.key) === "preview" || a.badge === "preview" ? '<span class="pv" title="Preview - still being trialled">Preview</span>' : ""}</div>
           <div class="unit">${esc(a.unit)}</div>
           <div class="open">Open →</div>
           ${a.device === "mobile" ? '<div class="device" title="Mainly used on a phone">Mobile</div>' : ""}
