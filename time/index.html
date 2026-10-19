@@ -881,7 +881,9 @@ async function graphDeleteItem(listName, itemId){
 }
 
 function siteIdForList(listName){
-  return TIME_SITE_LISTS.has(listName) ? timeSiteId : siteId;
+  if(TIME_SITE_LISTS.has(listName)) return timeSiteId;
+  if(!siteId) throw new Error(`The ${listName} list is on the Concept_CSA site, which your account doesn't have access to.`);
+  return siteId;
 }
 
 // Paginated fetch of all items (with $expand=fields) from a SharePoint list
@@ -896,9 +898,18 @@ async function fetchAllListItems(listName, extraQuery=""){
   return items;
 }
 
+// The Concept_CSA site is no longer needed to open CG Time (everything
+// it reads lives on CG_Time - see TIME_SITE_LISTS). Not everyone who uses
+// CG Time has access to Concept_CSA, so a refusal here must not stop the
+// app from opening: it is noted and the app carries on.
 async function resolveSiteId(){
-  const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${SITE_HOST}:${SITE_PATH}`);
-  siteId = data.id;
+  try{
+    const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${SITE_HOST}:${SITE_PATH}`);
+    siteId = data.id;
+  }catch(err){
+    siteId = null;
+    console.warn("Concept_CSA site not available to this account - not needed to open CG Time, carrying on.", err);
+  }
 }
 async function resolveTimeSiteId(){
   const data = await graphGet(`https://graph.microsoft.com/v1.0/sites/${TIME_SITE_HOST}:${TIME_SITE_PATH}`);
