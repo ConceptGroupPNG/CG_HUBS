@@ -927,6 +927,15 @@
   /* Clients list: click a row to open the client */
   #cl-tbody tr.cl-row { cursor:pointer; }
   #cl-tbody tr.cl-row:hover td { background:var(--teal-light, #e6f7f3); }
+  /* Client documents drop zone */
+  .doc-drop { border:2px dashed var(--grey-300, #cbd5e1); border-radius:8px; padding:16px; text-align:center; color:var(--grey-600);
+              font-size:12.5px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px; background:white; }
+  .doc-drop:hover, .doc-drop.over, .doc-drop:focus { border-color:var(--teal); background:var(--teal-light, #e6f7f3); outline:none; }
+  .doc-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border:1px solid var(--grey-200); border-radius:6px; background:white; margin-bottom:6px; font-size:12.5px; }
+  .doc-row a { color:var(--navy); font-weight:600; text-decoration:none; word-break:break-word; }
+  .doc-row a:hover { text-decoration:underline; }
+  .doc-type { font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
+  .doc-meta { color:var(--grey-500); font-size:11px; white-space:nowrap; margin-left:auto; }
   /* Client tabs: clickable when editing an existing client */
   .wiz-step.wiz-tab-clickable { cursor:pointer; }
   .wiz-step.wiz-tab-clickable:hover { filter:brightness(0.95); }
@@ -2177,6 +2186,29 @@
                   <input type="text" id="wiz-country" placeholder="Papua New Guinea" value="Papua New Guinea">
                 </div>
               </div>
+            </div>
+
+            <!-- Section: Client Documents (stored in the PSP_Client_Documents library, one folder per client) -->
+            <div style="background:var(--grey-50);border:1px solid var(--grey-200);border-radius:8px;padding:12px 14px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+                <div style="font-size:10px;font-weight:700;color:var(--grey-500);text-transform:uppercase;letter-spacing:0.07em;">
+                  <i class="ti ti-file-description" style="font-size:12px;"></i> Documents <span style="font-weight:400;font-size:10px;text-transform:none;letter-spacing:0;">(contracts, SLAs, price agreements, correspondence)</span>
+                </div>
+                <label style="font-size:11px;display:flex;align-items:center;gap:8px;margin:0;">Document type
+                  <select id="wiz-doc-type" style="font-size:12px;padding:4px 8px;"></select>
+                </label>
+              </div>
+              <div id="wiz-doc-drop" class="doc-drop" tabindex="0" role="button"
+                   onclick="document.getElementById('wiz-doc-input').click()"
+                   onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
+                   ondragover="event.preventDefault();this.classList.add('over');"
+                   ondragleave="this.classList.remove('over');"
+                   ondrop="wizDocDrop(event)">
+                <i class="ti ti-cloud-upload" style="font-size:22px;"></i>
+                <div><strong>Drop files here</strong> or click to choose &mdash; they're saved with the type selected above</div>
+              </div>
+              <input type="file" id="wiz-doc-input" multiple style="display:none;" onchange="wizDocFiles(this.files); this.value='';">
+              <div id="wiz-doc-list" style="margin-top:10px;"></div>
             </div>
 
             <div style="display:flex;justify-content:space-between;gap:10px;">
@@ -8575,7 +8607,208 @@ function openClientWizard(id) {
     document.getElementById('wiz-region').value = '';
     document.getElementById('wiz-country').value = 'Papua New Guinea';
   }
+  wizDocsOpen();
   wizGoStep(1);
+}
+
+// ─────────────────────────────────────────────
+// CLIENT DOCUMENTS
+// Stored in the PSP_Client_Documents document library on the PSP site,
+// in one folder per client (named after the PSP client name), with a
+// "DocumentType" choice column. Existing client: files upload straight
+// away. New client: files are held until the client is first saved.
+// ─────────────────────────────────────────────
+const CLIENT_DOCS_LIBRARY = 'PSP_Client_Documents';
+const CLIENT_DOC_TYPES = ['Contract Agreement', 'SLA', 'Price Agreement', 'Correspondence', 'Other'];
+const DOC_SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;       // larger files use an upload session
+let clientDocsDriveId = null;
+let wizDocsPending = [];       // [{file, type}] for a client not saved yet
+let wizDocsWarnedNoType = false;
+const docEsc = CG.esc;   // makes file names safe to show on the page
+
+function clientDocsFolder(clientName) {
+  // SharePoint doesn't allow these characters in folder names
+  return String(clientName || '').replace(/["*:<>?\/\\|#%{}~&]/g, '-').replace(/[\s.]+$/, '').trim() || 'Unnamed client';
+}
+function docPath(clientName, fileName) {
+  return [clientDocsFolder(clientName), fileName].map(encodeURIComponent).join('/');
+}
+
+async function getClientDocsDriveId() {
+  if (clientDocsDriveId) return clientDocsDriveId;
+  const siteId = await getSiteId();
+  let listId;
+  try { listId = await getListId(CLIENT_DOCS_LIBRARY); }
+  catch (e) { throw new Error(`The "${CLIENT_DOCS_LIBRARY}" document library wasn't found on the PSP site.`); }
+  const d = await CG.graph('GET', `/sites/${siteId}/lists/${listId}/drive?$select=id`);
+  clientDocsDriveId = d.id;
+  return clientDocsDriveId;
+}
+
+function wizCurrentClientName() {
+  if (!wizClientId) return '';
+  const c = cache.clients.find(x => String(x.id) === String(wizClientId));
+  return c ? getClientName(c) : '';
+}
+
+// Called whenever the client form is opened
+function wizDocsOpen() {
+  wizDocsPending = [];
+  const sel = document.getElementById('wiz-doc-type');
+  if (sel && !sel.options.length) sel.innerHTML = CLIENT_DOC_TYPES.map(t => `<option>${t}</option>`).join('');
+  if (sel) sel.value = 'Contract Agreement';
+  wizDocsRender();
+}
+
+function wizDocDrop(ev) {
+  ev.preventDefault();
+  document.getElementById('wiz-doc-drop')?.classList.remove('over');
+  if (ev.dataTransfer?.files?.length) wizDocFiles(ev.dataTransfer.files);
+}
+
+async function wizDocFiles(fileList) {
+  const files = [...(fileList || [])].filter(f => f && f.size >= 0);
+  if (!files.length) return;
+  const type = document.getElementById('wiz-doc-type')?.value || 'Other';
+  if (!wizClientId) {
+    files.forEach(f => wizDocsPending.push({ file: f, type }));
+    wizDocsRender();
+    showToast(`${files.length} document${files.length > 1 ? 's' : ''} will be uploaded when you save the client`, 'default');
+    return;
+  }
+  const client = wizCurrentClientName();
+  const list = document.getElementById('wiz-doc-list');
+  for (let i = 0; i < files.length; i++) {
+    if (list) list.insertAdjacentHTML('afterbegin', `<div class="doc-row" id="doc-uploading-${i}"><i class="ti ti-loader-2 spin"></i> Uploading ${docEsc(files[i].name)}&hellip;</div>`);
+    try {
+      await uploadClientDocument(client, files[i], type);
+    } catch (e) {
+      showToast(`Couldn't upload ${files[i].name}: ${e.message}`, 'error');
+    }
+  }
+  wizDocsRender();
+}
+
+async function wizDocsUploadPending(client) {
+  const items = wizDocsPending.slice();
+  wizDocsPending = [];
+  for (const it of items) await uploadClientDocument(client, it.file, it.type);
+}
+
+async function uploadClientDocument(client, file, type) {
+  const driveId = await getClientDocsDriveId();
+  const safeName = file.name.replace(/["*:<>?\/\\|#%{}~&]/g, '-');
+  let item;
+  if (file.size <= DOC_SIMPLE_UPLOAD_MAX) {
+    item = await CG.graph('PUT', `/drives/${driveId}/root:/${docPath(client, safeName)}:/content?@microsoft.graph.conflictBehavior=rename`, file);
+  } else {
+    const session = await CG.graph('POST', `/drives/${driveId}/root:/${docPath(client, safeName)}:/createUploadSession`,
+      { item: { '@microsoft.graph.conflictBehavior': 'rename' } });
+    const chunk = 5 * 1024 * 1024;                     // a multiple of 320 KiB, as Microsoft requires
+    for (let start = 0; start < file.size; start += chunk) {
+      const end = Math.min(start + chunk, file.size);
+      const res = await fetch(session.uploadUrl, {      // the upload address carries its own permission
+        method: 'PUT',
+        headers: { 'Content-Range': `bytes ${start}-${end - 1}/${file.size}` },
+        body: file.slice(start, end)
+      });
+      if (!res.ok && res.status !== 202) throw new Error(`upload stopped (${res.status})`);
+      if (res.status === 200 || res.status === 201) item = await res.json();
+    }
+  }
+  if (item?.id) {
+    try {
+      await CG.graph('PATCH', `/drives/${driveId}/items/${item.id}/listItem/fields`, { DocumentType: type });
+    } catch (e) {
+      console.warn('Could not set DocumentType on the uploaded file.', e);
+      if (!wizDocsWarnedNoType) {
+        wizDocsWarnedNoType = true;
+        showToast(`Document uploaded, but its type couldn't be saved — please add a "DocumentType" column to the ${CLIENT_DOCS_LIBRARY} library.`, 'error');
+      }
+    }
+  }
+  return item;
+}
+
+async function listClientDocuments(client) {
+  const driveId = await getClientDocsDriveId();
+  try {
+    const res = await CG.graph('GET', `/drives/${driveId}/root:/${encodeURIComponent(clientDocsFolder(client))}:/children` +
+      `?$expand=listItem($expand=fields($select=DocumentType))&$top=200`);
+    return (res.value || []).filter(x => x.file);
+  } catch (e) {
+    if (e.status === 404) return [];                    // no folder yet = no documents yet
+    throw e;
+  }
+}
+
+async function deleteClientDocument(itemId, name) {
+  const ok = await pspConfirm(`Delete "${name}"? It will go to the SharePoint recycle bin for this site.`, 'Delete document');
+  if (!ok) return;
+  try {
+    const driveId = await getClientDocsDriveId();
+    await CG.graph('DELETE', `/drives/${driveId}/items/${itemId}`);
+    showToast(`Deleted ${name}`, 'success');
+  } catch (e) {
+    showToast(`Couldn't delete ${name}: ${e.message}`, 'error');
+  }
+  wizDocsRender();
+}
+
+function removePendingDoc(i) {
+  wizDocsPending.splice(i, 1);
+  wizDocsRender();
+}
+
+function docSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+}
+function docIcon(name) {
+  return 'ti-file-text';   // PSP HUB embeds only the icons it uses; one document icon for every file type
+}
+function docDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+
+let wizDocsRenderSeq = 0;
+async function wizDocsRender() {
+  const box = document.getElementById('wiz-doc-list');
+  if (!box) return;
+  const seq = ++wizDocsRenderSeq;
+  const pendingHtml = wizDocsPending.map((p, i) => `
+    <div class="doc-row">
+      <i class="ti ${docIcon(p.file.name)}" style="font-size:18px;color:var(--grey-500);"></i>
+      <span style="font-weight:600;color:var(--navy);word-break:break-word;">${docEsc(p.file.name)}</span>
+      <span class="doc-type">${docEsc(p.type)}</span>
+      <span class="doc-meta">${docSize(p.file.size)} &middot; uploads when you save</span>
+      <button class="btn btn-xs btn-outline" onclick="removePendingDoc(${i})" title="Remove"><i class="ti ti-x"></i></button>
+    </div>`).join('');
+  if (!wizClientId) {
+    box.innerHTML = pendingHtml || '<div style="font-size:12px;color:var(--grey-400);">No documents yet.</div>';
+    return;
+  }
+  box.innerHTML = '<div style="font-size:12px;color:var(--grey-400);"><i class="ti ti-loader-2 spin"></i> Loading documents&hellip;</div>';
+  try {
+    const docs = await listClientDocuments(wizCurrentClientName());
+    if (seq !== wizDocsRenderSeq) return;               // a newer refresh has started
+    docs.sort((a, b) => String(b.lastModifiedDateTime).localeCompare(String(a.lastModifiedDateTime)));
+    box.innerHTML = docs.length ? docs.map(d => {
+      const type = d.listItem?.fields?.DocumentType || '';
+      const who = d.createdBy?.user?.displayName || '';
+      return `
+      <div class="doc-row">
+        <i class="ti ${docIcon(d.name)}" style="font-size:18px;color:var(--grey-500);"></i>
+        <a href="${docEsc(d.webUrl)}" target="_blank" rel="noopener" title="Open">${docEsc(d.name)}</a>
+        ${type ? `<span class="doc-type">${docEsc(type)}</span>` : ''}
+        <span class="doc-meta">${docDate(d.createdDateTime || d.lastModifiedDateTime)}${who ? ' &middot; ' + docEsc(who) : ''} &middot; ${docSize(d.size || 0)}</span>
+        <button class="btn btn-xs btn-outline" style="color:var(--red);border-color:#fca5a5;" onclick="deleteClientDocument('${d.id}', ${docEsc(JSON.stringify(d.name))})" title="Delete"><i class="ti ti-trash"></i></button>
+      </div>`;
+    }).join('') : '<div style="font-size:12px;color:var(--grey-400);">No documents yet.</div>';
+  } catch (e) {
+    if (seq !== wizDocsRenderSeq) return;
+    box.innerHTML = `<div style="font-size:12px;color:var(--red);">Couldn't load documents: ${docEsc(e.message)}</div>`;
+  }
 }
 
 function closeClientWizard() {
@@ -9233,6 +9466,13 @@ async function wizSaveClient() {
       }
 
       // Activities are managed live in Step 3 — no batch clone needed here
+    }
+
+    // New client: documents added before the first Save are uploaded now
+    // that the client exists. A failed upload doesn't undo the client save.
+    if (wizDocsPending.length) {
+      try { await wizDocsUploadPending(client); }
+      catch (e) { showToast('Client saved, but a document upload failed: ' + e.message, 'error'); }
     }
 
     showToast(`Client "${client}" saved successfully`, 'success');
