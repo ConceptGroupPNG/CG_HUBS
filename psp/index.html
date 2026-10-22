@@ -924,6 +924,12 @@
   .group-card-header .progress-pill.all-done {
     background: var(--teal);
   }
+  /* Clients list: click a row to open the client */
+  #cl-tbody tr.cl-row { cursor:pointer; }
+  #cl-tbody tr.cl-row:hover td { background:var(--teal-light, #e6f7f3); }
+  /* Client tabs: clickable when editing an existing client */
+  .wiz-step.wiz-tab-clickable { cursor:pointer; }
+  .wiz-step.wiz-tab-clickable:hover { filter:brightness(0.95); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
@@ -2049,7 +2055,7 @@
                 <th class="sort-th" data-table="clients" data-key="currency" onclick="setSort('clients','currency')" style="cursor:pointer;user-select:none;">Currency <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th class="sort-th" data-table="clients" data-key="taxtype" onclick="setSort('clients','taxtype')" style="cursor:pointer;user-select:none;">Tax Type <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
                 <th class="sort-th" data-table="clients" data-key="status" onclick="setSort('clients','status')" style="cursor:pointer;user-select:none;">Status <span class="sort-icon" style="font-size:9px;opacity:0.3;">⇅</span></th>
-                <th style="width:140px;">Actions</th>
+                <th style="width:120px;">Status Action</th>
               </tr></thead>
               <tbody id="cl-tbody"></tbody>
             </table>
@@ -2060,13 +2066,13 @@
         <div id="clients-wizard-view" style="display:none;">
           <!-- Wizard Steps Header -->
           <div style="display:flex;align-items:center;gap:0;margin-bottom:28px;overflow-x:auto;padding-bottom:4px;">
-            <div class="wiz-step active" id="wiz-step-1" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--teal);color:white;border-radius:10px 0 0 10px;font-size:13px;font-weight:700;white-space:nowrap;">
+            <div class="wiz-step active" id="wiz-step-1" onclick="wizTabClick(1)" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--teal);color:white;border-radius:10px 0 0 10px;font-size:13px;font-weight:700;white-space:nowrap;">
               <span style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">1</span> Client Details
             </div>
-            <div class="wiz-step" id="wiz-step-2" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);font-size:13px;font-weight:700;white-space:nowrap;">
+            <div class="wiz-step" id="wiz-step-2" onclick="wizTabClick(2)" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);font-size:13px;font-weight:700;white-space:nowrap;">
               <span style="width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:11px;">2</span> Pay Groups & Price Book
             </div>
-            <div class="wiz-step" id="wiz-step-3" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);border-radius:0 10px 10px 0;font-size:13px;font-weight:700;white-space:nowrap;">
+            <div class="wiz-step" id="wiz-step-3" onclick="wizTabClick(3)" style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--grey-200);color:var(--grey-600);border-radius:0 10px 10px 0;font-size:13px;font-weight:700;white-space:nowrap;">
               <span style="width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:11px;">3</span> Activity Templates
             </div>
           </div>
@@ -8478,15 +8484,14 @@ function renderClientsList() {
     const pspName = c.PSPClient || c.ContactName || c.Title || '—';
     const invoiceName = c.ClientInvoiceName || '';
     const isActive = (c.ClientStatus || 'Active') === 'Active';
-    return `<tr>
+    return `<tr class="cl-row" onclick="openClientWizard('${c.id}')" title="Open ${pspName}">
       <td><strong style="color:var(--navy);">${pspName}</strong></td>
       <td style="color:var(--grey-600);font-size:12px;">${invoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
       <td>${c.Currency||'PGK'}</td>
       <td style="font-size:12px;">${c.TaxType||'—'}</td>
       <td><span style="font-weight:700;color:${statusColor};">${c.ClientStatus||'Active'}</span></td>
       <td style="white-space:nowrap;">
-        <button class="btn btn-xs btn-outline" onclick="openClientWizard('${c.id}')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>
-        <button class="btn btn-xs" style="background:#eff6ff;color:#3b82f6;border:1.5px solid #93c5fd;" onclick="toggleClientStatus('${c.id}')" title="${isActive?'Deactivate':'Activate'}">
+        <button class="btn btn-xs" style="background:#eff6ff;color:#3b82f6;border:1.5px solid #93c5fd;" onclick="event.stopPropagation();toggleClientStatus('${c.id}')" title="${isActive?'Deactivate':'Activate'}">
           <i class="ti ti-${isActive?'toggle-right':'toggle-left'}"></i> ${isActive?'Deactivate':'Activate'}
         </button>
       </td>
@@ -8578,15 +8583,26 @@ function closeClientWizard() {
   document.getElementById('clients-wizard-view').style.display = 'none';
 }
 
+// Existing client: the three tabs can be clicked in any order (nothing is
+// lost switching tabs - Save saves all three). New client: a wizard,
+// 1 -> 2 -> 3 using the Next buttons, so the tabs are not clickable.
+function wizTabClick(n) {
+  if (!wizClientId) return;
+  wizGoStep(n);
+}
+
 function wizGoStep(n) {
+  const existing = !!wizClientId;
   [1,2,3].forEach(i => {
     const step = document.getElementById('wiz-step-' + i);
     const panel = document.getElementById('wiz-panel-' + i);
     const isActive = i === n;
-    const isDone = i < n;
+    const isDone = !existing && i < n;   // "done" shading only makes sense in the new-client wizard
     if (step) {
       step.style.background = isActive ? 'var(--teal)' : isDone ? '#065f46' : 'var(--grey-200)';
       step.style.color = (isActive || isDone) ? 'white' : 'var(--grey-600)';
+      step.classList.toggle('wiz-tab-clickable', existing && !isActive);
+      step.title = existing && !isActive ? 'Open this tab' : '';
     }
     if (panel) panel.style.display = isActive ? '' : 'none';
   });
