@@ -936,6 +936,16 @@
   .doc-row a:hover { text-decoration:underline; }
   .doc-type { font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
   .doc-meta { color:var(--grey-500); font-size:11px; white-space:nowrap; margin-left:auto; }
+  /* Client list: documents icon and its pop-up list */
+  .doc-chip { margin-left:8px; display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border-radius:999px; border:1px solid #93c5fd;
+              background:#eff6ff; color:#1d4ed8; font-size:11px; font-weight:700; cursor:pointer; vertical-align:middle; }
+  .doc-chip:hover { background:#dbeafe; }
+  #doc-pop { position:absolute; z-index:5000; background:white; border:1px solid var(--grey-200); border-radius:8px;
+             box-shadow:0 10px 30px rgba(0,0,0,.15); padding:8px; width:360px; max-height:320px; overflow:auto; font-size:12.5px; }
+  #doc-pop .doc-pop-title { font-size:10px; font-weight:700; color:var(--grey-500); text-transform:uppercase; letter-spacing:.07em; padding:2px 4px 6px; }
+  #doc-pop a { display:flex; align-items:center; gap:8px; padding:6px; border-radius:6px; color:var(--navy); text-decoration:none; }
+  #doc-pop a:hover { background:var(--grey-50); }
+  #doc-pop a span.n { font-weight:600; word-break:break-word; flex:1; }
   /* Client tabs: clickable when editing an existing client */
   .wiz-step.wiz-tab-clickable { cursor:pointer; }
   .wiz-step.wiz-tab-clickable:hover { filter:brightness(0.95); }
@@ -8449,6 +8459,7 @@ async function loadClientsPage() {
   cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']); // always fresh — was only ever fetched once before, so Refresh never updated it
   populateClientFilter('cl-filter-client', cache.clients.map(c => ({PSPClient: getClientName(c)})));
   renderClientsList();
+  loadClientDocCounts();   // in the background: adds the document icons when ready
 
   // If the wizard is open (e.g. Refresh was clicked mid-edit), re-render
   // whichever step is actually showing so it reflects the fresh data too,
@@ -8517,7 +8528,7 @@ function renderClientsList() {
     const invoiceName = c.ClientInvoiceName || '';
     const isActive = (c.ClientStatus || 'Active') === 'Active';
     return `<tr class="cl-row" onclick="openClientWizard('${c.id}')" title="Open ${pspName}">
-      <td><strong style="color:var(--navy);">${pspName}</strong></td>
+      <td><strong style="color:var(--navy);">${pspName}</strong>${clientDocsChip(c)}</td>
       <td style="color:var(--grey-600);font-size:12px;">${invoiceName || '<em style="color:var(--grey-400);">Same as PSP Name</em>'}</td>
       <td>${c.Currency||'PGK'}</td>
       <td style="font-size:12px;">${c.TaxType||'—'}</td>
@@ -8811,7 +8822,79 @@ async function wizDocsRender() {
   }
 }
 
+// ── Documents on the client list ──
+// One request lists the client folders in PSP_Client_Documents with how
+// many files each holds; a client with documents gets an icon next to its
+// name, which opens a small list of them (each opens in a new tab).
+let clientDocCounts = {};   // folder name -> number of documents
+
+async function loadClientDocCounts() {
+  try {
+    const driveId = await getClientDocsDriveId();
+    const counts = {};
+    let url = `/drives/${driveId}/root/children?$select=name,folder&$top=999`;
+    while (url) {
+      const page = await CG.graph('GET', url);
+      (page.value || []).forEach(f => { if (f.folder && f.folder.childCount > 0) counts[f.name] = f.folder.childCount; });
+      url = page['@odata.nextLink'] || null;
+    }
+    clientDocCounts = counts;
+    renderClientsList();
+  } catch (e) {
+    console.warn('Client document counts not available.', e);   // the list still works without the icons
+  }
+}
+
+function clientDocsChip(c) {
+  const n = clientDocCounts[clientDocsFolder(getClientName(c))] || 0;
+  if (!n) return '';
+  return `<span class="doc-chip" role="button" tabindex="0" title="Documents (${n}) - click to see them"
+    onclick="event.stopPropagation();showClientDocs(this,'${c.id}')"
+    onkeydown="if(event.key==='Enter'){event.stopPropagation();showClientDocs(this,'${c.id}')}"><i class="ti ti-file-text"></i>${n}</span>`;
+}
+
+function closeClientDocsPop() {
+  document.getElementById('doc-pop')?.remove();
+  document.removeEventListener('click', closeClientDocsPopOutside, true);
+}
+function closeClientDocsPopOutside(ev) {
+  const pop = document.getElementById('doc-pop');
+  if (pop && !pop.contains(ev.target) && !ev.target.closest('.doc-chip')) closeClientDocsPop();
+}
+
+async function showClientDocs(chip, clientId) {
+  const already = document.getElementById('doc-pop');
+  closeClientDocsPop();
+  if (already && already.dataset.client === String(clientId)) return;   // second click closes it
+  const c = cache.clients.find(x => String(x.id) === String(clientId));
+  if (!c) return;
+  const pop = document.createElement('div');
+  pop.id = 'doc-pop';
+  pop.dataset.client = String(clientId);
+  pop.onclick = ev => ev.stopPropagation();
+  pop.innerHTML = `<div class="doc-pop-title">${docEsc(getClientName(c))} — documents</div><div style="padding:6px;color:var(--grey-400);"><i class="ti ti-loader-2 spin"></i> Loading&hellip;</div>`;
+  document.body.appendChild(pop);
+  const r = chip.getBoundingClientRect();
+  pop.style.top = (window.scrollY + r.bottom + 6) + 'px';
+  pop.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - 370)) + 'px';
+  setTimeout(() => document.addEventListener('click', closeClientDocsPopOutside, true), 0);
+  try {
+    const docs = await listClientDocuments(getClientName(c));
+    if (document.getElementById('doc-pop') !== pop) return;
+    docs.sort((a, b) => String(b.lastModifiedDateTime).localeCompare(String(a.lastModifiedDateTime)));
+    pop.innerHTML = `<div class="doc-pop-title">${docEsc(getClientName(c))} — documents</div>` + (docs.length ? docs.map(d => {
+      const type = d.listItem?.fields?.DocumentType || '';
+      return `<a href="${docEsc(d.webUrl)}" target="_blank" rel="noopener" title="Open in a new tab">
+        <i class="ti ti-file-text" style="font-size:16px;color:var(--grey-500);"></i><span class="n">${docEsc(d.name)}</span>
+        ${type ? `<span class="doc-type">${docEsc(type)}</span>` : ''}</a>`;
+    }).join('') : '<div style="padding:6px;color:var(--grey-400);">No documents.</div>');
+  } catch (e) {
+    pop.innerHTML = `<div style="padding:6px;color:var(--red);">Couldn't load documents: ${docEsc(e.message)}</div>`;
+  }
+}
+
 function closeClientWizard() {
+  if (document.getElementById('clients-wizard-view')?.style.display !== 'none') loadClientDocCounts();   // documents may have changed
   document.getElementById('clients-list-view').style.display = '';
   document.getElementById('clients-wizard-view').style.display = 'none';
 }
