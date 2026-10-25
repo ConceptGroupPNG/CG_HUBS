@@ -1492,7 +1492,7 @@
               </div>
               <div class="form-group">
                 <label>Starting PPE <span id="gen-ppe-hint" style="font-weight:400;color:var(--grey-500);font-size:11px;text-transform:none;letter-spacing:0;"></span></label>
-                <input type="date" id="gen-payenddate">
+                <input type="date" id="gen-payenddate" onchange="onGenPPEChange()">
               </div>
                           <div id="gen-template-preview" style="margin-bottom:16px;"></div>
               <button class="btn btn-teal" onclick="generateCalendar()" id="btn-generate" disabled>
@@ -4882,15 +4882,16 @@ function onGenPayGroupChange() {
   document.getElementById('gen-cycle').value = cycle;
   document.getElementById('btn-generate').disabled = false;
 
-  // Find last Pay No and PPE for this client+paygroup from PSP_Billing — one
-  // row per pay run, same source the Client Overview tab uses, rather than
-  // needing the much larger full activity calendar just for this lookup.
+  // Find the most recent pay run for this client+paygroup from PSP_Billing —
+  // one row per pay run, same source the Client Overview tab uses. "Most
+  // recent" is the latest Pay Period End date, NOT the highest Pay No: Pay
+  // Nos restart at 1 each year, so after New Year last year's Pay 26 must
+  // not win over this year's Pay 1.
   const existing = cache.billing
-    .filter(i => i.PSPClient === client && getPayGroup(i) === pg)
-    .sort((a, b) => (b.PayNo || 0) - (a.PayNo || 0));
+    .filter(i => i.PSPClient === client && getPayGroup(i) === pg && spDateToDate(i.PayEnddate))
+    .sort((a, b) => (spDateToDate(b.PayEnddate) - spDateToDate(a.PayEnddate)) || ((b.PayNo || 0) - (a.PayNo || 0)));
 
   const lastPayNo = existing.length ? (existing[0].PayNo || 0) : 0;
-  const nextPayNo = lastPayNo + 1;
 
   // Get last PPE and calculate next one based on cycle
   const lastPPERaw = existing.length ? existing[0].PayEnddate : null;
@@ -4905,18 +4906,47 @@ function onGenPayGroupChange() {
     }
   }
 
+  // Remember the last pay run so the suggestion can be redone if the
+  // Starting PPE is changed by hand (see onGenPPEChange).
+  genLastPayRun = existing.length ? { payNo: lastPayNo, ppe: spDateToDate(lastPPERaw), raw: lastPPERaw } : null;
+
   // Populate fields
-  document.getElementById('gen-payno').value = nextPayNo || '';
   document.getElementById('gen-payenddate').value = nextPPE ? formatDateInputLocal(nextPPE) : '';
+  const nextPayNo = suggestedStartPayNo(nextPPE);
+  document.getElementById('gen-payno').value = nextPayNo || '';
 
   // Update hints
-  const paynoHint = lastPayNo ? `(last in system: Pay ${lastPayNo})` : '(no existing records found)';
   const ppeHint = lastPPERaw ? `(last PPE was ${fmtDate(lastPPERaw)})` : '';
-  document.getElementById('gen-payno-hint').textContent = paynoHint;
+  document.getElementById('gen-payno-hint').textContent = genPayNoHint(nextPPE);
   document.getElementById('gen-ppe-hint').textContent = ppeHint;
 
   // Preview with Add/Edit/Delete
   renderTemplatePreview(client, pg, tmpl);
+}
+
+// ── Pay numbers restart at 1 each year ──
+// The first pay period ENDING in a new calendar year is Pay 1.
+let genLastPayRun = null;   // { payNo, ppe } of the most recent pay run for the selected client + pay group
+
+function suggestedStartPayNo(startPPE) {
+  if (!genLastPayRun) return '';                        // no history: the user enters it
+  if (!startPPE) return genLastPayRun.payNo + 1;
+  return startPPE.getFullYear() > genLastPayRun.ppe.getFullYear() ? 1 : genLastPayRun.payNo + 1;
+}
+function genPayNoHint(startPPE) {
+  if (!genLastPayRun) return '(no existing records found)';
+  const last = `last in system: Pay ${genLastPayRun.payNo}, PPE ${fmtDate(genLastPayRun.raw)}`;
+  return startPPE && startPPE.getFullYear() > genLastPayRun.ppe.getFullYear()
+    ? `(new year — starts again at Pay 1; ${last})` : `(${last})`;
+}
+// Starting PPE changed by hand: redo the suggested Pay No to match
+function onGenPPEChange() {
+  const v = document.getElementById('gen-payenddate').value;
+  if (!v || !genLastPayRun) return;
+  const [y, m, d] = v.split('-').map(Number);
+  const ppe = new Date(y, m - 1, d);
+  document.getElementById('gen-payno').value = suggestedStartPayNo(ppe);
+  document.getElementById('gen-payno-hint').textContent = genPayNoHint(ppe);
 }
 
 async function generateCalendar() {
@@ -4942,8 +4972,10 @@ async function generateCalendar() {
   let holidayLandings = [];
   let currentPPE = new Date(startPPEStr);
   let currentPayNo = startPayNo;
+  const generatedRuns = [];   // [{ year, payNo }] for the summary message
 
   for (let p = 0; p < periods; p++) {
+    generatedRuns.push({ year: currentPPE.getFullYear(), payNo: currentPayNo });
     const payEndSerial = dateToExcelSerial(currentPPE);
     for (const t of tmpl) {
       // Use the time-of-day stored on the template itself (PSP_Activities_Templates.ActivityDateTime)
@@ -5019,10 +5051,11 @@ async function generateCalendar() {
     }
 
     btn.innerHTML = `<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Generated Pay ${currentPayNo} (${p+1}/${periods})...`;
-    currentPayNo++;
     let nextPPE = new Date(currentPPE);
     if (cycle.includes('FORT')) nextPPE.setDate(nextPPE.getDate() + 14);
     else if (cycle.includes('MONTH')) nextPPE = addOneMonthPreservingMonthEnd(nextPPE);
+    // The first pay period ending in a new year is Pay 1
+    currentPayNo = nextPPE.getFullYear() > currentPPE.getFullYear() ? 1 : currentPayNo + 1;
     currentPPE = nextPPE;
   }
 
@@ -5030,7 +5063,13 @@ async function generateCalendar() {
   cache.billing = await getItems('billing');
   btn.disabled = false;
   btn.innerHTML = '<i class="ti ti-calendar-plus"></i> Generate Calendar';
-  const label = periods > 1 ? `Pay ${startPayNo}–${currentPayNo-1}` : `Pay ${startPayNo}`;
+  // e.g. "Pay 25–26" or, across New Year, "Pay 25–26 (2026) and Pay 1–2 (2027)"
+  const byYear = [];
+  generatedRuns.forEach(r => {
+    const g = byYear[byYear.length - 1];
+    if (g && g.year === r.year) g.last = r.payNo; else byYear.push({ year: r.year, first: r.payNo, last: r.payNo });
+  });
+  const label = byYear.map(g => (g.first === g.last ? `Pay ${g.first}` : `Pay ${g.first}–${g.last}`) + (byYear.length > 1 ? ` (${g.year})` : '')).join(' and ');
   showToast(`✓ Created ${totalCreated} activities for ${pg} ${label} — billing records initialised`, 'success');
 
   if (holidayLandings.length) {
