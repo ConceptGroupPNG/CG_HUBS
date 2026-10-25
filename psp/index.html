@@ -4746,51 +4746,44 @@ function openGenTemplateForm(id) {
   setTimeout(() => renderUserPicker('gtf-member', 'gtf-member-dropdown', 'gtf-member-selected', null), 50);
 }
 
-// When adding (or re-ordering) a template activity to Order N and something
-// in the same Client + Pay Group template already sits at Order N (or
-// higher), push every one of those up by 1 to make room, rather than ending
-// up with two activities sharing the same Order. excludeId lets an edit skip
-// shifting the very activity being edited (it's about to become Order N
-// itself). Returns how many activities were shifted, for the success toast.
-async function shiftTemplateOrdersForInsert(client, pg, fromOrder, excludeId) {
-  const toShift = cache.activities
-    .filter(a => a.PSPClient === client && a.PayGroup === pg &&
-                 String(a.id) !== String(excludeId||'') &&
-                 (getOrder(a)||0) >= fromOrder)
-    .sort((a,b) => (getOrder(b)||0) - (getOrder(a)||0)); // shift highest first
+// Keeps a Client + Pay Group template numbered 1, 2, 3 ... with no gaps.
+// Adding or editing: the activity is placed at the Order asked for (an
+// Order past the end becomes the next number), every other activity keeps
+// its relative position, and all are renumbered from 1. Deleting: the rest
+// are renumbered from 1. Only activities whose number actually changes are
+// saved. (Previously every activity at or above the chosen Order was moved
+// up by 1 on every save - even when nothing needed to move, e.g. editing an
+// activity without changing its Order - which left gaps such as 1,2,3,6,7.)
+// Returns { order: the activity's final Order (when placing one), changed: how many others moved }.
+async function renumberTemplate(client, pg, { placeId = null, desiredOrder = null, excludeIds = [] } = {}) {
+  const skip = new Set([placeId, ...excludeIds].filter(v => v != null && v !== '').map(String));
+  const others = cache.activities
+    .filter(a => a.PSPClient === client && a.PayGroup === pg && !skip.has(String(a.id)))
+    .sort((a, b) => ((Number(getOrder(a)) || 0) - (Number(getOrder(b)) || 0)) || (Number(a.id) - Number(b.id)));
 
-  for (const item of toShift) {
-    const newOrder = (getOrder(item)||0) + 1;
+  let placedAt = null;
+  const ordered = others.slice();
+  if (desiredOrder != null) {
+    placedAt = Math.min(Math.max(1, Number(desiredOrder) || 1), ordered.length + 1);
+    ordered.splice(placedAt - 1, 0, null);           // null = the activity being added/edited
+  }
+
+  let changed = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const item = ordered[i];
+    if (!item) continue;
+    const newOrder = i + 1;
+    if ((Number(getOrder(item)) || 0) === newOrder) continue;
     try {
       await saveWithFieldFallback(true, 'activities', item.id, { Order0: newOrder });
       const idx = cache.activities.findIndex(a => String(a.id) === String(item.id));
       if (idx >= 0) cache.activities[idx].Order0 = newOrder;
-    } catch(e) {
-      console.warn('Failed to shift order for', item.id, e.message);
+      changed++;
+    } catch (e) {
+      console.warn('Failed to renumber template activity', item.id, e.message);
     }
   }
-  return toShift.length;
-}
-
-// Inverse of shiftTemplateOrdersForInsert — when an activity at Order N is
-// deleted, pull everything above N down by 1 to close the gap, e.g. deleting
-// Order 6 makes the old Order 7 become the new Order 6.
-async function shiftTemplateOrdersForDelete(client, pg, deletedOrder) {
-  const toShift = cache.activities
-    .filter(a => a.PSPClient === client && a.PayGroup === pg && (getOrder(a)||0) > deletedOrder)
-    .sort((a,b) => (getOrder(a)||0) - (getOrder(b)||0)); // close the gap from the top down
-
-  for (const item of toShift) {
-    const newOrder = (getOrder(item)||0) - 1;
-    try {
-      await saveWithFieldFallback(true, 'activities', item.id, { Order0: newOrder });
-      const idx = cache.activities.findIndex(a => String(a.id) === String(item.id));
-      if (idx >= 0) cache.activities[idx].Order0 = newOrder;
-    } catch(e) {
-      console.warn('Failed to shift order down for', item.id, e.message);
-    }
-  }
-  return toShift.length;
+  return { order: placedAt, changed };
 }
 
 async function saveGenTemplate(client, pg, cycle, id) {
@@ -4821,7 +4814,9 @@ async function saveGenTemplate(client, pg, cycle, id) {
   };
 
   try {
-    const shifted = await shiftTemplateOrdersForInsert(client, pg, orderVal, id);
+    const plan = await renumberTemplate(client, pg, { placeId: id || null, desiredOrder: orderVal });
+    fields.Order0 = plan.order;
+    const shifted = plan.changed;
     await saveWithFieldFallback(!!id, 'activities', id || '', fields);
     cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
     closeModal();
@@ -4830,7 +4825,7 @@ async function saveGenTemplate(client, pg, cycle, id) {
       .filter(i => i.PSPClient === client && i.PayGroup === pg)
       .sort((a,b) => (getOrder(a)||0)-(getOrder(b)||0));
     renderTemplatePreview(client, pg, tmpl);
-    showToast((id ? 'Activity updated' : 'Activity added') + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
+    showToast((id ? 'Activity updated' : 'Activity added') + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
@@ -4850,9 +4845,8 @@ async function deleteGenTemplate(id) {
   document.getElementById('modal-save-btn').className = 'btn btn-danger';
   document.getElementById('modal-save-btn').onclick = async () => {
     try {
-      const deletedOrder = getOrder(item);
       await deleteItem('activities', id);
-      const shifted = await shiftTemplateOrdersForDelete(client, pg, deletedOrder);
+      const shifted = (await renumberTemplate(client, pg, { excludeIds: [id] })).changed;
       cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
       closeModal();
       const tmpl = cache.activities
@@ -9196,10 +9190,10 @@ async function wizDeleteActivity(id, pgName) {
   );
   if (!ok) return;
   try {
-    const client = item.PSPClient, pg = item.PayGroup, deletedOrder = getOrder(item);
+    const client = item.PSPClient, pg = item.PayGroup;
     await deleteItem('activities', id);
     cache.activities = cache.activities.filter(a => String(a.id) !== String(id));
-    const shifted = await shiftTemplateOrdersForDelete(client, pg, deletedOrder);
+    const shifted = (await renumberTemplate(client, pg, { excludeIds: [id] })).changed;
     showToast('Activity deleted' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
     renderWizTemplates();
   } catch(e) {
@@ -9398,7 +9392,9 @@ async function saveTemplateForm() {
     }
 
     try {
-      const shifted = await shiftTemplateOrdersForInsert(wizTmplContext.client, wizTmplContext.pg, orderVal, id);
+      const plan = await renumberTemplate(wizTmplContext.client, wizTmplContext.pg, { placeId: id || null, desiredOrder: orderVal });
+      fields.Order0 = plan.order;
+      const shifted = plan.changed;
       if (id) {
         await saveWithFieldFallback(true, 'activities', id, fields);
         const ai = cache.activities.findIndex(a => String(a.id) === String(id));
@@ -9411,7 +9407,7 @@ async function saveTemplateForm() {
           // full refetch, even though the save itself succeeded correctly.
           cache.activities[ai].PSPMember = memberName;
         }
-        showToast('Activity updated' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
+        showToast('Activity updated' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
       } else {
         const created = await createItem('activities', fields);
         if (created?.id) {
@@ -9419,7 +9415,7 @@ async function saveTemplateForm() {
           fields.PSPMember = memberName; // same reasoning as above, for the newly-created local record
           cache.activities.push(fields);
         }
-        showToast('Activity added' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered to make room` : ''), 'success');
+        showToast('Activity added' + (shifted ? ` — ${shifted} other activit${shifted===1?'y':'ies'} renumbered` : ''), 'success');
       }
       document.getElementById('modal-overlay').classList.remove('open');
       document.getElementById('modal-save-btn').removeAttribute('data-wiz-mode');
