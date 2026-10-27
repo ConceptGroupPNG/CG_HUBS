@@ -927,6 +927,16 @@
   /* Clients list: click a row to open the client */
   #cl-tbody tr.cl-row { cursor:pointer; }
   #cl-tbody tr.cl-row:hover td { background:var(--teal-light, #e6f7f3); }
+  /* Administration: one tab per tool, each starting with the same explanation box */
+  #page-bulk-admin .ba-panel { max-width:1000px; }
+  .ba-intro { background:var(--grey-50); border:1px solid var(--grey-200); border-left:4px solid var(--teal); border-radius:8px;
+              padding:12px 14px; font-size:13px; color:var(--grey-600); line-height:1.55; }
+  .ba-intro strong { color:var(--navy); }
+  /* Scope choices (radio buttons): normal text, side by side */
+  #page-bulk-admin .form-group label:has(> input[type="radio"]) { text-transform:none; letter-spacing:0; font-size:13px; font-weight:500;
+              color:var(--grey-700, #374151); margin:0; width:auto; display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  #page-bulk-admin .form-group label:has(> input[type="radio"]) span { text-transform:none; letter-spacing:0; }
+  #page-bulk-admin input[type="radio"] { width:auto; margin:0; }
   /* Client documents drop zone */
   .doc-drop { border:2px dashed var(--grey-300, #cbd5e1); border-radius:8px; padding:16px; text-align:center; color:var(--grey-600);
               font-size:12.5px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px; background:white; }
@@ -2420,20 +2430,35 @@
 
 <!-- BULK ADMIN PAGE -->
       <div class="page" id="page-bulk-admin">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+        <div class="tabs" style="margin-bottom:16px;">
+          <div class="tab active" id="batab-fill" onclick="switchAdminTab('fill')">
+            <i class="ti ti-user-check" style="font-size:14px;margin-right:4px;"></i> Missing Pay Masters
+          </div>
+          <div class="tab" id="batab-pm" onclick="switchAdminTab('pm')">
+            <i class="ti ti-user-edit" style="font-size:14px;margin-right:4px;"></i> Reassign Pay Master
+          </div>
+          <div class="tab" id="batab-dt" onclick="switchAdminTab('dt')">
+            <i class="ti ti-calendar-event" style="font-size:14px;margin-right:4px;"></i> Change Activity Date
+          </div>
+          <div class="tab" id="batab-del" onclick="switchAdminTab('del')">
+            <i class="ti ti-trash" style="font-size:14px;margin-right:4px;"></i> Delete Not Started
+          </div>
+          <div class="tab" id="batab-ph" onclick="switchAdminTab('ph')">
+            <i class="ti ti-calendar-event" style="font-size:14px;margin-right:4px;"></i> Public Holidays
+          </div>
+        </div>
 
+        <div class="ba-panel" id="batab-fill-content">
           <!-- ── Card: Fill in missing Pay Masters from templates (all clients) ── -->
-          <div class="card" style="padding:0;overflow:hidden;grid-column:1/-1;">
+          <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:14px 20px;display:flex;align-items:center;gap:10px;">
               <i class="ti ti-user-check" style="color:#93c5fd;font-size:18px;"></i>
               <h3 style="color:white;margin:0;font-size:15px;">Fill in Missing Pay Masters from Templates</h3>
             </div>
             <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-              <div style="font-size:13px;color:var(--grey-600);line-height:1.5;">
-                Finds every calendar activity that has <strong>no Pay Master</strong> and is <strong>not Finished</strong>, for all clients and pay groups,
+              <div class="ba-intro">Finds every calendar activity that has <strong>no Pay Master</strong> and is <strong>not Finished</strong>, for all clients and pay groups,
                 and fills in the Pay Master from the matching activity in the client's Activity Template (matched by activity name, then Order).
-                Activities that already have a Pay Master are never changed. Nothing is saved until you click <strong>Apply</strong>.
-              </div>
+                Activities that already have a Pay Master are never changed. Click <strong>Preview</strong> to see what will change &mdash; nothing is saved until you click <strong>Apply</strong>.</div>
               <div style="display:flex;gap:10px;">
                 <button class="btn btn-outline" id="ba-fill-preview-btn" onclick="baFillPreview()"><i class="ti ti-search"></i> Preview</button>
                 <button class="btn btn-teal" id="ba-fill-apply-btn" onclick="baFillApply()" disabled><i class="ti ti-user-check"></i> Apply</button>
@@ -2441,7 +2466,9 @@
               <div id="ba-fill-result" style="font-size:12.5px;"></div>
             </div>
           </div>
+        </div>
 
+        <div class="ba-panel" id="batab-pm-content" style="display:none;">
           <!-- ── Card: Reassign Pay Master ── -->
           <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:14px 20px;display:flex;align-items:center;gap:10px;">
@@ -2449,6 +2476,10 @@
               <h3 style="color:white;margin:0;font-size:15px;">Reassign Pay Master</h3>
             </div>
             <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div class="ba-intro">Changes who is responsible for a client's pay group activities.
+                <strong>Going Forward</strong> reassigns every activity that hasn't Started or Finished, and also updates the client's Activity Template so future calendars use the new Pay Master.
+                <strong>Once Only</strong> reassigns a single activity and leaves the template as it is.
+                <strong>Apply from Template</strong> sets each Not Started activity back to the Pay Master in its template, matched by Order.</div>
               <div class="form-group" style="margin:0;">
                 <label>Client</label>
                 <select id="ba-pm-client" onchange="baPopulatePayGroups('pm')">
@@ -2496,7 +2527,9 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <div class="ba-panel" id="batab-dt-content" style="display:none;">
           <!-- ── Card: Change Activity Date ── -->
           <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,#065f46,#0e9f6e);padding:14px 20px;display:flex;align-items:center;gap:10px;">
@@ -2504,6 +2537,10 @@
               <h3 style="color:white;margin:0;font-size:15px;">Change Activity Date</h3>
             </div>
             <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div class="ba-intro">Moves activities in a client's pay calendar.
+                <strong>Once Only</strong> changes the date and time of one activity, and warns you if the new date is a public holiday.
+                <strong>All After</strong> moves every Not Started activity for the pay group by the number of days you enter (a minus number moves them earlier).
+                Started and Finished activities are never moved. <strong>Reset ActivityDateTimeNo</strong> is a maintenance fix that recalculates the date number used for sorting and filtering, on every activity.</div>
               <div class="form-group" style="margin:0;">
                 <label>Client</label>
                 <select id="ba-dt-client" onchange="baPopulatePayGroups('dt')">
@@ -2563,7 +2600,9 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <div class="ba-panel" id="batab-del-content" style="display:none;">
           <!-- ── Card: Delete Not Started ── -->
           <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,#7f1d1d,#cc1f2d);padding:14px 20px;display:flex;align-items:center;gap:10px;">
@@ -2571,6 +2610,8 @@
               <h3 style="color:white;margin:0;font-size:15px;">Delete Not Started Activities</h3>
             </div>
             <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+              <div class="ba-intro">Removes a pay group's calendar that hasn't started yet, so it can be generated again &mdash; for example after its Activity Template has changed.
+                Choose the client and pay group to see what will be deleted before you confirm.</div>
               <div style="background:#fff1f2;border:1.5px solid #fca5a5;border-radius:8px;padding:12px 14px;font-size:12px;color:#7f1d1d;line-height:1.6;">
                 <strong><i class="ti ti-alert-triangle"></i> Destructive Action</strong><br>
                 Permanently deletes all <strong>Not Started</strong> activities and their
@@ -2597,7 +2638,9 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <div class="ba-panel" id="batab-ph-content" style="display:none;">
           <!-- ── Card: Public Holidays ── -->
           <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,#78350f,#d97706);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
@@ -2610,6 +2653,8 @@
               </button>
             </div>
             <div style="padding:20px;">
+              <div class="ba-intro">The public holidays PSP HUB knows about, by country and year. Generate Calendar and Change Activity Date warn you when an activity would fall on one of these days,
+                so add each new year's holidays here before generating that year's calendars.</div>
               <div class="filter-bar" style="margin-bottom:14px;">
                 <select id="ph-filter-year" onchange="renderPublicHolidaysAdmin()">
                   <option value="">All Years</option>
@@ -2629,8 +2674,8 @@
               </div>
             </div>
           </div>
-
         </div>
+
       </div>
       </div>
 
@@ -9635,6 +9680,14 @@ async function wizSaveClient() {
 // ─────────────────────────────────────────────
 // BULK ADMIN PAGE
 // ─────────────────────────────────────────────
+function switchAdminTab(tab) {
+  ['fill','pm','dt','del','ph'].forEach(k => {
+    document.getElementById('batab-' + k)?.classList.toggle('active', k === tab);
+    const panel = document.getElementById('batab-' + k + '-content');
+    if (panel) panel.style.display = k === tab ? '' : 'none';
+  });
+}
+
 async function loadBulkAdmin() {
   if (!cache.calendar.length) cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);
   if (!cache.activities.length) cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
