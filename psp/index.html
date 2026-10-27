@@ -2477,7 +2477,7 @@
             </div>
             <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
               <div class="ba-intro">Changes who is responsible for a client's pay group activities.
-                <strong>Going Forward</strong> reassigns every activity that hasn't Started or Finished, and also updates the client's Activity Template so future calendars use the new Pay Master.
+                <strong>Going Forward</strong> moves the chosen <strong>Current Pay Master</strong>'s activities that haven't Started or Finished to the new Pay Master, and does the same in the client's Activity Template so future calendars follow &mdash; other people's activities are left alone (choose <em>Everyone</em> to move the whole pay group).
                 <strong>Once Only</strong> reassigns a single activity and leaves the template as it is.
                 <strong>Apply from Template</strong> sets each Not Started activity back to the Pay Master in its template, matched by Order.</div>
               <div class="form-group" style="margin:0;">
@@ -2490,6 +2490,12 @@
                 <label>Pay Group</label>
                 <select id="ba-pm-pg" onchange="baPreviewPMActivities()">
                   <option value="">— Select Pay Group —</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;" id="ba-pm-from-wrap">
+                <label>Current Pay Master <span style="font-weight:400;text-transform:none;letter-spacing:0;">(whose activities to move)</span></label>
+                <select id="ba-pm-from" onchange="baPreviewPMActivities()">
+                  <option value="">— Select a Pay Group first —</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0;position:relative;">
@@ -9728,6 +9734,33 @@ function baPopulatePayGroups(prefix) {
 }
 
 // ── Reassign Pay Master ──────────────────────
+// Reassign Pay Master > Current Pay Master: '__all__' = everyone,
+// '__none__' = activities with no Pay Master, otherwise a person's name.
+function baPMFromMatches(item, from) {
+  if (from === '__all__') return true;
+  const who = getPSPMember(item);
+  if (from === '__none__') return !who && !item.PSPMEmberLookupId && !item.PSPMemberLookupId;
+  return who === from;
+}
+function baFillPMFromList(client, pg) {
+  const sel = document.getElementById('ba-pm-from');
+  if (!sel) return;
+  const keep = sel.value;
+  const counts = {};   // name -> { cal, tmpl }
+  const add = (name, k) => { const c = counts[name] || (counts[name] = { cal: 0, tmpl: 0 }); c[k]++; };
+  cache.calendar.filter(i => i.PSPClient === client && getPayGroup(i) === pg && !['Finished','Started'].includes(getActStatus(i)))
+    .forEach(i => add(getPSPMember(i) || '__none__', 'cal'));
+  cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg)
+    .forEach(a => add(getPSPMember(a) || '__none__', 'tmpl'));
+  const label = (n, c) => `${n === '__none__' ? '(Unassigned)' : n} — ${c.cal} in calendar, ${c.tmpl} in template`;
+  const names = Object.keys(counts).filter(n => n !== '__none__').sort();
+  if (counts.__none__) names.push('__none__');
+  sel.innerHTML = '<option value="">— Choose whose activities to move —</option>' +
+    names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${label(n, counts[n]).replace(/</g, '&lt;')}</option>`).join('') +
+    '<option value="__all__">Everyone — the whole pay group</option>';
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : '';
+}
+
 function baPreviewPMActivities() {
   const client = document.getElementById('ba-pm-client')?.value;
   const pg     = document.getElementById('ba-pm-pg')?.value;
@@ -9737,13 +9770,23 @@ function baPreviewPMActivities() {
   const onceSel = document.getElementById('ba-pm-once-activity');
 
   onceDiv.style.display = scope === 'once' ? '' : 'none';
+  const fromWrap = document.getElementById('ba-pm-from-wrap');
+  if (fromWrap) fromWrap.style.display = scope === 'forward' ? '' : 'none';
 
-  if (!client || !pg) { if (preview) preview.innerHTML = ''; return; }
+  if (!client || !pg) {
+    if (preview) preview.innerHTML = '';
+    const fs = document.getElementById('ba-pm-from');
+    if (fs) fs.innerHTML = '<option value="">— Select a Pay Group first —</option>';
+    return;
+  }
+  baFillPMFromList(client, pg);
+  const from = document.getElementById('ba-pm-from')?.value || '';
 
   const items = cache.calendar.filter(i =>
     i.PSPClient === client && getPayGroup(i) === pg &&
-    (scope === 'forward' ? !['Finished','Started'].includes(getActStatus(i)) : true)
+    (scope === 'forward' ? !['Finished','Started'].includes(getActStatus(i)) && from && baPMFromMatches(i, from) : true)
   ).sort((a,b) => (spDateToDate(a.ActivityDateTime)||0) - (spDateToDate(b.ActivityDateTime)||0));
+  const tmplCount = from ? cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg && baPMFromMatches(a, from)).length : 0;
 
   if (scope === 'once' && onceSel) {
     const allItems = cache.calendar.filter(i =>
@@ -9759,9 +9802,11 @@ function baPreviewPMActivities() {
 
   if (preview) {
     if (scope === 'forward') {
-      preview.innerHTML = items.length
-        ? `<span style="color:var(--teal);font-weight:600;">✓ ${items.length} Not Started activities will be reassigned</span>`
-        : '<span style="color:var(--grey-400);">No eligible activities found</span>';
+      preview.innerHTML = !from
+        ? '<span style="color:var(--grey-500);">Choose the Current Pay Master whose activities should move</span>'
+        : (items.length || tmplCount)
+          ? `<span style="color:var(--teal);font-weight:600;">✓ ${items.length} calendar activit${items.length===1?'y':'ies'} (not Started or Finished) and ${tmplCount} template activit${tmplCount===1?'y':'ies'} will be reassigned</span>`
+          : '<span style="color:var(--grey-400);">No eligible activities found</span>';
     } else {
       preview.innerHTML = '<span style="color:var(--grey-600);">Select an activity above to reassign once</span>';
     }
@@ -9784,10 +9829,12 @@ async function baApplyPMChange() {
   }
 
   let targets = [];
+  const from = document.getElementById('ba-pm-from')?.value || '';
   if (scope === 'forward') {
+    if (!from) { showToast('Choose the Current Pay Master whose activities should move', 'error'); return; }
     targets = cache.calendar.filter(i =>
       i.PSPClient === client && getPayGroup(i) === pg &&
-      !['Finished','Started'].includes(getActStatus(i))
+      !['Finished','Started'].includes(getActStatus(i)) && baPMFromMatches(i, from)
     );
   } else {
     const id = document.getElementById('ba-pm-once-activity')?.value;
@@ -9796,10 +9843,17 @@ async function baApplyPMChange() {
     if (item) targets = [item];
   }
 
-  if (!targets.length) { showToast('No activities to update', 'error'); return; }
+  const tmplTargets = scope === 'forward'
+    ? cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg && baPMFromMatches(a, from))
+    : [];
+  if (!targets.length && !tmplTargets.length) { showToast('No activities to update', 'error'); return; }
 
+  const fromLabel = from === '__all__' ? 'everyone' : from === '__none__' ? 'unassigned activities' : from;
   const confirmed = await pspConfirm(
-    `Reassign <strong>${targets.length} activit${targets.length===1?'y':'ies'}</strong> for ${client} / ${pg} to <strong>${newMember}</strong>?`,
+    scope === 'forward'
+      ? `Move <strong>${fromLabel}</strong>'s activities for ${client} / ${pg} to <strong>${newMember}</strong>?<br><br>` +
+        `${targets.length} calendar activit${targets.length===1?'y':'ies'} (not Started or Finished) and ${tmplTargets.length} template activit${tmplTargets.length===1?'y':'ies'} will change. Other people's activities are left as they are.`
+      : `Reassign <strong>${targets.length} activit${targets.length===1?'y':'ies'}</strong> for ${client} / ${pg} to <strong>${newMember}</strong>?`,
     'Confirm Reassignment'
   );
   if (!confirmed) return;
@@ -9821,15 +9875,16 @@ async function baApplyPMChange() {
 
     // Going Forward: also update the Activity Template
     if (scope === 'forward') {
-      const tmplItems = cache.activities.filter(a => a.PSPClient === client && a.PayGroup === pg);
-      for (const tmpl of tmplItems) {
+      let tmplDone = 0;
+      for (const tmpl of tmplTargets) {
         try {
           await saveWithFieldFallback(true, 'activities', tmpl.id, { PSPMemberLookupId: lookupId });
           const ai = cache.activities.findIndex(a => a.id === tmpl.id);
           if (ai >= 0) { cache.activities[ai].PSPMember = newMember; cache.activities[ai].PSPMemberLookupId = String(lookupId); }
+          tmplDone++;
         } catch(e) { console.warn('Template update failed:', tmpl.id, e.message); }
       }
-      showToast(`${done} activities and Activity Template updated to ${newMember}`, 'success');
+      showToast(`${done} calendar and ${tmplDone} template activit${tmplDone===1?'y':'ies'} moved to ${newMember}`, 'success');
     } else {
       showToast(`${done} activit${done===1?'y':'ies'} reassigned to ${newMember}`, 'success');
     }
