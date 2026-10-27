@@ -2422,6 +2422,26 @@
       <div class="page" id="page-bulk-admin">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
 
+          <!-- ── Card: Fill in missing Pay Masters from templates (all clients) ── -->
+          <div class="card" style="padding:0;overflow:hidden;grid-column:1/-1;">
+            <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:14px 20px;display:flex;align-items:center;gap:10px;">
+              <i class="ti ti-user-check" style="color:#93c5fd;font-size:18px;"></i>
+              <h3 style="color:white;margin:0;font-size:15px;">Fill in Missing Pay Masters from Templates</h3>
+            </div>
+            <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+              <div style="font-size:13px;color:var(--grey-600);line-height:1.5;">
+                Finds every calendar activity that has <strong>no Pay Master</strong> and is <strong>not Finished</strong>, for all clients and pay groups,
+                and fills in the Pay Master from the matching activity in the client's Activity Template (matched by activity name, then Order).
+                Activities that already have a Pay Master are never changed. Nothing is saved until you click <strong>Apply</strong>.
+              </div>
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-outline" id="ba-fill-preview-btn" onclick="baFillPreview()"><i class="ti ti-search"></i> Preview</button>
+                <button class="btn btn-teal" id="ba-fill-apply-btn" onclick="baFillApply()" disabled><i class="ti ti-user-check"></i> Apply</button>
+              </div>
+              <div id="ba-fill-result" style="font-size:12.5px;"></div>
+            </div>
+          </div>
+
           <!-- ── Card: Reassign Pay Master ── -->
           <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:linear-gradient(135deg,var(--navy),#2d4a8a);padding:14px 20px;display:flex;align-items:center;gap:10px;">
@@ -9786,6 +9806,99 @@ function baResetPMForm() {
 // one person. Only ever touches existing, already-settled calendar records,
 // never something created moments ago, which is exactly the class of write
 // that's been proven reliable throughout this investigation.
+// ── Fill in missing Pay Masters from templates (all clients) ──
+// Repairs activities created by Generate Calendar before its Pay Master bug
+// was fixed (Oct 2026). Only unassigned, not-Finished activities change.
+let baFillPlan = null;   // [{ item, tmpl, by }] from the last Preview
+
+function baFillMatch(item, templates) {
+  const norm = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const name = norm(item.ActivityMilestone);
+  const order = Number(getOrder(item)) || 0;
+  const byName = templates.filter(t => norm(t.ActivityMilestone) === name);
+  if (byName.length === 1) return { tmpl: byName[0], by: 'name' };
+  if (byName.length > 1) {
+    const exact = byName.find(t => (Number(getOrder(t)) || 0) === order);
+    return exact ? { tmpl: exact, by: 'name' } : { tmpl: null, why: 'several template activities have this name' };
+  }
+  const byOrder = templates.filter(t => (Number(getOrder(t)) || 0) === order);
+  if (byOrder.length === 1) return { tmpl: byOrder[0], by: 'order' };
+  return { tmpl: null, why: 'no template activity with this name' };
+}
+
+async function baFillPreview() {
+  const out = document.getElementById('ba-fill-result');
+  const applyBtn = document.getElementById('ba-fill-apply-btn');
+  applyBtn.disabled = true; baFillPlan = null;
+  out.innerHTML = '<i class="ti ti-loader-2 spin"></i> Reading the calendar and templates&hellip;';
+  try {
+    cache.calendar = await getItems('calendar', '', 5000, ['PSPMEmber']);       // fresh copies
+    cache.activities = await getItems('activities', '', 5000, ['PSPMEmber']);
+  } catch (e) { out.innerHTML = `<span style="color:var(--red);">Couldn't read SharePoint: ${docEsc(e.message)}</span>`; return; }
+
+  const unassigned = cache.calendar.filter(i =>
+    !i.PSPMEmberLookupId && !getPSPMember(i) && getActStatus(i) !== 'Finished');
+  const groups = {};
+  const plan = [];
+  unassigned.forEach(i => {
+    const key = `${i.PSPClient || '—'}||${getPayGroup(i) || '—'}`;
+    const g = groups[key] || (groups[key] = { client: i.PSPClient || '—', pg: getPayGroup(i) || '—', fill: {}, byOrder: 0, skipped: {}, total: 0 });
+    g.total++;
+    const templates = cache.activities.filter(t => t.PSPClient === i.PSPClient && t.PayGroup === getPayGroup(i));
+    const m = templates.length ? baFillMatch(i, templates) : { tmpl: null, why: 'no Activity Template for this pay group' };
+    if (m.tmpl && !m.tmpl.PSPMemberLookupId) { m.why = 'the template activity has no Pay Master'; m.tmpl = null; }
+    if (!m.tmpl) { g.skipped[m.why] = (g.skipped[m.why] || 0) + 1; return; }
+    const who = getPSPMember(m.tmpl) || `user ${m.tmpl.PSPMemberLookupId}`;
+    g.fill[who] = (g.fill[who] || 0) + 1;
+    if (m.by === 'order') g.byOrder++;
+    plan.push({ item: i, tmpl: m.tmpl, by: m.by });
+  });
+
+  const rows = Object.values(groups).sort((a, b) => (a.client + a.pg).localeCompare(b.client + b.pg));
+  if (!rows.length) { out.innerHTML = '<span style="color:var(--teal);font-weight:700;">Every not-Finished activity already has a Pay Master — nothing to do.</span>'; return; }
+  const fillCount = plan.length, skipCount = unassigned.length - plan.length;
+  out.innerHTML = `
+    <div style="margin-bottom:8px;"><strong>${unassigned.length}</strong> unassigned, not-Finished activit${unassigned.length===1?'y':'ies'} found —
+      <strong style="color:var(--teal);">${fillCount}</strong> will be filled in${skipCount ? `, <strong>${skipCount}</strong> can't be (see right)` : ''}.</div>
+    <table class="data-table" style="font-size:12px;">
+      <thead><tr><th>Client</th><th>Pay Group</th><th style="text-align:right;">Unassigned</th><th>Will be assigned to</th><th>Left as they are</th></tr></thead>
+      <tbody>${rows.map(g => `<tr>
+        <td><strong>${docEsc(g.client)}</strong></td><td>${docEsc(g.pg)}</td><td style="text-align:right;">${g.total}</td>
+        <td>${Object.entries(g.fill).map(([w, n]) => `${docEsc(w)} &times; ${n}`).join('<br>') || '—'}${g.byOrder ? `<br><span style="color:#b45309;">(${g.byOrder} matched by Order — name differs from the template)</span>` : ''}</td>
+        <td style="color:var(--grey-500);">${Object.entries(g.skipped).map(([w, n]) => `${n} &mdash; ${docEsc(w)}`).join('<br>') || '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  baFillPlan = plan;
+  applyBtn.disabled = !plan.length;
+}
+
+async function baFillApply() {
+  if (!baFillPlan || !baFillPlan.length) return;
+  const ok = await pspConfirm(`Fill in the Pay Master on <strong>${baFillPlan.length} activit${baFillPlan.length===1?'y':'ies'}</strong> from their Activity Templates?`, 'Fill in Missing Pay Masters');
+  if (!ok) return;
+  const btn = document.getElementById('ba-fill-apply-btn'), prev = document.getElementById('ba-fill-preview-btn');
+  btn.disabled = true; prev.disabled = true;
+  let done = 0, failed = 0;
+  for (const { item, tmpl } of baFillPlan) {
+    btn.innerHTML = `<i class="ti ti-loader-2 spin"></i> ${done + failed + 1} of ${baFillPlan.length}&hellip;`;
+    const lookupId = parseInt(tmpl.PSPMemberLookupId, 10);
+    try {
+      await saveWithFieldFallback(true, 'calendar', item.id, { PSPMEmberLookupId: lookupId });
+      const ci = cache.calendar.findIndex(i => String(i.id) === String(item.id));
+      if (ci >= 0) { cache.calendar[ci].PSPMEmberLookupId = String(lookupId); cache.calendar[ci].PSPMEmber = getPSPMember(tmpl); }
+      done++;
+    } catch (e) {
+      failed++;
+      console.warn('Fill in Pay Master failed:', item.id, e.message);
+    }
+  }
+  btn.innerHTML = '<i class="ti ti-user-check"></i> Apply';
+  prev.disabled = false;
+  baFillPlan = null;
+  showToast(`${done} activit${done===1?'y':'ies'} given their Pay Master from the template` + (failed ? ` — ${failed} failed (run Preview again to retry them)` : ''), failed ? 'error' : 'success');
+  await baFillPreview();     // shows what's left (should be only those that can't be filled)
+}
+
 async function baApplyFromTemplate() {
   const client = document.getElementById('ba-pm-client')?.value;
   const pg     = document.getElementById('ba-pm-pg')?.value;
