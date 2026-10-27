@@ -4969,6 +4969,7 @@ async function generateCalendar() {
   btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 0.7s linear infinite"></i> Generating...';
 
   let totalCreated = 0;
+  let assignedCount = 0, unassignedCount = 0;   // activities given / not given a Pay Master from the template
   let holidayLandings = [];
   let currentPPE = new Date(startPPEStr);
   let currentPayNo = startPayNo;
@@ -4989,7 +4990,12 @@ async function generateCalendar() {
       if (hols.length) {
         holidayLandings.push({ milestone: t.ActivityMilestone, payNo: currentPayNo, date: actDate, holidays: hols });
       }
-      const memberLookupId = t.PSPMEmberLookupId ? parseInt(t.PSPMEmberLookupId, 10) : null;
+      // The template list's Person column is "PSPMember"; the calendar list's
+      // is "PSPMEmber" (a typo made when that list was created). This used to
+      // read the calendar's spelling from the template, so it never found the
+      // Pay Master and every generated activity was left unassigned.
+      const tmplMemberId = t.PSPMemberLookupId || t.PSPMEmberLookupId;
+      const memberLookupId = tmplMemberId ? parseInt(tmplMemberId, 10) : null;
       const fields = {
         PSPClient: t.PSPClient,
         PayGroup: t.PayGroup,
@@ -5008,18 +5014,12 @@ async function generateCalendar() {
         Cycle: t.Cycle,
         PayrollYear: currentPPE.getFullYear(),
       };
+      // Pay Master copied from this template activity, set as the activity is created
+      if (memberLookupId) fields.PSPMEmberLookupId = memberLookupId;
       try {
-        const created = await createItem('calendar', fields);
+        await createItem('calendar', fields);
         totalCreated++;
-        // Best-effort only — Pay Master (a SharePoint Person field) is known
-        // to be unreliable to set this soon after the item is created; a
-        // proper fix needs a much longer settle time than is practical to
-        // block this button on. Not attempting to verify or retry here.
-        if (memberLookupId && created?.id) {
-          try {
-            await saveWithFieldFallback(true, 'calendar', created.id, { PSPMEmberLookupId: memberLookupId });
-          } catch(e2) { /* best-effort — ignored */ }
-        }
+        if (memberLookupId) assignedCount++; else unassignedCount++;
       } catch(e) {
         showToast(`Error on Pay ${currentPayNo} step ${getOrder(t)}: ${e.message}`, 'error');
       }
@@ -5070,7 +5070,8 @@ async function generateCalendar() {
     if (g && g.year === r.year) g.last = r.payNo; else byYear.push({ year: r.year, first: r.payNo, last: r.payNo });
   });
   const label = byYear.map(g => (g.first === g.last ? `Pay ${g.first}` : `Pay ${g.first}–${g.last}`) + (byYear.length > 1 ? ` (${g.year})` : '')).join(' and ');
-  showToast(`✓ Created ${totalCreated} activities for ${pg} ${label} — billing records initialised`, 'success');
+  showToast(`✓ Created ${totalCreated} activities for ${pg} ${label} — billing records initialised` +
+    (unassignedCount ? ` · ${unassignedCount} have no Pay Master because their template activity has none` : ''), 'success');
 
   if (holidayLandings.length) {
     const lines = holidayLandings.map(h =>
