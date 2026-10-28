@@ -334,6 +334,46 @@ tr.clickable:hover{background:#f7f8fa;cursor:pointer;}
 .tkt-section.c-attach > .section-title{color:#0f8b8d;}
 .tkt-section.c-convo{border-color:#6952c9;}
 .tkt-section.c-convo > .section-title{color:#6952c9;}
+.c-convo .cv-headrow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.c-convo .cv-headrow .section-title{color:#6952c9;}
+.cv-tools{display:flex;gap:6px;flex-wrap:wrap;}
+.cv-list{display:flex;flex-direction:column;gap:8px;}
+.cv-note{font-size:12.5px;color:#8a5a00;background:#fff6e0;border-radius:6px;padding:7px 10px;}
+.cv-note.cv-note-info{color:var(--ink-2);background:var(--page);}
+.cv-msg{border:1px solid var(--gridline);border-left:3px solid #c9c2ec;border-radius:8px;background:var(--surface-1);overflow:hidden;}
+.cv-msg.ours{border-left-color:#6952c9;background:#faf9fe;}
+.cv-head{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;cursor:pointer;}
+.cv-head:hover{background:rgba(105,82,201,0.05);}
+.cv-avatar{flex:0 0 32px;height:32px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.cv-meta{flex:1;min-width:0;}
+.cv-from{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;}
+.cv-addr{color:var(--ink-2);font-size:12px;}
+.cv-preview{color:var(--ink-2);font-size:12.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cv-to{color:var(--ink-2);font-size:12px;margin-top:2px;}
+.cv-date{flex:0 0 auto;color:var(--ink-2);font-size:12px;white-space:nowrap;}
+.cv-body{padding:2px 12px 12px 55px;}
+.cv-frame{width:100%;border:0;display:block;min-height:24px;background:#fff;}
+.cv-text{white-space:pre-wrap;font-size:13px;}
+.cv-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.cv-att{border:1px solid var(--gridline);background:var(--page);border-radius:6px;padding:5px 9px;font-size:12.5px;cursor:pointer;}
+.cv-att span{color:var(--ink-2);margin-left:4px;}
+.cv-att:hover{border-color:#6952c9;}
+.cv-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.cv-actions a.btn{text-decoration:none;}
+.cv-reply{margin-top:14px;}
+.cv-reply-off{font-size:12.5px;color:var(--ink-2);}
+.cv-reply-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+.cv-seg{display:inline-flex;border:1px solid var(--gridline);border-radius:7px;overflow:hidden;}
+.cv-seg button{border:0;background:var(--surface-1);padding:6px 12px;font-size:12.5px;cursor:pointer;color:var(--ink-2);}
+.cv-seg button.on{background:#6952c9;color:#fff;}
+.cv-reply-to{font-size:12.5px;color:var(--ink-2);}
+.cv-addr-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.cv-addr-row label{flex:0 0 26px;font-size:12.5px;color:var(--ink-2);}
+.cv-addr-row input{flex:1;min-width:0;padding:6px 9px;border:1px solid var(--gridline);border-radius:6px;font:inherit;font-size:13px;}
+.cv-reply textarea{width:100%;box-sizing:border-box;min-height:110px;padding:9px 10px;border:1px solid var(--gridline);border-radius:7px;font:inherit;font-size:13.5px;resize:vertical;}
+.cv-reply textarea:focus,.cv-addr-row input:focus{outline:2px solid rgba(105,82,201,0.35);border-color:#6952c9;}
+.cv-reply-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ink-2);}
+@media (max-width:700px){ .cv-body{padding-left:12px;} .cv-date{font-size:11px;} }
 .tkt-section.c-time{border-color:#4a5568;}
 .tkt-section.c-time > .section-title{color:#4a5568;}
 .tkt-section.c-hist{border-color:#a8574e;}
@@ -2405,6 +2445,7 @@ function renderTicketDetail(){
   ].sort((a,b)=> new Date(b.fields.WorkDate||0) - new Date(a.fields.WorkDate||0));
   const totalHours = myEntries.reduce((s,e)=> s + (Number(e.fields.Hours)||0), 0);
   ensureTicketAttachmentsLoaded(t.id); // fire and forget — re-renders this panel once loaded
+  const convoFocus = captureConvoFocus();
 
   wrap.innerHTML = `
     <div class="detail-panel">
@@ -2464,23 +2505,7 @@ function renderTicketDetail(){
 
       ${attachmentsSectionHtml(String(t.id), "tkt-section c-attach", "Attachments")}
 
-      <div class="tkt-section c-convo">
-      <div class="section-title">Conversation${(() => { const n = ticketConversation(t.id).length; return n ? ` (${n})` : ""; })()}</div>
-      ${(() => { const convo = ticketConversation(t.id); return convo.length ? `
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        ${convo.map(c => `
-          <div style="border:1px solid var(--gridline);border-radius:8px;padding:10px 12px;background:var(--page);">
-            <div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">
-              <span><b style="color:var(--ink);">${esc(c.fields.FromName||c.fields.FromEmail||"—")}</b>${c.fields.FromEmail && c.fields.FromEmail!==c.fields.FromName?` (${esc(c.fields.FromEmail)})`:""}</span>
-              <span>${fmtDateTime(c.fields.MessageDate)}</span>
-            </div>
-            ${c.fields.Subject ? `<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:5px;">${esc(c.fields.Subject)}</div>` : ""}
-            <div style="white-space:pre-wrap;font-size:13px;">${esc(c.fields.Body||"")}</div>
-          </div>
-        `).join("")}
-      </div>
-      ` : `<div class="empty">No replies yet — a reply to the acknowledgment email sent for this ticket will show up here automatically.</div>`; })()}
-      </div>
+      <div id="convoSlot"></div>
 
       <div class="tkt-section c-time">
       <div class="section-title">Time logged (${totalHours.toFixed(2)} hrs — SLA HUB and CG Time's widget combined)</div>
@@ -2505,6 +2530,7 @@ function renderTicketDetail(){
       </div>
     </div>
   `;
+  mountConversation(t, convoFocus);
   overlay.classList.add("active");
 }
 
@@ -2698,6 +2724,595 @@ function ticketConversation(ticketId){
   return state.ticketConversations
     .filter(c => String(c.fields.TicketId)===String(ticketId))
     .sort((a,b)=> new Date(a.fields.MessageDate||0) - new Date(b.fields.MessageDate||0));
+}
+
+/* ============================================================
+   CONVERSATION — live from the support mailbox
+   ------------------------------------------------------------
+   A ticket's Conversation is read straight from support@ each time the
+   ticket is opened: every message (Inbox AND Sent Items) in every email
+   thread linked to the ticket, oldest first. Graph's "uniqueBody" gives
+   just the new text of each message, so no guessing where the quoted
+   history starts. The saved copies in SLA_TicketConversations are still
+   used for any message that's since been deleted from the mailbox, or if
+   the mailbox can't be read.
+
+   Threads linked to a ticket (Graph conversationIds):
+     - AckConversationId / AssignConversationId (set when those emails go out)
+     - LinkedConversationIds — newline-separated, any number of threads
+       (added by "Link to ticket" in Email Intake, and found automatically
+       from the ticket's source email and saved copies — see discoverTicketThreads())
+   ============================================================ */
+const MAILBOX_URL = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}`;
+// A Graph "access denied" (403) from callGraph()'s error text.
+const mailForbidden = e => /failed:\s*403\b/.test(String(e && e.message || e)) || /AccessDenied/i.test(String(e && e.message || ""));
+const odataStr = s => encodeURIComponent(String(s).replace(/'/g, "''"));
+const CONVO_MAX_AGE_MS = 2 * 60 * 1000;
+
+const convoCache = new Map();        // ticketId -> { status, items, error, at, token }
+const convoUi = new Map();           // ticketId -> { open:Set, full:Set, mode, to, cc, toDirty, ccDirty, text, sending }
+const convoNodes = new Map();        // ticketId -> persistent DOM node (survives ticket re-renders)
+const convoDiscovered = new Map();   // ticketId -> Promise<Set<conversationId>>
+const mailExtras = new Map();        // message id -> { full, attachments, cids, loading }
+let _deletedFolderId;                // undefined = not looked up yet, null = unavailable
+let _linkedColumnMissingWarned = false;
+
+function convoUiFor(ticketId){
+  ticketId = String(ticketId);
+  if(!convoUi.has(ticketId)) convoUi.set(ticketId, { open:new Set(), full:new Set(), mode:"reply", to:"", cc:"", toDirty:false, ccDirty:false, text:"", sending:false, defaultsSet:false });
+  return convoUi.get(ticketId);
+}
+
+// Every thread (conversationId) linked to a ticket.
+function ticketThreadIds(t){
+  const ids = new Set();
+  [t.fields.AckConversationId, t.fields.AssignConversationId].forEach(x => { if(x) ids.add(String(x).trim()); });
+  String(t.fields.LinkedConversationIds || "").split(/\s+/).forEach(x => { if(x) ids.add(x); });
+  return ids;
+}
+
+// Remembers extra threads on the ticket (LinkedConversationIds). Best-effort:
+// if the column hasn't been added to SLA_Tickets yet, the threads are still
+// found again automatically each time (discoverTicketThreads), just with a
+// few more mailbox lookups.
+async function rememberTicketThreads(t, ids){
+  const existing = ticketThreadIds(t);
+  const linked = String(t.fields.LinkedConversationIds || "").split(/\s+/).filter(Boolean);
+  const add = [...ids].filter(id => id && !existing.has(id));
+  if(!add.length) return true;
+  const merged = [...linked, ...add].join("\n");
+  try{
+    await graphUpdateItem("SLA_Tickets", t.id, { LinkedConversationIds: merged });
+    t.fields.LinkedConversationIds = merged;
+    return true;
+  }catch(e){
+    if(/not recognized|does not exist/i.test(e.message || "")){
+      if(!_linkedColumnMissingWarned) console.warn("SLA_Tickets has no LinkedConversationIds column yet — run the one-line PowerShell step from the pull request. Threads will still be found automatically meanwhile.");
+      _linkedColumnMissingWarned = true;
+    }else{
+      console.warn("Couldn't remember the linked email thread on the ticket:", e);
+    }
+    return false;
+  }
+}
+
+// Finds threads for a ticket from its original email (SourceMessageId) and
+// from the saved copies of messages already on it — this is what picks up a
+// thread that was linked before LinkedConversationIds existed (e.g. a
+// client's own thread linked to a ticket that already had an acknowledgment
+// thread). Runs once per ticket per session.
+function discoverTicketThreads(t){
+  const key = String(t.id);
+  if(convoDiscovered.has(key)) return convoDiscovered.get(key);
+  const p = (async () => {
+    const found = new Set();
+    const imIds = new Set();
+    if(t.fields.SourceMessageId) imIds.add(t.fields.SourceMessageId);
+    ticketConversation(t.id).forEach(c => { if(c.fields.InternetMessageId) imIds.add(c.fields.InternetMessageId); });
+    const known = ticketThreadIds(t);
+    for(const imId of [...imIds].slice(0, 15)){
+      try{
+        const res = await callGraph(`${MAILBOX_URL}/messages?$filter=internetMessageId eq '${odataStr(imId)}'&$select=conversationId&$top=1`);
+        const cid = (res.value || [])[0]?.conversationId;
+        if(cid && !known.has(cid)) found.add(cid);
+      }catch(e){
+        console.warn("Couldn't look up an email's thread:", e);
+        if(mailForbidden(e)) break; // no mailbox access — no point trying the rest
+      }
+    }
+    if(found.size) rememberTicketThreads(t, found); // fire and forget
+    return found;
+  })();
+  convoDiscovered.set(key, p);
+  return p;
+}
+
+async function deletedItemsFolderId(){
+  if(_deletedFolderId !== undefined) return _deletedFolderId;
+  try{ _deletedFolderId = (await callGraph(`${MAILBOX_URL}/mailFolders/deleteditems?$select=id`)).id || null; }
+  catch(e){ _deletedFolderId = null; }
+  return _deletedFolderId;
+}
+
+// Every message in one thread, across all folders of the support mailbox.
+async function fetchThreadMessages(conversationId){
+  const select = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,uniqueBody,bodyPreview,hasAttachments,internetMessageId,isDraft,parentFolderId,conversationId,webLink";
+  let url = `${MAILBOX_URL}/messages?$filter=conversationId eq '${odataStr(conversationId)}'&$select=${select}&$top=50`;
+  const out = [];
+  for(let page = 0; url && page < 6; page++){
+    const res = await callGraph(url, { headers: { Prefer: 'outlook.body-content-type="html"' } });
+    out.push(...(res.value || []));
+    url = res["@odata.nextLink"] || null;
+  }
+  return out;
+}
+
+function isFromHelpdesk(addr){ return String(addr || "").toLowerCase().trim() === HELPDESK_MAILBOX.toLowerCase(); }
+
+// Loads (or reloads) the conversation for a ticket and redraws it.
+async function loadTicketConversation(t, force){
+  const key = String(t.id);
+  const cur = convoCache.get(key);
+  if(cur && cur.status === "loading") return;
+  if(!force && cur && cur.status !== "error" && Date.now() - cur.at < CONVO_MAX_AGE_MS) return;
+  const token = {};
+  convoCache.set(key, { status:"loading", items: cur?.items || null, error:null, at: Date.now(), token });
+  renderConversationList(key);
+  let items = [], error = null;
+  const saved = ticketConversation(t.id);
+  try{
+    const discovered = await discoverTicketThreads(t);
+    const threadIds = new Set([...ticketThreadIds(t), ...discovered]);
+    const [deletedId, ...threads] = await Promise.all([deletedItemsFolderId(), ...[...threadIds].map(fetchThreadMessages)]);
+    const seen = new Set();
+    for(const m of threads.flat()){
+      if(m.isDraft) continue;
+      if(deletedId && m.parentFolderId === deletedId) continue;
+      const k = m.internetMessageId || m.id;
+      if(seen.has(k)) continue;
+      seen.add(k);
+      items.push({
+        key: m.id, live: true, id: m.id,
+        fromName: m.from?.emailAddress?.name || m.from?.emailAddress?.address || "",
+        fromEmail: m.from?.emailAddress?.address || "",
+        to: (m.toRecipients || []).map(r => r.emailAddress),
+        cc: (m.ccRecipients || []).map(r => r.emailAddress),
+        subject: m.subject || "",
+        date: m.receivedDateTime || m.sentDateTime,
+        html: m.uniqueBody?.content || "",
+        preview: m.bodyPreview || "",
+        hasAttachments: !!m.hasAttachments,
+        webLink: m.webLink || "",
+        internetMessageId: m.internetMessageId || ""
+      });
+    }
+    // Saved copies whose email is no longer in the mailbox.
+    for(const c of saved){
+      if(c.fields.InternetMessageId && seen.has(c.fields.InternetMessageId)) continue;
+      items.push(savedCopyItem(c));
+    }
+  }catch(e){
+    console.error("Couldn't read the conversation from the support mailbox:", e);
+    error = mailForbidden(e)
+      ? `Your account can't read ${HELPDESK_MAILBOX}, so only saved copies are shown.`
+      : `Couldn't read ${HELPDESK_MAILBOX} just now (${String(e.message || e).slice(0, 120)}) — showing saved copies only.`;
+    items = saved.map(savedCopyItem);
+  }
+  if(convoCache.get(key)?.token !== token) return; // superseded by a newer load
+  items.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)); // oldest first
+  const ui = convoUiFor(key);
+  // Open the newest message the first time a ticket's conversation is shown.
+  if(!cur && items.length) ui.open.add(items[items.length - 1].key);
+  convoCache.set(key, { status:"ok", items, error, at: Date.now(), token });
+  setReplyDefaults(key);
+  renderConversationList(key);
+  renderReplyBox(key);
+}
+
+function savedCopyItem(c){
+  return {
+    key: "saved:" + c.id, live: false, id: null,
+    fromName: c.fields.FromName || c.fields.FromEmail || "",
+    fromEmail: c.fields.FromEmail || "",
+    to: [], cc: [],
+    subject: c.fields.Subject || "",
+    date: c.fields.MessageDate,
+    text: c.fields.Body || "",
+    preview: (c.fields.Body || "").replace(/\s+/g, " ").slice(0, 160),
+    hasAttachments: false, webLink: "", internetMessageId: c.fields.InternetMessageId || ""
+  };
+}
+
+/* ---------- Drawing ---------- */
+
+// Called from renderTicketDetail(): drops the ticket's persistent
+// Conversation panel into its slot. The panel is kept between re-renders
+// (background refreshes redraw the ticket every so often), so a reply being
+// typed, open messages and scroll positions aren't lost.
+// Call BEFORE the ticket panel is redrawn — remembers which reply field had
+// the cursor, so mountConversation() can put it back.
+function captureConvoFocus(){
+  const a = document.activeElement;
+  if(!a || !/^(TEXTAREA|INPUT)$/.test(a.tagName)) return null;
+  for(const node of convoNodes.values()) if(node.contains(a)) return { el: a, start: a.selectionStart, end: a.selectionEnd };
+  return null;
+}
+function mountConversation(t, restore){
+  const slot = document.getElementById("convoSlot");
+  if(!slot) return;
+  const key = String(t.id);
+  let node = convoNodes.get(key);
+  if(!node){
+    node = document.createElement("div");
+    node.className = "tkt-section c-convo";
+    node.innerHTML = `
+      <div class="cv-headrow">
+        <div class="section-title" style="margin:0;">Conversation <span class="cv-count"></span></div>
+        <div class="cv-tools">
+          <button class="btn btn-sm" onclick="convoExpandAll('${key}', true)">Expand all</button>
+          <button class="btn btn-sm" onclick="convoExpandAll('${key}', false)">Collapse all</button>
+          <button class="btn btn-sm" title="Reload from the mailbox" onclick="reloadTicketConversation('${key}')">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="cv-list"></div>
+      <div class="cv-reply"></div>`;
+    convoNodes.set(key, node);
+  }
+  slot.replaceWith(node);
+  if(restore && document.contains(restore.el)){
+    restore.el.focus();
+    try{ restore.el.setSelectionRange(restore.start, restore.end); }catch(_){}
+  }
+  renderConversationList(key);
+  renderReplyBox(key);
+  loadTicketConversation(t);
+}
+
+function reloadTicketConversation(ticketId){
+  const t = state.tickets.find(x => String(x.id) === String(ticketId));
+  if(t) loadTicketConversation(t, true);
+}
+
+const AVATAR_COLOURS = ["#2a78d6", "#6952c9", "#0f8b8d", "#a8574e", "#c27c0e", "#3b7d3b", "#b03a6f", "#4a5568"];
+function avatarFor(name, email){
+  const src = (name || email || "?").trim();
+  const parts = src.replace(/[<>()"]/g, "").split(/[\s.@_-]+/).filter(Boolean);
+  const initials = ((parts[0] || "?")[0] + (parts.length > 1 ? parts[1][0] : "")).toUpperCase();
+  let h = 0; for(const ch of (email || name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { initials, colour: AVATAR_COLOURS[h % AVATAR_COLOURS.length] };
+}
+const fmtPeople = list => list.map(p => esc(p?.name || p?.address || "")).filter(Boolean).join("; ");
+
+function renderConversationList(ticketId){
+  const node = convoNodes.get(String(ticketId));
+  if(!node) return;
+  const listEl = node.querySelector(".cv-list");
+  const countEl = node.querySelector(".cv-count");
+  const c = convoCache.get(String(ticketId));
+  const ui = convoUiFor(ticketId);
+  const items = c?.items;
+  countEl.textContent = items && items.length ? `(${items.length})` : "";
+  if(!items){
+    listEl.innerHTML = `<div class="empty">Loading the email thread from ${esc(HELPDESK_MAILBOX)}…</div>`;
+    return;
+  }
+  const note = c.error ? `<div class="cv-note">⚠️ ${esc(c.error)}</div>` : "";
+  const loading = c.status === "loading" ? `<div class="cv-note cv-note-info">Refreshing…</div>` : "";
+  if(!items.length){
+    listEl.innerHTML = note + loading + `<div class="empty">No emails linked to this ticket yet. Replies to its acknowledgment email show up here automatically; use <b>Link to ticket</b> in Intake to attach any other email thread.</div>`;
+    return;
+  }
+  listEl.innerHTML = note + loading + items.map(m => {
+    const open = ui.open.has(m.key);
+    const ours = isFromHelpdesk(m.fromEmail);
+    const av = avatarFor(m.fromName, m.fromEmail);
+    const extras = m.live ? mailExtras.get(m.id) : null;
+    const attachments = (extras?.attachments || []).filter(a => !a.isInline);
+    return `
+    <div class="cv-msg${open ? " open" : ""}${ours ? " ours" : ""}" data-key="${esc(m.key)}">
+      <div class="cv-head" onclick="toggleConvoMessage('${ticketId}', '${esc(m.key)}')">
+        <div class="cv-avatar" style="background:${av.colour}">${esc(av.initials)}</div>
+        <div class="cv-meta">
+          <div class="cv-from">
+            <b>${esc(m.fromName || "—")}</b>
+            ${m.fromEmail && m.fromEmail !== m.fromName ? `<span class="cv-addr">${esc(m.fromEmail)}</span>` : ""}
+            ${ours ? `<span class="badge badge-info">Support mailbox</span>` : ""}
+            ${m.live ? "" : `<span class="badge badge-neutral" title="This email is no longer in the mailbox — showing the copy saved on the ticket">Saved copy</span>`}
+          </div>
+          ${open
+            ? `<div class="cv-to">${m.to.length ? `To: ${fmtPeople(m.to)}` : ""}${m.cc.length ? `${m.to.length ? " · " : ""}Cc: ${fmtPeople(m.cc)}` : ""}</div>`
+            : `<div class="cv-preview">${esc(m.preview)}</div>`}
+        </div>
+        <div class="cv-date">${m.hasAttachments ? `<span title="Has attachments">📎</span> ` : ""}${fmtDateTime(m.date)}</div>
+      </div>
+      ${open ? `
+      <div class="cv-body">
+        ${m.live ? `<iframe class="cv-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" data-id="${esc(m.id)}" onload="fitConvoFrame(this)"></iframe>`
+                 : `<div class="cv-text">${esc(m.text || "")}</div>`}
+        ${attachments.length ? `<div class="cv-atts">${attachments.map(a => `
+          <button class="cv-att" onclick="downloadMailAttachment('${esc(m.id)}', '${esc(a.id)}', this)" data-name="${esc(a.name)}">📄 ${esc(a.name)} <span>${fmtBytes(a.size)}</span></button>`).join("")}</div>` : ""}
+        ${extras?.loading ? `<div class="cv-note cv-note-info">Loading attachments…</div>` : ""}
+        ${m.live ? `<div class="cv-actions">
+          <button class="btn btn-sm" onclick="toggleConvoFull('${ticketId}', '${esc(m.id)}')">${ui.full.has(m.id) ? "Show new text only" : "Show full email (with earlier quoted messages)"}</button>
+          ${m.webLink ? `<a class="btn btn-sm" href="${esc(m.webLink)}" target="_blank" rel="noopener">Open in Outlook ↗</a>` : ""}
+        </div>` : ""}
+      </div>` : ""}
+    </div>`;
+  }).join("");
+  // Fill the email bodies (written into sandboxed frames — no scripts run).
+  listEl.querySelectorAll("iframe.cv-frame").forEach(frame => {
+    const m = items.find(x => x.id === frame.dataset.id);
+    if(!m) return;
+    const ex = mailExtras.get(m.id) || {};
+    const showFull = ui.full.has(m.id);
+    let html = showFull ? (ex.full ?? null) : (m.html || "");
+    if(showFull && html === null){ html = `<p style="color:#888">Loading the full email…</p>`; }
+    if(!showFull && !stripHtml(html || "").trim()) html = `<div style="white-space:pre-wrap">${esc(m.preview || "")}</div>`;
+    frame.srcdoc = emailFrameDoc(html, ex.cids);
+  });
+}
+
+function fmtBytes(n){
+  n = Number(n) || 0;
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+}
+
+// Turns an email's HTML into a safe, self-contained page for the frame:
+// scripts, embedded objects, event handlers and javascript: links are
+// removed; inline (cid:) images are swapped for the downloaded pictures.
+function emailFrameDoc(html, cids){
+  const doc = new DOMParser().parseFromString(html || "", "text/html");
+  doc.querySelectorAll("script, iframe, object, embed, form, link, meta, base").forEach(el => el.remove());
+  doc.querySelectorAll("*").forEach(el => {
+    for(const a of [...el.attributes]){
+      if(/^on/i.test(a.name)) el.removeAttribute(a.name);
+      else if(/^(href|src|action|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+    }
+    if(el.tagName === "IMG"){
+      const src = el.getAttribute("src") || "";
+      const m = /^cid:(.+)$/i.exec(src);
+      if(m){ const data = cids && (cids[m[1]] || cids[m[1].replace(/^<|>$/g, "")]); if(data) el.setAttribute("src", data); else el.removeAttribute("src"); }
+    }
+  });
+  const styles = [...doc.querySelectorAll("style")].map(s => s.outerHTML).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank">
+<style>html,body{margin:0;padding:0;background:#fff;}body{display:flow-root;}body{font:13.5px/1.5 "Segoe UI",Calibri,Arial,sans-serif;color:#1b1c20;overflow-wrap:anywhere;}
+img{max-width:100%;height:auto;}table{max-width:100%;}p{margin:0 0 .6em;}a{color:#1c5cab;}</style>${styles}</head>
+<body>${doc.body ? doc.body.innerHTML : ""}</body></html>`;
+}
+
+function fitConvoFrame(frame){
+  try{
+    const d = frame.contentDocument;
+    if(!d || !d.body) return;
+    const fit = () => { const h = Math.ceil(d.body.getBoundingClientRect().height) + 4; if(Math.abs((parseInt(frame.style.height, 10) || 0) - h) > 1) frame.style.height = Math.max(24, h) + "px"; };
+    fit();
+    if(window.ResizeObserver && !frame._ro){ frame._ro = new ResizeObserver(fit); frame._ro.observe(d.body); }
+    d.querySelectorAll("img").forEach(img => img.addEventListener("load", fit));
+  }catch(e){ /* cross-origin can't happen here (srcdoc), but never break the page over sizing */ }
+}
+
+function toggleConvoMessage(ticketId, key){
+  const ui = convoUiFor(ticketId);
+  if(ui.open.has(key)) ui.open.delete(key); else{ ui.open.add(key); ensureMailExtras(ticketId, key); }
+  renderConversationList(ticketId);
+}
+function convoExpandAll(ticketId, open){
+  const ui = convoUiFor(ticketId);
+  const items = convoCache.get(String(ticketId))?.items || [];
+  ui.open = new Set(open ? items.map(m => m.key) : []);
+  if(open) items.forEach(m => ensureMailExtras(ticketId, m.key));
+  renderConversationList(ticketId);
+}
+async function toggleConvoFull(ticketId, msgId){
+  const ui = convoUiFor(ticketId);
+  if(ui.full.has(msgId)){ ui.full.delete(msgId); renderConversationList(ticketId); return; }
+  ui.full.add(msgId);
+  const ex = mailExtras.get(msgId) || {};
+  mailExtras.set(msgId, ex);
+  renderConversationList(ticketId);
+  if(ex.full == null){
+    try{
+      const r = await callGraph(`${MAILBOX_URL}/messages/${msgId}?$select=body`, { headers: { Prefer: 'outlook.body-content-type="html"' } });
+      ex.full = r?.body?.content || "";
+    }catch(e){ ex.full = `<p style="color:#b00">Couldn't load the full email: ${esc(e.message)}</p>`; }
+    renderConversationList(ticketId);
+  }
+}
+
+// Attachments (and inline pictures) for an opened message — loaded on demand.
+async function ensureMailExtras(ticketId, key){
+  const m = (convoCache.get(String(ticketId))?.items || []).find(x => x.key === key);
+  if(!m || !m.live || !m.hasAttachments) return;
+  const ex = mailExtras.get(m.id) || {};
+  mailExtras.set(m.id, ex);
+  if(ex.attachments || ex.loading) return;
+  ex.loading = true;
+  try{
+    const res = await callGraph(`${MAILBOX_URL}/messages/${m.id}/attachments?$select=id,name,contentType,size,isInline`);
+    ex.attachments = res.value || [];
+    // Inline pictures (logos, screenshots pasted into the email body).
+    const cids = {};
+    for(const a of ex.attachments.filter(a => a.isInline && /^image\//i.test(a.contentType || "")).slice(0, 12)){
+      try{
+        const full = await callGraph(`${MAILBOX_URL}/messages/${m.id}/attachments/${a.id}`);
+        if(full?.contentId && full?.contentBytes) cids[full.contentId.replace(/^<|>$/g, "")] = `data:${a.contentType};base64,${full.contentBytes}`;
+      }catch(e){ console.warn("Couldn't load an inline picture:", e); }
+    }
+    ex.cids = cids;
+  }catch(e){
+    console.warn("Couldn't load attachments:", e);
+    ex.attachments = [];
+  }
+  ex.loading = false;
+  renderConversationList(ticketId);
+}
+
+async function downloadMailAttachment(msgId, attId, btn){
+  const name = btn?.dataset?.name || "attachment";
+  if(btn) btn.disabled = true;
+  try{
+    const token = await CG.auth.token();
+    const res = await fetch(`${MAILBOX_URL}/messages/${msgId}/attachments/${attId}/$value`, { headers: { Authorization: "Bearer " + token } });
+    if(!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  }catch(e){
+    toast("Couldn't download the attachment: " + e.message, true);
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+
+/* ---------- Reply / Reply all (sent from the support mailbox, in-thread) ---------- */
+
+// The message a reply answers: the newest email still in the mailbox.
+function replyTarget(ticketId){
+  const items = convoCache.get(String(ticketId))?.items || [];
+  for(let i = items.length - 1; i >= 0; i--) if(items[i].live) return items[i];
+  return null;
+}
+const sameAddr = (a, b) => String(a || "").toLowerCase().trim() === String(b || "").toLowerCase().trim();
+function uniquePeople(list, exclude = []){
+  const out = [];
+  for(const p of list){
+    if(!p || !p.address || isFromHelpdesk(p.address)) continue;
+    if(out.some(x => sameAddr(x.address, p.address)) || exclude.some(x => sameAddr(x.address, p.address))) continue;
+    out.push(p);
+  }
+  return out;
+}
+// Who a reply / reply-all goes to, the way Outlook works it out — except
+// that replying to a message the support mailbox sent goes back to that
+// message's recipients, not to support@ itself.
+function replyRecipients(m, mode){
+  const from = { name: m.fromName, address: m.fromEmail };
+  const base = isFromHelpdesk(m.fromEmail) ? m.to : [from];
+  if(mode !== "all") return { to: uniquePeople(base), cc: [] };
+  const to = uniquePeople([...base, ...m.to]);
+  return { to, cc: uniquePeople(m.cc, to) };
+}
+const peopleToText = list => list.map(p => p.address).join("; ");
+function textToPeople(s){
+  return String(s || "").split(/[;,\s]+/).map(x => x.trim()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)).map(address => ({ address }));
+}
+
+function setReplyDefaults(ticketId, force){
+  const ui = convoUiFor(ticketId);
+  const m = replyTarget(ticketId);
+  if(!m) return;
+  if(ui.defaultsSet && !force) return;
+  const r = replyRecipients(m, ui.mode);
+  if(!ui.toDirty || force) ui.to = peopleToText(r.to);
+  if(!ui.ccDirty || force) ui.cc = peopleToText(r.cc);
+  ui.defaultsSet = true;
+}
+
+function setReplyMode(ticketId, mode){
+  const ui = convoUiFor(ticketId);
+  ui.mode = mode;
+  ui.toDirty = ui.ccDirty = false;
+  setReplyDefaults(ticketId, true);
+  renderReplyBox(ticketId);
+}
+
+function renderReplyBox(ticketId){
+  const node = convoNodes.get(String(ticketId));
+  if(!node) return;
+  const el = node.querySelector(".cv-reply");
+  const c = convoCache.get(String(ticketId));
+  const ui = convoUiFor(ticketId);
+  const m = c?.items ? replyTarget(ticketId) : null;
+  if(!c?.items){ el.innerHTML = ""; return; }
+  if(!m){
+    el.innerHTML = `<div class="cv-reply-off">Reply becomes available once an email thread is linked to this ticket.</div>`;
+    return;
+  }
+  // Keep the text box itself if it already exists, so typing is never interrupted.
+  const existing = el.querySelector("textarea");
+  const ta = existing && el.dataset.for === m.key ? existing : null;
+  const hadFocus = !!ta && document.activeElement === ta;
+  const sel = hadFocus ? [ta.selectionStart, ta.selectionEnd] : null;
+  el.dataset.for = m.key;
+  el.innerHTML = `
+    <div class="cv-reply-head">
+      <div class="cv-seg">
+        <button class="${ui.mode === "reply" ? "on" : ""}" onclick="setReplyMode('${ticketId}', 'reply')">↩ Reply</button>
+        <button class="${ui.mode === "all" ? "on" : ""}" onclick="setReplyMode('${ticketId}', 'all')">↩↩ Reply all</button>
+      </div>
+      <div class="cv-reply-to">Replying to <b>${esc(m.fromName || m.fromEmail)}</b>, ${fmtDateTime(m.date)}</div>
+    </div>
+    <div class="cv-addr-row"><label>To</label><input type="text" value="${esc(ui.to)}" oninput="onReplyField('${ticketId}', 'to', this.value)" placeholder="name@example.com; …"></div>
+    <div class="cv-addr-row"><label>Cc</label><input type="text" value="${esc(ui.cc)}" oninput="onReplyField('${ticketId}', 'cc', this.value)" placeholder="optional"></div>
+    <div class="cv-ta-slot"></div>
+    <div class="cv-reply-foot">
+      <span>Sends from ${esc(HELPDESK_MAILBOX)} in the same email thread, with the earlier messages quoted underneath.</span>
+      <button class="btn btn-accent" ${ui.sending ? "disabled" : ""} onclick="sendTicketReply('${ticketId}')">${ui.sending ? "Sending…" : "Send"}</button>
+    </div>`;
+  const area = ta || Object.assign(document.createElement("textarea"), { rows: 5, placeholder: "Write your reply…" });
+  if(!ta){ area.value = ui.text; area.oninput = () => { ui.text = area.value; }; }
+  area.disabled = ui.sending;
+  el.querySelector(".cv-ta-slot").replaceWith(area);
+  if(hadFocus){ area.focus(); try{ area.setSelectionRange(sel[0], sel[1]); }catch(_){} }
+}
+
+function onReplyField(ticketId, field, value){
+  const ui = convoUiFor(ticketId);
+  ui[field] = value;
+  ui[field + "Dirty"] = true;
+}
+
+async function sendTicketReply(ticketId){
+  const ui = convoUiFor(ticketId);
+  const m = replyTarget(ticketId);
+  const t = state.tickets.find(x => String(x.id) === String(ticketId));
+  if(!m || !t) return;
+  const text = (ui.text || "").trim();
+  const to = textToPeople(ui.to), cc = textToPeople(ui.cc);
+  if(!text){ toast("Write your reply first.", true); return; }
+  if(!to.length){ toast("Add at least one valid email address in To.", true); return; }
+  const recipients = list => list.map(p => ({ emailAddress: { address: p.address } }));
+  const ourHtml = `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt;">${esc(text).replace(/\n/g, "<br>")}</div><br>`;
+  ui.sending = true;
+  renderReplyBox(ticketId);
+  try{
+    try{
+      // Draft first, so the recipients can be set exactly and the earlier
+      // messages are quoted underneath the way Outlook does it.
+      const draft = await callGraph(`${MAILBOX_URL}/messages/${m.id}/${ui.mode === "all" ? "createReplyAll" : "createReply"}`, { method: "POST", body: JSON.stringify({}) });
+      const quoted = draft?.body?.content || "";
+      const html = /<body[^>]*>/i.test(quoted) ? quoted.replace(/<body[^>]*>/i, b => b + ourHtml) : ourHtml + quoted;
+      await callGraph(`${MAILBOX_URL}/messages/${draft.id}`, { method: "PATCH", body: JSON.stringify({
+        body: { contentType: "HTML", content: html }, toRecipients: recipients(to), ccRecipients: recipients(cc)
+      }) });
+      await callGraph(`${MAILBOX_URL}/messages/${draft.id}/send`, { method: "POST" });
+    }catch(e){
+      // No permission to create drafts in the shared mailbox — send in one step instead.
+      if(!mailForbidden(e)) throw e;
+      console.warn("Draft reply refused, sending as a one-step reply instead:", e);
+      await callGraph(`${MAILBOX_URL}/messages/${m.id}/${ui.mode === "all" ? "replyAll" : "reply"}`, { method: "POST", body: JSON.stringify({
+        message: { toRecipients: recipients(to), ccRecipients: recipients(cc) },
+        comment: ourHtml
+      }) });
+    }
+    toast(`Reply sent to ${to.map(p => p.address).join(", ")}`);
+    ui.text = ""; ui.toDirty = ui.ccDirty = false; ui.defaultsSet = false;
+    const node = convoNodes.get(String(ticketId));
+    const area = node && node.querySelector(".cv-reply textarea");
+    if(area) area.value = "";
+    // Sent Items takes a moment to show the new message.
+    setTimeout(() => loadTicketConversation(t, true), 2500);
+  }catch(e){
+    console.error(e);
+    toast("Couldn't send the reply: " + describeMailError(e), true);
+  }finally{
+    ui.sending = false;
+    renderReplyBox(ticketId);
+  }
 }
 
 /* ---------- Notes (staff log entries as a ticket progresses) ---------- */
@@ -3255,8 +3870,7 @@ async function renderEmail(){
     // importing again.
     const ticketByConversationId = new Map();
     for(const t of state.tickets){
-      if(t.fields.AckConversationId) ticketByConversationId.set(t.fields.AckConversationId, t);
-      if(t.fields.AssignConversationId) ticketByConversationId.set(t.fields.AssignConversationId, t);
+      for(const cid of ticketThreadIds(t)) ticketByConversationId.set(cid, t);
     }
     const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
     const stillNeedingReview = [];
@@ -3663,7 +4277,7 @@ function openLinkThreadToTicketModal(threadKey){
   const suggestedSearch = normalizeSubject(group.messages[0].subject || "");
   openModal(`
     <h3>🔗 Link thread to an existing ticket</h3>
-    <p class="modal-sub">Imports every message in this thread (${group.messages.length}) into the ticket's Conversation. Where the ticket doesn't already have one of its own, this also remembers the thread's conversation so future replies in it match automatically from now on.</p>
+    <p class="modal-sub">Imports every message in this thread (${group.messages.length}) into the ticket's Conversation. It also remembers the thread, so later replies in it (including ones sent from Outlook) show on the ticket automatically.</p>
     <div class="field" style="margin-bottom:10px;">
       <input type="text" id="linkTicketSearch" placeholder="Search by ticket number or title…" value="${esc(suggestedSearch)}" oninput="renderLinkTicketResults('${threadKey}')">
     </div>
@@ -3713,6 +4327,10 @@ async function linkThreadToTicket(threadKey, ticketId){
       if(conversationId && !ticket.fields.AckConversationId){
         await graphUpdateItem("SLA_Tickets", ticket.id, { AckConversationId: conversationId });
         ticket.fields.AckConversationId = conversationId;
+      }else if(conversationId){
+        // The ticket already has a thread of its own — add this one alongside
+        // it (LinkedConversationIds), so later replies here match too.
+        await rememberTicketThreads(ticket, [conversationId]);
       }
       const importedIds = new Set(state.ticketConversations.map(c => c.fields.InternetMessageId).filter(Boolean));
       for(const m of group.messages){
@@ -3726,8 +4344,10 @@ async function linkThreadToTicket(threadKey, ticketId){
     return;
   }
   inboxMessages = inboxMessages.filter(x => !group.messages.some(m => m.id === x.id));
-  const willAutoMatch = conversationId && ticket.fields.AckConversationId === conversationId;
-  toast(`Linked ${group.messages.length} message${group.messages.length===1?"":"s"} to ${ticket.fields.TicketNumber||ticket.id}${willAutoMatch ? "" : " (future replies here won't auto-match — this ticket's conversation is already taken by a different thread)"}`);
+  convoCache.delete(String(ticket.id));
+  convoDiscovered.delete(String(ticket.id));
+  const willAutoMatch = conversationId && ticketThreadIds(ticket).has(conversationId);
+  toast(`Linked ${group.messages.length} message${group.messages.length===1?"":"s"} to ${ticket.fields.TicketNumber||ticket.id}${willAutoMatch ? " — later replies in this thread will show on the ticket automatically" : ""}`);
   renderEmail();
 }
 
