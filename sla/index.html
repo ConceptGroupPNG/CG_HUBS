@@ -36,6 +36,12 @@ input,select,textarea{font-family:inherit;font-size:13px;}
 .login-card img{height:44px;margin-bottom:20px;}
 .login-card h1{font-size:20px;margin:0 0 6px;}
 .login-card p{color:var(--ink-2);font-size:13px;margin:0 0 24px;}
+.login-card .denied-icon{font-size:34px;line-height:1;margin:-4px 0 10px;}
+.login-card .denied-title{color:#c0392b;font-size:16px;font-weight:700;margin:0 0 10px;}
+.login-card .denied-text{color:var(--ink-2);font-size:13px;line-height:1.5;margin:0 0 14px;text-align:left;}
+.login-card .denied-who{font-size:12px;color:var(--ink-2);margin:0 0 22px;word-break:break-all;}
+.login-card .denied-actions{display:flex;flex-direction:column;gap:10px;}
+.login-card .denied-actions a{font-size:13px;color:var(--ink-2);}
 .btn-primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;width:100%;transition:background .15s;}
 .btn-primary:hover{background:var(--accent-dk);}
 
@@ -1260,7 +1266,7 @@ async function init(){
     document.getElementById("app").classList.add("active");
     document.getElementById("whoAmI").textContent = account.name || account.username;
 
-    await loadCoreData();
+    if(await loadCoreData() === false) return;   // no access to the Helpdesk site
     await reconcileExceptions();
     await reconcileTicketActiveEntities();
     navigate("dashboard");
@@ -1270,6 +1276,40 @@ async function init(){
   }
 }
 
+// True when SharePoint refused the request because the signed-in account
+// isn't a member of the Helpdesk site (Graph 403 / accessDenied).
+function isAccessDenied(e){
+  const m = String(e && e.message || e);
+  return /failed:\s*403\b/.test(m) || /"code"\s*:\s*"accessDenied"/i.test(m);
+}
+
+// Replaces the dashboard with a plain "access denied" card on the sign-in
+// screen, instead of a raw Graph error over an empty dashboard.
+function showAccessDenied(){
+  const who = typeof CG_ACCESS_CONTACT !== "undefined" ? CG_ACCESS_CONTACT : "your administrator";
+  const email = (currentAccount && (currentAccount.username || currentAccount.name)) || "";
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const card = document.querySelector("#loginScreen .login-card");
+  const logo = card.querySelector("img");
+  card.innerHTML = "";
+  if(logo) card.appendChild(logo);
+  card.insertAdjacentHTML("beforeend", `
+    <h1>SLA HUB</h1>
+    <div class="denied-icon">🔒</div>
+    <div class="denied-title">Access denied</div>
+    <p class="denied-text">Your account doesn't have access to the Helpdesk SharePoint site, where SLA HUB keeps its tickets and records, so SLA HUB can't open.</p>
+    <p class="denied-text">If you need SLA HUB, please ask ${esc(who)} to add you to the Helpdesk site.</p>
+    ${email ? `<div class="denied-who">Signed in as ${esc(email)}</div>` : ""}
+    <div class="denied-actions">
+      <button class="btn-primary" onclick="logout()">Sign in with a different account</button>
+      <a href="../">Back to CG HUBS</a>
+    </div>`);
+  document.getElementById("app").classList.remove("active");
+  document.getElementById("loginScreen").style.display = "";
+}
+
+// Returns false if the signed-in account has no access to the Helpdesk site
+// (the access-denied screen has then been shown), true otherwise.
 async function loadCoreData(){
   try{
     const [tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices, agreements, workOrders] = await Promise.all([
@@ -1287,6 +1327,7 @@ async function loadCoreData(){
     state = { ...state, tickets, clients, endClients, resources, timeEntries, priorityDefaults, exceptions, invoices, agreements, workOrders };
   }catch(e){
     console.error(e);
+    if(isAccessDenied(e)){ showAccessDenied(); return false; }
     toast("Couldn't load data from SharePoint: " + e.message, true);
   }
   // Cross-site reads (CG_Time) — kept separate and non-fatal: if the signed-in
@@ -1455,7 +1496,7 @@ function scheduleRefresh(){
   _refreshTimer = setTimeout(async () => {
     setRefreshSpinner(true);
     try{
-      await loadCoreData();
+      if(await loadCoreData() === false){ setRefreshSpinner(false); return; }
       await reconcileExceptions();
       await reconcileTicketActiveEntities();
     }catch(e){ console.warn("Background refresh failed:", e); }
