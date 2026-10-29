@@ -1061,12 +1061,70 @@ function normaliseWorkDate(value){
   return str;   // anything else is left exactly as it was
 }
 
+// SLA HUB's own time entries (logged on a ticket, or directly against an
+// Agreement / Work Order / Ad Hoc client) don't carry the readable "CSA"
+// text that the Time widget and CSA HUB write - they store the ticket's
+// item ID (TicketId) or a lookup to the owning record instead, so CG Time
+// showed "—" for them. The label is rebuilt here, read-only, in exactly the
+// format SLA HUB gives the Time widget (activeEntityTitleFor in
+// sla/index.html), e.g. "SLA-41 — Tower Insurance | Parallel Run 1".
+async function slaEntryLabelsFor(siteId, items){
+  const needs = items.some(i => {
+    const f = i.fields || {};
+    return !f.CSA && (f.TicketId || f.OwningEntityType);
+  });
+  if(!needs) return null;
+  const read = (list) => fetchListItemsFromSite(siteId, list).catch(err => {
+    console.warn(`${list} unavailable — SLA time entries from it will show without a label.`, err);
+    return [];
+  });
+  const [tickets, agreements, workOrders, clients] = await Promise.all([
+    read("SLA_Tickets"), read("SLA_Agreements"), read("SLA_WorkOrders"), read("SLA_Clients"),
+  ]);
+  const byId = (rows) => new Map(rows.map(r => [String(r.id), r.fields || {}]));
+  return { tickets: byId(tickets), agreements: byId(agreements), workOrders: byId(workOrders), clients: byId(clients) };
+}
+
+function slaEntryLabel(f, labels){
+  const t = labels.tickets.get(String(f.TicketId || ""));
+  if(f.TicketId && t) return `${t.TicketNumber || ("SLA-" + f.TicketId)} — ${t.Title || ""}`.trim();
+  const type = f.OwningEntityType;
+  if(type === "Agreement"){
+    const a = labels.agreements.get(String(f.OwningAgreementLookupId || ""));
+    if(a) return `${a.AgreementNumber || ("AGR-" + f.OwningAgreementLookupId)} — ${a.Title || ""}`.trim();
+  }
+  if(type === "WorkOrder"){
+    const w = labels.workOrders.get(String(f.OwningWorkOrderLookupId || ""));
+    if(w) return `${w.WorkOrderNumber || ("WO-" + f.OwningWorkOrderLookupId)} — ${w.Title || ""}`.trim();
+  }
+  if(type && f.OwningClientLookupId){
+    const c = labels.clients.get(String(f.OwningClientLookupId));
+    if(c) return `Ad Hoc — ${c.Title || ""}`.trim();
+  }
+  // Record not found (deleted, or not readable): fall back to what's on the row.
+  if(f.TicketId) return `SLA-${f.TicketId}`;
+  const m = /^Time entry — (.+)$/.exec(f.Title || "");
+  return m ? m[1] : "";
+}
+
+function withSlaEntryLabel(item, labels, src){
+  const f = item.fields || {};
+  if(!labels || f.CSA || !(f.TicketId || f.OwningEntityType)) return item;
+  const label = slaEntryLabel(f, labels);
+  if(!label) return item;
+  // Source is set too, so an Agreement's "AGR-" label isn't mistaken for a
+  // CSA HUB entry by the naming-pattern guess in hubForEntry(): every row in
+  // this list was written by this one Hub.
+  return { ...item, fields: { ...f, CSA: label, Source: f.Source || src.hub } };
+}
+
 async function fetchAllTimeEntries(){
   const results = await Promise.all(timeEntriesSources().map(async src => {
     try{
       const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
       const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
-      return items.map(item => ({
+      const labels = await slaEntryLabelsFor(resolvedSiteId, items);
+      return items.map(item => withSlaEntryLabel(item, labels, src)).map(item => ({
         ...item,
         fields: { ...item.fields, WorkDate: normaliseWorkDate(item.fields && item.fields.WorkDate) },
         _sourceHub: src.hub, _sourceHubLabel: src.label, _sourceList: src.listName,
