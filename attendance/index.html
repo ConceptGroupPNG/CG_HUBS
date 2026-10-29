@@ -119,6 +119,29 @@
     border-radius:10px;padding:10px 14px;font-size:13px;
   }
 
+  /* ---------- Face check ---------- */
+  .face-line{font-size:12.5px;color:var(--ink-muted);}
+  .face-line b{color:var(--ink-secondary);}
+  .selfie-overlay{
+    position:fixed;inset:0;z-index:50;background:#2a1f13;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:calc(18px + var(--safe-top)) 18px calc(18px + var(--safe-bottom));
+  }
+  .selfie-title{color:#fff8e8;font-size:18px;font-weight:700;text-align:center;}
+  .selfie-sub{color:#e9dcbf;font-size:13.5px;text-align:center;max-width:420px;}
+  .selfie-cam{position:relative;width:min(78vw,340px);aspect-ratio:3/4;border-radius:18px;overflow:hidden;background:#000;box-shadow:0 6px 24px rgba(0,0,0,.4);}
+  .selfie-cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block;}
+  .selfie-oval{position:absolute;left:50%;top:46%;width:62%;height:62%;transform:translate(-50%,-50%);border:3px dashed rgba(255,248,232,.8);border-radius:50%;pointer-events:none;}
+  .selfie-msg{min-height:1.3em;font-size:14px;text-align:center;color:#ffd2c2;max-width:420px;}
+  .selfie-msg.ok{color:#bff0bf;}
+  .selfie-actions{display:flex;flex-direction:column;gap:10px;width:100%;max-width:300px;align-items:center;}
+  .btn-ghost{border:1px solid rgba(255,248,232,.5);background:transparent;color:#fff8e8;border-radius:999px;padding:12px 20px;font-size:15px;font-weight:600;width:100%;cursor:pointer;}
+  .admin-card{background:var(--surface-card);border:1px solid var(--hairline);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;}
+  .admin-card h3{margin:0 0 4px;font-size:15px;}
+  .admin-card p{margin:0 0 10px;font-size:12.5px;color:var(--ink-secondary);}
+  .admin-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--hairline);font-size:13px;}
+  .admin-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .admin-row button{border:1px solid var(--status-critical);color:var(--status-critical);background:none;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+  .admin-row button.confirm{background:var(--status-critical);color:#fff;}
   .spacer{flex:1;}
   .footnote{text-align:center;font-size:11px;color:var(--ink-muted);padding-top:4px;}
 </style>
@@ -164,14 +187,36 @@
             <span id="locationText">Checking your location…</span>
           </div>
           <button id="clockBtn" class="btn-clock" disabled>Clock In</button>
+          <div id="faceLine" class="face-line" hidden></div>
           <button id="retryLocationBtn" class="retry-link" hidden>Check location again</button>
         </div>
       </div>
 
       <div id="errorBanner" class="error-banner" hidden></div>
 
+      <div id="faceAdmin" class="admin-card" hidden>
+        <h3>Face check — administrator</h3>
+        <p>Reset someone's face if it was set up wrongly or they've changed appearance. They'll set it up again at their next clock in/out.</p>
+        <div id="faceAdminList"></div>
+      </div>
+
       <div class="spacer"></div>
-      <div class="footnote">Concept Group · CG Time</div>
+      <div class="footnote">Concept Group · CG Time <button id="faceAdminBtn" class="retry-link" hidden>· Face admin</button></div>
+    </div>
+  </div>
+
+  <!-- Selfie check (shown over everything while taking the photo) -->
+  <div id="selfieOverlay" class="selfie-overlay" hidden>
+    <div id="selfieTitle" class="selfie-title">Selfie check</div>
+    <div id="selfieSub" class="selfie-sub"></div>
+    <div class="selfie-cam">
+      <video id="selfieVideo" playsinline autoplay muted></video>
+      <div class="selfie-oval"></div>
+    </div>
+    <div id="selfieMsg" class="selfie-msg"></div>
+    <div class="selfie-actions">
+      <button id="selfieTakeBtn" class="btn-clock">Take selfie</button>
+      <button id="selfieCancelBtn" class="btn-ghost">Cancel</button>
     </div>
   </div>
 
@@ -186,6 +231,8 @@
   // ../shared/cg-config.js; sign-in and SharePoint from ../shared/cg-core.js.
   // ---------------------------------------------------------------------
   const SITE = CG.app("attendance").site;              // /sites/CG_Time
+  // Selfie check: on when cg-config.js gives the face service's address.
+  const FACE_API = CG.app("attendance").faceApi || "";
   const LISTS = {
     employees: "CG_Employees",
     timeRecords: "CG_EmployeeTimeRecords",
@@ -330,7 +377,7 @@
     );
   }
 
-  async function createClockIn(employee, dateStr, timeStr) {
+  async function createClockIn(employee, dateStr, timeStr, faceNote) {
     const payNumber = await findCurrentPayPeriod(dateStr);
     const fields = {
       Title: `${employee.fields.EmployeeNumber} ${dateStr}`,
@@ -342,12 +389,202 @@
       EntrySource: "Mobile",
       EnteredBy: employee.fields.Title,
     };
-    const created = await CG.sp.create(SITE, LISTS.timeRecords, fields);
+    if (faceNote) fields.FaceCheck = "In: " + faceNote;
+    // save() quietly leaves out FaceCheck if that column hasn't been added yet.
+    const created = await CG.sp.save(SITE, LISTS.timeRecords, null, fields);
     return created.id;
   }
 
-  async function setClockOut(itemId, timeStr) {
-    await CG.sp.update(SITE, LISTS.timeRecords, itemId, { TimeOut: timeStr });
+  async function setClockOut(record, timeStr, faceNote) {
+    const fields = { TimeOut: timeStr };
+    if (faceNote) {
+      const before = (record.fields.FaceCheck || "").trim();
+      fields.FaceCheck = (before ? before + " · " : "") + "Out: " + faceNote;
+    }
+    await CG.sp.save(SITE, LISTS.timeRecords, record.id, fields);
+  }
+
+  // ---------------------------------------------------------------------
+  // Selfie check (cg-staff-face-api in AWS). The service works out who is
+  // asking from the sign-in token, so it can only ever set up or check the
+  // signed-in employee's own face. Photos are sent once and never kept.
+  // ---------------------------------------------------------------------
+  let faceEnrolled = false;
+  let faceIsAdmin = false;
+  let faceStream = null;
+
+  async function faceCall(body) {
+    const token = await CG.auth.idToken();
+    let res;
+    try {
+      res = await fetch(FACE_API, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      throw new Error("Couldn't reach the face check service - check your internet connection.");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || `Face check failed (${res.status})`);
+      err.code = data.code;
+      throw err;
+    }
+    return data;
+  }
+
+  function renderFaceLine() {
+    const el = document.getElementById("faceLine");
+    if (!FACE_API) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = faceEnrolled
+      ? "Selfie check is <b>on</b> — you'll take a quick selfie when you clock in or out."
+      : "Selfie check: you'll set up your face the first time you clock in or out.";
+  }
+
+  async function loadFaceStatus() {
+    if (!FACE_API) return;
+    const st = await faceCall({ action: "status" });
+    faceEnrolled = !!st.enrolled;
+    faceIsAdmin = !!st.admin;
+    document.getElementById("faceAdminBtn").hidden = !faceIsAdmin;
+    renderFaceLine();
+  }
+
+  async function startSelfieCamera() {
+    if (faceStream) return;
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 1280 } },
+      audio: false,
+    });
+    document.getElementById("selfieVideo").srcObject = faceStream;
+  }
+  function stopSelfieCamera() {
+    if (faceStream) { faceStream.getTracks().forEach((t) => t.stop()); faceStream = null; }
+  }
+  function captureSelfie() {
+    const v = document.getElementById("selfieVideo");
+    if (!v.videoWidth) throw new Error("The camera isn't ready yet - try again in a moment.");
+    const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * scale);
+    c.height = Math.round(v.videoHeight * scale);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.85).split(",")[1];
+  }
+
+  /* Opens the selfie screen and resolves with a short note for the time
+     record ("verified 99.3%" / "face set up"), or null if the person
+     cancelled. A selfie that doesn't match never resolves - they can
+     retake it or cancel; the clock in/out is blocked either way. */
+  function runSelfieCheck(actionLabel) {
+    const overlay = document.getElementById("selfieOverlay");
+    const title = document.getElementById("selfieTitle");
+    const sub = document.getElementById("selfieSub");
+    const msg = document.getElementById("selfieMsg");
+    const takeBtn = document.getElementById("selfieTakeBtn");
+    const cancelBtn = document.getElementById("selfieCancelBtn");
+
+    const setMsg = (text, ok) => { msg.textContent = text || ""; msg.classList.toggle("ok", !!ok); };
+    title.textContent = faceEnrolled ? `Selfie to ${actionLabel}` : "Set up your selfie check";
+    sub.textContent = faceEnrolled
+      ? "Hold the phone at eye level, face inside the oval."
+      : "First time only: this photo becomes your face record for clocking in and out. " +
+        "Only a face-recognition record is kept, not the photo. Make sure only you are in the picture.";
+    takeBtn.textContent = faceEnrolled ? "Take selfie" : "Take selfie & set up";
+    setMsg("");
+    overlay.hidden = false;
+
+    return new Promise((resolve) => {
+      const finish = (result) => {
+        takeBtn.onclick = null;
+        cancelBtn.onclick = null;
+        stopSelfieCamera();
+        overlay.hidden = true;
+        resolve(result);
+      };
+      cancelBtn.onclick = () => finish(null);
+      takeBtn.onclick = async () => {
+        takeBtn.disabled = true;
+        cancelBtn.disabled = true;
+        try {
+          const image = captureSelfie();
+          if (!faceEnrolled) {
+            setMsg("Setting up your face…", true);
+            await faceCall({ action: "enrol", image });
+            faceEnrolled = true;
+            renderFaceLine();
+            setMsg("Face set up.", true);
+            finish("face set up");
+            return;
+          }
+          setMsg("Checking…", true);
+          const r = await faceCall({ action: "verify", image });
+          if (r.verified) {
+            setMsg("That's you.", true);
+            finish(`verified ${r.similarity}%`);
+            return;
+          }
+          setMsg("That selfie didn't match your face record. Try again in better light, or see your supervisor.");
+        } catch (e) {
+          if (e.code === "NOT_ENROLLED") { faceEnrolled = false; renderFaceLine(); }
+          if (e.code === "ALREADY_ENROLLED") {
+            // Status couldn't be loaded earlier - they're set up, so just check them.
+            faceEnrolled = true; renderFaceLine();
+            title.textContent = `Selfie to ${actionLabel}`;
+            takeBtn.textContent = "Take selfie";
+            setMsg("Your face is already set up - take the selfie again to check it.");
+            return;
+          }
+          setMsg(e.message);
+        } finally {
+          takeBtn.disabled = false;
+          cancelBtn.disabled = false;
+        }
+      };
+      startSelfieCamera().catch((e) => {
+        setMsg("Camera unavailable: " + e.message + ". Allow camera access for this app, then try again.");
+        takeBtn.disabled = true;
+      });
+    });
+  }
+
+  // ----- Administrator: list and reset face records -----
+  async function loadFaceAdmin() {
+    const box = document.getElementById("faceAdminList");
+    box.textContent = "Loading…";
+    try {
+      const r = await faceCall({ action: "list" });
+      box.textContent = "";
+      if (!r.employees.length) { box.textContent = "Nobody has set up a selfie check yet."; return; }
+      for (const emp of r.employees) {
+        const row = document.createElement("div");
+        row.className = "admin-row";
+        const name = document.createElement("span");
+        name.textContent = emp.email;
+        const btn = document.createElement("button");
+        btn.textContent = "Reset";
+        btn.onclick = async () => {
+          if (!btn.classList.contains("confirm")) {   // first tap arms, second tap resets
+            btn.classList.add("confirm");
+            btn.textContent = "Tap to confirm";
+            return;
+          }
+          btn.disabled = true;
+          try {
+            await faceCall({ action: "reset", email: emp.email });
+            if (emp.email === CG.auth.email()) { faceEnrolled = false; renderFaceLine(); }
+            await loadFaceAdmin();
+          } catch (e) { showError(e.message); btn.disabled = false; }
+        };
+        row.append(name, btn);
+        box.appendChild(row);
+      }
+    } catch (e) {
+      box.textContent = "";
+      showError(e.message);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -502,12 +739,19 @@
         clockBtn.disabled = false;
         return;
       }
+      const clockingIn = !todayRecord || !todayRecord.fields.TimeIn;
+      let faceNote = "";
+      if (FACE_API) {
+        faceNote = await runSelfieCheck(clockingIn ? "clock in" : "clock out");
+        if (!faceNote) { clockBtn.disabled = false; return; }   // cancelled - nothing saved
+      }
+      // Time is taken after the selfie, so it's when the check passed.
       const dateStr = toLocalDateOnly(new Date());
       const timeStr = nowHHMM();
-      if (!todayRecord || !todayRecord.fields.TimeIn) {
-        await createClockIn(currentEmployee, dateStr, timeStr);
+      if (clockingIn) {
+        await createClockIn(currentEmployee, dateStr, timeStr, faceNote);
       } else if (!todayRecord.fields.TimeOut) {
-        await setClockOut(todayRecord.id, timeStr);
+        await setClockOut(todayRecord, timeStr, faceNote);
       }
       await refreshTodayRecord();
     } catch (e) {
@@ -551,6 +795,10 @@
       statusArea.hidden = false;
       allowedLocations = await fetchAllowedLocationsForEmployee(employee.fields.EmployeeNumber);
       await refreshTodayRecord();
+      if (FACE_API) {
+        try { await loadFaceStatus(); }
+        catch (e) { showError("Selfie check unavailable: " + e.message); }
+      }
       await checkLocationAndRefresh();
     } catch (e) {
       showError(e.message);
@@ -575,6 +823,12 @@
   });
 
   signOutBtn.addEventListener("click", () => CG.auth.signOut());
+
+  document.getElementById("faceAdminBtn").addEventListener("click", () => {
+    const card = document.getElementById("faceAdmin");
+    card.hidden = !card.hidden;
+    if (!card.hidden) loadFaceAdmin();
+  });
 
   function showUnavailable() {
     showSignedOut();

@@ -95,6 +95,32 @@ used to clock in from somewhere else later.
 This gate is a reasonable deterrent and an audit trail, not a hard
 security guarantee — the same trade-off as most mobile geofencing.
 
+## Selfie check (experimental)
+
+When `faceApi` is set for this app in `../shared/cg-config.js`, each Clock In
+and Clock Out also needs a selfie that matches the signed-in employee. It runs
+after the GPS check passes:
+
+- **First time:** the app explains the check, and the employee's first selfie
+  becomes their face record ("Set up your selfie check").
+- **After that:** the selfie must match them. If it doesn't, the clock in/out
+  is **blocked**. They can retake it, or cancel and see a supervisor.
+- The result is written to a **FaceCheck** column on CG_EmployeeTimeRecords,
+  e.g. `In: verified 99.4% · Out: verified 98.7%`. If that column hasn't been
+  added yet, clocking still works and the result simply isn't recorded.
+- **Face admin** (bottom of the app, admins only) lists who has a face
+  record and can **Reset** one. The person then sets it up again next time.
+- Photos are never stored.
+
+The checking is done by the `cg-staff-face-api` function in AWS. Its code,
+security notes and one-time setup are in `../aws/cg-staff-face-api/README.md`.
+With `faceApi: ""` the app behaves exactly as before.
+
+**Add the FaceCheck column** (PnP PowerShell, connected to the CG_Time site):
+```powershell
+Add-PnPField -List "CG_EmployeeTimeRecords" -DisplayName "FaceCheck" -InternalName "FaceCheck" -Type Text -AddToDefaultView
+```
+
 ## Sign-in and settings
 
 Sign-in and SharePoint access come from the CG HUBS shared core

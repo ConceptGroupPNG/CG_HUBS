@@ -341,6 +341,22 @@
       }
     },
 
+    /* The sign-in (ID) token, for our own services that need to know who is
+       signed in - e.g. the CG Time Attendance face check, which checks this
+       token itself. Renewed quietly if it has less than 5 minutes left.
+       Never redirects; throws if it can't be obtained. */
+    async idToken() {
+      if (!msalApp) throw new Error("Not signed in yet.");
+      const account = msalApp.getActiveAccount();
+      let r = await msalApp.acquireTokenSilent({ scopes, account });
+      const exp = r && r.idTokenClaims ? Number(r.idTokenClaims.exp) || 0 : 0;
+      if (!r || !r.idToken || exp - Date.now() / 1000 < 300) {
+        r = await msalApp.acquireTokenSilent({ scopes, account, forceRefresh: true });
+      }
+      if (!r || !r.idToken) throw new Error("Couldn't confirm your sign-in - please sign out and in again.");
+      return r.idToken;
+    },
+
     /* A quiet token for an OPTIONAL extra permission (e.g. reading staff
        photos). Never redirects; returns null if the permission isn't
        granted, so the feature can simply switch itself off. */

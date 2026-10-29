@@ -14,6 +14,7 @@ The web apps used across Concept Group, served from
 | `mobile/` | Concept Time Mobile | Phone time logging |
 | `attendance/` | CG Time Attendance | Phone clock in / out |
 | `shared/` | Shared core library, central settings (`cg-config.js`), shared styles and logos | — |
+| `aws/` | Code for small AWS services the apps call (not served by GitHub Pages), e.g. the CG Time Attendance selfie check | — |
 
 All apps were brought across from the old `marcusappdev/CG_Training` repository and
 switched on for everyone on 18 October 2026. The old addresses now forward here.
