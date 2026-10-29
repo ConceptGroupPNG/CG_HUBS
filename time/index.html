@@ -1042,12 +1042,35 @@ function timeEntriesSources(){
 // safely tell entries apart. A source that fails (list not created
 // yet, site unreachable) is skipped with a console warning, same as
 // fetchAllResources().
+// Every screen in CG Time compares and shows WorkDate as a plain local
+// "YYYY-MM-DD". The CSA Time widget and CSA HUB save it that way, but SLA
+// HUB saves a full date-time (e.g. "2026-10-29T00:00:00Z"), which showed
+// raw in Timesheets > Entries and was missed by "today" totals, timesheet
+// day columns and a To-date filter on that same day. So entries are
+// brought to the plain form once, as they're loaded. A date-time is read
+// as the local (PNG) calendar day, which is right whether it was saved as
+// UTC midnight of that day or as local midnight expressed in UTC.
+function normaliseWorkDate(value){
+  if(value == null || value === "") return value;
+  const str = String(value).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if(/^\d{4}-\d{2}-\d{2}T/.test(str)){
+    const d = new Date(str);
+    if(!isNaN(d.getTime())) return toDateStr(d);
+  }
+  return str;   // anything else is left exactly as it was
+}
+
 async function fetchAllTimeEntries(){
   const results = await Promise.all(timeEntriesSources().map(async src => {
     try{
       const resolvedSiteId = await resolveSite(src.siteHost, src.sitePath);
       const items = await fetchListItemsFromSite(resolvedSiteId, src.listName);
-      return items.map(item => ({ ...item, _sourceHub: src.hub, _sourceHubLabel: src.label, _sourceList: src.listName }));
+      return items.map(item => ({
+        ...item,
+        fields: { ...item.fields, WorkDate: normaliseWorkDate(item.fields && item.fields.WorkDate) },
+        _sourceHub: src.hub, _sourceHubLabel: src.label, _sourceList: src.listName,
+      }));
     }catch(err){
       console.warn(`TimeEntries source ${src.listName} (${src.hub}) unavailable — skipping.`, err);
       return [];
