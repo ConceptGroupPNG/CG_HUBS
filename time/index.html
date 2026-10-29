@@ -3038,7 +3038,29 @@ function renderEmployeesHub(){
 // Only one row edits at a time.
 let editingEmployeeId = null;
 
-const EMP_ROW_COLS = "1fr 1.3fr .8fr .9fr 1.1fr .8fr .9fr";
+const EMP_ROW_COLS = "1fr 1.3fr 1.6fr .8fr .9fr 1.1fr .8fr .9fr";
+
+// Email links an Employee to the Microsoft 365 account they sign in with -
+// CG Time Attendance (phone clock in/out) finds the person this way.
+// Stored trimmed and lower-case; blank is allowed (not everyone uses the app).
+function cleanEmployeeEmail(raw){
+  return String(raw || "").trim().toLowerCase();
+}
+function employeeEmailProblem(email, ownItemId){
+  if(!email) return "";
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return `"${email}" doesn't look like an email address.`;
+  const other = allEmployees.find(e => e.id !== ownItemId && cleanEmployeeEmail(e.fields.Email) === email);
+  if(other) return `${email} is already on ${other.fields.Title || other.fields.EmployeeNumber}'s record.`;
+  return "";
+}
+// The Email column was added to CG_Employees for CG Time Attendance; if a
+// site hasn't got it yet, say exactly how to add it instead of a raw error.
+function employeeSaveError(err){
+  if(/Field 'Email' is not recognized/i.test(err && err.message || "")){
+    return "the CG_Employees list has no Email column yet. Add a column named Email (Single line of text) to CG_Employees, then try again.";
+  }
+  return err.message;
+}
 
 function payGroupOptionsHtml(selected){
   return allPayGroups.slice()
@@ -3073,6 +3095,7 @@ function renderEmployeesTab(){
         <div class="admin-row emp-edit-row" style="grid-template-columns:${EMP_ROW_COLS};" data-editing-id="${esc(e.id)}">
           <div class="admin-key">${esc(f.EmployeeNumber||"—")}</div>
           <div><input type="text" class="emp-edit-name" value="${esc(f.Title||"")}"></div>
+          <div><input type="email" class="emp-edit-email" value="${esc(f.Email||"")}" placeholder="name@concept.com.pg" autocomplete="off"></div>
           <div><select class="emp-edit-paygroup">${payGroupOptionsHtml(f.PayGroup)}</select></div>
           <div><input type="text" class="emp-edit-jobs" value="${esc(f.JobAssignments||"")}"></div>
           <div><select class="emp-edit-shift">${shiftOptionsHtml(f.DefaultShift, "— none —")}</select></div>
@@ -3089,6 +3112,7 @@ function renderEmployeesTab(){
       <div class="admin-row emp-row" style="grid-template-columns:${EMP_ROW_COLS};" data-edit-id="${esc(e.id)}">
         <div class="admin-key">${esc(f.EmployeeNumber||"—")}</div>
         <div>${esc(f.Title||"—")}</div>
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.Email||"")}">${f.Email ? esc(f.Email) : '<span style="color:var(--ink-muted);">—</span>'}</div>
         <div>${esc(f.PayGroup||"—")}</div>
         <div>${esc(f.JobAssignments||"—")}</div>
         <div>${f.DefaultShift ? esc(f.DefaultShift) : "—"}</div>
@@ -3103,16 +3127,17 @@ function renderEmployeesTab(){
       <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''} Click a row to edit it.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default Shift</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Email</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default Shift</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Employees on file yet in CG_Employees &mdash; add the first one below.</div>`}
     </div>
     <div id="empEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add an Employee</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default Shift pre-fills this Employee's days in Time Entry &mdash; add Shifts first from the Shifts tab if the list below is empty.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default Shift pre-fills this Employee's days in Time Entry &mdash; add Shifts first from the Shifts tab if the list below is empty. Email is the Concept Group address they sign in to Microsoft 365 with &mdash; needed for the CG Time Attendance phone app; leave it blank if they won't use it.</div>
       <div class="admin-form">
         <div class="filter-field"><label>Employee #</label><input type="text" id="empNewNumber" placeholder="e.g. CSW0158"></div>
         <div class="filter-field"><label>Name</label><input type="text" id="empNewName" placeholder="e.g. Kila Ravi"></div>
+        <div class="filter-field"><label>Email</label><input type="email" id="empNewEmail" placeholder="e.g. kravi@concept.com.pg" autocomplete="off"></div>
         <div class="filter-field"><label>Pay Group</label>
           <select id="empNewPayGroup"><option value="">Select…</option>${payGroupOptionsHtml()}</select>
         </div>
@@ -3162,6 +3187,7 @@ function renderEmployeesTab(){
 async function saveEmployeeEdit(itemId, rowEl){
   const msgEl = document.getElementById("empEditMsg");
   const name = rowEl.querySelector(".emp-edit-name").value.trim();
+  const email = cleanEmployeeEmail(rowEl.querySelector(".emp-edit-email").value);
   const payGroup = rowEl.querySelector(".emp-edit-paygroup").value;
   const jobs = rowEl.querySelector(".emp-edit-jobs").value.trim();
   const defaultShift = rowEl.querySelector(".emp-edit-shift").value;
@@ -3170,18 +3196,28 @@ async function saveEmployeeEdit(itemId, rowEl){
     reportRowMsg(msgEl, "Name is required.", true);
     return;
   }
+  const emailProblem = employeeEmailProblem(email, itemId);
+  if(emailProblem){
+    reportRowMsg(msgEl, emailProblem, true);
+    return;
+  }
+  const existing = allEmployees.find(e => e.id === itemId);
+  const fields = {
+    Title: name, PayGroup: payGroup, JobAssignments: jobs,
+    DefaultShift: defaultShift, IsActive: active,
+  };
+  // Only send Email when it's being set or changed, so editing other fields
+  // still works on a site that hasn't added the Email column yet.
+  if(email !== cleanEmployeeEmail(existing && existing.fields.Email)) fields.Email = email;
   try{
-    await graphUpdateItem("CG_Employees", itemId, {
-      Title: name, PayGroup: payGroup, JobAssignments: jobs,
-      DefaultShift: defaultShift, IsActive: active,
-    });
+    await graphUpdateItem("CG_Employees", itemId, fields);
     allEmployees = await fetchAllListItems("CG_Employees");
     editingEmployeeId = null;
     renderEmployeesTab();
     reportRowMsg(document.getElementById("empEditMsg"), "Saved.", false);
   }catch(err){
     console.error(err);
-    reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
+    reportRowMsg(msgEl, `Couldn't save — ${employeeSaveError(err)}`, true);
   }
 }
 
@@ -3189,6 +3225,7 @@ async function addEmployee(){
   const msgEl = document.getElementById("empAddMsg");
   const num = document.getElementById("empNewNumber").value.trim();
   const name = document.getElementById("empNewName").value.trim();
+  const email = cleanEmployeeEmail(document.getElementById("empNewEmail").value);
   const payGroup = document.getElementById("empNewPayGroup").value;
   const jobs = document.getElementById("empNewJobs").value.trim();
   const defaultShift = document.getElementById("empNewShift").value;
@@ -3200,16 +3237,23 @@ async function addEmployee(){
     reportRowMsg(msgEl, `Employee # "${num}" already exists.`, true);
     return;
   }
+  const emailProblem = employeeEmailProblem(email, null);
+  if(emailProblem){
+    reportRowMsg(msgEl, emailProblem, true);
+    return;
+  }
+  const fields = {
+    Title: name, EmployeeNumber: num, PayGroup: payGroup, JobAssignments: jobs,
+    DefaultShift: defaultShift, DefaultBreakMinutes: 30, IsActive: true,
+  };
+  if(email) fields.Email = email;
   try{
-    await graphCreateItem("CG_Employees", {
-      Title: name, EmployeeNumber: num, PayGroup: payGroup, JobAssignments: jobs,
-      DefaultShift: defaultShift, DefaultBreakMinutes: 30, IsActive: true,
-    });
+    await graphCreateItem("CG_Employees", fields);
     allEmployees = await fetchAllListItems("CG_Employees");
     renderEmployeesTab();
   }catch(err){
     console.error(err);
-    reportRowMsg(msgEl, `Couldn't add that Employee — ${err.message}`, true);
+    reportRowMsg(msgEl, `Couldn't add that Employee — ${employeeSaveError(err)}`, true);
   }
 }
 
