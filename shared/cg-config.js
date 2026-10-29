@@ -64,7 +64,7 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile",
     // Selfie check at clock in/out (experimental) - the address of the
     // cg-staff-face-api function in AWS. Leave "" to switch the check off.
-    faceApi: "" }
+    faceApi: "https://ggajahpgppa2kl2dfjfgj232gq0yuqur.lambda-url.ap-southeast-2.on.aws/" }
 ];
 
 /* ---------------------------------------------------------------------
