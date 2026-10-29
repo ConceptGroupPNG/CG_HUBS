@@ -2929,7 +2929,9 @@ async function loadTicketConversation(t, force){
     }
     // Saved copies whose email is no longer in the mailbox.
     for(const c of saved){
-      if(c.fields.InternetMessageId && seen.has(c.fields.InternetMessageId)) continue;
+      const imId = c.fields.InternetMessageId;
+      if(imId && seen.has(imId)) continue;
+      if(imId) seen.add(imId); // an old timing bug saved some emails twice
       items.push(savedCopyItem(c));
     }
   }catch(e){
@@ -2937,7 +2939,8 @@ async function loadTicketConversation(t, force){
     error = mailForbidden(e)
       ? `Your account can't read ${HELPDESK_MAILBOX}, so only saved copies are shown.`
       : `Couldn't read ${HELPDESK_MAILBOX} just now (${String(e.message || e).slice(0, 120)}) — showing saved copies only.`;
-    items = saved.map(savedCopyItem);
+    const seenSaved = new Set();
+    items = saved.filter(c => { const k = c.fields.InternetMessageId; if(!k) return true; if(seenSaved.has(k)) return false; seenSaved.add(k); return true; }).map(savedCopyItem);
   }
   if(convoCache.get(key)?.token !== token) return; // superseded by a newer load
   items.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)); // oldest first
@@ -3685,9 +3688,14 @@ async function importReplyIntoConversation(m, ticket){
   try{
     let bodyText = m.bodyPreview || "";
     try{
-      const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${m.id}?$select=body`);
-      if(full?.body?.content){
-        bodyText = full.body.contentType === "html" ? stripHtml(full.body.content) : full.body.content;
+      // Just the new text of the email (Graph's uniqueBody), the same as the
+      // live Conversation shows. Plain-text emails get the quoted history
+      // trimmed too — they used to be saved with it, and kept being flagged.
+      const full = await callGraph(`${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages/${m.id}?$select=uniqueBody,body`, { headers: { Prefer: 'outlook.body-content-type="html"' } });
+      const part = full?.uniqueBody?.content ? full.uniqueBody : full?.body;
+      if(part?.content){
+        const text = part.contentType === "html" ? stripHtml(part.content) : trimQuotedHistory(part.content);
+        if(text.trim()) bodyText = text;
       }
     }catch(e){
       console.warn("Couldn't fetch full body for a ticket reply, using the preview instead:", e);
@@ -3714,142 +3722,6 @@ async function importReplyIntoConversation(m, ticket){
   }
 }
 
-// A conversation row imported before the stripHtml() fix (see above) can
-// have raw Outlook/Word CSS glued onto the real message text — this is how
-// those rows are recognised so they can be offered for repair, regardless
-// of which ticket they ended up on.
-const CSS_LEAK_PATTERN = /@font-face|mso-[a-z-]+\s*:|MsoNormal|MsoChpDefault|WordSection\d|panose-1/i;
-function looksCssCorrupted(bodyText){
-  return CSS_LEAK_PATTERN.test(bodyText || "");
-}
-// Before the block-boundary-newline fix, a forwarded/quoted chain (several
-// "From: … Sent: … To: … Subject: …" blocks from earlier messages in the
-// thread) got glued into one run-on line with no breaks at all. Several of
-// those header labels packed together with almost no line breaks is that
-// signature — a normal reply has at most a couple, spread across real lines.
-function looksLikeRunOnQuoteChain(bodyText){
-  const t = bodyText || "";
-  if(t.length < 400) return false;
-  const headerHits = (t.match(/\b(From|Sent|To|Cc|Subject):/g) || []).length;
-  const lineCount = (t.match(/\n/g) || []).length;
-  return headerHits >= 3 && lineCount <= 2;
-}
-// An entry imported before the quote-trimming fix (see trimQuotedHistory())
-// still has the whole rest of the thread quoted underneath the sender's own
-// text — same marker trimQuotedHistory() now cuts new imports at.
-function containsUntrimmedQuote(bodyText){
-  return QUOTE_BOUNDARY_RE.test(bodyText || "");
-}
-function conversationBodyNeedsRepair(bodyText){
-  return looksCssCorrupted(bodyText) || looksLikeRunOnQuoteChain(bodyText) || containsUntrimmedQuote(bodyText);
-}
-// The same re-entrancy race that importReplyIntoConversation() now guards
-// against (see _importingMessageIds above) could already have created exact
-// duplicate rows — same ticket, same source email — before this fix. Group
-// by TicketId+InternetMessageId and treat every row after the first
-// (earliest SharePoint id) in a group as an extra to remove.
-function findDuplicateConversationEntries(){
-  const groups = new Map();
-  for(const c of state.ticketConversations){
-    const imId = c.fields.InternetMessageId;
-    if(!imId) continue;
-    const key = c.fields.TicketId + "|" + imId;
-    if(!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(c);
-  }
-  const extras = [];
-  for(const rows of groups.values()){
-    if(rows.length < 2) continue;
-    rows.sort((a,b)=> Number(a.id) - Number(b.id));
-    extras.push(...rows.slice(1));
-  }
-  return extras;
-}
-
-// One-time cleanup for conversation rows affected by bugs fixed above: text
-// still carrying leaked Outlook CSS or a run-on quote chain gets re-fetched
-// and re-cleaned in place, and exact duplicate rows from the old
-// re-entrancy race get removed. Re-fetching is by each row's stored
-// InternetMessageId — not dependent on it still being among the most recent
-// 30 inbox messages the way Email Intake's own fetch is. A message that's
-// been deleted/moved out of the mailbox since is skipped, not treated as an
-// error.
-async function repairCorruptedConversations(){
-  const toClean = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body));
-  const toRemove = findDuplicateConversationEntries();
-  if(toClean.length === 0 && toRemove.length === 0){ toast("No corrupted or duplicate conversation entries found."); return; }
-  const byTicket = new Map();
-  for(const c of toClean){
-    const t = state.tickets.find(t => String(t.id)===String(c.fields.TicketId));
-    const label = t ? (t.fields.TicketNumber||t.id) : `ticket #${c.fields.TicketId}`;
-    byTicket.set(label, (byTicket.get(label)||0) + 1);
-  }
-  const summary = [...byTicket.entries()].map(([label,n]) => `<li>${esc(label)} — ${n} entr${n===1?"y":"ies"} to clean up</li>`).join("");
-  openModal(`
-    <h3>🧹 Repair conversation text</h3>
-    <p class="modal-sub">Found ${toClean.length} conversation entr${toClean.length===1?"y":"ies"} with leaked formatting or a run-on quote chain, and ${toRemove.length} exact duplicate row${toRemove.length===1?"":"s"} from an old timing bug, across:</p>
-    <ul style="margin:0 0 14px 20px;font-size:13.5px;">${summary || "<li>—</li>"}</ul>
-    <p style="color:var(--ink-2);font-size:12.5px;line-height:1.5;margin:0 0 18px;">This re-fetches each original email and rewrites the stored text using the fixed cleanup, and removes the duplicate rows — it doesn't resend or change any email. A message that's since been deleted from the mailbox is skipped.</p>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-accent" onclick="runConversationRepair()">Clean up ${toClean.length + toRemove.length} entr${(toClean.length+toRemove.length)===1?"y":"ies"}</button>
-    </div>
-  `);
-}
-
-async function runConversationRepair(){
-  closeModal();
-  const toClean = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body));
-  let fixed = 0, skipped = 0;
-  for(const c of toClean){
-    const imId = c.fields.InternetMessageId;
-    if(!imId){ skipped++; continue; }
-    try{
-      const q = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/messages?$filter=internetMessageId eq '${encodeURIComponent(imId)}'&$select=id,body`;
-      const res = await callGraph(q);
-      const match = (res.value||[])[0];
-      if(!match?.body?.content){ skipped++; continue; }
-      const cleaned = (match.body.contentType === "html" ? stripHtml(match.body.content) : match.body.content).slice(0, 4000);
-      await graphUpdateItem("SLA_TicketConversations", c.id, { Body: cleaned });
-      c.fields.Body = cleaned;
-      fixed++;
-    }catch(e){
-      console.warn("Couldn't repair a conversation entry:", e);
-      skipped++;
-    }
-  }
-  const toRemove = findDuplicateConversationEntries();
-  let removed = 0;
-  for(const c of toRemove){
-    try{
-      await graphDeleteItem("SLA_TicketConversations", c.id);
-      state.ticketConversations = state.ticketConversations.filter(x => x.id !== c.id);
-      removed++;
-    }catch(e){
-      console.warn("Couldn't remove a duplicate conversation entry:", e);
-    }
-  }
-  toast(`Repaired ${fixed} conversation entr${fixed===1?"y":"ies"}, removed ${removed} duplicate${removed===1?"":"s"}${skipped?`, ${skipped} skipped (original email not found)`:""}.`);
-  if(document.getElementById("emailListWrap")) renderEmail();
-  if(ticketDetailId) renderTicketDetail();
-}
-
-function updateConversationRepairBanner(){
-  const el = document.getElementById("conversationRepairBanner");
-  if(!el) return;
-  const cleanCount = state.ticketConversations.filter(c => conversationBodyNeedsRepair(c.fields.Body)).length;
-  const dupeCount = findDuplicateConversationEntries().length;
-  const total = cleanCount + dupeCount;
-  if(!total){ el.hidden = true; el.innerHTML = ""; return; }
-  el.hidden = false;
-  el.innerHTML = `
-    <div class="record-card" style="border-left-color:var(--warning);background:var(--warning-bg);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-      <div>⚠️ ${total} ticket conversation entr${total===1?"y":"ies"} ${total===1?"needs":"need"} cleanup — leaked formatting, a run-on quote chain, or an exact duplicate from an old bug. The real message text is still there.</div>
-      <button class="btn btn-sm" onclick="repairCorruptedConversations()">Repair now</button>
-    </div>
-  `;
-}
-
 async function renderEmail(){
   // The page shell (header + the two wraps below) is only built once, the
   // first time this page is opened — not on every call. This function gets
@@ -3870,7 +3742,6 @@ async function renderEmail(){
         <div><h2>Email Intake</h2><div class="sub">${esc(HELPDESK_MAILBOX)} — staff review each email and convert it into a ticket</div></div>
         <button class="btn" onclick="renderEmail()">↻ Refresh</button>
       </div>
-      <div id="conversationRepairBanner" hidden></div>
       <div id="emailBulkBar" class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;" hidden>
         <span id="emailBulkCount" style="font-size:13px;color:var(--ink-2);align-self:center;margin-right:4px;"></span>
         <button class="btn btn-sm" onclick="clearEmailSelection()">Clear selection</button>
@@ -3880,7 +3751,6 @@ async function renderEmail(){
       <div id="emailDetailWrap"></div>
     `;
   }
-  updateConversationRepairBanner();
   try{
     const url = `${GRAPH}/users/${encodeURIComponent(HELPDESK_MAILBOX)}/mailFolders/inbox/messages`
       + `?$top=30&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,internetMessageId,conversationId`;
