@@ -61,7 +61,10 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile" },
 
   { key: "attendance", folder: "attendance/", name: "CG Time Attendance",  unit: "Clock in / out",
-    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile" }
+    site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile",
+    // Selfie check at clock in/out (experimental) - the address of the
+    // cg-staff-face-api function in AWS. Leave "" to switch the check off.
+    faceApi: "" }
 ];
 
 /* ---------------------------------------------------------------------

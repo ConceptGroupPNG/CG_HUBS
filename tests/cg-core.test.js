@@ -281,3 +281,15 @@ test("an app can use its own session-expired banner instead of the core's", asyn
   await CG.graph("GET", "/me");               // a later success clears it
   assert.deepEqual([...seen], ["show", "hide"]);
 });
+
+test("idToken() returns the sign-in token, renewing it when it is about to expire", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const fresh = await signedIn({ silent: (req) => ({ accessToken: "a", idToken: "id-fresh", idTokenClaims: { exp: now + 3600 } }) });
+  assert.equal(await fresh.CG.auth.idToken(), "id-fresh");
+
+  const t = await signedIn({ silent: (req) => req.forceRefresh
+    ? { accessToken: "a", idToken: "id-renewed", idTokenClaims: { exp: now + 3600 } }
+    : { accessToken: "a", idToken: "id-old", idTokenClaims: { exp: now + 60 } } });
+  assert.equal(await t.CG.auth.idToken(), "id-renewed");
+  assert.ok(t.calls.forceRefresh >= 1);
+});
