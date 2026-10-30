@@ -459,6 +459,13 @@
   .att-swatch.att-present{background:var(--status-good);}
   .att-swatch.att-late{background:var(--status-warning);}
   .att-swatch.att-absent{background:var(--status-critical);}
+  .att-swatch.att-holiday{background:var(--status-info, #4a7bb7);}
+  table.att-table td.att-holiday{color:var(--status-info, #4a7bb7);}
+  .ph-banner{margin:0 0 14px;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;
+    background:color-mix(in srgb, var(--status-info, #4a7bb7) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--status-info, #4a7bb7) 35%, transparent);color:var(--ink-primary);}
+  .ph-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:700;
+    background:color-mix(in srgb, var(--status-info, #4a7bb7) 15%, transparent);color:var(--status-info, #4a7bb7);}
   table.att-table{width:100%;border-collapse:collapse;font-size:11.5px;}
   table.att-table th, table.att-table td{padding:6px 5px;text-align:center;border-bottom:1px solid var(--hairline-soft);white-space:nowrap;}
   table.att-table thead th{
@@ -1147,6 +1154,9 @@ let allExceptions = [];
 let allHubAssignments = [];
 let allHubs = [];
 let allPayGroups = [];
+// Public holidays, read-only from PSP HUB (see PUBLIC HOLIDAYS below).
+let allPublicHolidays = [];
+let publicHolidaysStatus = "loading"; // "loading" | "ok" | "unavailable"
 let allPayPeriods = [];
 let allEmployees = [];
 let allEmployeeTimeRecords = [];
@@ -1212,6 +1222,9 @@ async function refreshAllData(){
     ]);
 
     banner.style.display = "none";
+
+    // Public holidays come from PSP HUB; never allowed to stop CG Time opening.
+    await loadPublicHolidays();
 
     lastAutoResolveCount = await autoResolveExceptions();
     lastAutoSeedCount = await autoSeedExceptions();
@@ -2134,6 +2147,101 @@ async function toggleHubActive(itemId, nextActive){
 }
 
 /* ============================================================
+   PUBLIC HOLIDAYS — PSP HUB's PSP_Public_Holidays list (on the
+   PSP HUB site) is the one source of truth; CG Time only reads it,
+   never writes. Add each year's holidays in PSP HUB as usual.
+   Columns: Title = country name (e.g. "Papua New Guinea"),
+   Abbreviation = country code (PNG, FIJI, SI), Holiday / PH_Date
+   (Graph sometimes exposes these as field_1 / field_2 — same quirk
+   PSP HUB handles).
+   Which country's holidays apply to an Employee comes from their
+   Pay Group's Country (CG_PayGroups.Country, a country code; blank
+   counts as PNG).
+   Effect: a holiday with no punch is shown as H (Public Holiday),
+   never Absent. Someone who does work it is judged as normal.
+   If this account can't read the PSP list, CG Time carries on
+   without holidays and says so on the Attendance tab.
+   ============================================================ */
+const PUBLIC_HOLIDAYS_LIST = "PSP_Public_Holidays";
+const DEFAULT_HOLIDAY_COUNTRY = "PNG";
+
+async function loadPublicHolidays(){
+  try{
+    const pspApp = CG.app("psp");
+    const pspSitePath = (pspApp && pspApp.site) || "/sites/PSP_Test";
+    const pspSiteId = await resolveSite(SITE_HOST, pspSitePath);
+    const items = await fetchListItemsFromSite(pspSiteId, PUBLIC_HOLIDAYS_LIST);
+    allPublicHolidays = items.map(i => {
+      const f = i.fields || {};
+      const raw = f.PH_Date || f.field_2 || null;
+      const d = raw == null ? null : (typeof raw === "number" ? new Date((raw - 25569) * 86400000) : new Date(raw));
+      return {
+        date: d && !isNaN(d) ? toDateStr(d) : "",   // local calendar date, never UTC
+        country: (f.Title || "").trim(),
+        code: (f.Abbreviation || "").trim().toUpperCase(),
+        name: (f.Holiday || f.field_1 || "Public Holiday").trim(),
+      };
+    }).filter(h => h.date);
+    publicHolidaysStatus = "ok";
+  }catch(err){
+    console.warn("PSP HUB public holidays not available to this account - carrying on without them.", err);
+    allPublicHolidays = [];
+    publicHolidaysStatus = "unavailable";
+  }
+}
+
+// Countries present in the holiday list, for the Pay Group Country picker.
+function holidayCountries(){
+  const map = new Map();
+  allPublicHolidays.forEach(h => { if(h.code && !map.has(h.code)) map.set(h.code, h.country || h.code); });
+  if(!map.has(DEFAULT_HOLIDAY_COUNTRY)) map.set(DEFAULT_HOLIDAY_COUNTRY, "Papua New Guinea");
+  return [...map.entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+}
+function payGroupCountry(payGroupCode){
+  const g = allPayGroups.find(x => (x.fields.Title||"").toUpperCase() === String(payGroupCode||"").toUpperCase());
+  const c = g ? String(g.fields.Country || "").trim().toUpperCase() : "";
+  return c || DEFAULT_HOLIDAY_COUNTRY;
+}
+function holidayMatchesCountry(h, code){
+  return h.code === code || h.country.toUpperCase() === code;
+}
+// The public holiday (if any) that applies to this Employee on this date.
+function employeeHolidayOn(emp, dateStr){
+  const code = payGroupCountry(emp.fields.PayGroup);
+  return allPublicHolidays.find(h => h.date === dateStr && holidayMatchesCountry(h, code)) || null;
+}
+// Holidays on a date for the countries of the given Employees (for banners).
+function holidaysOnDateFor(dateStr, employees){
+  const codes = new Set(employees.map(e => payGroupCountry(e.fields.PayGroup)));
+  const seen = new Set();
+  return allPublicHolidays.filter(h => {
+    if(h.date !== dateStr) return false;
+    if(![...codes].some(c => holidayMatchesCountry(h, c))) return false;
+    const key = h.code + "|" + h.name;
+    if(seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+function holidayLabel(h){ return `${h.name}${h.code ? " (" + h.code + ")" : ""}`; }
+function holidayBannerHtml(holidays){
+  if(!holidays.length) return "";
+  return `<div class="ph-banner">&#127881; Public Holiday &mdash; ${holidays.map(h => esc(holidayLabel(h))).join(", ")}. Employees in ${holidays.length===1?"that country":"those countries"} aren't marked Absent if they don't clock in.</div>`;
+}
+
+function payGroupCountryOptionsHtml(selected){
+  const sel = String(selected||"").trim().toUpperCase() || DEFAULT_HOLIDAY_COUNTRY;
+  const opts = holidayCountries();
+  if(!opts.some(([code]) => code === sel)) opts.push([sel, sel]);
+  return opts.map(([code, name]) => `<option value="${esc(code)}" ${code===sel?"selected":""}>${esc(name)} (${esc(code)})</option>`).join("");
+}
+function payGroupSaveError(err){
+  if(/Field 'Country' is not recognized/i.test(err && err.message || "")){
+    return "the CG_PayGroups list has no Country column yet. Add a column named Country (Single line of text) to CG_PayGroups, then try again.";
+  }
+  return err.message;
+}
+
+/* ============================================================
    PAY GROUPS VIEW — manage CG_PayGroups, an open admin-managed
    list (same convention as CG_Hubs) rather than a hardcoded set.
    A Pay Group is the legal entity an Employee is paid under
@@ -2141,6 +2249,7 @@ async function toggleHubActive(itemId, nextActive){
    DRW = Driftwood) — used on Employees and carried through to the
    Payroll export, never interpreted further by CG Time itself.
    ============================================================ */
+const PG_ROW_COLS = "1fr 2fr 1.4fr .8fr .9fr";
 function renderPayGroupsTab(){
   const container = document.getElementById("empTabContent");
   const sorted = allPayGroups.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
@@ -2148,9 +2257,10 @@ function renderPayGroupsTab(){
     const f = g.fields;
     const active = f.IsActive !== false;
     return `
-      <div class="admin-row" style="grid-template-columns:1fr 2fr .8fr .9fr;">
+      <div class="admin-row" style="grid-template-columns:${PG_ROW_COLS};">
         <div class="admin-key">${esc(f.Title||"—")}</div>
         <div>${esc(f.Label||"—")}</div>
+        <div><select class="pg-country" data-pg-id="${esc(g.id)}" title="Which country's public holidays apply to this Pay Group's Employees">${payGroupCountryOptionsHtml(f.Country)}</select></div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(g.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
       </div>
@@ -2159,10 +2269,10 @@ function renderPayGroupsTab(){
   container.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#127970;</span>Pay Groups</h3>
-      <div class="panel-sub">The legal entities Employees are paid under &mdash; e.g. IVA (Ivalisa Investment), CS (Concept Software), DRW (Driftwood). Add a row here whenever a new Pay Group is needed; no code change required. Writes straight to CG_PayGroups.</div>
+      <div class="panel-sub">The legal entities Employees are paid under &mdash; e.g. IVA (Ivalisa Investment), CS (Concept Software), DRW (Driftwood). Add a row here whenever a new Pay Group is needed; no code change required. Writes straight to CG_PayGroups. Country decides which public holidays (from PSP HUB) apply to the Pay Group's Employees &mdash; blank means Papua New Guinea; changing it saves straight away.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:1fr 2fr .8fr .9fr;"><div>Code</div><div>Label</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${PG_ROW_COLS};"><div>Code</div><div>Label</div><div>Country (holidays)</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Pay Groups on file yet in CG_PayGroups &mdash; add the first one below (e.g. IVA).</div>`}
     </div>
     <div class="panel">
@@ -2170,6 +2280,7 @@ function renderPayGroupsTab(){
       <div class="admin-form">
         <div class="filter-field"><label>Code</label><input type="text" id="pgNewCode" placeholder="e.g. IVA"></div>
         <div class="filter-field"><label>Label</label><input type="text" id="pgNewLabel" placeholder="e.g. Ivalisa Investment"></div>
+        <div class="filter-field"><label>Country (holidays)</label><select id="pgNewCountry">${payGroupCountryOptionsHtml("")}</select></div>
         <div><button class="admin-submit" id="pgAddBtn">+ Add Pay Group</button></div>
       </div>
       <div id="pgAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
@@ -2180,13 +2291,31 @@ function renderPayGroupsTab(){
       togglePayGroupActive(btn.getAttribute("data-toggle-id"), btn.getAttribute("data-next") === "true");
     });
   });
+  container.querySelectorAll(".pg-country[data-pg-id]").forEach(sel => {
+    sel.addEventListener("change", () => savePayGroupCountry(sel.getAttribute("data-pg-id"), sel.value));
+  });
   document.getElementById("pgAddBtn").addEventListener("click", addPayGroup);
+}
+
+async function savePayGroupCountry(itemId, code){
+  const msgEl = document.getElementById("pgAddMsg");
+  try{
+    await graphUpdateItem("CG_PayGroups", itemId, { Country: String(code||"").toUpperCase() });
+    allPayGroups = await fetchAllListItems("CG_PayGroups");
+    renderPayGroupsTab();
+    reportRowMsg(document.getElementById("pgAddMsg"), "Country saved.", false);
+  }catch(err){
+    console.error(err);
+    renderPayGroupsTab();
+    reportRowMsg(document.getElementById("pgAddMsg"), `Couldn't save the Country — ${payGroupSaveError(err)}`, true);
+  }
 }
 
 async function addPayGroup(){
   const msgEl = document.getElementById("pgAddMsg");
   const code = document.getElementById("pgNewCode").value.trim().toUpperCase();
   const label = document.getElementById("pgNewLabel").value.trim();
+  const country = document.getElementById("pgNewCountry").value.toUpperCase();
   if(!code){
     reportRowMsg(msgEl, "Code is required — e.g. IVA.", true);
     return;
@@ -2196,12 +2325,16 @@ async function addPayGroup(){
     return;
   }
   try{
-    await graphCreateItem("CG_PayGroups", { Title: code, Label: label || code, IsActive: true });
+    const fields = { Title: code, Label: label || code, IsActive: true };
+    // Blank already means PNG, so only another country is written — adding
+    // Pay Groups keeps working before the Country column exists.
+    if(country && country !== DEFAULT_HOLIDAY_COUNTRY) fields.Country = country;
+    await graphCreateItem("CG_PayGroups", fields);
     allPayGroups = await fetchAllListItems("CG_PayGroups");
     renderPayGroupsTab();
   }catch(err){
     console.error(err);
-    reportRowMsg(msgEl, `Couldn't add that Pay Group — ${err.message}`, true);
+    reportRowMsg(msgEl, `Couldn't add that Pay Group — ${payGroupSaveError(err)}`, true);
   }
 }
 
@@ -3611,7 +3744,10 @@ function renderEmployeeTimeEntryBody(){
     // Default Shift (if set) — both which Shift is picked and the
     // Time In/Out that come with it. A day that's already saved always
     // shows exactly what's on file, never overwritten by a default.
-    const shiftName = rec ? (f.ShiftName || "") : (empDefaultShift ? empDefaultShift.fields.Title : "");
+    // ...except a public holiday, which starts blank: it's only worked if
+    // someone actually enters (or punches) times for it.
+    const holiday = employeeHolidayOn(employee, dateStr);
+    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
@@ -3620,7 +3756,7 @@ function renderEmployeeTimeEntryBody(){
     const anomaly = timeEntryRowAnomaly(employee, dateStr, rec);
     return `
       <tr data-date="${esc(dateStr)}" class="${isWeekend?'weekend':''}${anomaly?' te-row-'+anomaly.level:''}">
-        <td>${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}</td>
+        <td>${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(WEEKDAY[d.getDay()])} ${esc(fmtDateDMY(dateStr))}${holiday ? `<span class="ph-tag" title="${esc(holidayLabel(holiday))}">PH</span>` : ""}</td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
         <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
         <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
@@ -3795,14 +3931,15 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     // the By Employee grid — an already-saved day always shows what's on
     // file, never overwritten by a default.
     const empDefaultShift = findShiftByName(emp.fields.DefaultShift);
-    const shiftName = rec ? (f.ShiftName || "") : (empDefaultShift ? empDefaultShift.fields.Title : "");
+    const holiday = employeeHolidayOn(emp, dateStr);   // holiday days start blank
+    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
     const anomaly = timeEntryRowAnomaly(emp, dateStr, rec);
     return `
       <tr data-emp-number="${esc(emp.fields.EmployeeNumber)}" class="${anomaly?'te-row-'+anomaly.level:''}">
-        <td class="te-day-name">${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(emp.fields.Title)}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
+        <td class="te-day-name">${anomaly?`<span class="te-anom-icon te-anom-${anomaly.level}" title="${esc(anomaly.label)}">${anomaly.level==='warn'?'&#9888;':'&#9679;'}</span> `:''}${esc(emp.fields.Title)}${holiday ? `<span class="ph-tag" title="${esc(holidayLabel(holiday))}">PH</span>` : ""}<span class="te-day-num">${esc(emp.fields.EmployeeNumber)}</span></td>
         <td><select class="te-shift">${shiftOptionsHtml(shiftName)}</select></td>
         <td><input type="text" class="te-in time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialIn)}"></td>
         <td><input type="text" class="te-out time-field" placeholder="HH:MM" maxlength="5" value="${esc(initialOut)}"></td>
@@ -3819,7 +3956,8 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
   grid.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>${esc(dayLabel)}</h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set, still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set (except on a public holiday, which starts blank), still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
+      ${holidayBannerHtml(holidaysOnDateFor(dateStr, activeEmployees))}
     </div>
     <div class="panel">
       <div class="te-save-bar">
@@ -3989,6 +4127,7 @@ function renderDailyReportBody(){
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128197;</span>Daily Time Report — ${esc(dayLabel)}</h3>
       <div class="panel-sub">Every active Employee's Clock In / Break Out / Break In / Clock Out for this day (Employees whose T&amp;A Method is N/A are left out), from CG_EmployeeTimeRecords (biometric + manual) — no record on file shows as "—" and 0.00 hours. Total Hours is net of break, the same figure Payroll pays on. Corrections are made from Time Entry, not here.</div>
+      ${holidayBannerHtml(holidaysOnDateFor(dateStr, rows.map(r => r.employee)))}
       <div class="panel-sub" style="margin-top:-6px;margin-bottom:0;">${clockedInCount} of ${rows.length} Employee${rows.length===1?"":"s"} clocked in &middot; ${totalHours.toFixed(2)} total hours</div>
     </div>
     <div class="panel">
@@ -4134,10 +4273,13 @@ function attendanceStatusForDay(employee, dateStr, record, todayD){
     }
     const missedClockOut = !timeOut && dateStr < todayD;
     const clockInProgress = !timeOut && dateStr === todayD;
-    return { status, missedClockOut, clockInProgress, breakNotClosed, breakInProgress, breakOutOfOrder, shift, timeIn, timeOut, breakOut, breakIn };
+    return { status, missedClockOut, clockInProgress, breakNotClosed, breakInProgress, breakOutOfOrder, shift, timeIn, timeOut, breakOut, breakIn, holiday: employeeHolidayOn(employee, dateStr) };
   }
 
-  const base = { missedClockOut: false, clockInProgress: false, breakNotClosed, breakInProgress, breakOutOfOrder, timeIn: "", timeOut: "", breakOut, breakIn };
+  const holiday = employeeHolidayOn(employee, dateStr);
+  const base = { missedClockOut: false, clockInProgress: false, breakNotClosed, breakInProgress, breakOutOfOrder, timeIn: "", timeOut: "", breakOut, breakIn, holiday };
+  // A public holiday with no punch is never Absent (see PUBLIC HOLIDAYS).
+  if(holiday) return { status: "holiday", shift, ...base };
   if(dateStr > todayD) return { status: "future", shift, ...base };
   if(!shift) return { status: "unscheduled", shift: null, ...base };
   if(!shiftRunsOn(shift, dateStr)) return { status: "off", shift, ...base };
@@ -4271,11 +4413,12 @@ function renderAttendanceBody(){
     return `<th>${WEEKDAY1[dd.getDay()]}<span class="att-day-num">${String(dd.getDate()).padStart(2,"0")}</span></th>`;
   }).join("");
 
-  const STATUS_LABEL = { present: "P", late: "L", absent: "A", off: "–", future: "", unscheduled: "?" };
+  const STATUS_LABEL = { present: "P", late: "L", absent: "A", off: "–", future: "", unscheduled: "?", holiday: "H" };
   const bodyRows = rows.map(r => {
     const cells = r.cells.map(c => {
       const label = STATUS_LABEL[c.status] != null ? STATUS_LABEL[c.status] : "";
-      const titleParts = [`${fmtDateDMY(c.dateStr)} — ${c.status}`];
+      const titleParts = [`${fmtDateDMY(c.dateStr)} — ${c.status === "holiday" ? "public holiday" : c.status}`];
+      if(c.holiday) titleParts.push(holidayLabel(c.holiday));
       if(c.timeIn) titleParts.push(`in ${c.timeIn}${c.timeOut ? `, out ${c.timeOut}` : ", no out on file"}`);
       const cls = `att-cell att-${c.status}${c.missedClockOut ? ' att-missed' : ''}`;
       return `<td class="${cls}" title="${esc(titleParts.join(" — "))}">${label}</td>`;
@@ -4298,12 +4441,14 @@ function renderAttendanceBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
-      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
+      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by &middot; <b>H</b> Public Holiday for their Pay Group's country (from PSP HUB) with no punch &mdash; never counted as Absent. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
         <span class="att-legend-item"><span class="att-swatch att-late"></span>Late ${totalLate}</span>
         <span class="att-legend-item"><span class="att-swatch att-absent"></span>Absent ${totalAbsent}</span>
+        <span class="att-legend-item"><span class="att-swatch att-holiday"></span>Public Holiday</span>
       </div>
+      ${publicHolidaysStatus === "unavailable" ? `<div class="panel-sub" style="margin:10px 0 0;color:var(--status-warning);">Public holidays couldn't be read from PSP HUB with your account, so holidays may show as Absent. Ask your administrator for read access to the PSP_Public_Holidays list.</div>` : ""}
     </div>
     <div class="panel">
       <div class="res-table-wrap" style="overflow-x:auto;box-shadow:none;">
