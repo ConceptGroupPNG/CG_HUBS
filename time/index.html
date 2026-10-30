@@ -589,7 +589,7 @@
 
       <div class="panel">
         <h3><span>&#8987;</span>Exceptions queue</h3>
-        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; resolves itself once Billable is set on the entry in CSA HUB</div>
+        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; "Billable not set" is no longer raised — hours are Billable unless marked No (SLA HUB Internal Support tickets default to No)</div>
         <div class="ex-list" id="exceptionsList"></div>
       </div>
     </div>
@@ -1226,8 +1226,12 @@ async function refreshAllData(){
     // Public holidays come from PSP HUB; never allowed to stop CG Time opening.
     await loadPublicHolidays();
 
+    await loadSlaInternalTickets();
+
+    // "Billable not set" exceptions are no longer raised — a blank Billable
+    // now has a default (see the Billable rule). Any still open are closed.
     lastAutoResolveCount = await autoResolveExceptions();
-    lastAutoSeedCount = await autoSeedExceptions();
+    lastAutoSeedCount = 0;
     if(lastAutoResolveCount > 0 || lastAutoSeedCount > 0){
       allExceptions = await fetchAllListItems("CG_ExceptionsQueue");
     }
@@ -1307,7 +1311,43 @@ function monthEndStr(offsetMonths=0){
   return toDateStr(d);
 }
 function hasBillableChoice(t){
-  return t.fields.Billable !== undefined && t.fields.Billable !== null;
+  return t.fields.Billable !== undefined && t.fields.Billable !== null && t.fields.Billable !== "";
+}
+
+/* ---------- Billable rule (shared with CSA HUB and SLA HUB) ----------
+   All hours are Billable unless an entry is marked otherwise. A Yes/No
+   already saved on the entry always wins; a blank one (the timer apps
+   don't set it) counts as Billable, EXCEPT time on an SLA HUB ticket
+   whose type is Internal Support, which counts as non-billable.
+   SLA HUB's Internal Support ticket numbers are read from its
+   SLA_Tickets list (best effort — if it can't be read, blanks just
+   count as Billable). */
+let slaInternalTicketCodes = new Set();
+let slaInternalTicketIds = new Set();
+async function loadSlaInternalTickets(){
+  const src = timeEntriesSources().find(x => x.hub === "SLA_HUB");
+  if(!src) return;
+  try{
+    const sid = await resolveSite(src.siteHost, src.sitePath);
+    const tickets = await fetchListItemsFromSite(sid, "SLA_Tickets");
+    const internal = tickets.filter(t => (t.fields && t.fields.OwningEntityType) === "Internal");
+    slaInternalTicketIds = new Set(internal.map(t => String(t.id)));
+    slaInternalTicketCodes = new Set(internal.map(t => String(t.fields.TicketNumber || ("SLA-" + t.id)).trim().toUpperCase()));
+  }catch(err){
+    console.warn("SLA_Tickets unavailable — blank Billable entries will all count as Billable.", err);
+  }
+}
+function isBillableEntry(t){
+  const f = t.fields;
+  if(hasBillableChoice(t)) return f.Billable === true || f.Billable === "true" || f.Billable === 1 || f.Billable === "1";
+  // SLA HUB's own entries carry TicketId; widget entries carry "SLA-123 ..." in CSA.
+  if(t._sourceHub === "SLA_HUB" && f.TicketId && slaInternalTicketIds.has(String(f.TicketId))) return false;
+  const m = String(f.CSA || "").trim().match(/^SLA-\d+/i);
+  if(m && slaInternalTicketCodes.has(m[0].toUpperCase())) return false;
+  return true;
+}
+function billableMark(t){
+  return isBillableEntry(t) ? "&#10003;" : "&#10007;";
 }
 // Naming-pattern fallback for entries that predate both federation
 // (_sourceHub, see fetchAllTimeEntries above) and the Source column
@@ -1447,6 +1487,7 @@ async function autoResolveExceptions(){
     let reason = null;
     if(!entry) reason = `Auto-resolved — source entry no longer found in ${sourceList}`;
     else if(hasBillableChoice(entry)) reason = "Auto-resolved — Billable is now set in the source HUB";
+    else reason = `Auto-resolved — Billable now defaults to ${isBillableEntry(entry) ? "Yes" : "No (Internal Support)"}`;
     if(!reason) continue;
     try{
       await graphUpdateItem("CG_ExceptionsQueue", exc.id, {
@@ -1527,15 +1568,13 @@ function renderStatTiles(){
   document.getElementById("statExceptionsBreakdown").textContent =
     openExceptions.length ? breakdown : (allExceptions.length ? "none open" : "queue is empty — not seeded yet");
 
-  const withChoice = allTimeEntries.filter(hasBillableChoice);
-  const billableHours = withChoice.filter(t=>t.fields.Billable===true).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const totalChoiceHours = withChoice.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const share = totalChoiceHours > 0 ? (billableHours/totalChoiceHours*100) : 0;
-  document.getElementById("statBillableShare").textContent = totalChoiceHours>0 ? share.toFixed(0)+"%" : "—";
-  const notSetCount = allTimeEntries.length - withChoice.length;
-  document.getElementById("statBillableDelta").textContent = totalChoiceHours>0
-    ? `of ${withChoice.length} entries with Billable set` + (notSetCount ? ` · ${notSetCount} not set` : "")
-    : "no entries have Billable set yet";
+  const billableHours = allTimeEntries.filter(isBillableEntry).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const totalHoursAll = allTimeEntries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const share = totalHoursAll > 0 ? (billableHours/totalHoursAll*100) : 0;
+  document.getElementById("statBillableShare").textContent = totalHoursAll>0 ? share.toFixed(0)+"%" : "—";
+  document.getElementById("statBillableDelta").textContent = totalHoursAll>0
+    ? `of all hours · Billable unless marked No`
+    : "no time logged yet";
 }
 
 function renderHubChart(){
@@ -1731,7 +1770,7 @@ function renderActivityTable(){
     const f = t.fields;
     const resource = resourceForEntry(t);
     const name = resource ? resource.fields.Title : (f.EntryUser || "—");
-    const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    const billable = billableMark(t);
     return `
       <tr>
         <td>${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
@@ -4829,9 +4868,8 @@ function filteredTimeEntries(){
       const email = r ? (r.fields.MatchEmail||"").toLowerCase().trim() : "";
       if(email !== teFilters.resourceEmail) return false;
     }
-    if(teFilters.billable === "billable" && f.Billable !== true) return false;
-    if(teFilters.billable === "not-billable" && f.Billable !== false) return false;
-    if(teFilters.billable === "not-set" && hasBillableChoice(t)) return false;
+    if(teFilters.billable === "billable" && !isBillableEntry(t)) return false;
+    if(teFilters.billable === "not-billable" && isBillableEntry(t)) return false;
     if(teFilters.search){
       const needle = teFilters.search.toLowerCase();
       const r = resourceForEntry(t);
@@ -4872,7 +4910,6 @@ function renderTimeEntriesView(){
           <option value="all">All</option>
           <option value="billable">Billable</option>
           <option value="not-billable">Not billable</option>
-          <option value="not-set">Not set</option>
         </select>
       </div>
       <div class="filter-field"><label>Search</label><input type="search" id="teSearch" placeholder="resource or CSA…" value="${esc(teFilters.search)}"></div>
@@ -4924,7 +4961,7 @@ function renderTimeEntriesResults(){
     const f = t.fields;
     const resource = resourceForEntry(t);
     const name = resource ? resource.fields.Title : (f.EntryUser || "—");
-    const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    const billable = billableMark(t);
     const hub = hubForEntry(t);
     const sourceLabel = hub ? hubLabelFor(hub) : "—";
     const sourceIsInferred = !f.Source && !!inferHubForEntry(f.CSA);
@@ -5006,9 +5043,8 @@ const REPORT_STYLE = `
 function teReportContext(entries){
   const hrs = t => parseFloat(t.fields.Hours) || 0;
   const total = entries.reduce((sum,t)=> sum + hrs(t), 0);
-  const billable = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
-  const notBillable = entries.filter(t=>t.fields.Billable===false).reduce((sum,t)=> sum + hrs(t), 0);
-  const notSet = total - billable - notBillable;
+  const billable = entries.filter(isBillableEntry).reduce((sum,t)=> sum + hrs(t), 0);
+  const notBillable = total - billable;
   const people = new Set(entries.map(t => { const r = resourceForEntry(t); return r ? r.fields.Title : (t.fields.EntryUser || "Unknown"); }));
   const dates = entries.map(t => t.fields.WorkDate).filter(Boolean).sort();
 
@@ -5020,12 +5056,12 @@ function teReportContext(entries){
   const periodLabel = (teFilters.from || teFilters.to)
     ? `${fmtDateDashDMY(teFilters.from) || "Start"} to ${fmtDateDashDMY(teFilters.to) || "Today"}`
     : (dates.length ? `${fmtDateDashDMY(dates[0])} to ${fmtDateDashDMY(dates[dates.length-1])}` : "All dates");
-  const billableLabel = { "billable":"Billable only", "not-billable":"Non-billable only", "not-set":"Not set only" }[teFilters.billable] || "All";
+  const billableLabel = { "billable":"Billable only", "not-billable":"Non-billable only" }[teFilters.billable] || "All";
   const account = CG.auth.account();
   const preparedBy = account ? (account.name || account.username || "") : "";
   const now = new Date();
   const generated = `${fmtDateDashDMY(todayStr())} ${fmtTimeOfDay(now.toISOString())}`;
-  return { hrs, total, billable, notBillable, notSet, peopleCount: people.size, resourceLabel, periodLabel, billableLabel, preparedBy, generated };
+  return { hrs, total, billable, notBillable, peopleCount: people.size, resourceLabel, periodLabel, billableLabel, preparedBy, generated };
 }
 
 function teReportShell(title, ctx, entriesCount, bodyHtml){
@@ -5074,7 +5110,7 @@ ${bodyHtml}
 
 <div class="rpt-foot">
   <div>Source: time entries federated from each HUB's TimeEntries list. Read-only report.</div>
-  <div>Hours: billable ${ctx.billable.toFixed(2)} &middot; non-billable ${ctx.notBillable.toFixed(2)} &middot; not set ${ctx.notSet.toFixed(2)}</div>
+  <div>Hours: billable ${ctx.billable.toFixed(2)} &middot; non-billable ${ctx.notBillable.toFixed(2)}</div>
 </div>
 </body>
 </html>
@@ -5288,7 +5324,6 @@ function renderTimesheetReportTab(){
           <option value="all">All</option>
           <option value="billable">Billable</option>
           <option value="not-billable">Not billable</option>
-          <option value="not-set">Not set</option>
         </select>
       </div>
       <button class="print-btn" id="tsrAllDatesBtn" title="Clear From/To to include every entry on file">All dates</button>
@@ -5461,9 +5496,8 @@ function renderTimesheetBody(){
   }
   const entries = entriesForResourceAndPeriod(resource, tsFilters.start, tsFilters.end);
   const total = entries.reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const billable = entries.filter(t=>t.fields.Billable===true).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const notBillable = entries.filter(t=>t.fields.Billable===false).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
-  const notSet = entries.filter(t=>!hasBillableChoice(t)).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const billable = entries.filter(isBillableEntry).reduce((s,t)=> s + (parseFloat(t.fields.Hours)||0), 0);
+  const notBillable = total - billable;
 
   const byCsa = {};
   entries.forEach(t=>{
@@ -5476,7 +5510,7 @@ function renderTimesheetBody(){
 
   const entryRows = entries.map(t=>{
     const f = t.fields;
-    const billableTxt = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
+    const billableTxt = billableMark(t);
     return `
       <tr>
         <td>${esc(fmtDateDMY(f.WorkDate)||"—")}</td>
@@ -5493,11 +5527,10 @@ function renderTimesheetBody(){
       <h3><span>&#128337;</span>${esc(resource.fields.Title||"—")}</h3>
       <div class="panel-sub">${esc(resource.fields.MatchEmail||"—")} &middot; ${esc(tsFilters.start)} to ${esc(tsFilters.end)} &middot; ${esc(resource._sourceHubLabel||"—")}</div>
     </div>
-    <div class="ts-stat-row">
+    <div class="ts-stat-row" style="grid-template-columns:repeat(3,1fr);">
       <div class="ts-stat"><div class="lbl">Total hours</div><div class="val">${total.toFixed(2)}</div></div>
       <div class="ts-stat"><div class="lbl">Billable</div><div class="val">${billable.toFixed(2)}</div></div>
       <div class="ts-stat"><div class="lbl">Not billable</div><div class="val">${notBillable.toFixed(2)}</div></div>
-      <div class="ts-stat"><div class="lbl">Not set</div><div class="val">${notSet.toFixed(2)}</div></div>
     </div>
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9776;</span>By CSA / logged against</h3>
@@ -5615,7 +5648,7 @@ function buildTimesheetDocHtml(resource, start, end){
   });
   const columnTotals = dates.map((d,i) => csaRows.reduce((sum,r)=> sum + r.cells[i], 0));
   const grandTotal = columnTotals.reduce((a,b)=>a+b,0);
-  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
+  const billableTotal = entries.filter(isBillableEntry).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
 
   const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric"});
   const dayLabelFull = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"}) + " " + fmtDateDMY(d);
@@ -5744,9 +5777,8 @@ function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFil
       reportResourceName(a).localeCompare(reportResourceName(b)));
   }
   if(csaFilterTitle) entries = entries.filter(t => (t.fields.CSA||"").trim() === csaFilterTitle);
-  if(billableFilter === "billable") entries = entries.filter(t => t.fields.Billable === true);
-  if(billableFilter === "not-billable") entries = entries.filter(t => t.fields.Billable === false);
-  if(billableFilter === "not-set") entries = entries.filter(t => !hasBillableChoice(t));
+  if(billableFilter === "billable") entries = entries.filter(isBillableEntry);
+  if(billableFilter === "not-billable") entries = entries.filter(t => !isBillableEntry(t));
 
   const periodStart = start || (entries.length ? entries[0].fields.WorkDate : "");
   const periodEnd = end || (entries.length ? entries[entries.length-1].fields.WorkDate : "");
@@ -5756,7 +5788,7 @@ function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFil
 
   const hrs = t => parseFloat(t.fields.Hours) || 0;
   const grandTotal = entries.reduce((sum,t)=> sum + hrs(t), 0);
-  const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + hrs(t), 0);
+  const billableTotal = entries.filter(isBillableEntry).reduce((sum,t)=> sum + hrs(t), 0);
 
   const byCSA = {};
   const byResource = {};
@@ -5773,14 +5805,13 @@ function timeEntriesReportData(resource, csaFilterTitle, start, end, billableFil
   if(csaFilterTitle) filterDescParts.push(csaFilterTitle);
   if(billableFilter === "billable") filterDescParts.push("Billable only");
   if(billableFilter === "not-billable") filterDescParts.push("Non-billable only");
-  if(billableFilter === "not-set") filterDescParts.push("Not set only");
   const filterDesc = filterDescParts.length ? filterDescParts.join(" · ") : "All entries";
 
   return { entries, periodLabel, grandTotal, billableTotal, byCSA, csaLabels, byResource, resourceLabels, filterDesc };
 }
 
 function reportBillableText(t){
-  return hasBillableChoice(t) ? (t.fields.Billable ? "Yes" : "No") : "Not Set";
+  return isBillableEntry(t) ? "Yes" : "No";
 }
 
 function buildTimeEntriesReportDocHtml(resource, csaFilterTitle, start, end, billableFilter){
@@ -6109,7 +6140,6 @@ function renderReportsView(){
           <option value="all">All</option>
           <option value="billable">Billable</option>
           <option value="not-billable">Not billable</option>
-          <option value="not-set">Not set</option>
         </select>
       </div>
       <button class="print-btn" id="rptGenerateBtn">Generate Report</button>
