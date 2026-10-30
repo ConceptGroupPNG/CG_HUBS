@@ -137,6 +137,13 @@
   .who-badge.late{background:color-mix(in srgb, var(--status-warning) 15%, transparent);color:var(--status-warning);}
   .who-badge.break{background:color-mix(in srgb, var(--status-info, #4a7bb7) 15%, transparent);color:var(--status-info, #4a7bb7);}
   .dash-empty{font-size:12px;color:var(--ink-muted);padding:6px 0;}
+  .inc-row{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;padding:8px 6px;margin:0 -6px;border-bottom:1px solid var(--hairline-soft);font-size:12.5px;cursor:pointer;border-radius:6px;}
+  .inc-row:last-child{border-bottom:none;}
+  .inc-row:hover,.inc-row:focus{background:var(--brass-wash);outline:none;}
+  .inc-ic{font-size:14px;text-align:center;}
+  .inc-name{font-weight:600;color:var(--ink-primary);}
+  .inc-detail{font-size:10.5px;color:var(--ink-muted);}
+  .inc-go{font-size:11px;color:var(--ink-secondary);white-space:nowrap;}
   .stat-card.warn .stat-value{color:var(--status-warning);}
   .stat-card.warn .stat-label .ic{color:var(--status-warning);}
 
@@ -668,10 +675,18 @@
     </div>
 
     <div class="grid-3" style="margin-bottom:16px;">
-      <div class="panel">
-        <h3><span>&#127970;</span>Who's in the office today</h3>
-        <div class="panel-sub">Clocked in and not yet clocked out, as of the last refresh</div>
-        <div id="whoInList"></div>
+      <div>
+        <div class="panel" style="margin-bottom:16px;">
+          <h3><span>&#127970;</span>Who's in the office today</h3>
+          <div class="panel-sub">Clocked in and not yet clocked out, as of the last refresh</div>
+          <div id="whoInList"></div>
+        </div>
+
+        <div class="panel">
+          <h3><span>&#9888;</span>Incomplete punches — <span id="incompleteDayLabel" style="font-weight:600;">previous work day</span></h3>
+          <div class="panel-sub">Missing clock-outs and break punches from the last work day. Click one to fix it in Time Entry.</div>
+          <div id="incompleteList"></div>
+        </div>
       </div>
 
       <div class="panel">
@@ -1849,6 +1864,92 @@ function employeeTodayRows(){
     });
 }
 
+/* ---------- Incomplete punches from the previous work day ----------
+   "Previous work day" = the most recent day before today on which any
+   time-tracked Employee was rostered or has a record (so on a Monday it
+   looks back to Friday). Lists the incomplete kinds only — missed
+   clock-out, clock-out with no clock-in, break not closed, break punch
+   out of order — not Absent/Late, which live on the Time Exceptions tab.
+   Each row opens Time Entry for that Employee and day. */
+function previousWorkDay(employees){
+  const today = todayStr();
+  for(let back = 1; back <= 14; back++){
+    const day = CG.date.addDays(today, -back);
+    const anyRecord = employees.some(e => findTimeRecord(e.fields.EmployeeNumber, day));
+    const anyRostered = employees.some(e => {
+      const sh = findShiftByName(e.fields.DefaultShift);
+      return sh && shiftRunsOn(sh, day) && !employeeHolidayOn(e, day);
+    });
+    if(anyRecord || anyRostered) return day;
+  }
+  return CG.date.addDays(today, -1);
+}
+function incompletePunchesForDay(employees, day){
+  const today = todayStr();
+  const out = [];
+  employees.forEach(emp => {
+    const rec = findTimeRecord(emp.fields.EmployeeNumber, day);
+    if(!rec) return;
+    const f = rec.fields;
+    const st = attendanceStatusForDay(emp, day, rec, today);
+    if(!f.TimeIn && f.TimeOut) out.push({ employee: emp, dateStr: day, type: "No clock-in", detail: `Clocked out at ${f.TimeOut}, no Time In on file` });
+    if(st.missedClockOut) out.push({ employee: emp, dateStr: day, type: "Missed clock-out", detail: `Clocked in at ${st.timeIn}, no Time Out on file` });
+    if(st.breakNotClosed) out.push({ employee: emp, dateStr: day, type: "Break not closed", detail: `Out for break at ${st.breakOut}, no Break In on file` });
+    if(st.breakOutOfOrder) out.push({ employee: emp, dateStr: day, type: "Break punch out of order", detail: `Break In at ${st.breakIn} with no Break Out` });
+  });
+  return out;
+}
+// Same jump as the Time Exceptions tab, starting from the Dashboard.
+function goToTimeEntryFromDashboard(x){
+  const period = findPayPeriodForDate(x.dateStr);
+  if(!period){
+    alert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
+    return;
+  }
+  etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
+  etFilters.payNumber = String(period.fields.PayNumber);
+  etMode = "employee";
+  employeesActiveTab = "time-entry";
+  document.querySelector('.nav-item[data-view="employees"]').click();
+  setTimeout(() => {
+    const row = document.querySelector(`#teRows tr[data-date="${x.dateStr}"]`);
+    if(row){
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.classList.add("te-row-jump");
+      setTimeout(() => row.classList.remove("te-row-jump"), 2200);
+    }
+  }, 80);
+}
+function renderIncompletePunches(employees){
+  const el = document.getElementById("incompleteList");
+  if(!el) return;
+  const day = previousWorkDay(employees);
+  const WEEKDAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  document.getElementById("incompleteDayLabel").textContent = `${WEEKDAY[new Date(day + "T00:00:00").getDay()]} ${fmtDateDMY(day)}`;
+  const items = incompletePunchesForDay(employees, day)
+    .sort((a,b)=> (a.employee.fields.Title||"").localeCompare(b.employee.fields.Title||""));
+  if(!items.length){
+    el.innerHTML = `<div class="dash-empty">&#10003; No incomplete punches — every clock-in on that day has its clock-out and breaks.</div>`;
+    return;
+  }
+  const ICON = { "Missed clock-out": "&#9888;", "No clock-in": "&#9888;", "Break not closed": "&#9888;", "Break punch out of order": "&#10071;" };
+  const COLOR = { "Missed clock-out": "var(--status-serious)", "No clock-in": "var(--status-serious)", "Break not closed": "var(--status-warning)", "Break punch out of order": "var(--status-critical)" };
+  el.innerHTML = items.map((x, i) => `
+    <div class="inc-row" data-inc="${i}" tabindex="0" role="button" title="Open ${esc(x.employee.fields.Title||"")}'s Time Entry for ${esc(fmtDateDMY(x.dateStr))}">
+      <div class="inc-ic" style="color:${COLOR[x.type]};">${ICON[x.type]}</div>
+      <div>
+        <div class="inc-name">${esc(x.employee.fields.Title||"—")} <span style="font-weight:400;color:var(--ink-secondary);">— ${esc(x.type)}</span></div>
+        <div class="inc-detail">${esc(x.detail)}</div>
+      </div>
+      <div class="inc-go">Fix &rsaquo;</div>
+    </div>`).join("");
+  el.querySelectorAll(".inc-row[data-inc]").forEach(row => {
+    const go = () => goToTimeEntryFromDashboard(items[Number(row.getAttribute("data-inc"))]);
+    row.addEventListener("click", go);
+    row.addEventListener("keydown", ev => { if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); go(); } });
+  });
+}
+
 function renderEmployeeDashboard(){
   const setText = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
   const whoEl = document.getElementById("whoInList");
@@ -1858,6 +1959,7 @@ function renderEmployeeDashboard(){
   const rows = employeeTodayRows();
 
   document.getElementById("empDashHoliday").innerHTML = holidayBannerHtml(holidaysOnDateFor(today, rows.map(r => r.emp)));
+  renderIncompletePunches(rows.map(r => r.emp));
 
   if(!rows.length){
     ["statEmpIn","statEmpPresent","statEmpLate","statEmpAbsent"].forEach(id => setText(id, "—"));
