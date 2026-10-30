@@ -701,8 +701,22 @@
           break;
         }
       }
+      // How sure the phone is about this reading, in metres (from the phone itself).
+      const accuracy = Math.round(pos.coords.accuracy || 0);
       if (withinFence) {
         renderLocation("in-range", `At ${matchedLocationTitle} (~${lastKnownDistance}m from centre)`);
+      } else if (accuracy > Math.max(100, nearest ? nearest.radiusMeters : 0)) {
+        // The phone is only giving a rough position (often "approximate
+        // location" allowed instead of "precise", or GPS off). The distance
+        // would be misleading, so say what to fix instead. The check itself
+        // is unchanged - a rough reading never counts as in range.
+        lastKnownDistance = nearest ? Math.round(nearest.dist) : null;
+        renderLocation(
+          "out-of-range",
+          `Your phone is only giving a rough location (accurate to about ${accuracy >= 1000 ? (accuracy / 1000).toFixed(1) + " km" : accuracy + "m"}). ` +
+          `Turn on Precise location for this browser (phone Settings → Apps → your browser → Permissions → Location → Use precise location) ` +
+          `and make sure Location is on, then tap Check location again.`
+        );
       } else {
         lastKnownDistance = nearest ? Math.round(nearest.dist) : null;
         const detail = nearest
