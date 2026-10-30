@@ -1504,9 +1504,27 @@ async function reconcileExceptions(){
 // Diffs against what's already loaded rather than syncing unconditionally,
 // so this stays cheap once everything's caught up. Non-fatal — mirrors the
 // graceful-degradation already used for the rest of the cross-site read.
+// Safety guard (Oct 2026): every write schedules a refresh, and every
+// refresh runs this pass, so anything that keeps looking out of sync would
+// write again and again until SharePoint throttles (HTTP 429). That happened
+// when an SLA HUB window still running older code and one running newer code
+// kept undoing each other's changes. So this automatic pass fixes each ticket
+// at most once per page load, and makes at most a set number of fixes per
+// load; a ticket saved by a person still syncs as normal.
+const reconciledTicketIds = new Set();
+const RECONCILE_MAX_PER_PAGE_LOAD = 200;
+let reconcileWritesThisLoad = 0;
+// The ticket's row the sync keeps: titled with the bare number, active first.
+function primaryTicketActiveEntityRow(t, rows){
+  const code = ticketCode(t);
+  const titled = rows.filter(x => (x.fields.Title||"").trim() === code);
+  return titled.find(x => x.fields.IsActive) || titled[0] || null;
+}
+
 async function reconcileTicketActiveEntities(){
   if(!Array.isArray(state.crossActiveEntities)) return; // cross-site load didn't succeed this session
   const outOfSync = state.tickets.filter(t => {
+    if(reconciledTicketIds.has(String(t.id))) return false; // already fixed once this page load
     const code = ticketCode(t);
     const wantActive = isTicketActive(t);
     const wantDesc = ticketActiveEntityDescription(t);
@@ -1515,12 +1533,22 @@ async function reconcileTicketActiveEntities(){
     // Old-style title to rename, or extra rows from earlier renames still showing.
     if(!rows.some(x => (x.fields.Title||"").trim() === code)) return true;
     if(rows.filter(x => x.fields.IsActive).length > (wantActive ? 1 : 0)) return true;
-    const existing = rows.find(x => (x.fields.Title||"").trim() === code);
-    return !!existing.fields.IsActive !== wantActive || (existing.fields.Description||"") !== wantDesc;
+    const existing = primaryTicketActiveEntityRow(t, rows);
+    return !!existing.fields.IsActive !== wantActive || (existing.fields.Description||"") !== (wantDesc || code);
   });
-  for(const t of outOfSync){
-    await syncTicketActiveEntity(t);
-  }
+  if(!outOfSync.length) return;
+  // One refresh at the end of the pass, not one per ticket.
+  await withBatchedRefresh(async () => {
+    for(const t of outOfSync){
+      if(reconcileWritesThisLoad >= RECONCILE_MAX_PER_PAGE_LOAD){
+        console.warn("Active-entity sync: per-load limit reached; the rest will be done next time SLA HUB is opened.");
+        break;
+      }
+      reconciledTicketIds.add(String(t.id));
+      reconcileWritesThisLoad++;
+      await syncTicketActiveEntity(t, { skipReload: true });
+    }
+  });
 }
 
 /* Keep the whole app in sync automatically: every successful write (see
@@ -2196,7 +2224,7 @@ function ticketActiveEntityDescription(t){
 // Finds the ticket's row by its number whatever its Title currently says,
 // renames an old-style row to the bare number, and switches off any extra
 // rows left behind by earlier renames. Never blocks the save if it fails.
-async function syncTicketActiveEntity(t){
+async function syncTicketActiveEntity(t, opts){
   const code = ticketCode(t);
   const description = ticketActiveEntityDescription(t);
   const isActive = isTicketActive(t);
@@ -2204,7 +2232,10 @@ async function syncTicketActiveEntity(t){
     const existing = await fetchAllListItems("CSA_ActiveEntities");
     const rows = ticketActiveEntityRows(t, existing);
     // Prefer a row already titled with the bare number, else the newest.
-    rows.sort((a,b) => ((b.fields.Title||"").trim()===code) - ((a.fields.Title||"").trim()===code) || Number(b.id) - Number(a.id));
+    rows.sort((a,b) =>
+      ((b.fields.Title||"").trim()===code) - ((a.fields.Title||"").trim()===code) ||
+      (!!b.fields.IsActive) - (!!a.fields.IsActive) ||
+      Number(b.id) - Number(a.id));
     const [keep, ...extras] = rows;
     if(keep){
       await graphUpdateItem("CSA_ActiveEntities", keep.id, {
@@ -2218,7 +2249,10 @@ async function syncTicketActiveEntity(t){
     for(const x of extras){
       if(x.fields.IsActive) await graphUpdateItem("CSA_ActiveEntities", x.id, { IsActive: false });
     }
-    state.crossActiveEntities = await fetchAllListItems("CSA_ActiveEntities").catch(()=>state.crossActiveEntities);
+    // The automatic pass skips this re-read; the refresh after it reloads the list once.
+    if(!(opts && opts.skipReload)){
+      state.crossActiveEntities = await fetchAllListItems("CSA_ActiveEntities").catch(()=>state.crossActiveEntities);
+    }
   }catch(err){
     console.error("Active entity sync failed:", err);
   }
