@@ -205,6 +205,7 @@
   .tr-hours{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink-primary);}
 
   .cal-mini{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+  .grid-activity{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;margin-bottom:16px;align-items:start;}
   .cal-cell{
     aspect-ratio:1;border-radius:5px;background:var(--surface-card-2);
     border:1px solid var(--hairline-soft);
@@ -611,22 +612,19 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#9998;</span>Recent consulting activity</h3>
-      <div class="panel-sub">Most recent time entries across every federated HUB, by work date</div>
-      <table>
-        <thead>
-          <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr>
-        </thead>
-        <tbody id="activityTableBody"></tbody>
-      </table>
-    </div>
-
-    <div class="grid-3" style="margin-bottom:16px;">
+    <!-- recent consulting activity + logged-time calendar -->
+    <div class="grid-activity">
       <div class="panel">
-        <h3><span>&#8987;</span>Exceptions queue</h3>
-        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; "Billable not set" is no longer raised — hours are Billable unless marked No (SLA HUB Internal Support tickets default to No)</div>
-        <div class="ex-list" id="exceptionsList"></div>
+        <h3><span>&#9998;</span>Recent consulting activity</h3>
+        <div class="panel-sub">Most recent time entries across every federated HUB, by work date</div>
+        <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>Work date</th><th>Resource</th><th>Logged against</th><th>Hours</th><th>Entry method</th><th>Billable</th></tr>
+          </thead>
+          <tbody id="activityTableBody"></tbody>
+        </table>
+        </div>
       </div>
 
       <div class="panel">
@@ -1670,6 +1668,7 @@ function renderHubChart(){
 
 function renderExceptions(){
   const list = document.getElementById("exceptionsList");
+  if(!list) return; // the Exceptions queue panel was removed from the Dashboard (Oct 2026)
   const noteParts = [];
   if(lastAutoSeedCount > 0) noteParts.push(`${lastAutoSeedCount} new exception${lastAutoSeedCount===1?"":"s"} auto-seeded`);
   if(lastAutoResolveCount > 0) noteParts.push(`${lastAutoResolveCount} auto-resolved`);
