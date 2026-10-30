@@ -1507,13 +1507,15 @@ async function reconcileExceptions(){
 async function reconcileTicketActiveEntities(){
   if(!Array.isArray(state.crossActiveEntities)) return; // cross-site load didn't succeed this session
   const outOfSync = state.tickets.filter(t => {
-    const title = activeEntityTitleFor("Ticket", t);
-    if(!title) return false;
+    const code = ticketCode(t);
     const wantActive = isTicketActive(t);
-    const wantDesc = t.fields.ShortDescription || t.fields.Title || "";
-    const existing = state.crossActiveEntities.find(x =>
-      (x.fields.Title||"").trim() === title.trim() && x.fields.Source === "SLA_HUB");
-    if(!existing) return wantActive; // only needs creating if it should actually show
+    const wantDesc = ticketActiveEntityDescription(t);
+    const rows = ticketActiveEntityRows(t, state.crossActiveEntities);
+    if(!rows.length) return wantActive; // only needs creating if it should actually show
+    // Old-style title to rename, or extra rows from earlier renames still showing.
+    if(!rows.some(x => (x.fields.Title||"").trim() === code)) return true;
+    if(rows.filter(x => x.fields.IsActive).length > (wantActive ? 1 : 0)) return true;
+    const existing = rows.find(x => (x.fields.Title||"").trim() === code);
     return !!existing.fields.IsActive !== wantActive || (existing.fields.Description||"") !== wantDesc;
   });
   for(const t of outOfSync){
@@ -2137,10 +2139,39 @@ function sortedEndClients(){
 // back against CSA_TimeEntries.CSA — same plain-text matching convention
 // CSA HUB already uses (Lookups can't span site collections). Prefixed with
 // the entity's own number/type so it stays unique and human-readable in the
-// Time Tracking Widget's dropdown.
+// Time Tracking Widget's dropdown. Tickets now use the bare number - see below.
+// A Ticket's row in CSA_ActiveEntities is titled with just its number
+// (e.g. "SLA-123") - the same rule CSA HUB uses (CSA-0059, PROP-0005).
+// The ticket's description goes in Description, and the timer apps show
+// "SLA-123 — description". Time entries are matched on the number at the
+// start of their CSA value, so renaming a ticket never loses hours or
+// creates a second row. Rows from before this change ("SLA-123 — name")
+// are renamed to the bare number automatically (see syncTicketActiveEntity).
+// Agreements, Work Orders and Ad Hoc clients no longer get rows of their
+// own; their old "number — name" titles are still matched exactly, for
+// time logged before tickets took over.
+function ticketCode(t){
+  return String(t.fields.TicketNumber || ("SLA-" + t.id)).trim();
+}
+// "SLA-123 — Printer not working" or "SLA-123" -> "SLA-123"; else "".
+function leadingTicketCode(text){
+  const m = String(text || "").trim().match(/^SLA-\d+/i);
+  return m ? m[0].toUpperCase() : "";
+}
+function entryIsForTicketCodes(entry, codes){
+  const code = leadingTicketCode(entry.fields.CSA);
+  return !!code && codes.has(code);
+}
+// SLA HUB's own CSA_ActiveEntities rows for a ticket (old- or new-style title).
+function ticketActiveEntityRows(t, rows){
+  const code = ticketCode(t).toUpperCase();
+  return (rows || []).filter(x => x.fields.Source === "SLA_HUB" &&
+    ((x.fields.Title||"").trim().toUpperCase() === code || leadingTicketCode(x.fields.Title) === code));
+}
+
 function activeEntityTitleFor(type, entity){
   if(!entity) return null;
-  if(type === "Ticket")     return `${entity.fields.TicketNumber || ("SLA-"+entity.id)} — ${entity.fields.Title}`;
+  if(type === "Ticket")     return ticketCode(entity);
   if(type === "Agreement")  return `${entity.fields.AgreementNumber || ("AGR-"+entity.id)} — ${entity.fields.Title}`;
   if(type === "WorkOrder")  return `${entity.fields.WorkOrderNumber || ("WO-"+entity.id)} — ${entity.fields.Title}`;
   if(type === "AdHocClient") return `Ad Hoc — ${entity.fields.Title}`;
@@ -2156,11 +2187,41 @@ function activeEntityTitleFor(type, entity){
 function isTicketActive(t){
   return !["Resolved","Closed"].includes(t.fields.Status);
 }
-function syncTicketActiveEntity(t){
-  // Returns the promise (rather than firing-and-forgetting) so callers that
-  // need the sync's writes to land before they finish a batched action can
-  // await it — see withBatchedRefresh usage in submitTicketFormCore.
-  return syncActiveEntity("Ticket", activeEntityTitleFor("Ticket", t), t.fields.ShortDescription || t.fields.Title, isTicketActive(t));
+function ticketActiveEntityDescription(t){
+  return t.fields.ShortDescription || t.fields.Title || "";
+}
+// Returns the promise (rather than firing-and-forgetting) so callers that
+// need the sync's writes to land before they finish a batched action can
+// await it — see withBatchedRefresh usage in submitTicketFormCore.
+// Finds the ticket's row by its number whatever its Title currently says,
+// renames an old-style row to the bare number, and switches off any extra
+// rows left behind by earlier renames. Never blocks the save if it fails.
+async function syncTicketActiveEntity(t){
+  const code = ticketCode(t);
+  const description = ticketActiveEntityDescription(t);
+  const isActive = isTicketActive(t);
+  try{
+    const existing = await fetchAllListItems("CSA_ActiveEntities");
+    const rows = ticketActiveEntityRows(t, existing);
+    // Prefer a row already titled with the bare number, else the newest.
+    rows.sort((a,b) => ((b.fields.Title||"").trim()===code) - ((a.fields.Title||"").trim()===code) || Number(b.id) - Number(a.id));
+    const [keep, ...extras] = rows;
+    if(keep){
+      await graphUpdateItem("CSA_ActiveEntities", keep.id, {
+        Title: code, Description: description || code, SourceType: "Ticket", Source: "SLA_HUB", IsActive: !!isActive
+      });
+    } else if(isActive){
+      await graphCreateItem("CSA_ActiveEntities", {
+        Title: code, Description: description || code, SourceType: "Ticket", Source: "SLA_HUB", IsActive: true
+      });
+    }
+    for(const x of extras){
+      if(x.fields.IsActive) await graphUpdateItem("CSA_ActiveEntities", x.id, { IsActive: false });
+    }
+    state.crossActiveEntities = await fetchAllListItems("CSA_ActiveEntities").catch(()=>state.crossActiveEntities);
+  }catch(err){
+    console.error("Active entity sync failed:", err);
+  }
 }
 
 // Keeps CG_Time's shared CSA_ActiveEntities in sync so the Time Tracking
@@ -2345,13 +2406,13 @@ function hoursForOwningEntity(type, entity){
       .map(t => String(t.id))
   );
   const ownedTickets = state.tickets.filter(t => ownedTicketIds.has(String(t.id)));
-  const ticketTitles = new Set(ownedTickets.map(t => activeEntityTitleFor("Ticket", t)));
+  const ticketCodes = new Set(ownedTickets.map(t => ticketCode(t).toUpperCase()));
   const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
   const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType===type &&
     String(ticketLookupId(e, refField))===String(entity.id));
   const external = state.crossTimeEntries.filter(e => {
     const csa = (e.fields.CSA||"").trim();
-    return ticketTitles.has(csa) || csa === legacyTitle;
+    return entryIsForTicketCodes(e, ticketCodes) || csa === legacyTitle;
   });
   return { ownedTicketIds, ticketTied, direct, external,
     total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
@@ -2368,13 +2429,13 @@ function hoursForAdHocClient(client){
       String(ticketLookupId(t,"Client"))===String(client.id)).map(t => String(t.id))
   );
   const ownedTickets = state.tickets.filter(t => ownedTicketIds.has(String(t.id)));
-  const ticketTitles = new Set(ownedTickets.map(t => activeEntityTitleFor("Ticket", t)));
+  const ticketCodes = new Set(ownedTickets.map(t => ticketCode(t).toUpperCase()));
   const ticketTied = state.timeEntries.filter(e => e.fields.TicketId && ownedTicketIds.has(String(e.fields.TicketId)));
   const direct = state.timeEntries.filter(e => !e.fields.TicketId && e.fields.OwningEntityType==="AdHocClient" &&
     String(ticketLookupId(e,"OwningClient"))===String(client.id));
   const external = state.crossTimeEntries.filter(e => {
     const csa = (e.fields.CSA||"").trim();
-    return ticketTitles.has(csa) || csa === legacyTitle;
+    return entryIsForTicketCodes(e, ticketCodes) || csa === legacyTitle;
   });
   return { ownedTicketIds, ticketTied, direct, external,
     total: [...ticketTied,...direct,...external].reduce((s,e)=>s+(Number(e.fields.Hours)||0),0) };
@@ -2385,8 +2446,8 @@ function hoursForAdHocClient(client){
 // the widget against THIS ticket show up there directly, not just rolled up
 // on its parent Agreement/Work Order.
 function externalHoursForTicket(t){
-  const title = activeEntityTitleFor("Ticket", t);
-  return state.crossTimeEntries.filter(e => (e.fields.CSA||"").trim() === title);
+  const codes = new Set([ticketCode(t).toUpperCase()]);
+  return state.crossTimeEntries.filter(e => entryIsForTicketCodes(e, codes));
 }
 
 function owningEntityLinkHtml(ticket){
@@ -4829,7 +4890,8 @@ function timeEntriesForResource(resource){
 function targetForExternalEntry(entry){
   const csa = (entry.fields.CSA||"").trim();
   if(!csa) return { label: entry.fields.Title || "—", onClick: null };
-  const ticket = state.tickets.find(t => activeEntityTitleFor("Ticket", t) === csa);
+  const entryCode = leadingTicketCode(csa);
+  const ticket = entryCode ? state.tickets.find(t => ticketCode(t).toUpperCase() === entryCode) : null;
   if(ticket) return { label: `${ticket.fields.TicketNumber||ticket.id} — ${ticket.fields.Title||""}`, onClick: `navigate('tickets'); openTicketDetail('${ticket.id}')` };
   const agreement = state.agreements.find(a => activeEntityTitleFor("Agreement", a) === csa);
   if(agreement) return { label: `${agreement.fields.AgreementNumber||("AGR-"+agreement.id)} — ${agreement.fields.Title||""}`, onClick: `openAgreementDetail('${agreement.id}')` };
