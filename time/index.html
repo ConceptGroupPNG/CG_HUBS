@@ -3119,7 +3119,28 @@ function renderEmployeesHub(){
 // Only one row edits at a time.
 let editingEmployeeId = null;
 
-const EMP_ROW_COLS = "1fr 1.3fr 1.6fr .8fr .9fr 1.1fr .8fr .9fr";
+const EMP_ROW_COLS = "1fr 1.3fr 1.6fr .8fr .9fr 1.1fr .9fr .8fr .9fr";
+
+// Time & Attendance Method — how this Employee's time is recorded
+// (CG_Employees.AttendanceMethod; see CG.attendanceMethod in the shared
+// core). Blank counts as Biometric, so existing Employees need no change.
+//   Biometric — ZKTeco scanner via the bridge
+//   Mobile    — CG Time Attendance phone app (the only method that app allows)
+//   Manual    — entered by a supervisor in Time Entry
+//   NA        — not on time & attendance; left out of the Attendance grid,
+//               Time Exceptions and Daily Report
+// Supervisor Time Entry stays open for every method, for corrections.
+const ATT_METHOD_LABELS = { Biometric: "Biometric", Mobile: "Mobile", Manual: "Manual", NA: "N/A" };
+function attendanceMethodOptionsHtml(selected){
+  const sel = CG.attendanceMethod(selected);
+  return CG.ATTENDANCE_METHODS
+    .map(m => `<option value="${esc(m)}" ${m===sel?"selected":""}>${esc(ATT_METHOD_LABELS[m])}${m===CG.ATTENDANCE_METHOD_DEFAULT?" (default)":""}</option>`)
+    .join("");
+}
+// Employees whose time is tracked at all (everyone except NA).
+function isTimeTracked(emp){
+  return CG.attendanceMethod(emp.fields) !== "NA";
+}
 
 // Email links an Employee to the Microsoft 365 account they sign in with -
 // CG Time Attendance (phone clock in/out) finds the person this way.
@@ -3137,6 +3158,9 @@ function employeeEmailProblem(email, ownItemId){
 // The Email column was added to CG_Employees for CG Time Attendance; if a
 // site hasn't got it yet, say exactly how to add it instead of a raw error.
 function employeeSaveError(err){
+  if(/Field 'AttendanceMethod' is not recognized/i.test(err && err.message || "")){
+    return "the CG_Employees list has no AttendanceMethod column yet. Add a Choice column named AttendanceMethod (choices Biometric, Mobile, Manual, NA; default Biometric) to CG_Employees, then try again.";
+  }
   if(/Field 'Email' is not recognized/i.test(err && err.message || "")){
     return "the CG_Employees list has no Email column yet. Add a column named Email (Single line of text) to CG_Employees, then try again.";
   }
@@ -3180,6 +3204,7 @@ function renderEmployeesTab(){
           <div><select class="emp-edit-paygroup">${payGroupOptionsHtml(f.PayGroup)}</select></div>
           <div><input type="text" class="emp-edit-jobs" value="${esc(f.JobAssignments||"")}"></div>
           <div><select class="emp-edit-shift">${shiftOptionsHtml(f.DefaultShift, "— none —")}</select></div>
+          <div><select class="emp-edit-method">${attendanceMethodOptionsHtml(f.AttendanceMethod)}</select></div>
           <div class="hf-check" style="display:flex;align-items:center;gap:5px;"><input type="checkbox" class="emp-edit-active" ${active?"checked":""}><label style="margin:0;font-size:11px;">Active</label></div>
           <div style="display:flex;gap:6px;">
             <button class="admin-submit emp-edit-save" style="padding:5px 10px;font-size:11px;">Save</button>
@@ -3197,6 +3222,7 @@ function renderEmployeesTab(){
         <div>${esc(f.PayGroup||"—")}</div>
         <div>${esc(f.JobAssignments||"—")}</div>
         <div>${f.DefaultShift ? esc(f.DefaultShift) : "—"}</div>
+        <div>${esc(ATT_METHOD_LABELS[CG.attendanceMethod(f)])}</div>
         <div class="res-active ${active?"yes":"no"}">${active?"Active":"Inactive"}</div>
         <div><button class="admin-toggle ${active?"deactivate":"activate"}" data-toggle-id="${esc(e.id)}" data-next="${active?"false":"true"}">${active?"Deactivate":"Activate"}</button></div>
       </div>
@@ -3208,13 +3234,13 @@ function renderEmployeesTab(){
       <div class="panel-sub">Internal Employees, distinct from Consulting Resources &mdash; a function entirely of CG Time. Writes straight to CG_Employees.${allPayGroups.length===0 ? ' No Pay Groups on file yet — add one from the Pay Groups tab first.' : ''} Click a row to edit it.</div>
     </div>
     <div class="res-table-wrap" style="margin-bottom:16px;">
-      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Email</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default Shift</div><div>Status</div><div></div></div>
+      <div class="admin-row head" style="grid-template-columns:${EMP_ROW_COLS};"><div>Employee #</div><div>Name</div><div>Email</div><div>Pay Group</div><div>Job Assignment(s)</div><div>Default Shift</div><div>T&amp;A Method</div><div>Status</div><div></div></div>
       ${rows || `<div style="padding:16px 18px;font-size:12px;color:var(--ink-muted);">No Employees on file yet in CG_Employees &mdash; add the first one below.</div>`}
     </div>
     <div id="empEditMsg" style="font-size:11.5px;margin-bottom:10px;min-height:14px;"></div>
     <div class="panel">
       <h3><span>&#10010;</span>Add an Employee</h3>
-      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default Shift pre-fills this Employee's days in Time Entry &mdash; add Shifts first from the Shifts tab if the list below is empty. Email is the Concept Group address they sign in to Microsoft 365 with &mdash; needed for the CG Time Attendance phone app; leave it blank if they won't use it.</div>
+      <div class="panel-sub" style="margin-bottom:12px;">Job Assignment(s) is recorded as-is for payroll purposes only &mdash; CG Time doesn't interpret it. If someone holds more than one, separate them with a comma (e.g. "01, 03"). Default Shift pre-fills this Employee's days in Time Entry &mdash; add Shifts first from the Shifts tab if the list below is empty. Email is the Concept Group address they sign in to Microsoft 365 with &mdash; needed for the CG Time Attendance phone app; leave it blank if they won't use it. T&amp;A Method is how their time is recorded: Biometric (the scanner, the default), Mobile (the CG Time Attendance phone app &mdash; only Mobile Employees can clock in there), Manual (entered by a supervisor in Time Entry) or N/A (not on time &amp; attendance &mdash; left out of Attendance, Time Exceptions and the Daily Report).</div>
       <div class="admin-form">
         <div class="filter-field"><label>Employee #</label><input type="text" id="empNewNumber" placeholder="e.g. CSW0158"></div>
         <div class="filter-field"><label>Name</label><input type="text" id="empNewName" placeholder="e.g. Kila Ravi"></div>
@@ -3225,6 +3251,9 @@ function renderEmployeesTab(){
         <div class="filter-field"><label>Job Assignment(s)</label><input type="text" id="empNewJobs" placeholder="e.g. 01"></div>
         <div class="filter-field"><label>Default Shift</label>
           <select id="empNewShift">${shiftOptionsHtml("", "— none —")}</select>
+        </div>
+        <div class="filter-field"><label>T&amp;A Method</label>
+          <select id="empNewMethod">${attendanceMethodOptionsHtml("")}</select>
         </div>
         <div><button class="admin-submit" id="empAddBtn">+ Add Employee</button></div>
       </div>
@@ -3272,6 +3301,7 @@ async function saveEmployeeEdit(itemId, rowEl){
   const payGroup = rowEl.querySelector(".emp-edit-paygroup").value;
   const jobs = rowEl.querySelector(".emp-edit-jobs").value.trim();
   const defaultShift = rowEl.querySelector(".emp-edit-shift").value;
+  const method = CG.attendanceMethod(rowEl.querySelector(".emp-edit-method").value);
   const active = rowEl.querySelector(".emp-edit-active").checked;
   if(!name){
     reportRowMsg(msgEl, "Name is required.", true);
@@ -3290,6 +3320,8 @@ async function saveEmployeeEdit(itemId, rowEl){
   // Only send Email when it's being set or changed, so editing other fields
   // still works on a site that hasn't added the Email column yet.
   if(email !== cleanEmployeeEmail(existing && existing.fields.Email)) fields.Email = email;
+  // Same for AttendanceMethod: only sent when it actually changes.
+  if(method !== CG.attendanceMethod(existing && existing.fields)) fields.AttendanceMethod = method;
   try{
     await graphUpdateItem("CG_Employees", itemId, fields);
     allEmployees = await fetchAllListItems("CG_Employees");
@@ -3310,6 +3342,7 @@ async function addEmployee(){
   const payGroup = document.getElementById("empNewPayGroup").value;
   const jobs = document.getElementById("empNewJobs").value.trim();
   const defaultShift = document.getElementById("empNewShift").value;
+  const method = CG.attendanceMethod(document.getElementById("empNewMethod").value);
   if(!num || !name){
     reportRowMsg(msgEl, "Employee # and Name are required.", true);
     return;
@@ -3328,6 +3361,9 @@ async function addEmployee(){
     DefaultShift: defaultShift, DefaultBreakMinutes: 30, IsActive: true,
   };
   if(email) fields.Email = email;
+  // Blank already means Biometric, so only a different choice is written —
+  // adding Employees keeps working before the AttendanceMethod column exists.
+  if(method !== CG.ATTENDANCE_METHOD_DEFAULT) fields.AttendanceMethod = method;
   try{
     await graphCreateItem("CG_Employees", fields);
     allEmployees = await fetchAllListItems("CG_Employees");
@@ -3601,7 +3637,7 @@ function renderEmployeeTimeEntryBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &middot; T&amp;A Method ${esc(ATT_METHOD_LABELS[CG.attendanceMethod(employee.fields)])} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
       <div class="te-save-bar">
@@ -3886,7 +3922,7 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
 let dailyReportFilters = { workDate: "" };
 
 function dailyReportRowsForDate(dateStr){
-  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false && isTimeTracked(e))
     .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   return activeEmployees.map(emp => {
     const rec = findTimeRecord(emp.fields.EmployeeNumber, dateStr);
@@ -3952,7 +3988,7 @@ function renderDailyReportBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128197;</span>Daily Time Report — ${esc(dayLabel)}</h3>
-      <div class="panel-sub">Every active Employee's Clock In / Break Out / Break In / Clock Out for this day, from CG_EmployeeTimeRecords (biometric + manual) — no record on file shows as "—" and 0.00 hours. Total Hours is net of break, the same figure Payroll pays on. Corrections are made from Time Entry, not here.</div>
+      <div class="panel-sub">Every active Employee's Clock In / Break Out / Break In / Clock Out for this day (Employees whose T&amp;A Method is N/A are left out), from CG_EmployeeTimeRecords (biometric + manual) — no record on file shows as "—" and 0.00 hours. Total Hours is net of break, the same figure Payroll pays on. Corrections are made from Time Entry, not here.</div>
       <div class="panel-sub" style="margin-top:-6px;margin-bottom:0;">${clockedInCount} of ${rows.length} Employee${rows.length===1?"":"s"} clocked in &middot; ${totalHours.toFixed(2)} total hours</div>
     </div>
     <div class="panel">
@@ -4109,7 +4145,7 @@ function attendanceStatusForDay(employee, dateStr, record, todayD){
 }
 
 function computeAttendanceForPeriod(period){
-  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
+  const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false && isTimeTracked(e))
     .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
   const days = dateRangeArray((period.fields.PPEStart||"").slice(0,10), (period.fields.PPEEnd||"").slice(0,10));
   const todayD = todayStr();
@@ -4262,7 +4298,7 @@ function renderAttendanceBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
-      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift. <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
+      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
         <span class="att-legend-item"><span class="att-swatch att-late"></span>Late ${totalLate}</span>

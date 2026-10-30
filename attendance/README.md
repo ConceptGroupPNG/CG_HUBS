@@ -36,6 +36,18 @@ Anyone without an Email value on file will see "Your sign-in isn't
 linked to an Employee record yet" instead of the clock in/out screen —
 a clear signal for who's still missing, rather than a silent failure.
 
+## Who can use it: T&A Method must be Mobile
+
+Each Employee has a **T&A Method** (CG_Employees column `AttendanceMethod`),
+set on CG Time's Employees tab: Biometric (the default — blank counts as
+Biometric), Mobile, Manual or N/A. Only Employees set to **Mobile** can
+clock in/out here; anyone else sees a short message saying how their time
+is recorded instead.
+
+To add the column (once): on the **CG_Employees** list, add a **Choice**
+column named **AttendanceMethod** with the choices Biometric, Mobile,
+Manual, NA and the default value Biometric.
+
 ## What gets written
 
 - **Clock In:** creates a new CG_EmployeeTimeRecords row for that
