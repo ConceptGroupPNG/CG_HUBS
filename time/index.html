@@ -122,6 +122,21 @@
   .stat-value{font-size:26px;font-weight:700;margin-top:6px;color:var(--ink-primary);}
   .stat-delta{font-size:11.5px;margin-top:4px;color:var(--ink-muted);}
   .stat-delta.good{color:var(--status-good);}
+  .stat-delta .trend-up{color:var(--status-good);font-weight:700;}
+  .stat-delta .trend-down{color:var(--status-critical);font-weight:700;}
+  .stat-card.bad .stat-value{color:var(--status-critical);}
+  .dash-section{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:26px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--hairline);}
+  .dash-section h2{margin:0;font-size:16px;color:var(--ink-primary);}
+  .dash-section span{font-size:11.5px;color:var(--ink-muted);}
+  .who-row,.ea-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--hairline-soft);font-size:12.5px;}
+  .who-row:last-child,.ea-row:last-child{border-bottom:none;}
+  .who-name,.ea-name{font-weight:600;color:var(--ink-primary);}
+  .who-meta,.ea-meta{font-size:10.5px;color:var(--ink-muted);}
+  .who-time,.ea-time{text-align:right;font-variant-numeric:tabular-nums;}
+  .who-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:700;}
+  .who-badge.late{background:color-mix(in srgb, var(--status-warning) 15%, transparent);color:var(--status-warning);}
+  .who-badge.break{background:color-mix(in srgb, var(--status-info, #4a7bb7) 15%, transparent);color:var(--status-info, #4a7bb7);}
+  .dash-empty{font-size:12px;color:var(--ink-muted);padding:6px 0;}
   .stat-card.warn .stat-value{color:var(--status-warning);}
   .stat-card.warn .stat-label .ic{color:var(--status-warning);}
 
@@ -579,7 +594,9 @@
       </div>
     </div>
 
-    <!-- hours by hub + exceptions -->
+    <!-- ===================== CONSULTING HOURS ===================== -->
+    <div class="dash-section"><h2>Consulting Hours</h2><span>Time logged against CSAs, Proposals and Tickets across every HUB</span></div>
+
     <div class="grid-2">
       <div class="panel">
         <h3><span>&#9776;</span>Hours by HUB</h3>
@@ -588,15 +605,14 @@
       </div>
 
       <div class="panel">
-        <h3><span>&#8987;</span>Exceptions queue</h3>
-        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; "Billable not set" is no longer raised — hours are Billable unless marked No (SLA HUB Internal Support tickets default to No)</div>
-        <div class="ex-list" id="exceptionsList"></div>
+        <h3><span>&#9733;</span>Top resources by hours</h3>
+        <div class="panel-sub">This calendar month, all HUBs</div>
+        <div class="top-resources" id="topResourcesList"></div>
       </div>
     </div>
 
-    <!-- recent activity -->
     <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#9998;</span>Recent activity</h3>
+      <h3><span>&#9998;</span>Recent consulting activity</h3>
       <div class="panel-sub">Most recent time entries across every federated HUB, by work date</div>
       <table>
         <thead>
@@ -606,12 +622,11 @@
       </table>
     </div>
 
-    <!-- top resources + calendar -->
-    <div class="grid-3">
+    <div class="grid-3" style="margin-bottom:16px;">
       <div class="panel">
-        <h3><span>&#9733;</span>Top resources by hours</h3>
-        <div class="panel-sub">This calendar month, all HUBs</div>
-        <div class="top-resources" id="topResourcesList"></div>
+        <h3><span>&#8987;</span>Exceptions queue</h3>
+        <div class="panel-sub">Most recent, from CG_ExceptionsQueue &middot; "Billable not set" is no longer raised — hours are Billable unless marked No (SLA HUB Internal Support tickets default to No)</div>
+        <div class="ex-list" id="exceptionsList"></div>
       </div>
 
       <div class="panel">
@@ -624,6 +639,47 @@
           <span><span class="sw" style="background:rgba(134,105,58,0.65);"></span>moderate</span>
           <span><span class="sw" style="background:rgba(94,73,31,0.9);"></span>heavy</span>
         </div>
+      </div>
+    </div>
+
+    <!-- ===================== EMPLOYEE TIME & ATTENDANCE ===================== -->
+    <div class="dash-section"><h2>Employee Time &amp; Attendance</h2><span id="empDashSub">Today, from CG_EmployeeTimeRecords (biometric, mobile and manual)</span></div>
+    <div id="empDashHoliday"></div>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label"><span>&#127970;</span>In the office now</div>
+        <div class="stat-value" id="statEmpIn">—</div>
+        <div class="stat-delta" id="statEmpInDelta">loading…</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label"><span>&#10003;</span>Present today</div>
+        <div class="stat-value" id="statEmpPresent">—</div>
+        <div class="stat-delta" id="statEmpPresentDelta">loading…</div>
+      </div>
+      <div class="stat-card" id="statEmpLateCard">
+        <div class="stat-label"><span class="ic">&#8987;</span>Late today</div>
+        <div class="stat-value" id="statEmpLate">—</div>
+        <div class="stat-delta" id="statEmpLateDelta">loading…</div>
+      </div>
+      <div class="stat-card" id="statEmpAbsentCard">
+        <div class="stat-label"><span class="ic">&#10007;</span>Absent today</div>
+        <div class="stat-value" id="statEmpAbsent">—</div>
+        <div class="stat-delta" id="statEmpAbsentDelta">loading…</div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:16px;">
+      <div class="panel">
+        <h3><span>&#127970;</span>Who's in the office today</h3>
+        <div class="panel-sub">Clocked in and not yet clocked out, as of the last refresh</div>
+        <div id="whoInList"></div>
+      </div>
+
+      <div class="panel">
+        <h3><span>&#9998;</span>Recent employee activity</h3>
+        <div class="panel-sub">Latest clock in / out and break punches, last 7 days</div>
+        <div id="empActivityList"></div>
       </div>
     </div>
     </div>
@@ -1513,6 +1569,7 @@ function renderDashboard(){
   renderActivityTable();
   renderTopResources();
   renderCalendarHeat();
+  renderEmployeeDashboard();
   document.getElementById("lastUpdated").textContent = "updated " + new Date().toLocaleTimeString();
 }
 
@@ -1532,11 +1589,12 @@ function renderStatTiles(){
   const deltaEl = document.getElementById("statHoursDelta");
   if(prevMonthHours > 0){
     const pct = ((thisMonthHours - prevMonthHours) / prevMonthHours) * 100;
-    deltaEl.textContent = (pct>=0?"▲ ":"▼ ") + Math.abs(pct).toFixed(1) + "% vs last calendar month";
-    deltaEl.classList.toggle("good", pct >= 0);
+    // Green ▲ when this month is ahead of last month, red ▼ when behind.
+    const up = pct >= 0;
+    deltaEl.innerHTML = `<span class="${up ? "trend-up" : "trend-down"}">${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%</span> vs last calendar month`;
+    deltaEl.classList.remove("good");
   } else {
     deltaEl.textContent = "no data logged last calendar month to compare";
-    deltaEl.classList.remove("good");
   }
 
   const today = todayStr();
@@ -1755,6 +1813,130 @@ function renderExceptionsResults(){
       </div>
     `;
   }).join("");
+}
+
+/* ============================================================
+   DASHBOARD — EMPLOYEE TIME & ATTENDANCE (today)
+   Built from the same rules as the Attendance tab
+   (attendanceStatusForDay), for active Employees whose T&A Method
+   isn't N/A. Before an Employee's Shift has started (plus the
+   ${ATT_LATE_GRACE_MINUTES}-minute Late grace) a missing punch counts as
+   "not in yet", not Absent.
+   ============================================================ */
+function minutesOfDay(hhmm){
+  if(!isValidTimeStr(hhmm)) return null;
+  const [h,m] = hhmm.split(":").map(Number);
+  return h*60 + m;
+}
+function employeeTodayRows(){
+  const today = todayStr();
+  const now = new Date();
+  const nowMins = now.getHours()*60 + now.getMinutes();
+  return allEmployees
+    .filter(e => e.fields.IsActive !== false && isTimeTracked(e))
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))
+    .map(emp => {
+      const rec = findTimeRecord(emp.fields.EmployeeNumber, today);
+      const st = attendanceStatusForDay(emp, today, rec, today);
+      let status = st.status;
+      if(status === "absent"){
+        const start = minutesOfDay(st.shift && st.shift.fields.StartTime);
+        if(start != null && nowMins <= start + ATT_LATE_GRACE_MINUTES) status = "due";
+      }
+      const f = rec ? rec.fields : {};
+      const inNow = !!(st.timeIn && !st.timeOut);
+      const onBreak = inNow && !!(st.breakOut && !st.breakIn);
+      return { emp, status, timeIn: st.timeIn, timeOut: st.timeOut, inNow, onBreak, source: f.EntrySource || "", shift: st.shift };
+    });
+}
+
+function renderEmployeeDashboard(){
+  const setText = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+  const whoEl = document.getElementById("whoInList");
+  const actEl = document.getElementById("empActivityList");
+  if(!whoEl || !actEl) return;
+  const today = todayStr();
+  const rows = employeeTodayRows();
+
+  document.getElementById("empDashHoliday").innerHTML = holidayBannerHtml(holidaysOnDateFor(today, rows.map(r => r.emp)));
+
+  if(!rows.length){
+    ["statEmpIn","statEmpPresent","statEmpLate","statEmpAbsent"].forEach(id => setText(id, "—"));
+    ["statEmpInDelta","statEmpPresentDelta","statEmpLateDelta","statEmpAbsentDelta"].forEach(id => setText(id, "no Employees on time & attendance yet"));
+    whoEl.innerHTML = `<div class="dash-empty">No Employees on file yet.</div>`;
+    actEl.innerHTML = `<div class="dash-empty">No clock-ins recorded yet.</div>`;
+    return;
+  }
+
+  const count = s => rows.filter(r => r.status === s).length;
+  const present = count("present") + count("late");
+  const late = count("late");
+  const absent = count("absent");
+  const due = count("due");
+  const expected = rows.filter(r => ["present","late","absent","due"].includes(r.status)).length;
+  const inNow = rows.filter(r => r.inNow);
+  const onBreak = inNow.filter(r => r.onBreak).length;
+  const left = rows.filter(r => r.timeIn && r.timeOut).length;
+
+  setText("statEmpIn", inNow.length);
+  setText("statEmpInDelta", onBreak ? `${onBreak} on a break · ${left} clocked out` : `${left} already clocked out`);
+  setText("statEmpPresent", present);
+  setText("statEmpPresentDelta", `of ${expected} rostered today${due ? ` · ${due} not in yet` : ""}`);
+  setText("statEmpLate", late);
+  setText("statEmpLateDelta", `more than ${ATT_LATE_GRACE_MINUTES} min after Shift start`);
+  setText("statEmpAbsent", absent);
+  setText("statEmpAbsentDelta", absent ? "no punch, Shift already started" : (due ? `${due} still due in` : "everyone rostered is in"));
+  document.getElementById("statEmpLateCard").classList.toggle("warn", late > 0);
+  document.getElementById("statEmpAbsentCard").classList.toggle("bad", absent > 0);
+
+  // Who's in the office today
+  whoEl.innerHTML = inNow.length ? inNow
+    .sort((a,b)=> (a.timeIn||"").localeCompare(b.timeIn||""))
+    .map(r => `
+      <div class="who-row">
+        <div>
+          <div class="who-name">${esc(r.emp.fields.Title||"—")}${r.status==="late" ? `<span class="who-badge late">Late</span>` : ""}${r.onBreak ? `<span class="who-badge break">On break</span>` : ""}</div>
+          <div class="who-meta">${esc(r.emp.fields.EmployeeNumber||"")}${r.source ? " · " + esc(r.source) : ""}</div>
+        </div>
+        <div class="who-time">in ${esc(r.timeIn)}</div>
+      </div>`).join("")
+    : `<div class="dash-empty">Nobody is clocked in right now.</div>`;
+
+  // Recent employee activity — every punch on the last 7 days' records
+  const since = toDateStr(new Date(Date.now() - 6*86400000));
+  const empByNum = new Map(allEmployees.map(e => [(e.fields.EmployeeNumber||"").toLowerCase(), e]));
+  const events = [];
+  allEmployeeTimeRecords.forEach(r => {
+    const f = r.fields;
+    const date = (f.WorkDate||"").slice(0,10);
+    if(!date || date < since || date > today) return;
+    const emp = empByNum.get((f.EmployeeNumber||"").toLowerCase());
+    const name = emp ? emp.fields.Title : (f.EmployeeNumber || "—");
+    const inMins = minutesOfDay(f.TimeIn);
+    const add = (time, label) => {
+      const mins = minutesOfDay(time);
+      if(mins == null) return;
+      // A time earlier than Clock In belongs to an overnight shift's next day.
+      const nextDay = inMins != null && mins < inMins && label !== "Clock in";
+      events.push({ date, sortKey: `${nextDay ? CG.date.addDays(date, 1) : date} ${time}`, time, label, name, source: f.EntrySource || "" });
+    };
+    add(f.TimeIn, "Clock in");
+    add(f.BreakStart, "Break out");
+    add(f.BreakEnd, "Break in");
+    add(f.TimeOut, "Clock out");
+  });
+  events.sort((a,b)=> b.sortKey.localeCompare(a.sortKey));
+  actEl.innerHTML = events.length ? events.slice(0, 12).map(ev => {
+    const day = ev.sortKey.slice(0,10);
+    return `
+      <div class="ea-row">
+        <div>
+          <div class="ea-name">${esc(ev.name)} <span style="font-weight:400;color:var(--ink-secondary);">— ${esc(ev.label)}</span></div>
+          <div class="ea-meta">${day === today ? "Today" : esc(fmtDateDMY(day))}${ev.source ? " · " + esc(ev.source) : ""}</div>
+        </div>
+        <div class="ea-time">${esc(ev.time)}</div>
+      </div>`;
+  }).join("") : `<div class="dash-empty">No clock-ins recorded in the last 7 days.</div>`;
 }
 
 function renderActivityTable(){
