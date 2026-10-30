@@ -1595,7 +1595,7 @@ function renderExceptions(){
         <div class="ex-icon">${icon}</div>
         <div class="ex-body">
           <div class="ex-title">${esc(f.Title || "(untitled)")}</div>
-          <div class="ex-meta">${esc(f.ExceptionType || "Other")}${f.RaisedDate ? " · " + esc(f.RaisedDate) : ""}</div>
+          <div class="ex-meta">${esc(f.ExceptionType || "Other")}${f.RaisedDate ? " · " + esc(fmtDateDMY(f.RaisedDate)) : ""}</div>
         </div>
         <span class="badge ${resolved?'resolved':'open'}">${resolved?'Resolved':'Open'}</span>
       </div>
@@ -1702,8 +1702,8 @@ function renderExceptionsResults(){
     const icon = resolved ? '<span style="color:var(--status-good);">&#10003;</span>' : '&#8987;';
     const metaParts = [esc(f.ExceptionType || "Other")];
     if(f.SourceList) metaParts.push(esc(f.SourceList));
-    if(f.RaisedDate) metaParts.push("raised " + esc(f.RaisedDate.slice(0,10)));
-    if(resolved && f.ResolvedDate) metaParts.push("resolved " + esc(f.ResolvedDate.slice(0,10)));
+    if(f.RaisedDate) metaParts.push("raised " + esc(fmtDateDMY(f.RaisedDate)));
+    if(resolved && f.ResolvedDate) metaParts.push("resolved " + esc(fmtDateDMY(f.ResolvedDate)));
     return `
       <div class="ex-item" style="${resolved?'opacity:.6;':''}">
         <div class="ex-icon">${icon}</div>
@@ -1734,7 +1734,7 @@ function renderActivityTable(){
     const billable = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
     return `
       <tr>
-        <td>${esc(f.WorkDate || "—")}</td>
+        <td>${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
         <td class="entity">${esc(name)}</td>
         <td>${esc(f.CSA || "—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
@@ -3115,7 +3115,7 @@ function renderEmployeeCalendarTab(){
       <div id="ppAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
     </div>
     <div class="panel">
-      <div class="panel-sub" style="margin-bottom:10px;">${latest ? `Latest on file: Pay #${esc(latest.fields.PayNumber)}, PPE ending ${esc((latest.fields.PPEEnd||"").slice(0,10))}.` : "No periods on file yet — add the first one above before generating the next."}</div>
+      <div class="panel-sub" style="margin-bottom:10px;">${latest ? `Latest on file: Pay #${esc(latest.fields.PayNumber)}, PPE ending ${esc(fmtDateDMY(latest.fields.PPEEnd))}.` : "No periods on file yet — add the first one above before generating the next."}</div>
       <button class="print-btn" id="ppGenerateBtn" ${latest ? "" : "disabled"}>Generate next period</button>
     </div>
   `;
@@ -3704,7 +3704,7 @@ function renderEmployeeTimeEntryTab(){
   if(!etFilters.payNumber) etFilters.payNumber = String(periods[0].fields.PayNumber);
 
   const employeeOptions = activeEmployees.map(e => `<option value="${esc(e.fields.EmployeeNumber)}">${esc(e.fields.Title)} (${esc(e.fields.EmployeeNumber)})</option>`).join("");
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
 
   document.getElementById("teModeBody").innerHTML = `
     <div class="filter-bar">
@@ -3773,7 +3773,7 @@ function renderEmployeeTimeEntryBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &middot; T&amp;A Method ${esc(ATT_METHOD_LABELS[CG.attendanceMethod(employee.fields)])} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
+      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &middot; T&amp;A Method ${esc(ATT_METHOD_LABELS[CG.attendanceMethod(employee.fields)])} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
       <div class="te-save-bar">
@@ -4380,7 +4380,7 @@ function renderAttendanceTab(){
     const current = periods.find(p => (p.fields.PPEStart||"").slice(0,10) <= today && today <= (p.fields.PPEEnd||"").slice(0,10));
     attFilters.payNumber = String((current || periods[0]).fields.PayNumber);
   }
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
   container.innerHTML = `
     <div class="filter-bar">
       <div class="filter-field"><label>Pay Period</label>
@@ -4441,7 +4441,7 @@ function renderAttendanceBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
-      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by &middot; <b>H</b> Public Holiday for their Pay Group's country (from PSP HUB) with no punch &mdash; never counted as Absent. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
+      <div class="panel-sub">${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by &middot; <b>H</b> Public Holiday for their Pay Group's country (from PSP HUB) with no punch &mdash; never counted as Absent. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
         <span class="att-legend-item"><span class="att-swatch att-late"></span>Late ${totalLate}</span>
@@ -4486,7 +4486,7 @@ function renderTimeExceptionsTab(){
   }
   if(!periods.some(p => String(p.fields.PayNumber) === String(timeExFilters.payNumber))) timeExFilters.payNumber = "all";
   const periodOptions = `<option value="all">All periods (outstanding)</option>` +
-    periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+    periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
   container.innerHTML = `
     <div class="filter-bar">
       <div class="filter-field"><label>Pay Period</label>
@@ -4738,7 +4738,7 @@ function renderEmployeePayrollTab(){
   const container = document.getElementById("empTabContent");
   const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
   if(!payFilters.payNumber && periods.length) payFilters.payNumber = String(periods[0].fields.PayNumber);
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc((p.fields.PPEEnd||"").slice(0,10))}</option>`).join("");
+  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
 
   container.innerHTML = `
     <div class="filter-bar">
@@ -4792,7 +4792,7 @@ function renderEmployeePayrollBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128176;</span>Pay #${esc(period.fields.PayNumber)}</h3>
-      <div class="panel-sub">${esc((period.fields.PPEStart||"").slice(0,10))} to ${esc((period.fields.PPEEnd||"").slice(0,10))} &middot; ${rows.length} employee${rows.length===1?"":"s"} &middot; ${grandTotal.toFixed(2)} total hours to pay</div>
+      <div class="panel-sub">${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; ${rows.length} employee${rows.length===1?"":"s"} &middot; ${grandTotal.toFixed(2)} total hours to pay</div>
     </div>
     <div class="panel">
       <table>
@@ -4816,8 +4816,7 @@ const TIME_ENTRIES_ROW_CAP = 200;
 
 // "2026-10-15" -> "15-10-2026" (Time Entries list + its printout).
 function fmtDateDashDMY(str){
-  const m = String(str || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : (str || "");
+  return fmtDateDMY(str);
 }
 
 function filteredTimeEntries(){
@@ -5480,7 +5479,7 @@ function renderTimesheetBody(){
     const billableTxt = hasBillableChoice(t) ? (f.Billable ? "&#10003;" : "&#10007;") : "—";
     return `
       <tr>
-        <td>${esc(f.WorkDate||"—")}</td>
+        <td>${esc(fmtDateDMY(f.WorkDate)||"—")}</td>
         <td>${esc(f.CSA||"—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td><span class="src-tag">${esc(f.EntryMethod||"—")}</span></td>
@@ -5524,11 +5523,15 @@ function renderTimesheetBody(){
    proven format rather than inventing a new one, just sourced
    from CG Time's own aggregated (read-only) data.
    ============================================================ */
+// Every date CG Time shows on screen or in a printout is dd-mm-yyyy.
+// "2026-10-15" or "2026-10-15T00:00:00Z" -> "15-10-2026". Dates stay
+// yyyy-mm-dd internally and in CSV exports (the Payroll CSV is an
+// import file), only the display changes.
 function fmtDateDMY(str){
   if(!str) return "";
-  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(!m) return str;
-  return `${m[3]}/${m[2]}/${m[1]}`;
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 function dateRangeArray(start, end){
@@ -5615,7 +5618,7 @@ function buildTimesheetDocHtml(resource, start, end){
   const billableTotal = entries.filter(t=>t.fields.Billable===true).reduce((sum,t)=> sum + (parseFloat(t.fields.Hours)||0), 0);
 
   const dayLabel = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric"});
-  const dayLabelFull = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"});
+  const dayLabelFull = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"}) + " " + fmtDateDMY(d);
   const periodLabel = start === end ? dayLabelFull(start) : `${dayLabelFull(start)} — ${dayLabelFull(end)}`;
 
   const MAX_COLS = 9;
@@ -6139,7 +6142,7 @@ function pad(n){ return String(n).padStart(2,"0"); }
 function tick(){
   const now = new Date();
   const time = pad(now.getHours()%12===0?12:now.getHours()%12) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds()) + (now.getHours()>=12?" PM":" AM");
-  const date = now.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"}) + " · Port Moresby";
+  const date = now.toLocaleDateString("en-GB",{weekday:"short"}) + " " + fmtDateDMY(toDateStr(now)) + " · Port Moresby";
   document.getElementById("clock").childNodes[0].textContent = time + " ";
   document.getElementById("clockDate").textContent = date;
 }
