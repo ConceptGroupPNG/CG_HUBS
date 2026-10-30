@@ -807,9 +807,6 @@ async function loadAllData(){
   allBusinessUnits = bus;
   allFeeLineItems = feeLines;
   allMilestones = milestones;
-  // CSA_TimeEntries is now a shared list on CG_Time — other systems write to it too,
-  // so only ever work with rows this app itself created.
-  allTimeEntries = timeEntries.filter(t => t.fields.Source === "CSA_HUB");
   allResources = resources;
   allRateOverrides = rateOverrides;
   allProposals = proposals;
@@ -827,6 +824,16 @@ async function loadAllData(){
 
   proposalByTitle = {};
   allProposals.forEach(p => { proposalByTitle[(p.fields.Title||"").trim()] = p; });
+
+  // CSA_TimeEntries is a shared list on CG_Time — SLA HUB writes to it too —
+  // so keep only CSA HUB's own rows (see csaHubEntryCode below).
+  allTimeEntries = timeEntries.filter(t => {
+    const code = csaHubEntryCode(t.fields);
+    if(!code) return false;
+    t.fields._csaRaw = t.fields.CSA;   // what's actually stored, untouched in SharePoint
+    t.fields.CSA = code;               // e.g. "PROP-0005", so every total/report matches
+    return true;
+  });
 
   resourceMap = {};
   allResources.forEach(r => { resourceMap[r.id] = r; });
@@ -1707,6 +1714,32 @@ document.getElementById("generateReportBtn").addEventListener("click", () => {
   }
   generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter);
 });
+
+// Works out which CSA HUB Agreement/Proposal a time entry belongs to,
+// returning its code (e.g. "CSA-0059", "PROP-0005") or "" if it isn't
+// CSA HUB's. Two things the timer apps can leave behind are tolerated:
+//   - a name after the code ("PROP-0005 — Credit Corp Pulse Survey"),
+//     so the code at the start is what's matched, and
+//   - a blank Source (older widget/phone versions, or an Active Entities
+//     row with no Source), counted when the code is a real CSA HUB
+//     Agreement or Proposal. Rows marked as another hub's (e.g. SLA_HUB)
+//     are never counted here.
+function csaHubEntryCode(fields){
+  const source = String(fields.Source || "").trim();
+  if(source && source !== "CSA_HUB") return "";
+  const raw = String(fields.CSA || "").trim();
+  let code = "";
+  if(agreementByTitle[raw] || proposalByTitle[raw]) code = raw;
+  else {
+    const m = raw.match(/^(CSA|PROP)-\d+/i);
+    const lead = m ? m[0].toUpperCase() : "";
+    if(lead && (agreementByTitle[lead] || proposalByTitle[lead])) code = lead;
+  }
+  if(code) return code;
+  // A CSA HUB row whose code no longer matches anything (e.g. a deleted
+  // Proposal) still shows, under whatever it was saved as.
+  return source === "CSA_HUB" ? raw : "";
+}
 
 function descForCsaTitle(title){
   const t = (title||"").trim();
