@@ -77,6 +77,20 @@ test("esc escapes HTML", () => {
   assert.equal(CG.esc(null), "");
 });
 
+/* ---------------- attendance method ---------------- */
+test("attendance method: blank or unknown means Biometric; known values tidied", () => {
+  const { CG } = load();
+  assert.equal(CG.ATTENDANCE_METHODS.join(","), "Biometric,Mobile,Manual,NA");
+  assert.equal(CG.attendanceMethod({}), "Biometric");
+  assert.equal(CG.attendanceMethod({ AttendanceMethod: "" }), "Biometric");
+  assert.equal(CG.attendanceMethod(null), "Biometric");
+  assert.equal(CG.attendanceMethod("something else"), "Biometric");
+  assert.equal(CG.attendanceMethod({ AttendanceMethod: " mobile " }), "Mobile");
+  assert.equal(CG.attendanceMethod("MANUAL"), "Manual");
+  assert.equal(CG.attendanceMethod("N/A"), "NA");
+  assert.equal(CG.attendanceMethod({ AttendanceMethod: "Biometric" }), "Biometric");
+});
+
 /* ---------------- app switches ---------------- */
 test("on / off / preview switches", () => {
   const { CG } = load();

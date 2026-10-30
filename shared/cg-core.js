@@ -54,6 +54,24 @@
     display: s => { if (!s) return ""; const [y, m, d] = String(s).slice(0, 10).split("-"); return `${d}/${m}/${y}`; }
   };
 
+  /* -----------------------------------------------------------------
+     Time & Attendance Method - how each Employee's time is recorded.
+     Stored on CG_Employees.AttendanceMethod. Blank or anything
+     unrecognised counts as the default, Biometric.
+       Biometric  - ZKTeco scanner (via the bridge)
+       Mobile     - CG Time Attendance phone app
+       Manual     - a supervisor enters it in CG Time
+       NA         - not on time & attendance at all
+     ----------------------------------------------------------------- */
+  CG.ATTENDANCE_METHODS = ["Biometric", "Mobile", "Manual", "NA"];
+  CG.ATTENDANCE_METHOD_DEFAULT = "Biometric";
+  // Accepts an Employee's fields object or the raw value.
+  CG.attendanceMethod = v => {
+    const raw = (v && typeof v === "object") ? v.AttendanceMethod : v;
+    const s = String(raw ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
+    return CG.ATTENDANCE_METHODS.find(m => m.toLowerCase() === s) || CG.ATTENDANCE_METHOD_DEFAULT;
+  };
+
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const store = {
     get(k) { try { return global.sessionStorage.getItem(k); } catch (e) { return null; } },
@@ -554,7 +572,7 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.5.0";
+  CG.VERSION = "1.6.0";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {

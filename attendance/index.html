@@ -804,6 +804,23 @@
         statusArea.hidden = true;
         return;
       }
+      // Only Employees whose Time & Attendance Method is Mobile may clock
+      // in/out here — set per Employee on CG Time's Employees tab (blank
+      // counts as Biometric, the default).
+      const method = CG.attendanceMethod(employee.fields);
+      if (method !== "Mobile") {
+        const how = {
+          Biometric: "your time is recorded by the biometric scanner at the office",
+          Manual: "your time is entered by your supervisor",
+          NA: "you aren't set up for time & attendance"
+        }[method];
+        notLinkedBanner.innerHTML =
+          `Hi <b>${CG.esc(employee.fields.Title || employee.fields.EmployeeNumber)}</b> — this app isn't switched on for you, because ${how}. ` +
+          `If you should be clocking in on your phone, ask your administrator to set your T&amp;A Method to <b>Mobile</b> in CG Time.`;
+        notLinkedBanner.hidden = false;
+        statusArea.hidden = true;
+        return;
+      }
       currentEmployee = employee;
       notLinkedBanner.hidden = true;
       statusArea.hidden = false;
