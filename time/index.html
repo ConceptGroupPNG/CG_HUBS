@@ -327,6 +327,9 @@
   }
   .subtab:hover{color:var(--ink-primary);}
   .subtab.active{color:var(--ink-primary);border-bottom-color:#b4934f;}
+  /* Dashboard tabs sit straight on the background artwork, so give them a solid backing */
+  .dash-tabs{background:var(--surface-card);border:1px solid var(--hairline);border-radius:12px;padding:4px 6px 0;box-shadow:var(--shadow);margin-bottom:18px;display:inline-flex;}
+  .dash-tabs .subtab{font-size:13px;font-weight:600;color:var(--ink-secondary);}
   .subtab .badge-count{
     background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;
     border-radius:10px;padding:1px 6px;
@@ -592,6 +595,13 @@
     </div>
 
     <div class="view active" id="view-dashboard">
+    <div class="subtabs dash-tabs" role="tablist">
+      <div class="subtab active" data-dash-tab="consulting" role="tab" tabindex="0" aria-selected="true">Consulting Dashboard</div>
+      <div class="subtab" data-dash-tab="employee" role="tab" tabindex="0" aria-selected="false">Employee Dashboard</div>
+    </div>
+
+    <!-- ===================== CONSULTING DASHBOARD TAB ===================== -->
+    <div class="dash-pane" id="dashPane-consulting">
     <!-- stat tiles -->
     <div class="stat-row">
       <div class="stat-card">
@@ -661,8 +671,11 @@
       </div>
     </div>
 
-    <!-- ===================== EMPLOYEE TIME & ATTENDANCE ===================== -->
-    <div class="dash-section"><h2>Employee Time &amp; Attendance</h2><span id="empDashSub">Today, from CG_EmployeeTimeRecords (biometric, mobile and manual)</span></div>
+    </div><!-- /dashPane-consulting -->
+
+    <!-- ===================== EMPLOYEE DASHBOARD TAB ===================== -->
+    <div class="dash-pane" id="dashPane-employee" hidden>
+    <div class="dash-section" style="margin-top:0;"><h2>Employee Time &amp; Attendance</h2><span id="empDashSub">Today, from CG_EmployeeTimeRecords (biometric, mobile and manual)</span></div>
     <div id="empDashHoliday"></div>
 
     <div class="stat-row">
@@ -709,6 +722,7 @@
         <div id="empActivityList"></div>
       </div>
     </div>
+    </div><!-- /dashPane-employee -->
     </div>
 
     <div class="view" id="view-resources"></div>
@@ -1619,7 +1633,43 @@ async function autoResolveExceptions(){
 /* ============================================================
    RENDER
    ============================================================ */
+/* ---------- Dashboard tabs: Consulting / Employee ----------
+   Which tab is showing is kept in dashTab, so a Refresh (or clicking
+   Dashboard in the nav) redraws the data and stays on the same tab.
+   The choice is also remembered in this browser for next time. */
+const DASH_TABS = ["consulting", "employee"];
+const DASH_TAB_TITLES = { consulting: "Consulting Dashboard", employee: "Employee Dashboard" };
+let dashTab = (() => {
+  try{ const t = localStorage.getItem("cgTime.dashTab"); return DASH_TABS.includes(t) ? t : "consulting"; }
+  catch(e){ return "consulting"; }
+})();
+function applyDashTab(){
+  DASH_TABS.forEach(t => {
+    const pane = document.getElementById("dashPane-" + t);
+    if(pane) pane.hidden = (t !== dashTab);
+  });
+  document.querySelectorAll(".dash-tabs .subtab[data-dash-tab]").forEach(el => {
+    const on = el.getAttribute("data-dash-tab") === dashTab;
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  if(currentNavView === "dashboard") document.getElementById("viewTitle").textContent = DASH_TAB_TITLES[dashTab];
+}
+function setDashTab(tab){
+  if(!DASH_TABS.includes(tab)) return;
+  dashTab = tab;
+  try{ localStorage.setItem("cgTime.dashTab", tab); }catch(e){ /* storage blocked - fine */ }
+  applyDashTab();
+}
+document.querySelectorAll(".dash-tabs .subtab[data-dash-tab]").forEach(el => {
+  const go = () => setDashTab(el.getAttribute("data-dash-tab"));
+  el.addEventListener("click", go);
+  el.addEventListener("keydown", ev => { if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); go(); } });
+});
+applyDashTab();
+
 function renderDashboard(){
+  applyDashTab();
   renderStatTiles();
   renderHubChart();
   renderExceptions();
