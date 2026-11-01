@@ -327,9 +327,21 @@
   }
   .subtab:hover{color:var(--ink-primary);}
   .subtab.active{color:var(--ink-primary);border-bottom-color:#b4934f;}
-  /* Dashboard tabs sit straight on the background artwork, so give them a solid backing */
-  .dash-tabs{background:var(--surface-card);border:1px solid var(--hairline);border-radius:12px;padding:4px 6px 0;box-shadow:var(--shadow);margin-bottom:18px;display:inline-flex;}
-  .dash-tabs .subtab{font-size:13px;font-weight:600;color:var(--ink-secondary);}
+  /* Dashboard tabs: brass pills, styled like the CG Time sign and avatar, so they
+     read clearly over the background artwork without a box behind them. */
+  .dash-tabs{display:flex;gap:8px;border-bottom:none;margin-bottom:18px;}
+  .dash-tabs .subtab{
+    margin:0;padding:7px 16px;border-radius:999px;border:1px solid rgba(94,73,31,0.35);
+    background:rgba(246,238,220,0.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+    color:var(--brass-deep);font-size:12.5px;font-weight:600;letter-spacing:.02em;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .dash-tabs .subtab:hover{background:rgba(246,238,220,0.85);color:var(--ink-primary);border-color:rgba(94,73,31,0.55);}
+  .dash-tabs .subtab.active{
+    background:linear-gradient(160deg,#caa968,var(--brass-deep));color:#fff8e8;
+    border-color:rgba(94,73,31,0.7);box-shadow:0 1px 2px rgba(36,26,16,0.18), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .dash-tabs .subtab:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
   .subtab .badge-count{
     background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;
     border-radius:10px;padding:1px 6px;
