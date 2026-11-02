@@ -2146,6 +2146,36 @@ function renderEmployeeDashboard(){
   }).join("") : `<div class="dash-empty">No clock-ins recorded in the last 7 days.</div>`;
 }
 
+// "Logged against" label for a time entry. Since CSA_ActiveEntities rows
+// were tidied to the bare code (CSA-0059, PROP-0005, SLA-44), the timer apps
+// save just that code; this adds the description back from the row's
+// Description ("SLA-44 — Ascender Prod Critical Vulnerabilities"). Entries
+// saved in the older "code — name" style already carry a name and show as
+// they are. Display only — grouping and filters still use the stored value.
+let _activeEntityDescCache = null, _activeEntityDescSource = null;
+function activeEntityDescriptions(){
+  if(_activeEntityDescSource === allActiveEntities) return _activeEntityDescCache;
+  const map = new Map();
+  // Active rows first, so a live row's description wins over an old inactive one.
+  allActiveEntities.slice().sort((a,b) => (!!b.fields.IsActive) - (!!a.fields.IsActive)).forEach(r => {
+    const title = String(r.fields.Title || "").trim().toUpperCase();
+    const desc = String(r.fields.Description || "").trim();
+    if(title && desc && !map.has(title)) map.set(title, desc);
+  });
+  _activeEntityDescCache = map; _activeEntityDescSource = allActiveEntities;
+  return map;
+}
+function loggedAgainstLabel(f){
+  const raw = String((f && f.CSA) || "").trim();
+  if(!raw) return "";
+  const descs = activeEntityDescriptions();
+  const m = raw.match(/^(CSA|PROP|SLA)-\d+/i);
+  const key = (m && m[0].length === raw.length) ? m[0].toUpperCase() : raw.toUpperCase();
+  if(m && m[0].length < raw.length) return raw;      // already "code — name"
+  const desc = descs.get(key);
+  return desc && desc.toUpperCase() !== key ? `${raw} — ${desc}` : raw;
+}
+
 function renderActivityTable(){
   const rows = allTimeEntries.slice()
     .sort((a,b)=> (b.fields.WorkDate||"").localeCompare(a.fields.WorkDate||""))
@@ -2164,7 +2194,7 @@ function renderActivityTable(){
       <tr>
         <td>${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
         <td class="entity">${esc(name)}</td>
-        <td>${esc(f.CSA || "—")}</td>
+        <td>${esc(loggedAgainstLabel(f) || "—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td><span class="src-tag">${esc(f.EntryMethod || "—")}</span></td>
         <td>${billable}</td>
@@ -5372,7 +5402,7 @@ function renderTimeEntriesResults(){
         <td style="white-space:nowrap;">${esc(fmtDateDashDMY(f.WorkDate) || "—")}</td>
         <td style="white-space:nowrap;">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td class="entity">${esc(name)}</td>
-        <td>${esc(f.CSA || "—")}</td>
+        <td>${esc(loggedAgainstLabel(f) || "—")}</td>
         <td ${sourceIsInferred ? 'style="color:var(--ink-muted);font-style:italic;" title="Guessed from the &quot;Logged against&quot; naming pattern — this entry predates the Source column (or came from a writer not yet updated to set it)."' : ''}>${esc(sourceLabel)}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td>${esc(f.ActivityDetail || "—")}</td>
@@ -5544,7 +5574,7 @@ function buildTimeEntriesListDocHtml(entries){
       <tr>
         <td class="muted num" style="text-align:left">${esc(fmtTimeOfDay(t.createdDateTime))}</td>
         <td>${esc(r ? r.fields.Title : (f.EntryUser || "—"))}</td>
-        <td>${esc(f.CSA || "—")}${hub ? `<div class="muted small">${esc(hubLabelFor(hub))}</div>` : ""}</td>
+        <td>${esc(loggedAgainstLabel(f) || "—")}${hub ? `<div class="muted small">${esc(hubLabelFor(hub))}</div>` : ""}</td>
         <td>${f.ActivityDetail ? esc(f.ActivityDetail) : '<span class="muted">—</span>'}</td>
         <td><span class="tag">${esc(f.EntryMethod || "—")}</span></td>
         <td>${esc(reportBillableText(t))}</td>
@@ -5790,7 +5820,7 @@ function renderTimesheetReportBody(){
       <tr>
         <td style="white-space:nowrap;">${esc(fmtDateDMY(f.WorkDate) || "—")}</td>
         ${isAll ? `<td style="white-space:nowrap;">${esc(reportResourceName(t))}</td>` : ""}
-        <td>${esc(f.CSA || "—")}</td>
+        <td>${esc(loggedAgainstLabel(f) || "—")}</td>
         <td class="hrs" style="text-align:right;">${parseFloat(f.Hours||0).toFixed(2)}</td>
         <td>${esc(reportBillableText(t))}</td>
         <td style="white-space:normal;">${esc(f.ActivityDetail || "—")}</td>
@@ -5916,7 +5946,7 @@ function renderTimesheetBody(){
     return `
       <tr>
         <td>${esc(fmtDateDMY(f.WorkDate)||"—")}</td>
-        <td>${esc(f.CSA||"—")}</td>
+        <td>${esc(loggedAgainstLabel(f)||"—")}</td>
         <td class="hrs">${f.Hours != null ? parseFloat(f.Hours).toFixed(2) : "—"}</td>
         <td><span class="src-tag">${esc(f.EntryMethod||"—")}</span></td>
         <td>${billableTxt}</td>
