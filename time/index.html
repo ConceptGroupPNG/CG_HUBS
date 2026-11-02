@@ -4180,7 +4180,10 @@ function renderEmployeeTimeEntryBody(){
     // ...except a public holiday, which starts blank: it's only worked if
     // someone actually enters (or punches) times for it.
     const holiday = employeeHolidayOn(employee, dateStr);
-    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
+    // A saved day with no Shift on it (e.g. a biometric day — the bridge
+    // doesn't set one) counts as the Employee's Default Shift, the same rule
+    // the Daily Report, Attendance and Payroll use.
+    const shiftName = rec ? (f.ShiftName || (empDefaultShift ? empDefaultShift.fields.Title : "")) : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
@@ -4365,7 +4368,10 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     // file, never overwritten by a default.
     const empDefaultShift = findShiftByName(emp.fields.DefaultShift);
     const holiday = employeeHolidayOn(emp, dateStr);   // holiday days start blank
-    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
+    // A saved day with no Shift on it (e.g. a biometric day — the bridge
+    // doesn't set one) counts as the Employee's Default Shift, the same rule
+    // the Daily Report, Attendance and Payroll use.
+    const shiftName = rec ? (f.ShiftName || (empDefaultShift ? empDefaultShift.fields.Title : "")) : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
@@ -5156,7 +5162,9 @@ function payrollSummaryForPeriod(payNumber){
     const days = [];
     empRecords.forEach(r => {
       const f = r.fields;
-      const shift = findShiftByName(f.ShiftName);
+      // No Shift saved on the day (biometric days never have one) -> the
+      // Employee's Default Shift, same as the Daily Report and Attendance.
+      const shift = findShiftByName(f.ShiftName || emp.fields.DefaultShift);
       const { hoursToPay } = computeHoursForDay(emp, f.TimeIn, f.TimeOut, f.BreakStart, f.BreakEnd, f.BreakMinutesOverride, shift);
       hours += hoursToPay;
       if(hoursToPay > 0) days.push({ date: (f.WorkDate||"").slice(0,10), hours: hoursToPay });
