@@ -3670,10 +3670,9 @@ function renderEmployeesHub(){
    in each place — CG Time draws no link between them). Each
    Employee can carry a Default Shift (see the Shifts tab), which
    pre-fills their days in Time Entry — Time In/Out and Break Length
-   all come from the Shift picked for a day. DefaultBreakMinutes
-   still exists on the record as a last-resort fallback for days
-   with no Shift at all (including records imported before Shifts
-   existed), but is no longer edited directly here.
+   all come from the Shift picked for a day. A day with no Shift at
+   all falls back to DEFAULT_BREAK_MINUTES (20); the DefaultBreakMinutes
+   column on each Employee is no longer used.
    ============================================================ */
 // Which Employee row (if any) is currently open for inline editing —
 // click a row to open it, click again / Cancel / Save to close it.
@@ -3919,7 +3918,7 @@ async function addEmployee(){
   }
   const fields = {
     Title: name, EmployeeNumber: num, PayGroup: payGroup, JobAssignments: jobs,
-    DefaultShift: defaultShift, DefaultBreakMinutes: 30, IsActive: true,
+    DefaultShift: defaultShift, DefaultBreakMinutes: DEFAULT_BREAK_MINUTES, IsActive: true,
   };
   if(email) fields.Email = email;
   // Blank already means Biometric, so only a different choice is written —
@@ -3977,10 +3976,16 @@ function findShiftByName(name){
 // that exact day); then whatever's actually logged in Break Start/End
 // for that day; then the Shift picked for that day (a Shift owns its
 // own Break Length, e.g. Guard_Day's 12hr shift needs a different break
-// than Normal's 9hr one); then the Employee's own configurable default
-// (30 min unless set otherwise) as a last-resort fallback for days with
+// than Normal's 9hr one); then the standard default break
+// (DEFAULT_BREAK_MINUTES, 20 min) as a last-resort fallback for days with
 // no Shift picked at all — including historic records imported before
 // Shifts existed.
+// Default break for a day with no break punches, no override and no Shift.
+// Was 30 minutes, stamped on each Employee's DefaultBreakMinutes when they
+// were added (a field nothing in CG Time lets you edit); since Nov 2026 it's
+// one standard 20 minutes for everyone and the per-Employee value is ignored.
+const DEFAULT_BREAK_MINUTES = 20;
+
 function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes, shift){
   if(overrideMinutes !== "" && overrideMinutes != null && !isNaN(parseFloat(overrideMinutes))){
     return Math.max(0, parseFloat(overrideMinutes));
@@ -3995,8 +4000,8 @@ function computeBreakMinutes(employee, breakStart, breakEnd, overrideMinutes, sh
   if(shift && shift.fields.BreakMinutes != null && !isNaN(parseFloat(shift.fields.BreakMinutes))){
     return Math.max(0, parseFloat(shift.fields.BreakMinutes));
   }
-  const def = employee && employee.fields.DefaultBreakMinutes != null ? parseFloat(employee.fields.DefaultBreakMinutes) : 30;
-  return isNaN(def) ? 30 : def;
+  // No break punches, no override and no Shift: the standard default break.
+  return DEFAULT_BREAK_MINUTES;
 }
 
 function computeHoursForDay(employee, timeIn, timeOut, breakStart, breakEnd, overrideMinutes, shift){
@@ -4175,7 +4180,10 @@ function renderEmployeeTimeEntryBody(){
     // ...except a public holiday, which starts blank: it's only worked if
     // someone actually enters (or punches) times for it.
     const holiday = employeeHolidayOn(employee, dateStr);
-    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
+    // A saved day with no Shift on it (e.g. a biometric day — the bridge
+    // doesn't set one) counts as the Employee's Default Shift, the same rule
+    // the Daily Report, Attendance and Payroll use.
+    const shiftName = rec ? (f.ShiftName || (empDefaultShift ? empDefaultShift.fields.Title : "")) : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
@@ -4360,7 +4368,10 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     // file, never overwritten by a default.
     const empDefaultShift = findShiftByName(emp.fields.DefaultShift);
     const holiday = employeeHolidayOn(emp, dateStr);   // holiday days start blank
-    const shiftName = rec ? (f.ShiftName || "") : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
+    // A saved day with no Shift on it (e.g. a biometric day — the bridge
+    // doesn't set one) counts as the Employee's Default Shift, the same rule
+    // the Daily Report, Attendance and Payroll use.
+    const shiftName = rec ? (f.ShiftName || (empDefaultShift ? empDefaultShift.fields.Title : "")) : ((empDefaultShift && !holiday) ? empDefaultShift.fields.Title : "");
     const shift = findShiftByName(shiftName);
     const initialIn = rec ? (f.TimeIn||"") : (shift ? (shift.fields.StartTime||"") : "");
     const initialOut = rec ? (f.TimeOut||"") : (shift ? (shift.fields.EndTime||"") : "");
@@ -5151,7 +5162,9 @@ function payrollSummaryForPeriod(payNumber){
     const days = [];
     empRecords.forEach(r => {
       const f = r.fields;
-      const shift = findShiftByName(f.ShiftName);
+      // No Shift saved on the day (biometric days never have one) -> the
+      // Employee's Default Shift, same as the Daily Report and Attendance.
+      const shift = findShiftByName(f.ShiftName || emp.fields.DefaultShift);
       const { hoursToPay } = computeHoursForDay(emp, f.TimeIn, f.TimeOut, f.BreakStart, f.BreakEnd, f.BreakMinutesOverride, shift);
       hours += hoursToPay;
       if(hoursToPay > 0) days.push({ date: (f.WorkDate||"").slice(0,10), hours: hoursToPay });
