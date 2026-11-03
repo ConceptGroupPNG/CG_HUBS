@@ -55,7 +55,7 @@ const CG_APPS = [
     site: "/sites/Helpdesk",       clientId: "2489de0c-f15b-40d0-9468-a54a81bd4f34", status: "on", group: "692052ae-b624-44c9-9a19-8b76376a0c38" /* CG HUBS – SLA */ },
 
   { key: "time",       folder: "time/",       name: "CG Time",             unit: "Time, attendance & payroll",
-    site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "on", group: "52a5230b-11d6-4e8a-b9c4-133410636660" /* CG HUBS – CG Time */, phone: "coming-soon" },
+    site: "/sites/CG_Time",        clientId: "b8139965-9ca3-493e-85b4-95f799f8e8ba", status: "on", group: "52a5230b-11d6-4e8a-b9c4-133410636660" /* CG HUBS – CG Time */ },
 
   { key: "mobile",     folder: "mobile/",     name: "Concept Time Mobile", unit: "Log consulting & support time",
     site: "/sites/CG_Time",        clientId: "ec5454e0-c794-419b-9ec9-464e9917ef3c", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile" },
