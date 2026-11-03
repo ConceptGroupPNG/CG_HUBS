@@ -7,6 +7,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 <script src="../shared/cg-config.js"></script>
 <script src="../shared/cg-core.js"></script>
+<script>
+  // Phone view (Nov 2026): on a phone CG Time shows just the two Dashboard
+  // tabs, in a one-column layout. Set here, before the page is drawn.
+  if (window.CG && CG.isPhone()) document.documentElement.classList.add("cg-phone");
+</script>
 <style>
   :root{
     color-scheme: light;
@@ -107,6 +112,49 @@
     color:#fff8e8;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
     border:1px solid rgba(255,255,255,0.4);
   }
+
+  /* ---------- phone view (html.cg-phone) — Dashboards only ---------- */
+  .phone-only{display:none;}
+  html.cg-phone .phone-only{display:block;}
+  html.cg-phone body{background-attachment:scroll;}
+  html.cg-phone .shell{display:block;}
+  html.cg-phone .sidebar{display:none;}
+  html.cg-phone .main{padding:14px 12px 28px;}
+  html.cg-phone .topbar{align-items:flex-start;gap:10px;margin-bottom:14px;}
+  html.cg-phone .topbar h1{font-size:17px;}
+  html.cg-phone .topbar .sub{font-size:10.5px;}
+  html.cg-phone .top-right{gap:8px;flex-shrink:0;}
+  html.cg-phone .clock{display:none;}
+  html.cg-phone .avatar{width:30px;height:30px;font-size:11.5px;}
+  html.cg-phone .refresh-btn{padding:7px 10px;}
+  html.cg-phone .refresh-btn .rl{display:none;}
+  html.cg-phone .phone-signout{
+    background:transparent;border:1px solid var(--hairline);border-radius:9px;padding:6px 9px;
+    font:inherit;font-size:11.5px;font-weight:600;color:var(--ink-secondary);cursor:pointer;
+  }
+  html.cg-phone .dash-tabs{display:flex;width:100%;gap:6px;}
+  html.cg-phone .dash-tabs .subtab{flex:1;justify-content:center;text-align:center;padding:8px 6px;font-size:12px;}
+  html.cg-phone .stat-row{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  html.cg-phone .stat-card{padding:12px;}
+  html.cg-phone .stat-label{font-size:9.5px;letter-spacing:.04em;}
+  html.cg-phone .stat-value{font-size:22px;}
+  html.cg-phone .stat-delta{font-size:10.5px;}
+  html.cg-phone .grid-2, html.cg-phone .grid-3, html.cg-phone .grid-activity{grid-template-columns:1fr;gap:12px;}
+  html.cg-phone .panel{padding:14px;}
+  html.cg-phone .dash-section{margin:18px 0 10px;}
+  html.cg-phone .dash-section h2{font-size:15px;}
+  html.cg-phone .bar-row{grid-template-columns:104px 1fr 44px;gap:8px;}
+  html.cg-phone .bar-row .name{font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  html.cg-phone .cal-mini{max-width:300px;margin:0 auto;gap:4px;}
+  /* Recent consulting activity: keep Work date, Resource, Logged against, Hours */
+  html.cg-phone #activityTableBody td:nth-child(5), html.cg-phone #activityTableBody td:nth-child(6),
+  html.cg-phone .grid-activity table th:nth-child(5), html.cg-phone .grid-activity table th:nth-child(6){display:none;}
+  html.cg-phone .grid-activity table{font-size:11.5px;}
+  html.cg-phone .grid-activity th, html.cg-phone .grid-activity td{padding-left:4px;padding-right:4px;}
+  html.cg-phone .inc-row{cursor:default;}
+  html.cg-phone .inc-go{display:none;}
+  html.cg-phone .desk-only{display:none;}
+  html.cg-phone .phone-foot{font-size:11px;color:var(--ink-muted);text-align:center;margin-top:18px;}
 
   /* ---------- stat tiles ---------- */
   .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
@@ -603,6 +651,7 @@
           --:--:-- <small id="clockDate">Loading…</small>
         </div>
         <div class="avatar" id="avatarInitials">··</div>
+        <button class="phone-only phone-signout" id="phoneSignoutBtn" type="button">Sign out</button>
       </div>
     </div>
 
@@ -723,7 +772,7 @@
 
         <div class="panel">
           <h3><span>&#9888;</span>Incomplete punches — <span id="incompleteDayLabel" style="font-weight:600;">previous work day</span></h3>
-          <div class="panel-sub">Missing clock-outs and break punches from the last work day. Click one to fix it in Time Entry.</div>
+          <div class="panel-sub">Missing clock-outs and break punches from the last work day.<span class="desk-only"> Click one to fix it in Time Entry.</span></div>
           <div id="incompleteList"></div>
         </div>
       </div>
@@ -735,6 +784,7 @@
       </div>
     </div>
     </div><!-- /dashPane-employee -->
+    <div class="phone-only phone-foot">On a phone, CG Time shows the Dashboards only. Use a computer for Time Entry, Timesheets, Payroll and the other screens.</div>
     </div>
 
     <div class="view" id="view-resources"></div>
@@ -1317,6 +1367,8 @@ function refreshNow(){
   return _refreshInFlight;
 }
 document.getElementById("refreshBtn").addEventListener("click", () => { refreshNow(); });
+document.getElementById("phoneSignoutBtn").addEventListener("click", () => document.getElementById("signoutBtn").click());
+const IS_PHONE_VIEW = document.documentElement.classList.contains("cg-phone");
 
 async function refreshAllData(){
   const banner = document.getElementById("dataBanner");
@@ -1944,7 +1996,8 @@ function renderExceptionsResults(){
    "not in yet", not Absent.
    ============================================================ */
 function minutesOfDay(hhmm){
-  if(!isValidTimeStr(hhmm)) return null;
+  // Blank counts as "no time" (isValidTimeStr allows blank, for empty inputs).
+  if(!hhmm || !TIME_HHMM_RE.test(String(hhmm))) return null;
   const [h,m] = hhmm.split(":").map(Number);
   return h*60 + m;
 }
@@ -2049,6 +2102,12 @@ function renderIncompletePunches(employees){
       </div>
       <div class="inc-go">Fix &rsaquo;</div>
     </div>`).join("");
+  // On a phone Time Entry isn't available, so the rows are information only.
+  if(IS_PHONE_VIEW){
+    el.insertAdjacentHTML("beforeend", `<div class="dash-empty" style="padding-top:8px;">Fix these from Time Entry on a computer.</div>`);
+    el.querySelectorAll(".inc-row").forEach(r => { r.removeAttribute("tabindex"); r.removeAttribute("role"); r.removeAttribute("title"); });
+    return;
+  }
   el.querySelectorAll(".inc-row[data-inc]").forEach(row => {
     const go = () => goToTimeEntryFromDashboard(items[Number(row.getAttribute("data-inc"))]);
     row.addEventListener("click", go);
