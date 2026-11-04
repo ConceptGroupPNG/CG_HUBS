@@ -33,7 +33,7 @@
   /* Command bar */
   header.bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; padding:12px 18px; }
   .brand { display:flex; align-items:center; gap:14px; }
-  .brand img { width:48px; height:48px; border-radius:6px; display:block; box-shadow:0 0 0 1px var(--line), 0 0 18px rgba(201,162,39,.25); }
+  .brand img { width:64px; height:64px; display:block; box-shadow:0 0 18px rgba(201,162,39,.3); }   /* square: the icon has its own gold border */
   .brand .name { font-family:var(--display); font-weight:700; font-size:22px; letter-spacing:.14em; }
   .brand .name span { color:var(--cyan); }
   .brand .sub { font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:.08em; }
@@ -133,7 +133,7 @@
 
   /* Cards (sign in / set up / errors) */
   .card { max-width:560px; margin:40px auto 0; text-align:center; padding:32px 28px; }
-  .card img { width:96px; height:96px; border-radius:10px; margin-bottom:16px; }
+  .card img { width:96px; height:96px; margin-bottom:16px; }
   .card h2 { font-family:var(--display); letter-spacing:.1em; margin:0 0 10px; }
   .card p, .card li { color:var(--soft); line-height:1.55; }
   .card ol { text-align:left; padding-left:20px; }
@@ -159,7 +159,7 @@
 
   @keyframes pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); } 70% { box-shadow:0 0 0 7px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
-  @media (max-width:640px) { svg.chart { height:auto; } .relrow { grid-template-columns:1fr; gap:2px; } .wrap { padding:12px 12px 32px; } .brand .name { font-size:17px; } .meta { gap:14px; } }
+  @media (max-width:640px) { .brand img { width:48px; height:48px; } svg.chart { height:auto; } .relrow { grid-template-columns:1fr; gap:2px; } .wrap { padding:12px 12px 32px; } .brand .name { font-size:17px; } .meta { gap:14px; } }
 </style>
 </head>
 <body>
