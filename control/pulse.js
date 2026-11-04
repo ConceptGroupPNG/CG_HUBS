@@ -365,7 +365,7 @@
     const d = v => (v ? new Date(v) : null);
     return { key: f.Title || "", lastSeen: d(f.LastSeen || item.lastModifiedDateTime), deviceSerial: f.DeviceSerial || "",
              deviceLastSeen: d(f.DeviceLastSeen), lastSyncAt: d(f.LastSyncAt), lastSyncError: f.LastSyncError || "",
-             version: f.Version || "", host: f.Host || "" };
+             version: f.AppVersion || "", host: f.Host || "" };
   };
   P.readHeartbeats = async (graph, siteIdOf, T) => {
     if (!T || !T.heartbeats) return { ok: false, reason: "No heartbeat list in cg-config.js" };

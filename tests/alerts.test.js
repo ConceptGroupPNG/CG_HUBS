@@ -109,7 +109,7 @@ function fakeFetch({ bridgeAt = ago(5 * MIN), heartbeat = { lastSeen: ago(2 * MI
     if (url.includes("/lists/CG_EmployeeTimeRecords/")) return json(200, { value: [item(bridgeAt, "SharePoint App", true)] });
     if (url.includes("/lists/CG_Heartbeats/")) return json(200, { value: heartbeat ? [{ lastModifiedDateTime: iso(heartbeat.lastSeen), fields: {
       Title: "zkteco-bridge", LastSeen: iso(heartbeat.lastSeen), DeviceSerial: "NES1", DeviceLastSeen: heartbeat.deviceLastSeen ? iso(heartbeat.deviceLastSeen) : undefined,
-      LastSyncAt: iso(ago(5 * MIN)), LastSyncError: heartbeat.error || "", Version: "1.1.0", Host: "BioDevAirvos2" } }] : [] });
+      LastSyncAt: iso(ago(5 * MIN)), LastSyncError: heartbeat.error || "", AppVersion: "1.1.0", Host: "BioDevAirvos2" } }] : [] });
     return json(200, { value: [] });
   };
   return { f, posts };
