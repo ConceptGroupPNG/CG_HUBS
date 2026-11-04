@@ -71,7 +71,7 @@ const CG_APPS = [
   // only Sites.Read.All and User.Read. Until the registration exists the
   // page shows the set-up steps instead of signing in.
   { key: "control",    folder: "control/",    name: "Mission Control",     unit: "CG HUBS monitoring",
-    site: "",                      clientId: "<<MISSION-CONTROL-CLIENT-ID>>", status: "preview",
+    site: "",                      clientId: "21ed36b8-f2ae-42ec-ab53-ef2c76cdfa01", status: "preview",
     scopes: ["Sites.Read.All", "User.Read"] }
 ];
 
