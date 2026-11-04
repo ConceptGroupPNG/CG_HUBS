@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control — CG HUBS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../shared/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../shared/img/favicon-192.png">
+<link rel="apple-touch-icon" href="../shared/img/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg:#070B10; --panel:#0D131A; --panel-2:#0A0F15; --line:#1B2531; --line-2:#2A3542;
+    --text:#E6EDF3; --soft:#CBD5E1; --muted:#8B9AAB; --faint:#7D8B9B;
+    --cyan:#3FC8F2; --cyan-dim:#2B6C85; --green:#3DDC97; --amber:#F2A93B; --red:#FF6B6B; --gold:#C9A227;
+    --display:"Chakra Petch", "Segoe UI", sans-serif;
+    --mono:"JetBrains Mono", Consolas, monospace;
+    --body:"IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:var(--body); min-height:100vh;
+         background-image:linear-gradient(rgba(63,200,242,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(63,200,242,.035) 1px, transparent 1px);
+         background-size:32px 32px; }
+  button { font:inherit; }
+  .wrap { max-width:1600px; margin:0 auto; padding:20px 24px 40px; display:flex; flex-direction:column; gap:16px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:16px 18px; min-width:0; }
+  h2.ttl { margin:0; font-family:var(--display); font-weight:600; font-size:14px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; }
+  .mono { font-family:var(--mono); }
+
+  /* Command bar */
+  header.bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; padding:12px 18px; }
+  .brand { display:flex; align-items:center; gap:14px; }
+  .brand img { width:48px; height:48px; border-radius:6px; display:block; box-shadow:0 0 0 1px var(--line), 0 0 18px rgba(201,162,39,.25); }
+  .brand .name { font-family:var(--display); font-weight:700; font-size:22px; letter-spacing:.14em; }
+  .brand .name span { color:var(--cyan); }
+  .brand .sub { font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:.08em; }
+  .sys { display:flex; align-items:center; gap:10px; padding:8px 14px; border:1px solid var(--line); border-radius:4px; font-family:var(--display); font-weight:600; letter-spacing:.1em; font-size:14px; }
+  .sys.ok { color:var(--green); border-color:#1E4A38; background:rgba(61,220,151,.06); }
+  .sys.warn { color:var(--amber); border-color:#5A4520; background:rgba(242,169,59,.08); }
+  .sys .dot { width:10px; height:10px; border-radius:2px; background:currentColor; animation:pulse 2s infinite; }
+  .meta { display:flex; flex-wrap:wrap; align-items:center; gap:22px; }
+  .clock { text-align:right; }
+  .clock .t { font-family:var(--mono); font-size:26px; font-weight:500; letter-spacing:.04em; }
+  .clock .t small { color:var(--muted); font-size:16px; }
+  .clock .d, .sync .n { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .sync { text-align:right; }
+  .sync .s { font-family:var(--mono); font-size:13px; color:var(--green); }
+  .sync .s.busy { color:var(--cyan); }
+  .sync .s.bad { color:var(--amber); }
+  .user { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
+  .btn { min-height:40px; padding:0 14px; background:transparent; color:var(--text); border:1px solid var(--line-2); border-radius:4px;
+         font-family:var(--display); font-weight:600; letter-spacing:.08em; font-size:12px; cursor:pointer; text-transform:uppercase; }
+  .btn:hover, .btn:focus-visible { border-color:var(--cyan); color:var(--cyan); outline:none; }
+  .btn.primary { background:var(--cyan); color:#04131B; border-color:var(--cyan); }
+
+  /* Hub strip */
+  .hubs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+  .hub { position:relative; text-align:left; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px;
+         padding:14px 16px; cursor:pointer; overflow:hidden; transition:border-color .15s, transform .15s; }
+  .hub:hover, .hub:focus-visible { border-color:var(--cyan); transform:translateY(-1px); outline:none; }
+  .hub::before { content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--c); }
+  .hub .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .hub .nm { font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
+  .hub .st { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; font-weight:700; color:var(--c); letter-spacing:.06em; }
+  .hub .st i { width:9px; height:9px; border-radius:50%; background:var(--c); }
+  .hub.ACTIVE .st i { animation:pulse 2.4s infinite; }
+  .hub .big { display:flex; align-items:baseline; gap:6px; margin-top:10px; }
+  .hub .big b { font-family:var(--mono); font-size:34px; font-weight:500; line-height:1; }
+  .hub .big span { font-size:12px; color:var(--muted); }
+  .hub .row { display:flex; justify-content:space-between; gap:8px; margin-top:12px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .hub .row em { font-style:normal; color:var(--text); }
+  .hub .more { margin-top:10px; font-size:12px; color:var(--cyan); }
+  .hub.PARTIAL .more, .hub.OFFLINE .more { color:var(--amber); }
+
+  /* Activity + stream */
+  .split { display:flex; flex-wrap:wrap; gap:16px; }
+  .split > .wide { flex:999 1 620px; }
+  .split > .narrow { flex:1 1 360px; display:flex; flex-direction:column; }
+  .head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:12px; }
+  .kpis { display:flex; flex-wrap:wrap; gap:22px; font-family:var(--mono); font-size:12px; }
+  .kpis span span { color:var(--muted); }
+  svg.chart { width:100%; height:230px; display:block; margin-top:12px; }
+  .stream { list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; gap:2px; font-size:12.5px; max-height:300px; overflow:auto; }
+  .stream li { display:grid; grid-template-columns:44px 64px minmax(0,1fr); gap:8px; padding:6px 8px; border-radius:3px; }
+  .stream li:nth-child(odd) { background:rgba(255,255,255,.02); }
+  .stream .t { font-family:var(--mono); color:var(--faint); }
+  .stream .k { font-family:var(--mono); font-weight:700; color:var(--cyan); font-size:11.5px; }
+  .stream .k.added { color:var(--green); }
+  .stream .m { color:var(--soft); }
+  .empty { color:var(--muted); font-size:13px; padding:12px 0; }
+
+  /* Data Pulse */
+  .legend { display:flex; flex-wrap:wrap; gap:16px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; vertical-align:-1px; margin-right:4px; box-sizing:border-box; }
+  .pulse { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-top:14px; }
+  .pgroup { border:1px solid var(--line); border-radius:4px; padding:12px; background:var(--panel-2); }
+  .pgroup h3 { margin:0 0 8px; font-family:var(--display); font-weight:600; font-size:13px; letter-spacing:.1em; text-transform:uppercase; }
+  .plist { display:grid; grid-template-columns:6px minmax(0,1fr) auto; gap:10px; align-items:center; padding:3px 0; }
+  .plist .bar { width:6px; height:30px; border-radius:1px; }
+  .plist .l { font-size:13px; }
+  .plist .w { font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .plist .a { font-family:var(--mono); font-size:12.5px; }
+  .f-today .bar { background:var(--cyan); box-shadow:0 0 8px rgba(63,200,242,.7); } .f-today .a { color:var(--cyan); }
+  .f-week .bar { background:var(--cyan-dim); }
+  .f-month .bar { background:var(--line-2); } .f-month .a { color:var(--muted); }
+  .f-quiet .bar { border:1px solid var(--amber); } .f-quiet .a { color:var(--amber); }
+  .f-unknown .bar { background:repeating-linear-gradient(45deg, var(--red) 0 3px, transparent 3px 6px); } .f-unknown .a, .f-unknown .w { color:var(--red); }
+
+  /* Coming next */
+  .next { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:10px; margin-top:12px; }
+  .next div { border:1px dashed var(--line-2); border-radius:4px; padding:10px 12px; font-size:13px; color:var(--soft); }
+  .next b { display:block; font-family:var(--mono); font-size:10.5px; color:var(--faint); letter-spacing:.08em; margin-bottom:4px; font-weight:500; }
+
+  /* Cards (sign in / set up / errors) */
+  .card { max-width:560px; margin:40px auto 0; text-align:center; padding:32px 28px; }
+  .card img { width:96px; height:96px; border-radius:10px; margin-bottom:16px; }
+  .card h2 { font-family:var(--display); letter-spacing:.1em; margin:0 0 10px; }
+  .card p, .card li { color:var(--soft); line-height:1.55; }
+  .card ol { text-align:left; padding-left:20px; }
+  .card code { font-family:var(--mono); color:var(--cyan); font-size:12.5px; }
+  .card .err { color:var(--amber); background:rgba(242,169,59,.08); border:1px solid #5A4520; border-radius:4px; padding:10px 12px; text-align:left; font-size:14px; margin-top:16px; }
+
+  /* Drill-down */
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line-2); border-radius:8px; padding:0; width:min(880px, calc(100vw - 32px)); max-height:calc(100vh - 48px); }
+  dialog::backdrop { background:rgba(3,6,10,.72); }
+  .dhead { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--line); }
+  .dhead h2 { margin:0; font-family:var(--display); letter-spacing:.12em; font-size:18px; text-transform:uppercase; }
+  .tabs { display:flex; gap:4px; padding:12px 20px 0; }
+  .tab { min-height:40px; padding:0 16px; background:transparent; color:var(--muted); border:1px solid var(--line); border-bottom:0; border-radius:4px 4px 0 0;
+         font-family:var(--display); font-weight:600; letter-spacing:.1em; cursor:pointer; }
+  .tab[aria-selected="true"] { color:var(--cyan); background:var(--panel-2); border-color:var(--line-2); }
+  .dbody { padding:16px 20px 22px; overflow:auto; max-height:calc(100vh - 220px); background:var(--panel-2); border-top:1px solid var(--line-2); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-family:var(--mono); font-size:11px; color:var(--faint); font-weight:500; letter-spacing:.06em; padding:6px 8px; border-bottom:1px solid var(--line); }
+  td { padding:8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td.n { font-family:var(--mono); text-align:right; }
+  th.n { text-align:right; }
+  .note { font-size:12.5px; color:var(--muted); margin-top:14px; }
+
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); } 70% { box-shadow:0 0 0 7px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+  @media (max-width:640px) { svg.chart { height:auto; } .wrap { padding:12px 12px 32px; } .brand .name { font-size:17px; } .meta { gap:14px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar panel">
+    <div class="brand">
+      <img src="../shared/img/favicon-192.png" alt="CG HUBS">
+      <div>
+        <div class="name">CG HUBS <span>MISSION CONTROL</span></div>
+        <div class="sub">CONCEPT GROUP · PLATFORM OPERATIONS</div>
+      </div>
+    </div>
+    <div class="sys" id="sys" hidden><span class="dot"></span><span id="sysText"></span></div>
+    <div class="meta">
+      <div class="clock"><div class="t" id="clock">--:--</div><div class="d" id="date"></div></div>
+      <div class="sync" id="syncBox" hidden><div class="s" id="sync"></div><div class="n" id="next"></div></div>
+      <div class="user" id="user" hidden><span id="userName"></span>
+        <button class="btn" id="refresh" type="button">Refresh</button>
+        <button class="btn" id="signOut" type="button">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <main id="main" aria-live="polite"><div class="panel card"><p>Loading…</p></div></main>
+</div>
+
+<dialog id="drill" aria-labelledby="drillTitle">
+  <div class="dhead"><h2 id="drillTitle"></h2><button class="btn" type="button" id="drillClose">Close</button></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" type="button" id="tabUsers" aria-selected="true" aria-controls="drillBody">Users</button>
+    <button class="tab" role="tab" type="button" id="tabErrors" aria-selected="false" aria-controls="drillBody">Errors</button>
+  </div>
+  <div class="dbody" id="drillBody" role="tabpanel"></div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="../shared/cg-config.js"></script>
+<script src="../shared/cg-core.js"></script>
+<script src="pulse.js"></script>
+<script>
+(function () {
+  "use strict";
+  const P = CGPulse, esc = CG.esc;
+  const $ = id => document.getElementById(id);
+  const main = $("main");
+  const APP = CG.app("control");
+  const MON = typeof CG_MONITOR !== "undefined" ? CG_MONITOR : { hubs: [] };
+  const REFRESH_MS = Math.max(1, Number(MON.refreshMinutes) || 3) * 60 * 1000;
+  const WINDOW_DAYS = Math.max(1, Number(MON.windowDays) || 7);
+  const LOGO = "../shared/img/favicon-192.png";
+  const COLORS = { ACTIVE: "var(--green)", QUIET: "#7FB3C9", PARTIAL: "var(--amber)", OFFLINE: "var(--red)" };
+  const STATUS_TEXT = { ACTIVE: "ACTIVE", QUIET: "QUIET", PARTIAL: "PARTIAL", OFFLINE: "UNREACHABLE" };
+
+  let summary = null, nextAt = 0, loading = false, lastOk = null;
+
+  /* ---------------- clock ---------------- */
+  const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  function tick() {
+    const d = new Date(), two = n => String(n).padStart(2, "0");
+    $("clock").innerHTML = `${two(d.getHours())}:${two(d.getMinutes())}<small>:${two(d.getSeconds())}</small>`;
+    $("date").textContent = `${DAYS[d.getDay()]} ${two(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()} · PORT MORESBY`;
+    if (lastOk && !loading) {
+      const ago = P.ageText(Date.now() - lastOk);
+      $("sync").textContent = ago === "now" ? "● SYNCED JUST NOW" : `● SYNCED ${ago.toUpperCase()} AGO`;
+      const left = Math.max(0, nextAt - Date.now());
+      $("next").textContent = `NEXT READ IN ${two(Math.floor(left / 60000))}:${two(Math.floor(left / 1000) % 60)}`;
+      if (left === 0) load();
+    }
+  }
+  setInterval(tick, 1000); tick();
+
+  /* ---------------- cards ---------------- */
+  function card(html) { main.innerHTML = `<div class="panel card"><img src="${LOGO}" alt="">${html}</div>`; }
+
+  function setupCard() {
+    card(`<h2>ONE SET-UP STEP LEFT</h2>
+      <p>Mission Control needs its own Entra app registration before it can sign in.</p>
+      <ol>
+        <li>Entra admin centre → App registrations → <b>New registration</b>, name it <code>CG HUBS Mission Control</code>, single tenant.</li>
+        <li>Redirect URI: platform <b>Single-page application</b>, <code>${esc(CG.ROOT_URL)}control/</code></li>
+        <li>API permissions → Microsoft Graph → Delegated → <code>Sites.Read.All</code> (and keep <code>User.Read</code>) → Grant admin consent.</li>
+        <li>Copy the <b>Application (client) ID</b> into <code>shared/cg-config.js</code> in place of <code>&lt;&lt;MISSION-CONTROL-CLIENT-ID&gt;&gt;</code>, by pull request.</li>
+      </ol>`);
+  }
+  function signInCard(err) {
+    card(`<h2>MISSION CONTROL</h2><p>Sign in with your Concept Group Microsoft account.</p>
+      <button class="btn primary" id="signIn" type="button">Sign in</button>
+      ${err ? `<div class="err">${esc(err)}</div>` : ""}`);
+    $("signIn").onclick = () => CG.auth.signIn().catch(e => signInCard(e.message));
+  }
+
+  /* ---------------- reading SharePoint ---------------- */
+  const PREFER = { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" };
+
+  async function readList(siteId, hubCfg, app, label, list, since) {
+    const base = { app: hubCfg.app, hubName: app.name, label, list };
+    try {
+      const page = await CG.graph("GET", P.recentUrl(siteId, list, since), undefined, PREFER);
+      const items = (page.value || []).map(P.fromItem);
+      let last = null;
+      if (!items.length) {
+        const one = await CG.graph("GET", P.latestUrl(siteId, list), undefined, PREFER);
+        if (one.value && one.value[0]) { const i = P.fromItem(one.value[0]); last = { at: i.at, by: i.by }; }
+      }
+      return Object.assign(base, { ok: true, items, last, capped: !!page["@odata.nextLink"] });
+    } catch (e) {
+      if (CG.sp.isMissingList(e) || CG.sp.isForbidden(e) || e.status === 401) return Object.assign(base, { ok: false, error: P.explain(e) });
+      // Big lists can't be sorted/filtered without an index: fall back to the
+      // list's own "last changed" time so the pulse still shows something.
+      try {
+        const meta = await CG.graph("GET", `/sites/${siteId}/lists/${encodeURIComponent(list)}?$select=lastModifiedDateTime`);
+        return Object.assign(base, { ok: true, items: [], last: { at: new Date(meta.lastModifiedDateTime), by: "Not known (large list)" }, note: P.explain(e) });
+      } catch (e2) {
+        return Object.assign(base, { ok: false, error: P.explain(e) });
+      }
+    }
+  }
+
+  // Runs jobs a few at a time, so SharePoint isn't asked for 20 lists at once.
+  async function pool(jobs, size) {
+    const out = new Array(jobs.length); let next = 0;
+    await Promise.all(Array.from({ length: Math.min(size, jobs.length) }, async () => {
+      while (next < jobs.length) { const i = next++; out[i] = await jobs[i](); }
+    }));
+    return out;
+  }
+
+  async function load() {
+    if (loading) return;
+    loading = true;
+    $("sync").className = "s busy"; $("sync").textContent = "◌ READING SHAREPOINT…";
+    nextAt = Date.now() + REFRESH_MS;
+    try {
+      const since = new Date(Date.now() - WINDOW_DAYS * 86400000);
+      const jobs = [];
+      for (const h of MON.hubs) {
+        const app = CG.app(h.app);
+        if (!app) continue;
+        const sitePath = h.site || app.site;
+        let sid = null, siteErr = null;
+        try { sid = await CG.sp.siteId(sitePath); } catch (e) { siteErr = P.explain(e); }
+        for (const [label, list] of h.lists) {
+          jobs.push(sid ? () => readList(sid, h, app, label, list, since)
+                        : async () => ({ app: h.app, hubName: app.name, label, list, ok: false, error: `Site ${sitePath}: ${siteErr}` }));
+        }
+      }
+      const reads = await pool(jobs, 4);
+      summary = P.summarise(reads, new Date());
+      lastOk = Date.now();
+      $("sync").className = "s";
+      render();
+    } catch (e) {
+      $("sync").className = "s bad"; $("sync").textContent = "▲ READ FAILED — " + (e.message || e);
+      if (!summary) card(`<h2>COULDN'T READ SHAREPOINT</h2><div class="err">${esc(e.message || e)}</div>`);
+    } finally {
+      loading = false;
+    }
+  }
+
+  /* ---------------- drawing ---------------- */
+  function render() {
+    const s = summary, now = new Date();
+    const sys = $("sys");
+    sys.hidden = false;
+    if (s.totals.failing) { sys.className = "sys warn"; $("sysText").textContent = `${s.totals.failing} OF ${s.totals.hubs} HUBS NEED ATTENTION`; }
+    else { sys.className = "sys ok"; $("sysText").textContent = `ALL ${s.totals.hubs} HUBS REACHABLE`; }
+
+    main.innerHTML = `
+      <section class="hubs" aria-label="Hub status">${s.hubs.map(hubTile).join("")}</section>
+      <section class="split">
+        <div class="panel wide">
+          <div class="head">
+            <h2 class="ttl">Activity today · SharePoint writes per hour</h2>
+            <div class="kpis">
+              <span><span>WRITES TODAY</span> ${s.totals.writesToday}</span>
+              <span><span>PEOPLE TODAY</span> ${s.totals.peopleToday}</span>
+              <span><span>BUSIEST HOUR</span> ${s.totals.writesToday ? String(s.totals.busiestHour).padStart(2, "0") + ":00" : "—"}</span>
+            </div>
+          </div>
+          ${chart(s.hourly, now)}
+        </div>
+        <div class="panel narrow">
+          <div class="head"><h2 class="ttl">Event stream</h2><span class="mono" style="font-size:11px;color:var(--green)">● LAST ${WINDOW_DAYS} DAYS</span></div>
+          ${s.events.length ? `<ol class="stream">${s.events.map(e => `
+            <li><span class="t">${esc(P.sameDay(e.at, now) ? P.clock(e.at) : P.stamp(e.at).slice(0, 6))}</span>
+                <span class="k ${e.kind}">${e.kind === "added" ? "ADDED" : "UPDATED"}</span>
+                <span class="m">${esc(e.hub)} · ${esc(e.label)} — ${esc(e.by)}</span></li>`).join("")}</ol>`
+            : `<p class="empty">No writes in the last ${WINDOW_DAYS} days.</p>`}
+        </div>
+      </section>
+      <section class="panel">
+        <div class="head">
+          <h2 class="ttl">Data Pulse · last write per SharePoint list</h2>
+          <div class="legend"><span><i style="background:var(--cyan)"></i>TODAY</span><span><i style="background:var(--cyan-dim)"></i>≤ 7 DAYS</span>
+            <span><i style="background:var(--line-2)"></i>≤ 30 DAYS</span><span><i style="border:1px solid var(--amber)"></i>QUIET 30+ DAYS</span>
+            <span><i style="background:repeating-linear-gradient(45deg, var(--red) 0 3px, transparent 3px 6px)"></i>CAN'T READ</span></div>
+        </div>
+        <div class="pulse">${s.hubs.map(h => `
+          <div class="pgroup"><h3>${esc(h.name)}</h3>${h.lists.map(l => `
+            <div class="plist f-${l.freshness}" title="${esc(l.list)}${l.note ? " — " + esc(l.note) : ""}">
+              <span class="bar"></span>
+              <div style="min-width:0"><div class="l">${esc(l.label)}${l.capped ? ' <span class="mono" style="font-size:10.5px;color:var(--muted)">500+</span>' : ""}</div>
+                <div class="w">${l.ok ? `${esc(l.last ? l.last.by : "No items yet")} · ${esc(l.stamp || "—")}` : esc(l.error)}</div></div>
+              <span class="a">${l.ok ? esc(l.age) : "ERR"}</span>
+            </div>`).join("")}
+          </div>`).join("")}
+        </div>
+      </section>
+      <section class="panel">
+        <h2 class="ttl">Coming online with telemetry (next step)</h2>
+        <div class="next">
+          <div><b>HUB TILES</b>Online now, page load time, browser errors per Hub</div>
+          <div><b>ERRORS TAB</b>Failed saves and throttling seen by real users, not just by this page</div>
+          <div><b>ADOPTION</b>Active people vs each Hub's security-group members</div>
+          <div><b>RELEASES</b>Which build each person is running after a deploy</div>
+          <div><b>SATELLITES</b>ZKTeco bridge, Concept Time widget, mobile clock-ins, SSL expiry, list capacity</div>
+          <div><b>ALERTS</b>Teams message when a Hub turns red or the bridge goes silent</div>
+        </div>
+      </section>`;
+
+    main.querySelectorAll(".hub").forEach(b => { b.onclick = () => openDrill(b.dataset.app); });
+  }
+
+  function hubTile(h) {
+    const issues = h.errors.length;
+    return `<button class="hub ${h.status}" type="button" data-app="${esc(h.app)}" style="--c:${COLORS[h.status]}" aria-label="${esc(h.name)}: ${STATUS_TEXT[h.status]}, ${h.people} people today. Open details">
+      <div class="top"><span class="nm">${esc(h.name)}</span><span class="st"><i></i>${STATUS_TEXT[h.status]}</span></div>
+      <div class="big"><b>${h.people}</b><span>${h.people === 1 ? "person" : "people"} today</span></div>
+      <div class="row"><span>WRITES <em>${h.writesToday}</em></span><span>LAST <em>${esc(h.age)}</em></span><span>LISTS <em>${h.lists.length}</em></span></div>
+      <div class="more">${issues ? `${issues} list${issues > 1 ? "s" : ""} can't be read →` : "Users &amp; errors →"}</div>
+    </button>`;
+  }
+
+  function chart(hourly, now) {
+    const W = 960, H = 220, x0 = 40, x1 = 950, yTop = 18, yBot = 192;
+    const max = Math.max(4, ...hourly), step = Math.ceil(max / 4);
+    const top = step * 4, slot = (x1 - x0) / 24, bw = slot * 0.62;
+    const y = v => yBot - (yBot - yTop) * v / top;
+    const nowH = now.getHours() + now.getMinutes() / 60;
+    let g = "";
+    for (let v = 0; v <= top; v += step) g += `<line x1="${x0}" x2="${x1}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${x0 - 8}" y="${y(v) + 4}" fill="var(--faint)" font-size="11" text-anchor="end" font-family="JetBrains Mono, monospace">${v}</text>`;
+    for (let h = 0; h < 24; h += 3) g += `<text x="${x0 + slot * h + slot / 2}" y="${H - 6}" fill="var(--faint)" font-size="11" text-anchor="middle" font-family="JetBrains Mono, monospace">${String(h).padStart(2, "0")}:00</text>`;
+    const bars = hourly.map((v, h) => v ? `<rect x="${(x0 + slot * h + (slot - bw) / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(yBot - y(v)).toFixed(1)}" rx="2" fill="${h === now.getHours() ? "var(--cyan)" : "var(--cyan-dim)"}"><title>${String(h).padStart(2, "0")}:00 — ${v} write${v > 1 ? "s" : ""}</title></rect>` : "").join("");
+    const nx = x0 + slot * nowH;
+    const label = hourly.some(Boolean) ? `Bar chart of SharePoint writes per hour today; ${hourly.reduce((a, b) => a + b, 0)} writes so far` : "No SharePoint writes yet today";
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${g}${bars}
+      <line x1="${nx}" x2="${nx}" y1="8" y2="${yBot}" stroke="var(--amber)" stroke-dasharray="2 3"/>
+      <text x="${Math.min(nx + 6, W - 70)}" y="14" fill="var(--amber)" font-size="11" font-family="JetBrains Mono, monospace">NOW ${P.clock(now)}</text></svg>`;
+  }
+
+  /* ---------------- drill-down ---------------- */
+  let drillApp = null, drillTab = "users";
+  function openDrill(app) {
+    drillApp = app; drillTab = "users";
+    drawDrill();
+    $("drill").showModal();
+  }
+  function drawDrill() {
+    const h = summary && summary.hubs.find(x => x.app === drillApp);
+    if (!h) return;
+    $("drillTitle").textContent = h.name;
+    $("tabUsers").setAttribute("aria-selected", drillTab === "users");
+    $("tabErrors").setAttribute("aria-selected", drillTab === "errors");
+    $("tabErrors").textContent = h.errors.length ? `Errors (${h.errors.length})` : "Errors";
+    const now = new Date();
+    if (drillTab === "users") {
+      $("drillBody").innerHTML = h.userList.length ? `
+        <table><thead><tr><th>PERSON</th><th class="n">TODAY</th><th class="n">${WINDOW_DAYS} DAYS</th><th>LAST WRITE</th><th>LISTS</th></tr></thead>
+        <tbody>${h.userList.map(u => `<tr><td>${esc(u.name)}</td><td class="n">${u.today}</td><td class="n">${u.writes}</td>
+          <td class="mono" style="font-size:12px">${esc(P.stamp(u.last))}<br><span style="color:var(--muted)">${esc(P.ageText(now - u.last))} ago</span></td>
+          <td style="color:var(--soft)">${u.lists.map(esc).join(", ")}</td></tr>`).join("")}</tbody></table>
+        <p class="note">Counts SharePoint writes (added or changed items) in the watched lists over the last ${WINDOW_DAYS} days. People who only open the Hub to look appear once telemetry is switched on.</p>`
+        : `<p class="empty">Nobody has written to ${esc(h.name)}'s watched lists in the last ${WINDOW_DAYS} days.</p>`;
+    } else {
+      const notes = h.lists.filter(l => l.note);
+      $("drillBody").innerHTML = (h.errors.length || notes.length) ? `
+        <table><thead><tr><th>LIST</th><th>PROBLEM</th></tr></thead><tbody>
+        ${h.errors.map(e => `<tr><td>${esc(e.label)}<br><span class="mono" style="font-size:11px;color:var(--muted)">${esc(e.list)}</span></td><td style="color:var(--amber)">${esc(e.message)}</td></tr>`).join("")}
+        ${notes.map(l => `<tr><td>${esc(l.label)}<br><span class="mono" style="font-size:11px;color:var(--muted)">${esc(l.list)}</span></td><td style="color:var(--soft)">Partly read: ${esc(l.note)}</td></tr>`).join("")}
+        </tbody></table>
+        <p class="note">These are problems Mission Control itself hit while reading SharePoint. Errors your users hit inside the Hub appear here once telemetry is switched on.</p>`
+        : `<p class="empty">Every watched list was read without problems.</p>
+           <p class="note">Errors your users hit inside the Hub appear here once telemetry is switched on.</p>`;
+    }
+  }
+  $("tabUsers").onclick = () => { drillTab = "users"; drawDrill(); };
+  $("tabErrors").onclick = () => { drillTab = "errors"; drawDrill(); };
+  $("drillClose").onclick = () => $("drill").close();
+  $("drill").addEventListener("click", e => { if (e.target === $("drill")) $("drill").close(); });
+
+  /* ---------------- start ---------------- */
+  async function start() {
+    if (!APP) { card(`<h2>NOT SET UP</h2><p>Mission Control is missing from <code>shared/cg-config.js</code>.</p>`); return; }
+    if (String(APP.clientId).startsWith("<<")) { setupCard(); return; }
+    let account;
+    try {
+      account = await CG.auth.init({ app: "control", scopes: APP.scopes || ["Sites.Read.All", "User.Read"] });
+    } catch (e) { signInCard(e.message); return; }
+    if (!account) { if (!CG.isAuthReturnInChildWindow()) signInCard(); return; }
+    if (!CG.appAllowed("control", CG.auth.email())) {
+      card(`<h2>NO ACCESS</h2><p>${esc(CG.appDeniedMessage("control", CG.auth.email()))}</p>`); return;
+    }
+    $("userName").textContent = account.name || account.username;
+    $("user").hidden = false; $("syncBox").hidden = false;
+    $("signOut").onclick = () => CG.auth.signOut();
+    $("refresh").onclick = () => load();
+    load();
+  }
+  start();
+})();
+</script>
+</body>
+</html>

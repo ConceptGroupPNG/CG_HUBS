@@ -64,8 +64,43 @@ const CG_APPS = [
     site: "/sites/CG_Time",        clientId: "04c72756-916b-4fed-aa36-a6771ea4e8dc", status: "on", group: "7da2e0cc-3717-43bf-a9d1-93c21fe8397a" /* CG Mobile Apps */, badge: "preview", device: "mobile",
     // Selfie check at clock in/out (experimental) - the address of the
     // cg-staff-face-api function in AWS. Leave "" to switch the check off.
-    faceApi: "https://ggajahpgppa2kl2dfjfgj232gq0yuqur.lambda-url.ap-southeast-2.on.aws/" }
+    faceApi: "https://ggajahpgppa2kl2dfjfgj232gq0yuqur.lambda-url.ap-southeast-2.on.aws/" },
+
+  // Platform monitoring for the administrator (and later an IT admin).
+  // Read-only: its Entra app registration ("CG HUBS Mission Control") needs
+  // only Sites.Read.All and User.Read. Until the registration exists the
+  // page shows the set-up steps instead of signing in.
+  { key: "control",    folder: "control/",    name: "Mission Control",     unit: "CG HUBS monitoring",
+    site: "",                      clientId: "<<MISSION-CONTROL-CLIENT-ID>>", status: "preview",
+    scopes: ["Sites.Read.All", "User.Read"] }
 ];
+
+/* ---------------------------------------------------------------------
+   Mission Control - which SharePoint lists the Data Pulse watches.
+
+   One entry per Hub: `app` is the Hub's key in CG_APPS above, `site` the
+   SharePoint site the lists are on (leave it out to use the Hub's own
+   site), and `lists` pairs the label shown on screen with the list's
+   real name. Add or remove lists here - the page needs no change.
+   --------------------------------------------------------------------- */
+const CG_MONITOR = {
+  refreshMinutes: 3,          // how often the page re-reads the lists
+  windowDays: 7,              // how far back the activity and user counts look
+  hubs: [
+    { app: "psp", lists: [
+      ["Calendar", "PSP_Act_Calendar"], ["Billing", "PSP_Billing"], ["Clients", "PSP_Client_Details"],
+      ["Quotes", "PSP_Quotes"], ["Invoices", "PSP_Invoices"] ] },
+    { app: "sla", lists: [
+      ["Tickets", "SLA_Tickets"], ["Agreements", "SLA_Agreements"], ["Work Orders", "SLA_WorkOrders"] ] },
+    { app: "time", lists: [
+      ["Time Entries", "CSA_TimeEntries"], ["Attendance Records", "CG_EmployeeTimeRecords"] ] },
+    { app: "training", lists: [
+      ["Attendees", "CG_Attendees"], ["Courses", "CG_Courses"], ["Course Runs", "CG_CourseRuns"],
+      ["Quotes", "CG_Quotes"], ["Invoices", "CG_Invoices"], ["Payments", "CG_Payments"] ] },
+    { app: "csa", lists: [
+      ["Clients", "CSA_Clients"], ["CSA's", "CSA_List"], ["Documents", "CSA_Documents"] ] }
+  ]
+};
 
 /* ---------------------------------------------------------------------
    The launcher (the CG HUBS front page). It has its own small Entra app

@@ -13,6 +13,7 @@ The web apps used across Concept Group, served from
 | `time/` | CG Time dashboard | Group time, attendance & payroll |
 | `mobile/` | Concept Time Mobile | Phone time logging |
 | `attendance/` | CG Time Attendance | Phone clock in / out |
+| `control/` | Mission Control (preview) | Platform monitoring for the administrator |
 | `shared/` | Shared core library, central settings (`cg-config.js`), shared styles and logos | — |
 | `aws/` | Code for small AWS services the apps call (not served by GitHub Pages), e.g. the CG Time Attendance selfie check | — |
 

@@ -101,7 +101,7 @@ test("on / off / preview switches", () => {
   assert.equal(CG.appAllowed("csa", "someone.else@concept.com.pg"), false);
   assert.equal(CG.appAllowed("sla", "mscully@concept.com.pg"), false);
   assert.equal(CG.appState("nonexistent"), "off");
-  assert.equal(CG.apps().length, 7);
+  assert.equal(CG.apps().length, 8);
 });
 
 test("Hub groups: only members of the app's group can use it", () => {
