@@ -57,12 +57,12 @@
   .btn.primary { background:var(--cyan); color:#04131B; border-color:var(--cyan); }
 
   /* Hub strip */
-  .hubs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+  .hubs { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
   .hub { position:relative; text-align:left; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px;
          padding:14px 16px; cursor:pointer; overflow:hidden; transition:border-color .15s, transform .15s; }
   .hub:hover, .hub:focus-visible { border-color:var(--cyan); transform:translateY(-1px); outline:none; }
   .hub::before { content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--c); }
-  .hub .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .hub .top { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 8px; }
   .hub .nm { font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:.08em; text-transform:uppercase; }
   .hub .st { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; font-weight:700; color:var(--c); letter-spacing:.06em; }
   .hub .st i { width:9px; height:9px; border-radius:50%; background:var(--c); }
@@ -70,7 +70,8 @@
   .hub .big { display:flex; align-items:baseline; gap:6px; margin-top:10px; }
   .hub .big b { font-family:var(--mono); font-size:34px; font-weight:500; line-height:1; }
   .hub .big span { font-size:12px; color:var(--muted); }
-  .hub .row { display:flex; justify-content:space-between; gap:8px; margin-top:12px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .hub .row { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; margin-top:12px; font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+  .hub .row span { white-space:nowrap; }
   .hub .row em { font-style:normal; color:var(--text); }
   .hub .more { margin-top:10px; font-size:12px; color:var(--cyan); }
   .hub.PARTIAL .more, .hub.OFFLINE .more { color:var(--amber); }
@@ -90,6 +91,21 @@
   .stream .k { font-family:var(--mono); font-weight:700; color:var(--cyan); font-size:11.5px; }
   .stream .k.added { color:var(--green); }
   .stream .m { color:var(--soft); }
+  .stream .k.opened { color:#B79CFF; }
+  .stream .k.error { color:var(--amber); }
+  .stream .x { font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap; }
+  .teleoff { border-color:#5A4520; color:var(--soft); font-size:13px; }
+  .teleoff b { font-family:var(--mono); color:var(--amber); font-weight:700; letter-spacing:.06em; margin-right:6px; }
+  .teleoff code { font-family:var(--mono); color:var(--cyan); font-size:12px; }
+  .rel { display:flex; flex-direction:column; gap:2px; margin-top:12px; }
+  .relrow { display:grid; grid-template-columns:minmax(140px, 200px) minmax(0, 300px) minmax(0, 1fr); gap:14px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .relrow .nm { font-family:var(--display); font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+  .relrow .b { font-size:12px; color:var(--cyan); }
+  .relrow .ok { color:var(--green); } .relrow .warn { color:var(--amber); }
+  .on { color:var(--green); }
+  .tag { font-family:var(--mono); font-size:10px; color:var(--muted); border:1px solid var(--line-2); border-radius:3px; padding:0 4px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; margin-top:4px; }
+  pre { white-space:pre-wrap; word-break:break-word; font-family:var(--mono); font-size:11px; color:var(--soft); background:var(--panel); padding:8px; border-radius:4px; }
   .empty { color:var(--muted); font-size:13px; padding:12px 0; }
 
   /* Data Pulse */
@@ -107,6 +123,7 @@
   .f-week .bar { background:var(--cyan-dim); }
   .f-month .bar { background:var(--line-2); } .f-month .a { color:var(--muted); }
   .f-quiet .bar { border:1px solid var(--amber); } .f-quiet .a { color:var(--amber); }
+  .f-empty .bar { border:1px dashed var(--faint); } .f-empty .a, .f-empty .w { color:var(--faint); }
   .f-unknown .bar { background:repeating-linear-gradient(45deg, var(--red) 0 3px, transparent 3px 6px); } .f-unknown .a, .f-unknown .w { color:var(--red); }
 
   /* Coming next */
@@ -142,7 +159,7 @@
 
   @keyframes pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); } 70% { box-shadow:0 0 0 7px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
-  @media (max-width:640px) { svg.chart { height:auto; } .wrap { padding:12px 12px 32px; } .brand .name { font-size:17px; } .meta { gap:14px; } }
+  @media (max-width:640px) { svg.chart { height:auto; } .relrow { grid-template-columns:1fr; gap:2px; } .wrap { padding:12px 12px 32px; } .brand .name { font-size:17px; } .meta { gap:14px; } }
 </style>
 </head>
 <body>
@@ -192,8 +209,10 @@
   const REFRESH_MS = Math.max(1, Number(MON.refreshMinutes) || 3) * 60 * 1000;
   const WINDOW_DAYS = Math.max(1, Number(MON.windowDays) || 7);
   const LOGO = "../shared/img/favicon-192.png";
-  const COLORS = { ACTIVE: "var(--green)", QUIET: "#7FB3C9", PARTIAL: "var(--amber)", OFFLINE: "var(--red)" };
-  const STATUS_TEXT = { ACTIVE: "ACTIVE", QUIET: "QUIET", PARTIAL: "PARTIAL", OFFLINE: "UNREACHABLE" };
+  const COLORS = { ACTIVE: "var(--green)", QUIET: "#7FB3C9", PARTIAL: "var(--amber)", ERRORS: "var(--amber)", OFFLINE: "var(--red)" };
+  // Short names for the status tiles (the drill-down shows the full name)
+  const SHORT = { training: "Training", psp: "PSP", csa: "CSA", sla: "SLA", time: "CG Time", mobile: "Time Mobile", attendance: "Attendance" };
+  const STATUS_TEXT = { ACTIVE: "ACTIVE", QUIET: "QUIET", PARTIAL: "PARTIAL", ERRORS: "ERRORS", OFFLINE: "UNREACHABLE" };
 
   let summary = null, nextAt = 0, loading = false, lastOk = null;
 
@@ -261,6 +280,33 @@
     }
   }
 
+  /* What the Hubs reported themselves (CG_TELEMETRY in cg-config.js).
+     Returns { ok: true, sessions, errors } or { ok: false, reason }. */
+  async function readTelemetry(since) {
+    const T = typeof CG_TELEMETRY !== "undefined" ? CG_TELEMETRY : null;
+    if (!T || T.enabled === false) return { ok: false, reason: "Telemetry is switched off in cg-config.js" };
+    const all = async (url) => {
+      const out = [];
+      for (let n = 0; url && n < 10; n++) {
+        const page = await CG.graph("GET", url, undefined, PREFER);
+        (page.value || []).forEach(i => out.push(i));
+        url = page["@odata.nextLink"] || null;
+      }
+      return out;
+    };
+    try {
+      const sid = await CG.sp.siteId(T.site);
+      const base = list => `/sites/${sid}/lists/${encodeURIComponent(list)}/items?$expand=fields&$top=500`;
+      const [ss, es] = await Promise.all([
+        all(`${base(T.sessions)}&$filter=fields/LastSeen ge '${since.toISOString()}'`),
+        all(`${base(T.errors)}&$filter=fields/Created ge '${since.toISOString()}'`)
+      ]);
+      return { ok: true, sessions: ss.map(P.fromSession), errors: es.map(P.fromError) };
+    } catch (e) {
+      return { ok: false, reason: CG.sp.isMissingList(e) ? "The CG_Platform site or its lists aren't set up yet." : P.explain(e) };
+    }
+  }
+
   // Runs jobs a few at a time, so SharePoint isn't asked for 20 lists at once.
   async function pool(jobs, size) {
     const out = new Array(jobs.length); let next = 0;
@@ -281,6 +327,7 @@
       for (const h of MON.hubs) {
         const app = CG.app(h.app);
         if (!app) continue;
+        if (!h.lists.length) continue;
         const sitePath = h.site || app.site;
         let sid = null, siteErr = null;
         try { sid = await CG.sp.siteId(sitePath); } catch (e) { siteErr = P.explain(e); }
@@ -289,8 +336,10 @@
                         : async () => ({ app: h.app, hubName: app.name, label, list, ok: false, error: `Site ${sitePath}: ${siteErr}` }));
         }
       }
-      const reads = await pool(jobs, 4);
-      summary = P.summarise(reads, new Date());
+      const [reads, tele] = await Promise.all([pool(jobs, 4), readTelemetry(since)]);
+      const now = new Date();
+      const hubs = MON.hubs.map(h => CG.app(h.app)).filter(Boolean).map(a => ({ app: a.key, name: a.name }));
+      summary = P.withTelemetry(P.summarise(reads, now, { hubs }), tele, now);
       lastOk = Date.now();
       $("sync").className = "s";
       render();
@@ -303,34 +352,36 @@
   }
 
   /* ---------------- drawing ---------------- */
+  const two = n => String(n).padStart(2, "0");
   function render() {
-    const s = summary, now = new Date();
+    const s = summary, now = new Date(), tele = s.telemetry && s.telemetry.ok;
     const sys = $("sys");
     sys.hidden = false;
-    if (s.totals.failing) { sys.className = "sys warn"; $("sysText").textContent = `${s.totals.failing} OF ${s.totals.hubs} HUBS NEED ATTENTION`; }
-    else { sys.className = "sys ok"; $("sysText").textContent = `ALL ${s.totals.hubs} HUBS REACHABLE`; }
+    const shown = s.hubs.filter(h => tele || h.lists.length).length;
+    if (s.totals.failing) { sys.className = "sys warn"; $("sysText").textContent = `${s.totals.failing} OF ${shown} HUBS NEED ATTENTION`; }
+    else { sys.className = "sys ok"; $("sysText").textContent = `ALL ${shown} HUBS NOMINAL`; }
 
     main.innerHTML = `
-      <section class="hubs" aria-label="Hub status">${s.hubs.map(hubTile).join("")}</section>
+      ${tele ? "" : `<div class="panel teleoff"><b>TELEMETRY NOT ON YET</b> ${esc(s.telemetry.reason || "")} — run <code>setup/Setup-CGPlatformTelemetry.ps1</code>. Until then this page shows SharePoint writes only.</div>`}
+      <section class="hubs" aria-label="Hub status">${s.hubs.filter(h => tele || h.lists.length).map(h => hubTile(h, tele)).join("")}</section>
       <section class="split">
         <div class="panel wide">
           <div class="head">
             <h2 class="ttl">Activity today · SharePoint writes per hour</h2>
             <div class="kpis">
-              <span><span>WRITES TODAY</span> ${s.totals.writesToday}</span>
+              ${tele ? `<span><span>ONLINE NOW</span> <b style="color:var(--green)">${s.totals.online}</b></span>` : ""}
               <span><span>PEOPLE TODAY</span> ${s.totals.peopleToday}</span>
-              <span><span>BUSIEST HOUR</span> ${s.totals.writesToday ? String(s.totals.busiestHour).padStart(2, "0") + ":00" : "—"}</span>
+              <span><span>WRITES TODAY</span> ${s.totals.writesToday}</span>
+              ${tele ? `<span><span>ERRORS 24H</span> <b style="color:${s.totals.errors24h ? "var(--amber)" : "inherit"}">${s.totals.errors24h}</b></span>` : ""}
+              <span><span>BUSIEST HOUR</span> ${s.totals.writesToday ? two(s.totals.busiestHour) + ":00" : "—"}</span>
             </div>
           </div>
           ${chart(s.hourly, now)}
         </div>
         <div class="panel narrow">
           <div class="head"><h2 class="ttl">Event stream</h2><span class="mono" style="font-size:11px;color:var(--green)">● LAST ${WINDOW_DAYS} DAYS</span></div>
-          ${s.events.length ? `<ol class="stream">${s.events.map(e => `
-            <li><span class="t">${esc(P.sameDay(e.at, now) ? P.clock(e.at) : P.stamp(e.at).slice(0, 6))}</span>
-                <span class="k ${e.kind}">${e.kind === "added" ? "ADDED" : "UPDATED"}</span>
-                <span class="m">${esc(e.hub)} · ${esc(e.label)} — ${esc(e.by)}</span></li>`).join("")}</ol>`
-            : `<p class="empty">No writes in the last ${WINDOW_DAYS} days.</p>`}
+          ${s.events.length ? `<ol class="stream">${s.events.map(e => eventRow(e, now)).join("")}</ol>`
+            : `<p class="empty">Nothing in the last ${WINDOW_DAYS} days.</p>`}
         </div>
       </section>
       <section class="panel">
@@ -338,42 +389,74 @@
           <h2 class="ttl">Data Pulse · last write per SharePoint list</h2>
           <div class="legend"><span><i style="background:var(--cyan)"></i>TODAY</span><span><i style="background:var(--cyan-dim)"></i>≤ 7 DAYS</span>
             <span><i style="background:var(--line-2)"></i>≤ 30 DAYS</span><span><i style="border:1px solid var(--amber)"></i>QUIET 30+ DAYS</span>
+            <span><i style="border:1px dashed var(--faint)"></i>EMPTY</span>
             <span><i style="background:repeating-linear-gradient(45deg, var(--red) 0 3px, transparent 3px 6px)"></i>CAN'T READ</span></div>
         </div>
-        <div class="pulse">${s.hubs.map(h => `
+        <div class="pulse">${s.hubs.filter(h => h.lists.length).map(h => `
           <div class="pgroup"><h3>${esc(h.name)}</h3>${h.lists.map(l => `
             <div class="plist f-${l.freshness}" title="${esc(l.list)}${l.note ? " — " + esc(l.note) : ""}">
               <span class="bar"></span>
               <div style="min-width:0"><div class="l">${esc(l.label)}${l.capped ? ' <span class="mono" style="font-size:10.5px;color:var(--muted)">500+</span>' : ""}</div>
-                <div class="w">${l.ok ? `${esc(l.last ? l.last.by : "No items yet")} · ${esc(l.stamp || "—")}` : esc(l.error)}</div></div>
-              <span class="a">${l.ok ? esc(l.age) : "ERR"}</span>
+                <div class="w">${!l.ok ? esc(l.error) : l.last ? `${esc(l.last.by)} · ${esc(l.stamp)}` : "No items yet"}</div></div>
+              <span class="a">${!l.ok ? "ERR" : esc(l.age)}</span>
             </div>`).join("")}
           </div>`).join("")}
         </div>
       </section>
+      ${tele ? releases(s) : ""}
       <section class="panel">
-        <h2 class="ttl">Coming online with telemetry (next step)</h2>
+        <h2 class="ttl">Still to come</h2>
         <div class="next">
-          <div><b>HUB TILES</b>Online now, page load time, browser errors per Hub</div>
-          <div><b>ERRORS TAB</b>Failed saves and throttling seen by real users, not just by this page</div>
           <div><b>ADOPTION</b>Active people vs each Hub's security-group members</div>
-          <div><b>RELEASES</b>Which build each person is running after a deploy</div>
-          <div><b>SATELLITES</b>ZKTeco bridge, Concept Time widget, mobile clock-ins, SSL expiry, list capacity</div>
+          <div><b>SATELLITES</b>ZKTeco bridge, Concept Time widget, SSL expiry, list capacity</div>
           <div><b>ALERTS</b>Teams message when a Hub turns red or the bridge goes silent</div>
         </div>
       </section>`;
 
     main.querySelectorAll(".hub").forEach(b => { b.onclick = () => openDrill(b.dataset.app); });
+    if ($("drill").open) drawDrill();
   }
 
-  function hubTile(h) {
+  function eventRow(e, now) {
+    const t = P.sameDay(e.at, now) ? P.clock(e.at) : P.stamp(e.at).slice(0, 6);
+    const K = { added: ["ADDED", "added"], updated: ["UPDATED", ""], opened: ["OPENED", "opened"], error: ["ERROR", "error"] }[e.kind] || [e.kind, ""];
+    const what = e.kind === "opened" ? `${esc(e.hub)} — ${esc(e.by)}${e.label === "Phone" ? " (phone)" : ""}`
+               : e.kind === "error" ? `${esc(e.hub)} — ${esc(e.by)}: ${esc(e.label)}`
+               : `${esc(e.hub)} · ${esc(e.label)} — ${esc(e.by)}`;
+    const many = e.count > 1 ? ` <span class="x">×${e.count} since ${esc(P.clock(e.from))}</span>` : "";
+    return `<li><span class="t">${esc(t)}</span><span class="k ${K[1]}">${K[0]}</span><span class="m">${what}${many}</span></li>`;
+  }
+
+  function hubTile(h, tele) {
     const issues = h.errors.length;
-    return `<button class="hub ${h.status}" type="button" data-app="${esc(h.app)}" style="--c:${COLORS[h.status]}" aria-label="${esc(h.name)}: ${STATUS_TEXT[h.status]}, ${h.people} people today. Open details">
-      <div class="top"><span class="nm">${esc(h.name)}</span><span class="st"><i></i>${STATUS_TEXT[h.status]}</span></div>
-      <div class="big"><b>${h.people}</b><span>${h.people === 1 ? "person" : "people"} today</span></div>
-      <div class="row"><span>WRITES <em>${h.writesToday}</em></span><span>LAST <em>${esc(h.age)}</em></span><span>LISTS <em>${h.lists.length}</em></span></div>
-      <div class="more">${issues ? `${issues} list${issues > 1 ? "s" : ""} can't be read →` : "Users &amp; errors →"}</div>
+    const big = tele ? h.online : h.people;
+    const bigLabel = tele ? "online now" : (h.people === 1 ? "person today" : "people today");
+    const more = issues ? `${issues} list${issues > 1 ? "s" : ""} can't be read →`
+               : (tele && h.errors24h) ? `${h.errors24h} error${h.errors24h > 1 ? "s" : ""} in 24h →` : "Users &amp; errors →";
+    const row = tele
+      ? `<span>TODAY <em>${h.people}</em></span><span>ERR 24H <em style="color:${h.errors24h ? "var(--amber)" : "inherit"}">${h.errors24h}</em></span><span>LOAD <em>${esc(P.seconds(h.loadMs))}</em></span>`
+      : `<span>WRITES <em>${h.writesToday}</em></span><span>LAST <em>${esc(h.age)}</em></span><span>LISTS <em>${h.lists.length}</em></span>`;
+    return `<button class="hub ${h.status}" type="button" data-app="${esc(h.app)}" style="--c:${COLORS[h.status]}" aria-label="${esc(h.name)}: ${STATUS_TEXT[h.status]}, ${big} ${bigLabel}. Open details">
+      <div class="top"><span class="nm" title="${esc(h.name)}">${esc(SHORT[h.app] || h.name)}</span><span class="st"><i></i>${STATUS_TEXT[h.status]}</span></div>
+      <div class="big"><b${tele && h.online ? ' style="color:var(--green)"' : ""}>${big}</b><span>${bigLabel}</span></div>
+      <div class="row">${row}</div>
+      <div class="more">${more}</div>
     </button>`;
+  }
+
+  function releases(s) {
+    const rows = s.hubs.filter(h => h.builds && h.builds.length);
+    if (!rows.length) return "";
+    return `<section class="panel">
+      <h2 class="ttl">Releases · which build people are running (last ${WINDOW_DAYS} days)</h2>
+      <div class="rel">${rows.map(h => {
+        const b = h.builds[0], n = h.behind.length;
+        return `<div class="relrow">
+          <span class="nm">${esc(h.name)}</span>
+          <span class="mono b">${esc(b.build)}</span>
+          <span class="${n ? "warn" : "ok"}">${n ? `${n} on an older build: ${h.behind.map(esc).join(", ")}` : "Everyone on the latest build"}</span>
+        </div>`; }).join("")}</div>
+    </section>`;
   }
 
   function chart(hourly, now) {
@@ -384,8 +467,8 @@
     const nowH = now.getHours() + now.getMinutes() / 60;
     let g = "";
     for (let v = 0; v <= top; v += step) g += `<line x1="${x0}" x2="${x1}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${x0 - 8}" y="${y(v) + 4}" fill="var(--faint)" font-size="11" text-anchor="end" font-family="JetBrains Mono, monospace">${v}</text>`;
-    for (let h = 0; h < 24; h += 3) g += `<text x="${x0 + slot * h + slot / 2}" y="${H - 6}" fill="var(--faint)" font-size="11" text-anchor="middle" font-family="JetBrains Mono, monospace">${String(h).padStart(2, "0")}:00</text>`;
-    const bars = hourly.map((v, h) => v ? `<rect x="${(x0 + slot * h + (slot - bw) / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(yBot - y(v)).toFixed(1)}" rx="2" fill="${h === now.getHours() ? "var(--cyan)" : "var(--cyan-dim)"}"><title>${String(h).padStart(2, "0")}:00 — ${v} write${v > 1 ? "s" : ""}</title></rect>` : "").join("");
+    for (let h = 0; h < 24; h += 3) g += `<text x="${x0 + slot * h + slot / 2}" y="${H - 6}" fill="var(--faint)" font-size="11" text-anchor="middle" font-family="JetBrains Mono, monospace">${two(h)}:00</text>`;
+    const bars = hourly.map((v, h) => v ? `<rect x="${(x0 + slot * h + (slot - bw) / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(yBot - y(v)).toFixed(1)}" rx="2" fill="${h === now.getHours() ? "var(--cyan)" : "var(--cyan-dim)"}"><title>${two(h)}:00 — ${v} write${v > 1 ? "s" : ""}</title></rect>` : "").join("");
     const nx = x0 + slot * nowH;
     const label = hourly.some(Boolean) ? `Bar chart of SharePoint writes per hour today; ${hourly.reduce((a, b) => a + b, 0)} writes so far` : "No SharePoint writes yet today";
     return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${g}${bars}
@@ -403,29 +486,39 @@
   function drawDrill() {
     const h = summary && summary.hubs.find(x => x.app === drillApp);
     if (!h) return;
+    const tele = summary.telemetry && summary.telemetry.ok;
+    const userErrs = (tele && h.userErrors) || [];
+    const nErr = h.errors.length + userErrs.length;
     $("drillTitle").textContent = h.name;
     $("tabUsers").setAttribute("aria-selected", drillTab === "users");
     $("tabErrors").setAttribute("aria-selected", drillTab === "errors");
-    $("tabErrors").textContent = h.errors.length ? `Errors (${h.errors.length})` : "Errors";
+    $("tabErrors").textContent = nErr ? `Errors (${nErr})` : "Errors";
     const now = new Date();
+    const when = d => d ? `${esc(P.stamp(d))}<br><span style="color:var(--muted)">${esc(P.ageText(now - d))} ago</span>` : "—";
     if (drillTab === "users") {
-      $("drillBody").innerHTML = h.userList.length ? `
-        <table><thead><tr><th>PERSON</th><th class="n">TODAY</th><th class="n">${WINDOW_DAYS} DAYS</th><th>LAST WRITE</th><th>LISTS</th></tr></thead>
-        <tbody>${h.userList.map(u => `<tr><td>${esc(u.name)}</td><td class="n">${u.today}</td><td class="n">${u.writes}</td>
-          <td class="mono" style="font-size:12px">${esc(P.stamp(u.last))}<br><span style="color:var(--muted)">${esc(P.ageText(now - u.last))} ago</span></td>
-          <td style="color:var(--soft)">${u.lists.map(esc).join(", ")}</td></tr>`).join("")}</tbody></table>
-        <p class="note">Counts SharePoint writes (added or changed items) in the watched lists over the last ${WINDOW_DAYS} days. People who only open the Hub to look appear once telemetry is switched on.</p>`
-        : `<p class="empty">Nobody has written to ${esc(h.name)}'s watched lists in the last ${WINDOW_DAYS} days.</p>`;
+      const people = h.userList;
+      $("drillBody").innerHTML = people.length ? `
+        <table><thead><tr><th>PERSON</th>${tele ? '<th class="n">VISITS</th><th>LAST SEEN</th>' : ""}<th class="n">WRITES TODAY</th><th class="n">${WINDOW_DAYS}-DAY WRITES</th><th>LAST WRITE</th><th>LISTS</th></tr></thead>
+        <tbody>${people.map(u => `<tr>
+          <td>${u.online ? '<span class="on" title="Online now">●</span> ' : ""}${esc(u.name)}${u.isApp ? ' <span class="tag">PROGRAM</span>' : ""}${u.device === "Phone" ? ' <span class="tag">PHONE</span>' : ""}</td>
+          ${tele ? `<td class="n">${u.sessions || 0}</td><td class="mono" style="font-size:12px">${when(u.lastSeen)}</td>` : ""}
+          <td class="n">${u.today}</td><td class="n">${u.writes}</td>
+          <td class="mono" style="font-size:12px">${when(u.last)}</td>
+          <td style="color:var(--soft)">${u.lists.map(esc).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>
+        <p class="note">Visits and last seen come from the Hub itself${tele ? "" : " (once telemetry is on)"}; writes are added or changed items in the watched lists. Programs such as the ZKTeco bridge are listed but not counted as people.</p>`
+        : `<p class="empty">Nobody has used ${esc(h.name)} in the last ${WINDOW_DAYS} days.</p>`;
     } else {
       const notes = h.lists.filter(l => l.note);
-      $("drillBody").innerHTML = (h.errors.length || notes.length) ? `
-        <table><thead><tr><th>LIST</th><th>PROBLEM</th></tr></thead><tbody>
-        ${h.errors.map(e => `<tr><td>${esc(e.label)}<br><span class="mono" style="font-size:11px;color:var(--muted)">${esc(e.list)}</span></td><td style="color:var(--amber)">${esc(e.message)}</td></tr>`).join("")}
-        ${notes.map(l => `<tr><td>${esc(l.label)}<br><span class="mono" style="font-size:11px;color:var(--muted)">${esc(l.list)}</span></td><td style="color:var(--soft)">Partly read: ${esc(l.note)}</td></tr>`).join("")}
-        </tbody></table>
-        <p class="note">These are problems Mission Control itself hit while reading SharePoint. Errors your users hit inside the Hub appear here once telemetry is switched on.</p>`
-        : `<p class="empty">Every watched list was read without problems.</p>
-           <p class="note">Errors your users hit inside the Hub appear here once telemetry is switched on.</p>`;
+      const userRows = userErrs.map(e => `<tr><td class="mono" style="font-size:12px">${esc(P.stamp(e.at))}</td><td>${esc(e.user)}</td>
+          <td><span class="tag">${esc(e.kind.toUpperCase())}</span> <span style="color:var(--amber)">${esc(e.message)}</span>
+          ${e.detail ? `<details><summary>Detail</summary><pre>${esc(e.detail)}</pre></details>` : ""}
+          ${e.page ? `<div class="mono" style="font-size:11px;color:var(--muted)">${esc(e.page)}</div>` : ""}</td></tr>`).join("");
+      const listRows = h.errors.map(e => `<tr><td>—</td><td>Mission Control</td><td><b>${esc(e.label)}</b> <span class="mono" style="font-size:11px;color:var(--muted)">${esc(e.list)}</span><br><span style="color:var(--amber)">${esc(e.message)}</span></td></tr>`).join("")
+        + notes.map(l => `<tr><td>—</td><td>Mission Control</td><td><b>${esc(l.label)}</b> <span class="mono" style="font-size:11px;color:var(--muted)">${esc(l.list)}</span><br><span style="color:var(--soft)">Partly read: ${esc(l.note)}</span></td></tr>`).join("");
+      $("drillBody").innerHTML = (userRows || listRows) ? `
+        <table><thead><tr><th>WHEN</th><th>WHO</th><th>WHAT</th></tr></thead><tbody>${userRows}${listRows}</tbody></table>
+        <p class="note">Errors people hit in the Hub over the last ${WINDOW_DAYS} days${tele ? "" : " (once telemetry is on)"}, plus lists Mission Control couldn't read.</p>`
+        : `<p class="empty">No errors in the last ${WINDOW_DAYS} days.</p>${tele ? "" : '<p class="note">Errors people hit in the Hub appear here once telemetry is on.</p>'}`;
     }
   }
   $("tabUsers").onclick = () => { drillTab = "users"; drawDrill(); };

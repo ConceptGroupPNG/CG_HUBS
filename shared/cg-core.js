@@ -322,6 +322,9 @@
       if (!t) return null;            // navigating away to Microsoft sign-in
       clearRedirect();
       CG.auth.startKeepAlive();
+      // Usage telemetry for Mission Control (only apps that can write to
+      // SharePoint; never blocks or breaks the app). opts.telemetry: false skips it.
+      if (opts.telemetry !== false) CG.telemetry.start(appKey);
       return msalApp.getActiveAccount();
     },
 
@@ -453,13 +456,15 @@
     return err;
   }
 
-  /* CG.graph(method, url, body?, headers?)
+  /* CG.graph(method, url, body?, headers?, opts?)
      url may be a full URL or a path like "/sites/…".
+     opts.quiet: true - don't report problems to telemetry (telemetry's own calls).
      - 401: one silent token refresh and replay; if that fails, the session
        banner is shown and a plain "session expired" error is thrown.
      - 429 / 503: waits (Retry-After, else 2s, 4s, 8s) and retries.
      - Other errors throw with Graph's own message and err.status set. */
-  CG.graph = async function (method, url, body, headers) {
+  CG.graph = async function (method, url, body, headers, opts) {
+    const quiet = !!(opts && opts.quiet);
     const full = /^https?:/i.test(url) ? url : GRAPH + url;
     // Objects are sent as JSON; a string is taken to be JSON already and sent
     // as it is; a Blob/File is sent as raw content.
@@ -488,6 +493,7 @@
     for (;;) {
       res = await send();
       if ((res.status === 429 || res.status === 503) && busy < MAX_BUSY_RETRIES) {
+        if (!quiet) CG.telemetry.throttled();
         const after = parseInt(res.headers && res.headers.get ? res.headers.get("Retry-After") || "" : "", 10);
         await sleep((after > 0 ? Math.min(after, 30) : 2 ** (busy + 1)) * 1000);
         busy++;
@@ -505,7 +511,14 @@
         throw err;
       }
     }
-    if (!res.ok) throw await graphError(res);
+    if (!res.ok) {
+      const err = await graphError(res);
+      // SharePoint busy or broken (not "not found" etc., which apps often expect)
+      if (!quiet && (res.status === 429 || res.status >= 500)) {
+        CG.telemetry.error("graph", `${res.status} ${err.message}`, `${method} ${String(full).split("?")[0].replace(GRAPH, "")}`);
+      }
+      throw err;
+    }
     hideSessionExpired();
     if (res.status === 204) return null;
     return res.json().catch(() => null);
@@ -572,7 +585,177 @@
     isForbidden:   e => e && (e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""))
   };
 
-  CG.VERSION = "1.6.0";
+  /* -----------------------------------------------------------------
+     Telemetry for Mission Control
+     -----------------------------------------------------------------
+     One row per visit in CG_HubSessions (created when the app starts,
+     refreshed every few minutes while the page is on screen), and one
+     row per error in CG_HubErrors. Settings: CG_TELEMETRY in cg-config.js.
+
+     Rules:
+       - It must never break or slow an app: everything is caught, and
+         it switches itself off for the visit if the lists are missing,
+         access is refused, or SharePoint fails 3 times in a row.
+       - Only apps that can write to SharePoint take part (not the
+         launcher, not Mission Control itself).
+       - Each browser removes its own person's rows older than keepDays,
+         at most once a day.
+     Times sent to SharePoint are moments (toISOString is right for those);
+     calendar dates elsewhere still use CG.date.
+
+     Apps may also call:
+       CG.telemetry.screen("Invoices")            - a screen was opened
+       CG.telemetry.error("save", message, detail) - an error worth seeing
+     ----------------------------------------------------------------- */
+  const T = { on: false, sid: "", app: "", item: null, started: null, views: 0, screens: [], errors: 0,
+              errorsSent: 0, throttles: 0, fails: 0, last: 0, timer: null, recent: {}, queue: Promise.resolve() };
+  const tcfg = () => (typeof CG_TELEMETRY !== "undefined" && CG_TELEMETRY && CG_TELEMETRY.enabled !== false) ? CG_TELEMETRY : null;
+  const canWrite = () => scopes.some(sc => /^Sites\.(ReadWrite|Manage|FullControl)\.All$/i.test(sc));
+  const cut = (v, n) => { const t = String(v ?? ""); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+  const tg = (method, url, body, headers) => CG.graph(method, url, body, headers, { quiet: true });
+  const tUrl = async list => `/sites/${await siteId(tcfg().site)}/lists/${encodeURIComponent(list)}/items`;
+
+  function browserName() {
+    const ua = String((global.navigator && global.navigator.userAgent) || "");
+    const m = /Edg\/(\d+)/.exec(ua) || /OPR\/(\d+)/.exec(ua);
+    if (m) return (ua.includes("Edg/") ? "Edge " : "Opera ") + m[1];
+    const c = /Chrome\/(\d+)/.exec(ua); if (c) return "Chrome " + c[1];
+    const f = /Firefox\/(\d+)/.exec(ua); if (f) return "Firefox " + f[1];
+    const s = /Version\/(\d+).*Safari/.exec(ua); if (s) return "Safari " + s[1];
+    return cut(ua, 60) || "Unknown";
+  }
+  // Which copy of the app is running: core version + when the page was published
+  // (GitHub Pages' Last-Modified). Spots people still on an old, cached build.
+  function buildText() {
+    const lm = global.document && document.lastModified ? new Date(document.lastModified) : null;
+    const page = lm && !isNaN(lm) ? `${CG.date.ymd(lm)} ${CG.date.hhmm(lm)}` : "?";
+    return `core ${CG.VERSION} · page ${page}`;
+  }
+  function loadMs() {
+    try {
+      const n = global.performance && performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+      const v = n ? (n.loadEventEnd || n.domComplete || 0) : 0;
+      return v > 0 ? Math.round(v) : null;
+    } catch (e) { return null; }
+  }
+  function noteScreen(name) {
+    const n = cut(String(name || "").replace(/^#\/?/, "").trim(), 40);
+    if (n && !T.screens.includes(n) && T.screens.length < 30) T.screens.push(n);
+  }
+  // Run telemetry work one job at a time, never throwing into the app.
+  function tq(job) {
+    T.queue = T.queue.then(() => (T.on ? job() : null)).then(() => { T.fails = 0; }, e => {
+      T.fails++;
+      if (CG.sp.isMissingList(e) || CG.sp.isForbidden(e) || T.fails >= 3) {
+        console.warn("CG telemetry switched off for this visit:", e && e.message);
+        CG.telemetry.stop();
+      }
+    });
+    return T.queue;
+  }
+  function beat() {
+    if (!T.on || !T.item) return;
+    if (global.document && document.visibilityState === "hidden") return;   // only count time on screen
+    T.last = Date.now();
+    return tq(async () => tg("PATCH", `${await tUrl(tcfg().sessions)}/${T.item}/fields`, {
+      LastSeen: new Date().toISOString(), PageViews: T.views, Screens: T.screens.join(", "),
+      ErrorCount: T.errors, Throttles: T.throttles, LoadMs: loadMs()
+    }));
+  }
+  function cleanup() {
+    const c = tcfg(), days = Number(c.keepDays) || 90;
+    const key = "cg.telemetry.cleanup", today = CG.date.today();
+    try { if (global.localStorage && localStorage.getItem(key) === today) return; } catch (e) { /* storage blocked */ }
+    try { if (global.localStorage) localStorage.setItem(key, today); } catch (e) { /* storage blocked */ }
+    const before = new Date(Date.now() - days * 86400000).toISOString();
+    const prefer = { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" };
+    [[c.sessions, "LastSeen"], [c.errors, "Created"]].forEach(([list, col]) => tq(async () => {
+      const base = await tUrl(list);
+      const page = await tg("GET", `${base}?$select=id&$expand=fields($select=${col})&$filter=fields/${col} lt '${before}'&$top=50`, undefined, prefer);
+      for (const i of (page && page.value) || []) await tg("DELETE", `${base}/${i.id}`);
+    }));
+  }
+
+  CG.telemetry = {
+    enabled: () => T.on,
+    sessionId: () => T.sid,
+
+    start(app) {
+      try {
+        if (T.on || !global.document || !tcfg() || !canWrite()) return;
+        T.on = true; T.app = app || "unknown"; T.started = new Date(); T.views = 1;
+        T.sid = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+        noteScreen(global.location && global.location.hash);
+        const acct = CG.auth.account() || {};
+        tq(async () => {
+          const now = new Date().toISOString();
+          const r = await tg("POST", await tUrl(tcfg().sessions), { fields: {
+            Title: T.sid, App: T.app, UserName: cut(acct.name || acct.username, 255), UserEmail: CG.auth.email(),
+            StartedAt: now, LastSeen: now, PageViews: 1, Screens: T.screens.join(", "), ErrorCount: T.errors,
+            Throttles: T.throttles, Build: cut(buildText(), 255), LoadMs: loadMs(),
+            Device: CG.isPhone() ? "Phone" : "Desktop", Browser: cut(browserName(), 255)
+          } });
+          T.item = r && r.id;
+          T.last = Date.now();
+        });
+        cleanup();
+        const every = Math.max(1, Number(tcfg().heartbeatMinutes) || 5) * 60000;
+        T.timer = setInterval(beat, every);
+        global.addEventListener("hashchange", () => { T.views++; noteScreen(global.location.hash); });
+        // Back on screen after a while away: say so straight away.
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible" && Date.now() - T.last > 60000) beat();
+        });
+        global.addEventListener("error", e => {
+          const msg = e && e.message ? e.message : "";
+          if (!msg || /^Script error\.?$/i.test(msg) || /ResizeObserver loop/i.test(msg)) return;   // other sites' scripts / harmless
+          CG.telemetry.error("script", msg, `${e.filename || ""}:${e.lineno || ""}\n${(e.error && e.error.stack) || ""}`);
+        });
+        global.addEventListener("unhandledrejection", e => {
+          const r = e && e.reason;
+          if (r && r.status === 401) return;              // the session banner handles these
+          CG.telemetry.error("unhandled", (r && r.message) || String(r), (r && r.stack) || "");
+        });
+      } catch (e) {
+        console.warn("CG telemetry couldn't start:", e && e.message);
+        T.on = false;
+      }
+    },
+
+    screen(name) { if (T.on) { T.views++; noteScreen(name); } },
+    throttled() { if (T.on) T.throttles++; },
+
+    error(kind, message, detail) {
+      try {
+        if (!T.on) return;
+        T.errors++;
+        const max = Number(tcfg().maxErrorsPerSession) || 20;
+        const sig = `${kind}|${message}`;
+        if (T.recent[sig] && Date.now() - T.recent[sig] < 60000) return;   // same error again within a minute
+        T.recent[sig] = Date.now();
+        if (T.errorsSent >= max) return;
+        T.errorsSent++;
+        const acct = CG.auth.account() || {};
+        const page = global.location ? `${global.location.pathname}${global.location.hash || ""}` : "";
+        tq(async () => tg("POST", await tUrl(tcfg().errors), { fields: {
+          Title: cut(kind || "error", 255), App: T.app, UserName: cut(acct.name || acct.username, 255),
+          Message: cut(message, 2000), Detail: cut(detail, 4000), SessionId: T.sid, Page: cut(page, 255)
+        } }));
+      } catch (e) { /* never let error reporting cause an error */ }
+    },
+
+    stop() {
+      T.on = false;
+      if (T.timer) clearInterval(T.timer);
+      T.timer = null;
+    },
+
+    // For tests: wait for queued telemetry work to finish.
+    _flush: () => T.queue,
+    _state: () => Object.assign({}, T)
+  };
+
+  CG.VERSION = "1.7.0";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {

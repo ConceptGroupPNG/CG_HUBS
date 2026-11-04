@@ -76,12 +76,33 @@ const CG_APPS = [
 ];
 
 /* ---------------------------------------------------------------------
+   Telemetry - how the Hubs report usage and errors to Mission Control.
+
+   Every Hub that writes to SharePoint adds one row per visit to
+   `sessions` (refreshed every `heartbeatMinutes` while on screen) and one
+   row per error to `errors`, on the CG_Platform site. People can only see
+   their own rows; rows older than `keepDays` are removed automatically.
+   The lists are created by setup/Setup-CGPlatformTelemetry.ps1.
+   Set enabled: false to switch it off everywhere.
+   --------------------------------------------------------------------- */
+const CG_TELEMETRY = {
+  enabled: true,
+  site: "/sites/CG_Platform",
+  sessions: "CG_HubSessions",
+  errors: "CG_HubErrors",
+  heartbeatMinutes: 5,
+  keepDays: 90,
+  maxErrorsPerSession: 20
+};
+
+/* ---------------------------------------------------------------------
    Mission Control - which SharePoint lists the Data Pulse watches.
 
    One entry per Hub: `app` is the Hub's key in CG_APPS above, `site` the
    SharePoint site the lists are on (leave it out to use the Hub's own
    site), and `lists` pairs the label shown on screen with the list's
    real name. Add or remove lists here - the page needs no change.
+   A Hub with no lists still gets a tile, filled from telemetry.
    --------------------------------------------------------------------- */
 const CG_MONITOR = {
   refreshMinutes: 3,          // how often the page re-reads the lists
@@ -98,7 +119,10 @@ const CG_MONITOR = {
       ["Attendees", "CG_Attendees"], ["Courses", "CG_Courses"], ["Course Runs", "CG_CourseRuns"],
       ["Quotes", "CG_Quotes"], ["Invoices", "CG_Invoices"], ["Payments", "CG_Payments"] ] },
     { app: "csa", lists: [
-      ["Clients", "CSA_Clients"], ["CSA's", "CSA_List"], ["Documents", "CSA_Documents"] ] }
+      ["Clients", "CSA_Clients"], ["CSA's", "CSA_List"], ["Documents", "CSA_Documents"] ] },
+    // The phone apps write to CG Time's lists; their tiles show telemetry only.
+    { app: "mobile", lists: [] },
+    { app: "attendance", lists: [] }
   ]
 };
 
