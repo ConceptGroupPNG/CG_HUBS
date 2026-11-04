@@ -254,92 +254,15 @@
   }
 
   /* ---------------- reading SharePoint ---------------- */
-  const PREFER = { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" };
-
-  async function readList(siteId, hubCfg, app, label, list, since) {
-    const base = { app: hubCfg.app, hubName: app.name, label, list };
-    try {
-      const page = await CG.graph("GET", P.recentUrl(siteId, list, since), undefined, PREFER);
-      const items = (page.value || []).map(P.fromItem);
-      let last = null;
-      if (!items.length) {
-        const one = await CG.graph("GET", P.latestUrl(siteId, list), undefined, PREFER);
-        if (one.value && one.value[0]) { const i = P.fromItem(one.value[0]); last = { at: i.at, by: i.by }; }
-      }
-      return Object.assign(base, { ok: true, items, last, capped: !!page["@odata.nextLink"] });
-    } catch (e) {
-      if (CG.sp.isMissingList(e) || CG.sp.isForbidden(e) || e.status === 401) return Object.assign(base, { ok: false, error: P.explain(e) });
-      // Big lists can't be sorted/filtered without an index: fall back to the
-      // list's own "last changed" time so the pulse still shows something.
-      try {
-        const meta = await CG.graph("GET", `/sites/${siteId}/lists/${encodeURIComponent(list)}?$select=lastModifiedDateTime`);
-        return Object.assign(base, { ok: true, items: [], last: { at: new Date(meta.lastModifiedDateTime), by: "Not known (large list)" }, note: P.explain(e) });
-      } catch (e2) {
-        return Object.assign(base, { ok: false, error: P.explain(e) });
-      }
-    }
-  }
-
-  /* What the Hubs reported themselves (CG_TELEMETRY in cg-config.js).
-     Returns { ok: true, sessions, errors } or { ok: false, reason }. */
-  async function readTelemetry(since) {
-    const T = typeof CG_TELEMETRY !== "undefined" ? CG_TELEMETRY : null;
-    if (!T || T.enabled === false) return { ok: false, reason: "Telemetry is switched off in cg-config.js" };
-    const all = async (url) => {
-      const out = [];
-      for (let n = 0; url && n < 10; n++) {
-        const page = await CG.graph("GET", url, undefined, PREFER);
-        (page.value || []).forEach(i => out.push(i));
-        url = page["@odata.nextLink"] || null;
-      }
-      return out;
-    };
-    try {
-      const sid = await CG.sp.siteId(T.site);
-      const base = list => `/sites/${sid}/lists/${encodeURIComponent(list)}/items?$expand=fields&$top=500`;
-      const [ss, es] = await Promise.all([
-        all(`${base(T.sessions)}&$filter=fields/LastSeen ge '${since.toISOString()}'`),
-        all(`${base(T.errors)}&$filter=fields/Created ge '${since.toISOString()}'`)
-      ]);
-      return { ok: true, sessions: ss.map(P.fromSession), errors: es.map(P.fromError) };
-    } catch (e) {
-      return { ok: false, reason: CG.sp.isMissingList(e) ? "The CG_Platform site or its lists aren't set up yet." : P.explain(e) };
-    }
-  }
-
-  // Runs jobs a few at a time, so SharePoint isn't asked for 20 lists at once.
-  async function pool(jobs, size) {
-    const out = new Array(jobs.length); let next = 0;
-    await Promise.all(Array.from({ length: Math.min(size, jobs.length) }, async () => {
-      while (next < jobs.length) { const i = next++; out[i] = await jobs[i](); }
-    }));
-    return out;
-  }
-
   async function load() {
     if (loading) return;
     loading = true;
     $("sync").className = "s busy"; $("sync").textContent = "◌ READING SHAREPOINT…";
     nextAt = Date.now() + REFRESH_MS;
     try {
-      const since = new Date(Date.now() - WINDOW_DAYS * 86400000);
-      const jobs = [];
-      for (const h of MON.hubs) {
-        const app = CG.app(h.app);
-        if (!app) continue;
-        if (!h.lists.length) continue;
-        const sitePath = h.site || app.site;
-        let sid = null, siteErr = null;
-        try { sid = await CG.sp.siteId(sitePath); } catch (e) { siteErr = P.explain(e); }
-        for (const [label, list] of h.lists) {
-          jobs.push(sid ? () => readList(sid, h, app, label, list, since)
-                        : async () => ({ app: h.app, hubName: app.name, label, list, ok: false, error: `Site ${sitePath}: ${siteErr}` }));
-        }
-      }
-      const [reads, tele] = await Promise.all([pool(jobs, 4), readTelemetry(since)]);
-      const now = new Date();
-      const hubs = MON.hubs.map(h => CG.app(h.app)).filter(Boolean).map(a => ({ app: a.key, name: a.name }));
-      summary = P.withTelemetry(P.summarise(reads, now, { hubs }), tele, now);
+      summary = await P.collect({ graph: CG.graph, siteId: CG.sp.siteId, apps: CG.apps(), monitor: MON,
+                                  telemetry: typeof CG_TELEMETRY !== "undefined" ? CG_TELEMETRY : null,
+                                  windowDays: WINDOW_DAYS, now: new Date() });
       lastOk = Date.now();
       $("sync").className = "s";
       render();
@@ -409,7 +332,6 @@
         <div class="next">
           <div><b>ADOPTION</b>Active people vs each Hub's security-group members</div>
           <div><b>SATELLITES</b>ZKTeco bridge, Concept Time widget, SSL expiry, list capacity</div>
-          <div><b>ALERTS</b>Teams message when a Hub turns red or the bridge goes silent</div>
         </div>
       </section>`;
 

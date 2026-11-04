@@ -1,0 +1,67 @@
+# CG HUBS alerts - checks the Hubs every 10 minutes and messages the Teams
+# channel when something goes wrong (rules: alerts/rules.js, settings:
+# CG_ALERTS in shared/cg-config.js).
+#
+# To send a test message: Actions tab -> Alerts -> Run workflow.
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   ALERTS_CLIENT_SECRET  - secret of the "CG HUBS Alerts" Entra app
+#   TEAMS_WEBHOOK_URL     - the Teams channel's Workflows webhook address
+# Until both exist the job does nothing and stays green.
+#
+# This repository is public, so the logs are too: the job prints only
+# counts and problem keys, never names or details.
+name: Alerts
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Also send a test message showing what the job can see"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: Pacific/Port_Moresby
+      STATE_FILE: .alerts-state.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # What was already announced, so each problem is only sent once
+      - name: Restore alert memory
+        uses: actions/cache/restore@v4
+        with:
+          path: .alerts-state.json
+          key: alerts-state-${{ github.run_id }}
+          restore-keys: alerts-state-
+
+      - name: Check the Hubs
+        run: node alerts/run.js
+        env:
+          ALERTS_CLIENT_SECRET: ${{ secrets.ALERTS_CLIENT_SECRET }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          SEND_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test }}
+
+      - name: Save alert memory
+        if: always() && hashFiles('.alerts-state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .alerts-state.json
+          key: alerts-state-${{ github.run_id }}-${{ github.run_attempt }}
