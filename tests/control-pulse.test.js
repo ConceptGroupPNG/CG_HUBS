@@ -79,7 +79,8 @@ test("summarise: hub status, people, hourly writes, events and users", () => {
   assert.equal(sla.status, "PARTIAL");
   assert.equal(sla.errors.length, 1);
   assert.equal(sla.lists[1].note, "List is over 5,000 items");
-  assert.equal(sla.lists[1].freshness, "unknown");
+  assert.equal(sla.lists[1].freshness, "empty");          // nothing in it yet: grey, not red
+  assert.equal(sla.lists[0].freshness, "unknown");        // couldn't be read: red
 
   assert.equal(s.totals.writesToday, 3);
   assert.equal(s.totals.peopleToday, 2);
@@ -128,7 +129,89 @@ test("cg-config.js: every Mission Control Hub and site exists", () => {
     const app = ctx.CG_APPS.find(a => a.key === h.app);
     assert.ok(app, `${h.app} is a Hub in CG_APPS`);
     assert.ok(h.site || app.site, `${h.app} has a SharePoint site`);
-    assert.ok(h.lists.length > 0);
     h.lists.forEach(([label, list]) => { assert.ok(label && list, `${h.app}: label and list name`); });
   });
+});
+
+test("programs (SharePoint App, flows) are shown but never counted as people; their runs are folded", () => {
+  const app = { user: { displayName: "SharePoint App" } };
+  const flow = { application: { displayName: "Power Automate" } };
+  assert.equal(P.isApp(app), true);
+  assert.equal(P.isApp(flow), true);
+  assert.equal(P.isApp({ user: { displayName: "Miriam Here" } }), false);
+
+  const items = [];
+  for (let m = 20; m >= 6; m -= 2) items.push({ at: at(4, 15, m), by: "SharePoint App", kind: "updated", isApp: true });
+  items.splice(3, 0, { at: at(4, 15, 13), by: "Peter Kent", kind: "added", isApp: false });
+  const s = P.summarise([{ app: "time", hubName: "CG Time", label: "Attendance Records", list: "CG_EmployeeTimeRecords", ok: true, items }], NOW);
+  const h = s.hubs[0];
+  assert.equal(h.people, 1);                                      // Peter only
+  assert.equal(s.totals.peopleToday, 1);
+  assert.equal(h.writesToday, 9);                                 // the chart still counts every write
+  assert.deepEqual(s.events.map(e => [e.by, e.count]), [["SharePoint App", 4], ["Peter Kent", 1], ["SharePoint App", 4]]);
+  assert.equal(h.userList[h.userList.length - 1].name, "SharePoint App");   // programs listed after people
+});
+
+test("Hubs with no watched lists (phone apps) still appear and aren't 'unreachable'", () => {
+  const s = P.summarise([], NOW, { hubs: [{ app: "mobile", name: "Concept Time Mobile" }] });
+  assert.equal(s.hubs.length, 1);
+  assert.equal(s.hubs[0].status, "QUIET");
+});
+
+test("withTelemetry: online now, people today, errors, load time, builds and who is behind", () => {
+  const reads = [{ app: "psp", hubName: "PSP HUB", label: "Billing", list: "PSP_Billing", ok: true,
+                   items: [{ at: at(4, 10, 19), by: "Brendan Kodana", kind: "updated" }] }];
+  const s = P.summarise(reads, NOW, { hubs: [{ app: "psp", name: "PSP HUB" }, { app: "mobile", name: "Concept Time Mobile" }] });
+  const sess = (app, user, lastSeen, build, loadMs, device = "Desktop") =>
+    ({ app, user, started: new Date(lastSeen - 30 * MIN), lastSeen, build, loadMs, device, views: 1, throttles: 0 });
+  const NEW = "core 1.7.0 · page 2026-11-04 15:20", OLD = "core 1.6.0 · page 2026-10-30 09:00";
+  P.withTelemetry(s, { ok: true,
+    sessions: [
+      sess("psp", "Carlos Atalou", at(4, 14, 15), NEW, 1800),     // 2 min ago -> online
+      sess("psp", "Miriam Here", at(4, 13, 0), OLD, 2600),        // today, not online, old build
+      sess("psp", "Brendan Kodana", at(3, 16, 0), NEW, 1500),     // yesterday
+      sess("mobile", "Peter Kent", at(4, 14, 14), NEW, 900, "Phone")
+    ],
+    errors: [
+      { app: "psp", at: at(4, 13, 50), user: "Miriam Here", kind: "graph", message: "500 Server error" },
+      { app: "psp", at: new Date(NOW - 2 * DAY), user: "Miriam Here", kind: "script", message: "old" }
+    ] }, NOW);
+
+  const psp = s.hubs.find(h => h.app === "psp");
+  assert.equal(psp.online, 1);
+  assert.deepEqual(psp.onlineNames, ["Carlos Atalou"]);
+  assert.equal(psp.people, 3);                    // Brendan (wrote today) + Carlos + Miriam
+  assert.equal(psp.errors24h, 1);
+  assert.equal(psp.status, "ERRORS");             // an error in the last hour
+  assert.equal(psp.loadMs, 2200);                 // median of today's visits
+  assert.equal(psp.builds[0].build, NEW);
+  assert.deepEqual(psp.behind, ["Miriam Here"]);
+  assert.equal(psp.userList[0].name, "Carlos Atalou");   // online first
+  assert.equal(psp.userList[0].online, true);
+
+  const mob = s.hubs.find(h => h.app === "mobile");
+  assert.equal(mob.status, "ACTIVE");
+  assert.equal(mob.online, 1);
+
+  assert.equal(s.totals.online, 2);
+  assert.equal(s.totals.peopleToday, 4);
+  assert.equal(s.totals.errors24h, 1);
+  assert.equal(s.totals.failing, 1);
+  assert.ok(s.events.some(e => e.kind === "opened" && e.by === "Peter Kent" && e.label === "Phone"));
+  assert.ok(s.events.some(e => e.kind === "error" && e.label === "500 Server error"));
+});
+
+test("withTelemetry when the lists aren't there yet: marked off, nothing else changes", () => {
+  const s = P.summarise([], NOW, { hubs: [{ app: "psp", name: "PSP HUB" }] });
+  P.withTelemetry(s, { ok: false, reason: "List not found" }, NOW);
+  assert.equal(s.telemetry.ok, false);
+  assert.equal(s.hubs[0].online, undefined);
+});
+
+test("fromSession / fromError read the list rows", () => {
+  const x = P.fromSession({ fields: { App: "sla", UserName: "Mathias Sikari", LastSeen: "2026-11-04T04:10:00Z", StartedAt: "2026-11-04T03:00:00Z", LoadMs: 1200, Build: "b", Device: "Phone" } });
+  assert.equal(x.app, "sla"); assert.equal(x.loadMs, 1200); assert.equal(x.device, "Phone");
+  assert.equal(x.lastSeen.toISOString(), "2026-11-04T04:10:00.000Z");
+  const e = P.fromError({ createdDateTime: "2026-11-04T04:11:00Z", fields: { App: "sla", UserName: "Mathias Sikari", Title: "graph", Message: "429 busy" } });
+  assert.equal(e.kind, "graph"); assert.equal(e.message, "429 busy");
 });

@@ -15,6 +15,7 @@ The web apps used across Concept Group, served from
 | `attendance/` | CG Time Attendance | Phone clock in / out |
 | `control/` | Mission Control (preview) | Platform monitoring for the administrator |
 | `shared/` | Shared core library, central settings (`cg-config.js`), shared styles and logos | — |
+| `setup/` | One-off PowerShell set-up scripts (e.g. the CG_Platform telemetry lists) | — |
 | `aws/` | Code for small AWS services the apps call (not served by GitHub Pages), e.g. the CG Time Attendance selfie check | — |
 
 All apps were brought across from the old `marcusappdev/CG_Training` repository and
@@ -44,6 +45,7 @@ Every app loads `shared/cg-config.js` then `shared/cg-core.js`, which provides o
 | `CG.sp` | SharePoint lists: read every page, create, update, delete, and `save` (skips unknown columns) |
 | `CG.date` | Local-date helpers (never `toISOString()`) |
 | `CG.appAllowed` | On / off / preview switches from `cg-config.js` |
+| `CG.telemetry` | Usage and error reporting to Mission Control (one row per visit, own rows only, 90 days) |
 
 The tests in `tests/` run automatically on every pull request (green tick = passed).
 To run them yourself: `node --test tests/*.test.js`

@@ -50,15 +50,48 @@
            (s.application && (s.application.displayName ? s.application.displayName + " (app)" : "")) || "Unknown";
   };
 
-  /* One Graph list item -> { at, by, kind }.
+  // A change made by a program (a flow, the ZKTeco bridge, "SharePoint App")
+  // rather than a person. These are shown, but never counted as people.
+  P.isApp = (identitySet) => {
+    const s = identitySet || {};
+    if (s.application && !s.user) return true;
+    return /^SharePoint App$/i.test(P.who(s)) || / \(app\)$/.test(P.who(s));
+  };
+
+  /* One Graph list item -> { at, by, kind, isApp }.
      kind is "added" when it was created at (about) the same moment it was
      last changed, otherwise "updated". */
   P.fromItem = (item) => {
     const at = new Date(item.lastModifiedDateTime);
     const created = item.createdDateTime ? new Date(item.createdDateTime) : null;
     const kind = created && Math.abs(at - created) < 5000 ? "added" : "updated";
-    return { at, by: P.who(item.lastModifiedBy), kind };
+    return { at, by: P.who(item.lastModifiedBy), kind, isApp: P.isApp(item.lastModifiedBy) };
   };
+
+  /* The event stream: newest first, with runs of the same program writing to
+     the same list folded into one line ("SharePoint App · Attendance ×14"). */
+  P.feed = (events, max = 15) => {
+    const sorted = events.slice().sort((a, b) => b.at - a.at);
+    const out = [];
+    sorted.forEach(e => {
+      const prev = out[out.length - 1];
+      if (prev && e.isApp && prev.isApp && prev.hub === e.hub && prev.label === e.label && prev.by === e.by) {
+        prev.count = (prev.count || 1) + 1;
+        prev.from = e.at;
+        return;
+      }
+      if (out.length < max) out.push(Object.assign({ count: 1 }, e));
+    });
+    return out;
+  };
+
+  P.median = (nums) => {
+    const v = nums.filter(n => n > 0).sort((a, b) => a - b);
+    if (!v.length) return null;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2);
+  };
+  P.seconds = (ms) => (ms ? (ms / 1000).toFixed(1) + "s" : "—");
 
   /* Turns what was read from SharePoint into everything the screen shows.
 
@@ -70,8 +103,10 @@
                     note: "text"              (optional: read only partly, and why)
          ok: false, error: "message" }
      now: Date
+     opts.hubs: [{ app, name }] - Hubs to show even when they have no lists
+                (e.g. the phone apps, seen only through telemetry)
 
-     Returns { hubs: [...], events: [...], hourly: [24 numbers], totals: {...} } */
+     Returns { hubs: [...], events: [...], rawEvents, hourly: [24 numbers], totals: {...} } */
   P.summarise = (reads, now, opts = {}) => {
     const maxEvents = opts.maxEvents || 15;
     const hubs = [], byApp = {};
@@ -79,14 +114,17 @@
     const hourly = new Array(24).fill(0);
     const peopleToday = new Set();
     let writesToday = 0;
+    const hubFor = (app, name) => {
+      if (!byApp[app]) {
+        byApp[app] = { app, name, lists: [], users: {}, errors: [], writesToday: 0, peopleToday: new Set(), last: null };
+        hubs.push(byApp[app]);
+      }
+      return byApp[app];
+    };
+    (opts.hubs || []).forEach(h => hubFor(h.app, h.name));
 
     reads.forEach(r => {
-      let hub = byApp[r.app];
-      if (!hub) {
-        hub = byApp[r.app] = { app: r.app, name: r.hubName, lists: [], users: {}, errors: [],
-                               writesToday: 0, peopleToday: new Set(), last: null };
-        hubs.push(hub);
-      }
+      const hub = hubFor(r.app, r.hubName);
       if (!r.ok) {
         hub.errors.push({ list: r.list, label: r.label, message: r.error || "Couldn't be read" });
         hub.lists.push({ label: r.label, list: r.list, ok: false, error: r.error, freshness: "unknown", last: null, age: "—" });
@@ -96,7 +134,7 @@
       const last = r.last || (items[0] ? { at: items[0].at, by: items[0].by } : null);
       hub.lists.push({
         label: r.label, list: r.list, ok: true, capped: !!r.capped, note: r.note || "",
-        last, freshness: P.freshness(last && last.at, now),
+        last, freshness: last ? P.freshness(last.at, now) : "empty",
         age: last ? P.ageText(now - last.at) : "—",
         stamp: last ? P.stamp(last.at) : "—",
         writes: items.length, writesToday: items.filter(i => P.sameDay(i.at, now)).length
@@ -104,41 +142,122 @@
       if (last && (!hub.last || last.at > hub.last.at)) hub.last = last;
 
       items.forEach(i => {
-        const u = hub.users[i.by] || (hub.users[i.by] = { name: i.by, writes: 0, today: 0, last: null, lists: new Set() });
+        const u = hub.users[i.by] || (hub.users[i.by] = { name: i.by, isApp: !!i.isApp, writes: 0, today: 0, last: null, lists: new Set() });
         u.writes++;
         u.lists.add(r.label);
         if (!u.last || i.at > u.last) u.last = i.at;
         if (P.sameDay(i.at, now)) {
           u.today++;
           hub.writesToday++; writesToday++;
-          hub.peopleToday.add(i.by); peopleToday.add(i.by);
+          if (!i.isApp) { hub.peopleToday.add(i.by); peopleToday.add(i.by); }
           hourly[i.at.getHours()]++;
         }
-        events.push({ at: i.at, hub: r.hubName, label: r.label, by: i.by, kind: i.kind });
+        events.push({ at: i.at, hub: r.hubName, app: r.app, label: r.label, by: i.by, kind: i.kind, isApp: !!i.isApp });
       });
     });
 
     hubs.forEach(h => {
       const okLists = h.lists.filter(l => l.ok).length;
       const today = h.writesToday || h.lists.some(l => l.freshness === "today");
-      h.status = okLists === 0 ? "OFFLINE" : h.errors.length ? "PARTIAL" : today ? "ACTIVE" : "QUIET";
+      h.status = (h.lists.length && okLists === 0) ? "OFFLINE" : h.errors.length ? "PARTIAL" : today ? "ACTIVE" : "QUIET";
       h.people = h.peopleToday.size;
+      h.peopleNames = Array.from(h.peopleToday);
       h.age = h.last ? P.ageText(now - h.last.at) : "—";
       h.userList = Object.values(h.users)
-        .map(u => ({ name: u.name, writes: u.writes, today: u.today, last: u.last, lists: Array.from(u.lists).sort() }))
-        .sort((a, b) => b.last - a.last);
+        .map(u => ({ name: u.name, isApp: u.isApp, writes: u.writes, today: u.today, last: u.last, lists: Array.from(u.lists).sort(),
+                     sessions: 0, lastSeen: null, online: false, device: "" }))
+        .sort((a, b) => (a.isApp - b.isApp) || (b.last - a.last));
       delete h.users; delete h.peopleToday;
     });
 
-    events.sort((a, b) => b.at - a.at);
     const failing = hubs.filter(h => h.status === "OFFLINE" || h.status === "PARTIAL").length;
     return {
       hubs,
-      events: events.slice(0, maxEvents),
+      events: P.feed(events, maxEvents),
+      rawEvents: events,
       hourly,
+      peopleNames: Array.from(peopleToday),
       totals: { writesToday, peopleToday: peopleToday.size, failing, hubs: hubs.length,
                 busiestHour: hourly.reduce((best, v, h) => (v > hourly[best] ? h : best), 0) }
     };
+  };
+
+  /* Adds what the Hubs reported themselves (telemetry) to a summary.
+
+     tele: { ok: true, sessions: [...], errors: [...] }  or  { ok: false, reason }
+       session: { app, user, started, lastSeen, views, screens, errors, throttles,
+                  build, loadMs, device }
+       error:   { app, at, user, kind, message, detail, page }
+     Changes the summary in place and returns it. */
+  P.withTelemetry = (summary, tele, now, opts = {}) => {
+    const onlineMs = (opts.onlineMinutes || 6) * 60000;
+    summary.telemetry = tele && tele.ok ? { ok: true } : { ok: false, reason: (tele && tele.reason) || "" };
+    if (!tele || !tele.ok) return summary;
+
+    const allOnline = new Set(), allToday = new Set(summary.peopleNames || []);
+    const extra = [];
+    let errors24h = 0;
+    summary.hubs.forEach(h => {
+      const ss = tele.sessions.filter(x => x.app === h.app);
+      const es = tele.errors.filter(x => x.app === h.app).sort((a, b) => b.at - a.at);
+      const online = new Set(), today = new Set(h.peopleNames || []);
+      const builds = {};
+      ss.forEach(x => {
+        if (now - x.lastSeen <= onlineMs) { online.add(x.user); allOnline.add(x.user); }
+        if (P.sameDay(x.lastSeen, now)) { today.add(x.user); allToday.add(x.user); }
+        let u = h.userList.find(v => v.name === x.user);
+        if (!u) { u = { name: x.user, isApp: false, writes: 0, today: 0, last: null, lists: [], sessions: 0, lastSeen: null, online: false, device: "" }; h.userList.push(u); }
+        u.sessions++;
+        if (!u.lastSeen || x.lastSeen > u.lastSeen) { u.lastSeen = x.lastSeen; u.device = x.device || ""; u.build = x.build || ""; }
+        if (now - x.lastSeen <= onlineMs) u.online = true;
+        const b = builds[x.build || "?"] || (builds[x.build || "?"] = { build: x.build || "?", people: new Set(), lastSeen: x.lastSeen });
+        b.people.add(x.user);
+        if (x.lastSeen > b.lastSeen) b.lastSeen = x.lastSeen;
+        if (x.started) extra.push({ at: x.started, hub: h.name, app: h.app, label: x.device || "Desktop", by: x.user, kind: "opened", isApp: false });
+      });
+      es.forEach(e => extra.push({ at: e.at, hub: h.name, app: h.app, label: e.message, by: e.user, kind: "error", isApp: false }));
+
+      h.online = online.size;
+      h.onlineNames = Array.from(online).sort();
+      h.people = today.size;
+      h.userErrors = es;
+      h.errors24h = es.filter(e => now - e.at <= 86400000).length;
+      errors24h += h.errors24h;
+      h.loadMs = P.median(ss.filter(x => P.sameDay(x.lastSeen, now)).map(x => x.loadMs));
+      h.throttles = ss.reduce((t, x) => t + (x.throttles || 0), 0);
+      // Builds, newest first (the build text ends with the page's publish time).
+      h.builds = Object.values(builds).map(b => ({ build: b.build, people: Array.from(b.people).sort(), lastSeen: b.lastSeen }))
+        .sort((a, b) => b.build.localeCompare(a.build));
+      const newest = h.builds[0] && h.builds[0].build;
+      h.behind = h.userList.filter(u => u.build && newest && u.build !== newest).map(u => u.name).sort();
+      h.userList.sort((a, b) => (b.online - a.online) || (a.isApp - b.isApp) ||
+        ((b.lastSeen || b.last || 0) - (a.lastSeen || a.last || 0)));
+
+      const recentErr = es.some(e => now - e.at <= 3600000);
+      if (h.status === "ACTIVE" || h.status === "QUIET") {
+        if (recentErr) h.status = "ERRORS";
+        else if (h.online || h.people) h.status = "ACTIVE";
+      }
+    });
+    summary.events = P.feed(summary.rawEvents.concat(extra), opts.maxEvents || 15);
+    summary.totals.online = allOnline.size;
+    summary.totals.peopleToday = allToday.size;
+    summary.totals.errors24h = errors24h;
+    summary.totals.failing = summary.hubs.filter(h => ["OFFLINE", "PARTIAL", "ERRORS"].includes(h.status)).length;
+    return summary;
+  };
+
+  // A row from CG_HubSessions / CG_HubErrors (Graph list item) -> plain object
+  P.fromSession = (item) => {
+    const f = item.fields || {};
+    return { app: f.App || "", user: f.UserName || P.who(item.createdBy), started: f.StartedAt ? new Date(f.StartedAt) : null,
+             lastSeen: new Date(f.LastSeen || item.lastModifiedDateTime), views: f.PageViews || 0, screens: f.Screens || "",
+             errors: f.ErrorCount || 0, throttles: f.Throttles || 0, build: f.Build || "", loadMs: f.LoadMs || null, device: f.Device || "" };
+  };
+  P.fromError = (item) => {
+    const f = item.fields || {};
+    return { app: f.App || "", at: new Date(item.createdDateTime), user: f.UserName || P.who(item.createdBy),
+             kind: f.Title || "error", message: f.Message || "", detail: f.Detail || "", page: f.Page || "" };
   };
 
   /* The Graph address that reads one list's recent writes, newest first.
