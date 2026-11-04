@@ -119,7 +119,7 @@ test("all well: nothing sent; a test run sends 'connected' with what it can see"
   assert.equal(b.posts.length, 1);
   const text = b.posts[0].attachments[0].content.body.map(x => x.text).join("\n");
   assert.match(text, /Alerts are connected/);
-  assert.match(text, /telemetry on/);
+  assert.match(text, /telemetry on \(sees 0 visits by 0 people and 0 errors in the last day\)/);
   assert.match(text, /Problems right now: none/);
 });
 

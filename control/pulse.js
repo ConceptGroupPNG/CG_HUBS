@@ -192,7 +192,9 @@
      Changes the summary in place and returns it. */
   P.withTelemetry = (summary, tele, now, opts = {}) => {
     const onlineMs = (opts.onlineMinutes || 6) * 60000;
-    summary.telemetry = tele && tele.ok ? { ok: true } : { ok: false, reason: (tele && tele.reason) || "" };
+    summary.telemetry = tele && tele.ok
+      ? { ok: true, visits: tele.sessions.length, people: new Set(tele.sessions.map(x => x.user)).size, errors: tele.errors.length }
+      : { ok: false, reason: (tele && tele.reason) || "" };
     if (!tele || !tele.ok) return summary;
 
     const allOnline = new Set(), allToday = new Set(summary.peopleNames || []);
