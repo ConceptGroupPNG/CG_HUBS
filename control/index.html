@@ -103,6 +103,9 @@
   .relrow .b { font-size:12px; color:var(--cyan); }
   .relrow .ok { color:var(--green); } .relrow .warn { color:var(--amber); }
   .on { color:var(--green); }
+  .tag.old { color:var(--amber); border-color:#5A4520; }
+  .note.warn { color:var(--soft); border:1px solid #5A4520; background:rgba(242,169,59,.06); padding:8px 10px; border-radius:4px; }
+  .note.warn b { font-family:var(--mono); color:var(--amber); margin-right:6px; }
   .tag { font-family:var(--mono); font-size:10px; color:var(--muted); border:1px solid var(--line-2); border-radius:3px; padding:0 4px; }
   details summary { cursor:pointer; color:var(--muted); font-size:12px; margin-top:4px; }
   pre { white-space:pre-wrap; word-break:break-word; font-family:var(--mono); font-size:11px; color:var(--soft); background:var(--panel); padding:8px; border-radius:4px; }
@@ -367,12 +370,12 @@
   }
 
   function releases(s) {
-    const rows = s.hubs.filter(h => h.builds && h.builds.length);
+    const rows = s.hubs.filter(h => (h.builds && h.builds.length) || (h.oldCopy && h.oldCopy.length));
     if (!rows.length) return "";
     return `<section class="panel">
       <h2 class="ttl">Releases · which build people are running (last ${WINDOW_DAYS} days)</h2>
       <div class="rel">${rows.map(h => {
-        const b = h.builds[0], n = h.behind.length;
+        const b = h.builds[0] || { build: "—" }, n = h.behind.length;
         return `<div class="relrow">
           <span class="nm">${esc(h.name)}</span>
           <span class="mono b">${esc(b.build)}</span>
@@ -422,12 +425,13 @@
       $("drillBody").innerHTML = people.length ? `
         <table><thead><tr><th>PERSON</th>${tele ? '<th class="n">VISITS</th><th>LAST SEEN</th>' : ""}<th class="n">WRITES TODAY</th><th class="n">${WINDOW_DAYS}-DAY WRITES</th><th>LAST WRITE</th><th>LISTS</th></tr></thead>
         <tbody>${people.map(u => `<tr>
-          <td>${u.online ? '<span class="on" title="Online now">●</span> ' : ""}${esc(u.name)}${u.isApp ? ' <span class="tag">PROGRAM</span>' : ""}${u.device === "Phone" ? ' <span class="tag">PHONE</span>' : ""}</td>
+          <td>${u.online ? '<span class="on" title="Online now">●</span> ' : ""}${esc(u.name)}${u.isApp ? ' <span class="tag">PROGRAM</span>' : ""}${u.device === "Phone" ? ' <span class="tag">PHONE</span>' : ""}${u.oldCopy ? ' <span class="tag old" title="Wrote today, but their copy of the Hub is not reporting - opened before the last update. Ask them to refresh (Ctrl+F5).">OLD COPY</span>' : ""}</td>
           ${tele ? `<td class="n">${u.sessions || 0}</td><td class="mono" style="font-size:12px">${when(u.lastSeen)}</td>` : ""}
           <td class="n">${u.today}</td><td class="n">${u.writes}</td>
           <td class="mono" style="font-size:12px">${when(u.last)}</td>
           <td style="color:var(--soft)">${u.lists.map(esc).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>
-        <p class="note">Visits and last seen come from the Hub itself${tele ? "" : " (once telemetry is on)"}; writes are added or changed items in the watched lists. Programs such as the ZKTeco bridge are listed but not counted as people.</p>`
+        ${h.oldCopy && h.oldCopy.length ? `<p class="note warn"><b>OLD COPY</b> ${h.oldCopy.map(esc).join(", ")} ${h.oldCopy.length > 1 ? "are" : "is"} working in a copy of ${esc(h.name)} opened before the last update, so it doesn't report visits or errors. Ask them to refresh it (Ctrl+F5).</p>` : ""}
+        <p class="note">Visits and last seen come from the Hub itself${tele ? "" : " (once telemetry is on)"}; writes are added or changed items in the watched lists. Anyone who wrote in the last few minutes counts as online. Programs such as the ZKTeco bridge are listed but not counted as people.</p>`
         : `<p class="empty">Nobody has used ${esc(h.name)} in the last ${WINDOW_DAYS} days.</p>`;
     } else {
       const notes = h.lists.filter(l => l.note);

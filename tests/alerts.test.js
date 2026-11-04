@@ -11,10 +11,12 @@ const { run, loadConfig } = require("../alerts/run.js");
 const NOW = new Date(2026, 10, 4, 14, 17);
 const MIN = 60000, HOUR = 60 * MIN;
 const ago = ms => new Date(NOW - ms);
-const CFG = { remindHours: 6, hubProblems: { errorsPerHour: 3 }, bridge: { app: "time", list: "CG_EmployeeTimeRecords", silentMinutes: 30 } };
+const CFG = { remindHours: 6, hubProblems: { errorsPerHour: 3 }, bridge: { key: "zkteco-bridge", downMinutes: 15, deviceMinutes: 15 } };
 
 const hub = (app, name, extra = {}) => Object.assign({ app, name, status: "ACTIVE", errors: [], lists: [], userErrors: [] }, extra);
-const bridgeList = (lastApp, extra = {}) => Object.assign({ label: "Attendance Records", list: "CG_EmployeeTimeRecords", ok: true, lastApp }, extra);
+// A heartbeat row as P.readHeartbeats returns it
+const beat = (extra = {}) => ({ ok: true, rows: { "zkteco-bridge": Object.assign({ key: "zkteco-bridge", lastSeen: ago(3 * MIN),
+  deviceSerial: "NES1", deviceLastSeen: ago(20 * 1000), lastSyncAt: ago(4 * MIN), lastSyncError: "", version: "1.1.0", host: "BioDevAirvos2" }, extra) } });
 
 /* ---------------- rules ---------------- */
 test("Hub problems: unreadable, partly unreadable, and errors per hour", () => {
@@ -33,14 +35,27 @@ test("Hub problems: unreadable, partly unreadable, and errors per hour", () => {
   assert.match(p[2].text, /Carlos Atalou, Miriam Here/);
 });
 
-test("ZKTeco bridge: silent too long, recently synced, or can't tell", () => {
-  const time = (list) => ({ hubs: [hub("time", "CG Time", { lists: [list] })] });
-  assert.deepEqual(R.evaluate(time(bridgeList(ago(45 * MIN))), CFG, NOW).map(x => x.key), ["bridge:silent"]);
-  assert.match(R.evaluate(time(bridgeList(ago(45 * MIN))), CFG, NOW)[0].title, /silent for 45m/);
-  assert.deepEqual(R.evaluate(time(bridgeList(ago(10 * MIN))), CFG, NOW), []);
-  assert.deepEqual(R.evaluate(time(bridgeList(null)), CFG, NOW).map(x => x.key), ["bridge:silent"]);      // nothing at all in the window
-  assert.deepEqual(R.evaluate(time(bridgeList(null, { note: "List is over 5,000 items" })), CFG, NOW), []);   // can't tell: no false alarm
-  assert.deepEqual(R.evaluate(time(bridgeList(ago(3 * HOUR))), Object.assign({}, CFG, { bridge: { enabled: false } }), NOW), []);
+test("ZKTeco bridge from its heartbeat: running, down, device lost, sync failing, not installed yet", () => {
+  const withBeat = hb => ({ hubs: [], heartbeats: hb });
+  const keys = hb => R.evaluate(withBeat(hb), CFG, NOW).map(x => x.key);
+  assert.deepEqual(keys(beat()), []);                                                   // all well
+  assert.deepEqual(keys(beat({ lastSeen: ago(40 * MIN) })), ["bridge:down"]);
+  assert.match(R.evaluate(withBeat(beat({ lastSeen: ago(40 * MIN) })), CFG, NOW)[0].text, /on BioDevAirvos2/);
+  assert.deepEqual(keys(beat({ deviceLastSeen: ago(30 * MIN) })), ["bridge:device"]);
+  assert.deepEqual(keys(beat({ deviceLastSeen: null })), ["bridge:device"]);
+  assert.deepEqual(keys(beat({ lastSyncError: "Graph GET -> 401" })), ["bridge:sync"]);
+  assert.deepEqual(keys({ ok: true, rows: {} }), []);                                   // heartbeat version not installed yet
+  assert.deepEqual(keys({ ok: false, reason: "The CG_Heartbeats list isn't set up yet." }), []);
+  assert.deepEqual(R.evaluate(withBeat(beat({ lastSeen: ago(2 * HOUR) })), Object.assign({}, CFG, { bridge: { enabled: false } }), NOW), []);
+  // ...but it always says why it can't check, rather than staying silent
+  assert.match(R.bridgeStatus(withBeat({ ok: true, rows: {} }), CFG, NOW), /not reporting yet/);
+  assert.match(R.bridgeStatus(withBeat({ ok: false, reason: "The CG_Heartbeats list isn't set up yet." }), CFG, NOW), /can't check/);
+  assert.match(R.bridgeStatus(withBeat(beat()), CFG, NOW), /^bridge running; device checked in just now$/);
+});
+
+test("lists read only partly are always reported", () => {
+  const s = { hubs: [{ lists: [{ list: "CG_EmployeeTimeRecords", ok: true, note: "List is over 5,000 items" }, { list: "SLA_Tickets", ok: true }] }] };
+  assert.deepEqual(R.partial(s), ["CG_EmployeeTimeRecords"]);
 });
 
 test("announced once, reminded every 6 hours, resolved when it clears", () => {
@@ -82,7 +97,7 @@ const iso = d => d.toISOString();
 const item = (at, who, app) => ({ id: "1", createdDateTime: iso(at), lastModifiedDateTime: iso(at),
   lastModifiedBy: app ? { application: { displayName: who } } : { user: { displayName: who } } });
 
-function fakeFetch({ bridgeAt = ago(5 * MIN), signInFails = false, errors = [] } = {}) {
+function fakeFetch({ bridgeAt = ago(5 * MIN), heartbeat = { lastSeen: ago(2 * MIN), deviceLastSeen: ago(10 * 1000) }, signInFails = false, errors = [] } = {}) {
   const posts = [];
   const f = async (url, opts = {}) => {
     url = decodeURIComponent(url);
@@ -92,6 +107,9 @@ function fakeFetch({ bridgeAt = ago(5 * MIN), signInFails = false, errors = [] }
     if (url.includes("/lists/CG_HubSessions/")) return json(200, { value: [] });
     if (url.includes("/lists/CG_HubErrors/")) return json(200, { value: errors.map(e => ({ createdDateTime: iso(e.at), fields: { App: e.app, UserName: e.user, Title: "graph", Message: e.message } })) });
     if (url.includes("/lists/CG_EmployeeTimeRecords/")) return json(200, { value: [item(bridgeAt, "SharePoint App", true)] });
+    if (url.includes("/lists/CG_Heartbeats/")) return json(200, { value: heartbeat ? [{ lastModifiedDateTime: iso(heartbeat.lastSeen), fields: {
+      Title: "zkteco-bridge", LastSeen: iso(heartbeat.lastSeen), DeviceSerial: "NES1", DeviceLastSeen: heartbeat.deviceLastSeen ? iso(heartbeat.deviceLastSeen) : undefined,
+      LastSyncAt: iso(ago(5 * MIN)), LastSyncError: heartbeat.error || "", Version: "1.1.0", Host: "BioDevAirvos2" } }] : [] });
     return json(200, { value: [] });
   };
   return { f, posts };
@@ -111,7 +129,7 @@ test("not set up yet: does nothing, stays green", async () => {
 test("all well: nothing sent; a test run sends 'connected' with what it can see", async () => {
   const file = tmpState();
   const a = fakeFetch();
-  assert.match(await run(ENV(file), { fetch: a.f, now: NOW, config: config() }), /^0 problem/);
+  assert.match(await run(ENV(file), { fetch: a.f, now: NOW, config: config() }), /; 0 problem/);
   assert.equal(a.posts.length, 0);
 
   const b = fakeFetch();
@@ -120,25 +138,40 @@ test("all well: nothing sent; a test run sends 'connected' with what it can see"
   const text = b.posts[0].attachments[0].content.body.map(x => x.text).join("\n");
   assert.match(text, /Alerts are connected/);
   assert.match(text, /telemetry on \(sees 0 visits by 0 people and 0 errors in the last day\)/);
+  assert.match(text, /ZKTeco bridge running; device checked in/);
   assert.match(text, /Problems right now: none/);
 });
 
-test("bridge goes silent, then recovers: one alert, one resolved, nothing in between", async () => {
+test("bridge stops, then comes back: one alert, one resolved, nothing in between", async () => {
   const file = tmpState();
-  const silent = fakeFetch({ bridgeAt: ago(50 * MIN) });
-  const line = await run(ENV(file), { fetch: silent.f, now: NOW, config: config() });
-  assert.match(line, /bridge:silent/);
-  assert.equal(silent.posts.length, 1);
-  assert.match(JSON.stringify(silent.posts[0]), /ZKTeco bridge silent for 50m/);
+  const down = fakeFetch({ heartbeat: { lastSeen: ago(50 * MIN), deviceLastSeen: ago(50 * MIN) } });
+  const line = await run(ENV(file), { fetch: down.f, now: NOW, config: config() });
+  assert.match(line, /bridge:down/);
+  assert.doesNotMatch(line, /BioDevAirvos2/);                 // no PC names in the public log
+  assert.equal(down.posts.length, 1);
+  assert.match(JSON.stringify(down.posts[0]), /ZKTeco bridge not running \(no heartbeat for 50m\)/);
 
-  const still = fakeFetch({ bridgeAt: ago(60 * MIN) });
+  const still = fakeFetch({ heartbeat: { lastSeen: ago(60 * MIN), deviceLastSeen: ago(60 * MIN) } });
   await run(ENV(file), { fetch: still.f, now: new Date(+NOW + 10 * MIN), config: config() });
   assert.equal(still.posts.length, 0);
 
-  const back = fakeFetch({ bridgeAt: new Date(+NOW + 18 * MIN) });
+  const back = fakeFetch({ heartbeat: { lastSeen: new Date(+NOW + 19 * MIN), deviceLastSeen: new Date(+NOW + 19 * MIN) } });
   await run(ENV(file), { fetch: back.f, now: new Date(+NOW + 20 * MIN), config: config() });
   assert.equal(back.posts.length, 1);
   assert.match(JSON.stringify(back.posts[0]), /Resolved/);
+});
+
+test("nobody scanning overnight is not an alert (the old false alarm)", async () => {
+  const x = fakeFetch({ bridgeAt: ago(10 * HOUR) });            // no attendance writes for 10 hours, heartbeat fine
+  assert.match(await run(ENV(tmpState()), { fetch: x.f, now: NOW, config: config() }), /0 problem/);
+  assert.equal(x.posts.length, 0);
+});
+
+test("before the heartbeat version is installed: no alert, and the test message says so", async () => {
+  const x = fakeFetch({ heartbeat: null });
+  const line = await run(Object.assign(ENV(tmpState()), { SEND_TEST: "true" }), { fetch: x.f, now: NOW, config: config() });
+  assert.match(line, /not reporting yet/);
+  assert.match(JSON.stringify(x.posts[0]), /ZKTeco bridge not reporting yet/);
 });
 
 test("errors people hit reach Teams by name, but the log line has no names", async () => {
@@ -166,5 +199,6 @@ test("cg-config.js: alert settings are complete", () => {
   assert.ok(c.CG_ALERTS.remindHours > 0);
   assert.ok(c.CG_ALERTS.hubProblems.errorsPerHour > 0);
   const b = c.CG_ALERTS.bridge;
-  assert.ok(c.CG_MONITOR.hubs.find(h => h.app === b.app).lists.some(([, list]) => list === b.list), "bridge list is a watched list");
+  assert.ok(b.key && b.downMinutes > 0 && b.deviceMinutes > 0);
+  assert.equal(c.CG_TELEMETRY.heartbeats, "CG_Heartbeats");
 });

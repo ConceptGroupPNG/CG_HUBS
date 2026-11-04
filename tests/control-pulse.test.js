@@ -185,7 +185,8 @@ test("withTelemetry: online now, people today, errors, load time, builds and who
   assert.equal(psp.status, "ERRORS");             // an error in the last hour
   assert.equal(psp.loadMs, 2200);                 // median of today's visits
   assert.equal(psp.builds[0].build, NEW);
-  assert.deepEqual(psp.behind, ["Miriam Here"]);
+  assert.deepEqual(psp.behind, ["Brendan Kodana", "Miriam Here"]);   // Brendan: wrote today, last visit yesterday
+  assert.deepEqual(psp.oldCopy, ["Brendan Kodana"]);
   assert.equal(psp.userList[0].name, "Carlos Atalou");   // online first
   assert.equal(psp.userList[0].online, true);
 
@@ -214,4 +215,19 @@ test("fromSession / fromError read the list rows", () => {
   assert.equal(x.lastSeen.toISOString(), "2026-11-04T04:10:00.000Z");
   const e = P.fromError({ createdDateTime: "2026-11-04T04:11:00Z", fields: { App: "sla", UserName: "Mathias Sikari", Title: "graph", Message: "429 busy" } });
   assert.equal(e.kind, "graph"); assert.equal(e.message, "429 busy");
+});
+
+test("old copies: wrote today with no visit today is flagged; recent writers count as online", () => {
+  const w = (h, m, by) => ({ at: at(4, h, m), by, kind: "updated" });
+  const reads = [{ app: "psp", hubName: "PSP HUB", label: "Calendar", list: "PSP_Act_Calendar", ok: true,
+                   items: [w(14, 15, "Gloria Boku"), w(7, 31, "Jacinta Kodana"), { at: at(4, 14, 16), by: "SharePoint App", kind: "updated", isApp: true }] }];
+  const s = P.summarise(reads, NOW, { hubs: [{ app: "psp", name: "PSP HUB" }] });
+  P.withTelemetry(s, { ok: true, errors: [], sessions: [
+    { app: "psp", user: "Marcus Scully", started: at(4, 13, 0), lastSeen: at(4, 14, 16), build: "b2", device: "Desktop" } ] }, NOW);
+  const psp = s.hubs[0];
+  assert.deepEqual(psp.oldCopy, ["Gloria Boku", "Jacinta Kodana"]);          // never the program
+  assert.deepEqual(psp.onlineNames, ["Gloria Boku", "Marcus Scully"]);       // Gloria wrote 2 minutes ago
+  assert.equal(psp.userList.find(u => u.name === "Jacinta Kodana").online, false);
+  assert.deepEqual(psp.behind, ["Gloria Boku", "Jacinta Kodana"]);
+  assert.equal(s.totals.online, 2);
 });

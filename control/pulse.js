@@ -220,6 +220,16 @@
       });
       es.forEach(e => extra.push({ at: e.at, hub: h.name, app: h.app, label: e.message, by: e.user, kind: "error", isApp: false }));
 
+      // Someone who changed something in the last few minutes is online,
+      // even if their copy of the Hub doesn't report visits.
+      h.userList.forEach(u => {
+        if (!u.isApp && u.last && now - u.last <= onlineMs) { u.online = true; online.add(u.name); allOnline.add(u.name); }
+      });
+      // Wrote today, but the Hub hasn't reported them today: they still have
+      // a copy open from before the last update (it doesn't report visits).
+      h.oldCopy = h.userList.filter(u => !u.isApp && u.today > 0 && !(u.lastSeen && P.sameDay(u.lastSeen, now)))
+        .map(u => { u.oldCopy = true; return u.name; }).sort();
+
       h.online = online.size;
       h.onlineNames = Array.from(online).sort();
       h.people = today.size;
@@ -232,7 +242,7 @@
       h.builds = Object.values(builds).map(b => ({ build: b.build, people: Array.from(b.people).sort(), lastSeen: b.lastSeen }))
         .sort((a, b) => b.build.localeCompare(a.build));
       const newest = h.builds[0] && h.builds[0].build;
-      h.behind = h.userList.filter(u => u.build && newest && u.build !== newest).map(u => u.name).sort();
+      h.behind = Array.from(new Set(h.userList.filter(u => u.build && newest && u.build !== newest).map(u => u.name).concat(h.oldCopy))).sort();
       h.userList.sort((a, b) => (b.online - a.online) || (a.isApp - b.isApp) ||
         ((b.lastSeen || b.last || 0) - (a.lastSeen || a.last || 0)));
 
@@ -348,6 +358,45 @@
     }
   };
 
+  /* Background services' heartbeats (CG_TELEMETRY.heartbeats), e.g. the
+     ZKTeco bridge. Returns { ok: true, rows: { [key]: {...} } } or { ok: false, reason }. */
+  P.fromHeartbeat = (item) => {
+    const f = item.fields || {};
+    const d = v => (v ? new Date(v) : null);
+    return { key: f.Title || "", lastSeen: d(f.LastSeen || item.lastModifiedDateTime), deviceSerial: f.DeviceSerial || "",
+             deviceLastSeen: d(f.DeviceLastSeen), lastSyncAt: d(f.LastSyncAt), lastSyncError: f.LastSyncError || "",
+             version: f.Version || "", host: f.Host || "" };
+  };
+  P.readHeartbeats = async (graph, siteIdOf, T) => {
+    if (!T || !T.heartbeats) return { ok: false, reason: "No heartbeat list in cg-config.js" };
+    try {
+      const sid = await siteIdOf(T.site);
+      const page = await graph("GET", `/sites/${sid}/lists/${encodeURIComponent(T.heartbeats)}/items?$expand=fields&$top=50`);
+      const rows = {};
+      ((page && page.value) || []).map(P.fromHeartbeat).forEach(r => { if (r.key && (!rows[r.key] || r.lastSeen > rows[r.key].lastSeen)) rows[r.key] = r; });
+      return { ok: true, rows };
+    } catch (e) {
+      return { ok: false, reason: P.isMissing(e) ? "The CG_Heartbeats list isn't set up yet." : P.explain(e) };
+    }
+  };
+
+  /* The state of one service's heartbeat, in plain words - used by the
+     alerts and (later) Mission Control. Returns
+       { state: "ok" | "down" | "device" | "sync" | "waiting" | "unknown", text, row } */
+  P.heartbeatState = (hb, key, now, opts = {}) => {
+    const MINUTE = 60000;
+    const ago = d => { const t = P.ageText(now - d); return t === "now" ? "just now" : t + " ago"; };
+    if (!hb || !hb.ok) return { state: "unknown", text: `can't check (${(hb && hb.reason) || "heartbeats not read"})` };
+    const r = hb.rows[key];
+    if (!r) return { state: "waiting", text: "not reporting yet (heartbeat version not installed)" };
+    const down = (opts.downMinutes || 15) * MINUTE, dev = (opts.deviceMinutes || 15) * MINUTE;
+    if (now - r.lastSeen > down) return { state: "down", row: r, text: `no heartbeat for ${P.ageText(now - r.lastSeen)}` };
+    if (!r.deviceLastSeen || now - r.deviceLastSeen > dev)
+      return { state: "device", row: r, text: r.deviceLastSeen ? `device last checked in ${ago(r.deviceLastSeen)}` : "no device has checked in since the bridge started" };
+    if (r.lastSyncError) return { state: "sync", row: r, text: "SharePoint sync failing" };
+    return { state: "ok", row: r, text: `running; device checked in ${ago(r.deviceLastSeen)}` };
+  };
+
   /* Reads every watched list and the telemetry, and returns the summary
      the screen (or the alert rules) work from.
        opts: { graph, siteId, apps: [CG_APPS entries], monitor: CG_MONITOR,
@@ -369,9 +418,12 @@
                       : async () => Object.assign({}, base, { list, ok: false, error: `Site ${sitePath}: ${siteErr}` }));
       }
     }
-    const [reads, tele] = await Promise.all([P.pool(jobs, 4), P.readTelemetry(opts.graph, opts.siteId, opts.telemetry, since)]);
+    const [reads, tele, beats] = await Promise.all([P.pool(jobs, 4), P.readTelemetry(opts.graph, opts.siteId, opts.telemetry, since),
+                                                    P.readHeartbeats(opts.graph, opts.siteId, opts.telemetry)]);
     const hubs = opts.monitor.hubs.map(h => appOf(h.app)).filter(Boolean).map(a => ({ app: a.key, name: a.name }));
-    return P.withTelemetry(P.summarise(reads, now, { hubs }), tele, now);
+    const summary = P.withTelemetry(P.summarise(reads, now, { hubs }), tele, now);
+    summary.heartbeats = beats;
+    return summary;
   };
 
   // A plain-English reason for a list that couldn't be read.

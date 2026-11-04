@@ -124,13 +124,17 @@ async function run(env = process.env, deps = {}) {
           ? `on (sees ${summary.telemetry.visits} visits by ${summary.telemetry.people} people and ${summary.telemetry.errors} errors in the last day)`
           : "NOT readable"}; ` +
         `today ${t.peopleToday} people, ${t.writesToday} writes, ${t.errors24h || 0} errors in 24h. ` +
+        `ZKTeco ${R.bridgeStatus(summary, A, now)}. ` +
+        (R.partial(summary).length ? `Read only partly (too big to filter): ${R.partial(summary).join(", ")}. ` : "") +
         `Problems right now: ${problems.length ? problems.map(p => p.title).join("; ") : "none"}.`
       : "Couldn't read SharePoint - see the message below.";
     toSend.unshift({ type: "info", title: "Alerts are connected", text: seen });
   }
   if (toSend.length) await postToTeams(env.TEAMS_WEBHOOK_URL, R.card(toSend, now, link), fetchFn);
   save(next);
-  const line = R.logLine(problems, messages);
+  const line = R.logLine(problems, messages, summary
+    ? `${R.bridgeStatus(summary, A, now).replace(/ on .*$/, "")}; ${R.partial(summary).length} list(s) read partly`
+    : "");
   if (problems.some(p => p.key === "alerts:job")) { const err = new Error("Job couldn't read SharePoint - " + line); err.line = line; throw err; }
   return line;
 }
