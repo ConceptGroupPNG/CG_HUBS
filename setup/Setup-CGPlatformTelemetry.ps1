@@ -8,8 +8,9 @@
 #    3. Creates the list CG_HubErrors    (one row per error a user hits)
 #    4. Makes both lists private: each person can only see and change
 #       their OWN rows; site owners (you) see everything. Hidden from search.
-#    5. Gives all Concept Group staff "Contribute" on the site, so the
-#       Hubs can write their rows. No other site or list is touched.
+#    5. Shows how to give all Concept Group staff "Contribute" on the site
+#       (done in the browser), so the Hubs can write their rows.
+#       No other site or list is touched.
 #
 #  SAFE TO RE-RUN: every step checks first and skips what already exists.
 #
@@ -25,8 +26,6 @@ $AdminUrl   = "https://$TenantName-admin.sharepoint.com"
 $ClientId   = "38ab6537-f037-49a3-9837-af7aab9b5ca1"   # your PnP app registration
 $Owner      = "mscully@concept.com.pg"
 $TenantId   = "ea9e105c-2df6-47ef-a8e3-b4aa1d788423"
-# "Everyone except external users" in this tenant
-$AllStaff   = "c:0-f|rolemanager|spo-grid-all-users/$TenantId"
 
 function Pause-Step($text) {
     Write-Host ""
@@ -120,8 +119,14 @@ foreach ($l in @($S, $E)) {
 
 # ---------------------------------------------------------------------
 Pause-Step "STEP 5 of 5 - Let all Concept Group staff add their rows (Contribute on CG_Platform)"
-Set-PnPWebPermission -User $AllStaff -AddRole "Contribute" | Out-Null
-Ok "Everyone except external users - Contribute"
+# PnP can't resolve "Everyone except external users" from the command line
+# (fails with "encodedValue"), so this one step is done in the browser.
+Write-Host "  Do this in the browser:" -ForegroundColor Yellow
+Write-Host "   1. Open $SiteUrl/_layouts/15/user.aspx"
+Write-Host "   2. Grant Permissions -> type 'Everyone except external users'"
+Write-Host "   3. Show options -> untick 'Send an email invitation'"
+Write-Host "   4. Permission level: Contribute (NOT Edit) -> Share"
+Read-Host "Press Enter once it shows 'Everyone except external users - Contribute'" | Out-Null
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
