@@ -41,21 +41,24 @@ R.evaluate = (summary, cfg, now) => {
     });
   }
 
+  // The ZKTeco bridge, from its own heartbeat (it only writes attendance
+  // rows when someone scans, so silence in that list proves nothing).
+  // Nothing is raised before the bridge has reported at least once, or
+  // while the heartbeat list can't be read - R.bridgeStatus says which.
   const b = cfg.bridge || {};
-  if (b.enabled !== false && b.list) {
-    const hub = summary.hubs.find(h => h.app === b.app);
-    const list = hub && hub.lists.find(l => l.list === b.list);
-    const silent = (Number(b.silentMinutes) || 30) * MIN;
-    // Only judged when the list was read in full (a list that can't be read
-    // is already a Hub problem; a partly-read big list can't tell us).
-    if (list && list.ok && !list.note) {
-      if (!list.lastApp) {
-        out.push({ key: "bridge:silent", hub: hub.name, title: "ZKTeco bridge: no attendance sync found",
-                   text: `Nothing has been written to ${b.list} by the bridge in the period checked.` });
-      } else if (now - list.lastApp > silent) {
-        out.push({ key: "bridge:silent", hub: hub.name, title: `ZKTeco bridge silent for ${P.ageText(now - list.lastApp)}`,
-                   text: `Last sync to ${b.list} at ${P.stamp(list.lastApp)}. Check the bridge PC and the ZKTeco device.` });
-      }
+  if (b.enabled !== false && b.key) {
+    const st = P.heartbeatState(summary.heartbeats, b.key, now, b);
+    const r = st.row;
+    const where = r && r.host ? ` on ${r.host}` : "";
+    if (st.state === "down") {
+      out.push({ key: "bridge:down", hub: "CG Time", title: `ZKTeco bridge not running (${st.text})`,
+                 text: `Last heartbeat ${P.stamp(r.lastSeen)}${where}. Clock-ins aren't reaching CG Time. Check the bridge PC is on and the "CG Time ZKTeco Bridge" task is running.` });
+    } else if (st.state === "device") {
+      out.push({ key: "bridge:device", hub: "CG Time", title: "ZKTeco device not connected to the bridge",
+                 text: `The bridge${where} is running, but ${st.text}. Check the device is powered on and on the network.` });
+    } else if (st.state === "sync") {
+      out.push({ key: "bridge:sync", hub: "CG Time", title: "ZKTeco bridge can't sync to SharePoint",
+                 text: `${r.lastSyncError}${r.lastSyncAt ? ` (last good sync ${P.stamp(r.lastSyncAt)})` : ""}` });
     }
   }
   return out;
@@ -88,6 +91,21 @@ R.diff = (problems, memory, cfg, now) => {
   return { messages, memory: next };
 };
 
+/* The bridge in one short, name-free line (test message and job log). */
+R.bridgeStatus = (summary, cfg, now) => {
+  const b = cfg.bridge || {};
+  if (b.enabled === false) return "bridge check off";
+  return "bridge " + P.heartbeatState(summary.heartbeats, b.key, now, b).text;
+};
+
+/* Lists read only partly (too big to filter) - the checks that depend on
+   them can't see everything, so this is always reported, never silent. */
+R.partial = (summary) => {
+  const out = [];
+  summary.hubs.forEach(h => h.lists.forEach(l => { if (l.ok && l.note) out.push(l.list); }));
+  return out;
+};
+
 /* The Teams message (an Adaptive Card for a Teams "Workflows" webhook). */
 R.card = (messages, now, link, heading) => {
   const icon = { new: "🔴", reminder: "🟠", resolved: "✅", info: "ℹ️" };
@@ -116,8 +134,8 @@ R.card = (messages, now, link, heading) => {
 };
 
 /* A short, name-free line for the job's log (the repository is public). */
-R.logLine = (problems, messages) =>
-  `${problems.length} problem(s) now [${problems.map(p => p.key).join(", ")}]; ` +
+R.logLine = (problems, messages, extra) =>
+  `${extra ? extra + "; " : ""}${problems.length} problem(s) now [${problems.map(p => p.key).join(", ")}]; ` +
   `sent ${messages.filter(m => m.type === "new").length} new, ${messages.filter(m => m.type === "reminder").length} reminder, ` +
   `${messages.filter(m => m.type === "resolved").length} resolved`;
 

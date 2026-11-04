@@ -90,6 +90,9 @@ const CG_TELEMETRY = {
   site: "/sites/CG_Platform",
   sessions: "CG_HubSessions",
   errors: "CG_HubErrors",
+  // One row per background service (e.g. the ZKTeco bridge), refreshed
+  // every few minutes by the service itself - see CG_ALERTS.bridge
+  heartbeats: "CG_Heartbeats",
   heartbeatMinutes: 5,
   keepDays: 90,
   maxErrorsPerSession: 20
@@ -110,8 +113,11 @@ const CG_ALERTS = {
   remindHours: 6,
   // A Hub's lists can't be read, or people hit this many errors in an hour
   hubProblems: { enabled: true, errorsPerHour: 3 },
-  // No sync from the ZKTeco bridge to this list for this many minutes
-  bridge: { enabled: true, app: "time", list: "CG_EmployeeTimeRecords", silentMinutes: 30 }
+  // The ZKTeco bridge's heartbeat (its row in CG_Heartbeats): alert when the
+  // bridge stops reporting, the device stops checking in with it, or its
+  // SharePoint sync keeps failing. No alert until the bridge has reported
+  // at least once (i.e. before the heartbeat version is installed).
+  bridge: { enabled: true, key: "zkteco-bridge", downMinutes: 15, deviceMinutes: 15 }
 };
 
 /* ---------------------------------------------------------------------

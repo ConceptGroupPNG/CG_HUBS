@@ -16,7 +16,7 @@ const res = (status, body) => ({
 });
 
 // route(method, url, body) -> response; default: everything succeeds
-function load({ route, scopes, telemetryConfig, withDocument = true } = {}) {
+function load({ route, scopes, telemetryConfig, withDocument = true, protocol } = {}) {
   const calls = [];
   const listeners = {};
   const storage = new Map();
@@ -35,7 +35,7 @@ function load({ route, scopes, telemetryConfig, withDocument = true } = {}) {
     getElementById: () => null
   };
   const win = {
-    location: { hash: "#invoices", origin: "https://conceptgrouppng.github.io", pathname: "/CG_HUBS/psp/", hostname: "conceptgrouppng.github.io", href: "https://conceptgrouppng.github.io/CG_HUBS/psp/" },
+    location: { protocol, reload() { win.reloaded = true; }, hash: "#invoices", origin: "https://conceptgrouppng.github.io", pathname: "/CG_HUBS/psp/", hostname: "conceptgrouppng.github.io", href: "https://conceptgrouppng.github.io/CG_HUBS/psp/" },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) },
     navigator: { userAgent: "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Edg/131.0" },
@@ -198,4 +198,24 @@ test("old rows are cleaned up at most once a day, using the indexed columns", as
   assert.ok(gets[1].url.includes("fields/Created lt '"));
   assert.deepEqual(calls.filter(c => c.method === "DELETE").map(c => c.url.split("/").pop()), ["7", "8"]);
   assert.equal(storage.get("cg.telemetry.cleanup").length, 10);   // remembered as today's date
+});
+
+/* ---------------- "A new version is available" bar ---------------- */
+test("new version bar: shown when the page or shared files change, never on a local copy", async () => {
+  let version = "v1";
+  const head = (m, url) => m === "HEAD" ? { status: 200, ok: true, headers: { get: k => (k === "ETag" ? `"${version}-${url.split("/").pop()}"` : null) }, json: async () => ({}) } : null;
+  const live = load({ protocol: "https:", route: head });
+  await live.start();
+  await new Promise(r => setImmediate(r));                  // baseline taken
+  assert.equal(await live.CG.updates.check(), false);      // nothing new yet
+  version = "v2";                                           // an update is published
+  assert.equal(await live.CG.updates.check(), true);
+  assert.equal(live.CG.updates._state().shown, true);
+  assert.equal(await live.CG.updates.check(), false);      // shown once, not stacked
+  assert.equal(live.calls.filter(c => c.method === "HEAD").length, 9);   // baseline + 2 checks, 3 files each; none once shown
+
+  const local = load({ route: head });                      // no https: tests / file copies
+  await local.start();
+  assert.equal(local.CG.updates._state().on, false);
+  assert.equal(local.calls.filter(c => c.method === "HEAD").length, 0);
 });

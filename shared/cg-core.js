@@ -325,6 +325,8 @@
       // Usage telemetry for Mission Control (only apps that can write to
       // SharePoint; never blocks or breaks the app). opts.telemetry: false skips it.
       if (opts.telemetry !== false) CG.telemetry.start(appKey);
+      // "A new version is available - Refresh" after future updates.
+      CG.updates.start();
       return msalApp.getActiveAccount();
     },
 
@@ -755,7 +757,82 @@
     _state: () => Object.assign({}, T)
   };
 
-  CG.VERSION = "1.7.0";
+  /* -----------------------------------------------------------------
+     "A new version is available" bar
+     -----------------------------------------------------------------
+     A page left open keeps running the code it loaded with - laptops that
+     sleep overnight keep a Hub open for days, so people can miss an update
+     (and, before Nov 2026, telemetry) entirely. Every 15 minutes, and when
+     the page comes back on screen, the core asks GitHub Pages whether this
+     page or the shared files have changed since it loaded. If so it shows a
+     small bar with a Refresh button. It never reloads by itself - there may
+     be unsaved work. "Later" hides it for 2 hours.
+     Only on the real site (https), so tests and local copies never ask.
+     ----------------------------------------------------------------- */
+  const UPD_EVERY_MS = 15 * 60 * 1000, UPD_SNOOZE_MS = 2 * 60 * 60 * 1000;
+  const U = { on: false, base: null, last: 0, shown: false, snoozeUntil: 0, timer: null };
+
+  async function versionTag() {
+    const urls = [String(global.location.href).split(/[?#]/)[0], SHARED_URL + "cg-core.js", SHARED_URL + "cg-config.js"];
+    const tags = await Promise.all(urls.map(async u => {
+      const r = await global.fetch(u, { method: "HEAD", cache: "no-store" });
+      if (!r.ok) throw new Error(`HEAD ${r.status}`);
+      return (r.headers && r.headers.get && (r.headers.get("ETag") || r.headers.get("Last-Modified"))) || "";
+    }));
+    return tags.join("|");
+  }
+
+  function showUpdateBar() {
+    U.shown = true;
+    if (!global.document || !document.createElement || !document.body) return;
+    let b = document.getElementById("cg-update-bar");
+    if (!b) {
+      const app = CG.currentApp();
+      b = document.createElement("div");
+      b.id = "cg-update-bar";
+      b.setAttribute("role", "status");
+      b.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99998;display:flex;gap:12px;" +
+        "align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 32px);padding:10px 16px;border-radius:8px;" +
+        "background:#1F3864;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25);font:14px 'Segoe UI',Calibri,Arial,sans-serif";
+      b.innerHTML = `<span>A new version of ${CG.esc(app ? app.name : "CG HUBS")} is available.</span>` +
+        '<button type="button" data-a="refresh" style="background:#C9A227;color:#1F3864;border:0;border-radius:4px;padding:6px 14px;font-weight:600;cursor:pointer">Refresh</button>' +
+        '<button type="button" data-a="later" style="background:transparent;color:#DDE6F5;border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:5px 12px;cursor:pointer">Later</button>';
+      b.querySelector('[data-a="refresh"]').onclick = () => global.location.reload();
+      b.querySelector('[data-a="later"]').onclick = () => {
+        b.style.display = "none"; U.shown = false; U.snoozeUntil = Date.now() + UPD_SNOOZE_MS;
+      };
+      document.body.appendChild(b);
+    }
+    b.style.display = "flex";
+  }
+
+  CG.updates = {
+    start() {
+      try {
+        if (U.on || !global.document || !global.fetch || !global.location || global.location.protocol !== "https:") return;
+        U.on = true;
+        U.last = Date.now();
+        versionTag().then(t => { U.base = t; }, () => { U.on = false; });
+        U.timer = setInterval(CG.updates.check, UPD_EVERY_MS);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible" && Date.now() - U.last > UPD_EVERY_MS) CG.updates.check();
+        });
+      } catch (e) { U.on = false; }
+    },
+    // Returns true when a newer version was found (and the bar shown).
+    async check() {
+      if (!U.on || !U.base || U.shown || Date.now() < U.snoozeUntil) return false;
+      U.last = Date.now();
+      try {
+        const t = await versionTag();
+        if (t && t !== U.base) { showUpdateBar(); return true; }
+      } catch (e) { /* offline or busy - try again next time */ }
+      return false;
+    },
+    _state: () => Object.assign({}, U)
+  };
+
+  CG.VERSION = "1.8.0";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {

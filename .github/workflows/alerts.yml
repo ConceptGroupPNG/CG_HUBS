@@ -14,8 +14,10 @@
 name: Alerts
 
 on:
+  # Off the busy minutes: GitHub delays or drops scheduled runs when it is
+  # busy, especially on the hour, so these run at :03, :13, :23 ...
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       test:
@@ -38,11 +40,11 @@ jobs:
       TZ: Pacific/Port_Moresby
       STATE_FILE: .alerts-state.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
 
       # What was already announced, so each problem is only sent once
       - name: Restore alert memory
