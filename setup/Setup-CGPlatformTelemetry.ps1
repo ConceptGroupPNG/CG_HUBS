@@ -114,7 +114,7 @@ else { Skip "  index on Created" }
 Pause-Step "STEP 4 of 5 - Make both lists private (own rows only) and hide them from search"
 foreach ($l in @($S, $E)) {
     # People read and change only their own rows
-    Set-PnPList -Identity $l -ReadSecurity OwnReadAccess -WriteSecurity WriteOwnItems -NoCrawl:$true | Out-Null
+    Set-PnPList -Identity $l -ReadSecurity AllUsersReadAccessOnItemsTheyCreate -WriteSecurity WriteOnlyMyItems -NoCrawl:$true | Out-Null
     Ok "$l - own rows only, not in search"
 }
 
