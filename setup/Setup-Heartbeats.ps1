@@ -37,7 +37,8 @@ $fields = [ordered]@{
     DeviceLastSeen = "<Field Type='DateTime' Name='DeviceLastSeen' StaticName='DeviceLastSeen' DisplayName='DeviceLastSeen' Format='DateTime' />"
     LastSyncAt     = "<Field Type='DateTime' Name='LastSyncAt' StaticName='LastSyncAt' DisplayName='LastSyncAt' Format='DateTime' />"
     LastSyncError  = "<Field Type='Note' Name='LastSyncError' StaticName='LastSyncError' DisplayName='LastSyncError' RichText='FALSE' NumLines='6' />"
-    Version        = "<Field Type='Text' Name='Version' StaticName='Version' DisplayName='Version' MaxLength='255' />"
+    # Not "Version": every list already has a built-in column of that name
+    AppVersion     = "<Field Type='Text' Name='AppVersion' StaticName='AppVersion' DisplayName='AppVersion' MaxLength='255' />"
     Host           = "<Field Type='Text' Name='Host' StaticName='Host' DisplayName='Host' MaxLength='255' />"
 }
 foreach ($name in $fields.Keys) {
