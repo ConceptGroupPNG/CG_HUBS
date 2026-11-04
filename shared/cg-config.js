@@ -96,6 +96,25 @@ const CG_TELEMETRY = {
 };
 
 /* ---------------------------------------------------------------------
+   Alerts - Teams messages when something goes wrong, sent by a scheduled
+   job in GitHub Actions (.github/workflows/alerts.yml, alerts/rules.js).
+
+   clientId is the "CG HUBS Alerts" Entra app (read-only on the Hub
+   sites). Its secret and the Teams address are GitHub secrets, never here.
+   Each problem is announced once, reminded every `remindHours` while it
+   lasts, and a "resolved" message follows when it clears.
+   --------------------------------------------------------------------- */
+const CG_ALERTS = {
+  enabled: true,
+  clientId: "8c3604ec-3837-4cfc-b622-6a20cf735f8a",
+  remindHours: 6,
+  // A Hub's lists can't be read, or people hit this many errors in an hour
+  hubProblems: { enabled: true, errorsPerHour: 3 },
+  // No sync from the ZKTeco bridge to this list for this many minutes
+  bridge: { enabled: true, app: "time", list: "CG_EmployeeTimeRecords", silentMinutes: 30 }
+};
+
+/* ---------------------------------------------------------------------
    Mission Control - which SharePoint lists the Data Pulse watches.
 
    One entry per Hub: `app` is the Hub's key in CG_APPS above, `site` the

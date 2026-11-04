@@ -137,7 +137,8 @@
         last, freshness: last ? P.freshness(last.at, now) : "empty",
         age: last ? P.ageText(now - last.at) : "—",
         stamp: last ? P.stamp(last.at) : "—",
-        writes: items.length, writesToday: items.filter(i => P.sameDay(i.at, now)).length
+        writes: items.length, writesToday: items.filter(i => P.sameDay(i.at, now)).length,
+        lastApp: (items.find(i => i.isApp) || {}).at || null     // newest write by a program (e.g. the ZKTeco bridge)
       });
       if (last && (!hub.last || last.at > hub.last.at)) hub.last = last;
 
@@ -274,6 +275,102 @@
     `/sites/${siteId}/lists/${encodeURIComponent(list)}/items` +
     `?$select=id,createdDateTime,lastModifiedDateTime,lastModifiedBy` +
     `&$expand=fields($select=Modified)&$orderby=fields/Modified desc&$top=1`;
+
+  /* -----------------------------------------------------------------
+     Reading SharePoint - shared by Mission Control (in the browser, with
+     CG.graph) and the alerts job (alerts/run.js, in GitHub Actions).
+       graph(method, url, body, headers) -> parsed JSON, or throws an error
+                                            carrying .status
+       siteId("/sites/X")                -> the Graph site id
+     ----------------------------------------------------------------- */
+  const PREFER = { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" };
+  P.isMissing = e => !!e && (e.status === 404 || /not (be )?found|does not exist/i.test(e.message || ""));
+  P.isForbidden = e => !!e && (e.status === 401 || e.status === 403 || /access denied|forbidden|not authorized/i.test(e.message || ""));
+
+  // Runs jobs a few at a time, so SharePoint isn't asked for 20 lists at once.
+  P.pool = async (jobs, size) => {
+    const out = new Array(jobs.length); let next = 0;
+    await Promise.all(Array.from({ length: Math.min(size, jobs.length) }, async () => {
+      while (next < jobs.length) { const i = next++; out[i] = await jobs[i](); }
+    }));
+    return out;
+  };
+
+  P.readList = async (graph, siteId, base, list, since) => {
+    base = Object.assign({}, base, { list });
+    try {
+      const page = await graph("GET", P.recentUrl(siteId, list, since), undefined, PREFER);
+      const items = ((page && page.value) || []).map(P.fromItem);
+      let last = null;
+      if (!items.length) {
+        const one = await graph("GET", P.latestUrl(siteId, list), undefined, PREFER);
+        if (one && one.value && one.value[0]) { const i = P.fromItem(one.value[0]); last = { at: i.at, by: i.by }; }
+      }
+      return Object.assign(base, { ok: true, items, last, capped: !!(page && page["@odata.nextLink"]) });
+    } catch (e) {
+      if (P.isMissing(e) || P.isForbidden(e)) return Object.assign(base, { ok: false, error: P.explain(e) });
+      // Big lists can't be sorted/filtered without an index: fall back to the
+      // list's own "last changed" time so the pulse still shows something.
+      try {
+        const meta = await graph("GET", `/sites/${siteId}/lists/${encodeURIComponent(list)}?$select=lastModifiedDateTime`);
+        return Object.assign(base, { ok: true, items: [], last: { at: new Date(meta.lastModifiedDateTime), by: "Not known (large list)" }, note: P.explain(e) });
+      } catch (e2) {
+        return Object.assign(base, { ok: false, error: P.explain(e) });
+      }
+    }
+  };
+
+  /* What the Hubs reported themselves (CG_TELEMETRY in cg-config.js).
+     Returns { ok: true, sessions, errors } or { ok: false, reason }. */
+  P.readTelemetry = async (graph, siteIdOf, T, since) => {
+    if (!T || T.enabled === false) return { ok: false, reason: "Telemetry is switched off in cg-config.js" };
+    const all = async (url) => {
+      const out = [];
+      for (let n = 0; url && n < 10; n++) {
+        const page = await graph("GET", url, undefined, PREFER);
+        ((page && page.value) || []).forEach(i => out.push(i));
+        url = (page && page["@odata.nextLink"]) || null;
+      }
+      return out;
+    };
+    try {
+      const sid = await siteIdOf(T.site);
+      const base = list => `/sites/${sid}/lists/${encodeURIComponent(list)}/items?$expand=fields&$top=500`;
+      const [ss, es] = await Promise.all([
+        all(`${base(T.sessions)}&$filter=fields/LastSeen ge '${since.toISOString()}'`),
+        all(`${base(T.errors)}&$filter=fields/Created ge '${since.toISOString()}'`)
+      ]);
+      return { ok: true, sessions: ss.map(P.fromSession), errors: es.map(P.fromError) };
+    } catch (e) {
+      return { ok: false, reason: P.isMissing(e) ? "The CG_Platform site or its lists aren't set up yet." : P.explain(e) };
+    }
+  };
+
+  /* Reads every watched list and the telemetry, and returns the summary
+     the screen (or the alert rules) work from.
+       opts: { graph, siteId, apps: [CG_APPS entries], monitor: CG_MONITOR,
+               telemetry: CG_TELEMETRY, windowDays, now: Date } */
+  P.collect = async (opts) => {
+    const now = opts.now || new Date();
+    const since = new Date(now - (opts.windowDays || 7) * 86400000);
+    const appOf = key => (opts.apps || []).find(a => a.key === key);
+    const jobs = [];
+    for (const h of opts.monitor.hubs) {
+      const app = appOf(h.app);
+      if (!app || !h.lists.length) continue;
+      const sitePath = h.site || app.site;
+      let sid = null, siteErr = null;
+      try { sid = await opts.siteId(sitePath); } catch (e) { siteErr = P.explain(e); }
+      for (const [label, list] of h.lists) {
+        const base = { app: h.app, hubName: app.name, label };
+        jobs.push(sid ? () => P.readList(opts.graph, sid, base, list, since)
+                      : async () => Object.assign({}, base, { list, ok: false, error: `Site ${sitePath}: ${siteErr}` }));
+      }
+    }
+    const [reads, tele] = await Promise.all([P.pool(jobs, 4), P.readTelemetry(opts.graph, opts.siteId, opts.telemetry, since)]);
+    const hubs = opts.monitor.hubs.map(h => appOf(h.app)).filter(Boolean).map(a => ({ app: a.key, name: a.name }));
+    return P.withTelemetry(P.summarise(reads, now, { hubs }), tele, now);
+  };
 
   // A plain-English reason for a list that couldn't be read.
   P.explain = (e) => {

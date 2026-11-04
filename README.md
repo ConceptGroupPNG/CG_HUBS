@@ -15,6 +15,7 @@ The web apps used across Concept Group, served from
 | `attendance/` | CG Time Attendance | Phone clock in / out |
 | `control/` | Mission Control (preview) | Platform monitoring for the administrator |
 | `shared/` | Shared core library, central settings (`cg-config.js`), shared styles and logos | — |
+| `alerts/` | The scheduled alerts job (GitHub Actions, every 10 min) that messages Teams when a Hub has problems or the ZKTeco bridge goes silent | — |
 | `setup/` | One-off PowerShell set-up scripts (e.g. the CG_Platform telemetry lists) | — |
 | `aws/` | Code for small AWS services the apps call (not served by GitHub Pages), e.g. the CG Time Attendance selfie check | — |
 
