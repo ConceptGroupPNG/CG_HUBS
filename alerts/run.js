@@ -120,7 +120,9 @@ async function run(env = process.env, deps = {}) {
   if (String(env.SEND_TEST).toLowerCase() === "true") {
     const t = summary ? summary.totals : null;
     const seen = summary
-      ? `Can read ${summary.hubs.filter(h => h.lists.some(l => l.ok)).length} Hubs; telemetry ${summary.telemetry && summary.telemetry.ok ? "on" : "NOT readable"}; ` +
+      ? `Can read ${summary.hubs.filter(h => h.lists.some(l => l.ok)).length} Hubs; telemetry ${summary.telemetry && summary.telemetry.ok
+          ? `on (sees ${summary.telemetry.visits} visits by ${summary.telemetry.people} people and ${summary.telemetry.errors} errors in the last day)`
+          : "NOT readable"}; ` +
         `today ${t.peopleToday} people, ${t.writesToday} writes, ${t.errors24h || 0} errors in 24h. ` +
         `Problems right now: ${problems.length ? problems.map(p => p.title).join("; ") : "none"}.`
       : "Couldn't read SharePoint - see the message below.";
