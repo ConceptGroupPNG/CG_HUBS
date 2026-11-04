@@ -106,7 +106,7 @@ const CG_TELEMETRY = {
    --------------------------------------------------------------------- */
 const CG_ALERTS = {
   enabled: true,
-  clientId: "<<ALERTS-CLIENT-ID>>",
+  clientId: "8c3604ec-3837-4cfc-b622-6a20cf735f8a",
   remindHours: 6,
   // A Hub's lists can't be read, or people hit this many errors in an hour
   hubProblems: { enabled: true, errorsPerHour: 3 },
