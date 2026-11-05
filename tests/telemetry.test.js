@@ -219,3 +219,35 @@ test("new version bar: shown when the page or shared files change, never on a lo
   assert.equal(local.CG.updates._state().on, false);
   assert.equal(local.calls.filter(c => c.method === "HEAD").length, 0);
 });
+
+/* ---------------- open vs active (core 1.9) ---------------- */
+test("heartbeat is sent while the Hub is open in the background, with when the person was last active", async () => {
+  const { CG, calls, start, doc, fire } = load();
+  await start();
+  await CG.telemetry._flush();
+  const post = posts(calls, "CG_HubSessions")[0].body.fields;
+  assert.ok(post.LastActive, "a new visit starts as active");
+  doc.visibilityState = "hidden";                    // operator switched to Excel
+  await CG.telemetry._beat();
+  await CG.telemetry._flush();
+  const p = calls.filter(c => c.method === "PATCH");
+  assert.equal(p.length, 1, "still reports while hidden");
+  assert.equal(p[0].body.LastActive, post.LastActive);   // no clicks since: last active unchanged
+  fire("keydown", {});
+  await CG.telemetry._beat();
+  await CG.telemetry._flush();
+  assert.ok(calls.filter(c => c.method === "PATCH")[1].body.LastActive >= post.LastActive);
+});
+
+test("a column the list doesn't have yet (LastActive before set-up) is left out, telemetry carries on", async () => {
+  const notRecognised = (body) => body && JSON.stringify(body).includes("LastActive")
+    ? res(400, { error: { code: "invalidRequest", message: "Field 'LastActive' is not recognized" } }) : null;
+  const { CG, calls, start } = load({ route: (m, url, body) => url.includes("CG_HubSessions") && (m === "POST" || m === "PATCH") ? notRecognised(body) : null });
+  await start();
+  await CG.telemetry._flush();
+  await CG.telemetry._beat();
+  await CG.telemetry._flush();
+  assert.equal(CG.telemetry.enabled(), true);
+  const ok = calls.filter(c => c.url.includes("CG_HubSessions") && (c.method === "POST" || c.method === "PATCH") && !JSON.stringify(c.body).includes("LastActive"));
+  assert.equal(ok.length, 2);                        // the visit and the heartbeat, both saved without it
+});

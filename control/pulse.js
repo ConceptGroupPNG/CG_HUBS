@@ -190,29 +190,41 @@
                   build, loadMs, device }
        error:   { app, at, user, kind, message, detail, page }
      Changes the summary in place and returns it. */
+  /* "Open" = the Hub is open in someone's browser (its heartbeat is recent,
+     on screen or not). "Active" = they clicked, typed or scrolled in it in
+     the last few minutes (LastActive), or changed something. Sessions from
+     cores before 1.9 have no LastActive; they only reported while on
+     screen, so open counts as active for them. */
   P.withTelemetry = (summary, tele, now, opts = {}) => {
     const onlineMs = (opts.onlineMinutes || 6) * 60000;
+    const activeMs = (opts.activeMinutes || 10) * 60000;
     summary.telemetry = tele && tele.ok
       ? { ok: true, visits: tele.sessions.length, people: new Set(tele.sessions.map(x => x.user)).size, errors: tele.errors.length }
       : { ok: false, reason: (tele && tele.reason) || "" };
     if (!tele || !tele.ok) return summary;
 
-    const allOnline = new Set(), allToday = new Set(summary.peopleNames || []);
+    const allOnline = new Set(), allActive = new Set(), allToday = new Set(summary.peopleNames || []);
     const extra = [];
     let errors24h = 0;
     summary.hubs.forEach(h => {
       const ss = tele.sessions.filter(x => x.app === h.app);
       const es = tele.errors.filter(x => x.app === h.app).sort((a, b) => b.at - a.at);
-      const online = new Set(), today = new Set(h.peopleNames || []);
+      const online = new Set(), active = new Set(), today = new Set(h.peopleNames || []);
       const builds = {};
       ss.forEach(x => {
-        if (now - x.lastSeen <= onlineMs) { online.add(x.user); allOnline.add(x.user); }
+        const isOpen = now - x.lastSeen <= onlineMs;
+        const isActive = isOpen && (x.lastActive ? now - x.lastActive <= activeMs : true);
+        if (isOpen) { online.add(x.user); allOnline.add(x.user); }
+        if (isActive) { active.add(x.user); allActive.add(x.user); }
         if (P.sameDay(x.lastSeen, now)) { today.add(x.user); allToday.add(x.user); }
         let u = h.userList.find(v => v.name === x.user);
         if (!u) { u = { name: x.user, isApp: false, writes: 0, today: 0, last: null, lists: [], sessions: 0, lastSeen: null, online: false, device: "" }; h.userList.push(u); }
         u.sessions++;
         if (!u.lastSeen || x.lastSeen > u.lastSeen) { u.lastSeen = x.lastSeen; u.device = x.device || ""; u.build = x.build || ""; }
-        if (now - x.lastSeen <= onlineMs) u.online = true;
+        if (isOpen) u.online = true;
+        if (isActive) u.active = true;
+        const la = x.lastActive || (isOpen ? x.lastSeen : null);
+        if (la && (!u.lastActive || la > u.lastActive)) u.lastActive = la;
         const b = builds[x.build || "?"] || (builds[x.build || "?"] = { build: x.build || "?", people: new Set(), lastSeen: x.lastSeen });
         b.people.add(x.user);
         if (x.lastSeen > b.lastSeen) b.lastSeen = x.lastSeen;
@@ -223,7 +235,9 @@
       // Someone who changed something in the last few minutes is online,
       // even if their copy of the Hub doesn't report visits.
       h.userList.forEach(u => {
-        if (!u.isApp && u.last && now - u.last <= onlineMs) { u.online = true; online.add(u.name); allOnline.add(u.name); }
+        if (!u.isApp && u.last && now - u.last <= onlineMs) {
+          u.online = u.active = true; online.add(u.name); allOnline.add(u.name); active.add(u.name); allActive.add(u.name);
+        }
       });
       // Wrote today, but the Hub hasn't reported them today: they still have
       // a copy open from before the last update (it doesn't report visits).
@@ -232,6 +246,8 @@
 
       h.online = online.size;
       h.onlineNames = Array.from(online).sort();
+      h.active = active.size;
+      h.activeNames = Array.from(active).sort();
       h.people = today.size;
       h.userErrors = es;
       h.errors24h = es.filter(e => now - e.at <= 86400000).length;
@@ -243,7 +259,7 @@
         .sort((a, b) => b.build.localeCompare(a.build));
       const newest = h.builds[0] && h.builds[0].build;
       h.behind = Array.from(new Set(h.userList.filter(u => u.build && newest && u.build !== newest).map(u => u.name).concat(h.oldCopy))).sort();
-      h.userList.sort((a, b) => (b.online - a.online) || (a.isApp - b.isApp) ||
+      h.userList.sort((a, b) => (!!b.active - !!a.active) || (!!b.online - !!a.online) || (a.isApp - b.isApp) ||
         ((b.lastSeen || b.last || 0) - (a.lastSeen || a.last || 0)));
 
       const recentErr = es.some(e => now - e.at <= 3600000);
@@ -254,6 +270,7 @@
     });
     summary.events = P.feed(summary.rawEvents.concat(extra), opts.maxEvents || 15);
     summary.totals.online = allOnline.size;
+    summary.totals.active = allActive.size;
     summary.totals.peopleToday = allToday.size;
     summary.totals.errors24h = errors24h;
     summary.totals.failing = summary.hubs.filter(h => ["OFFLINE", "PARTIAL", "ERRORS"].includes(h.status)).length;
@@ -264,7 +281,8 @@
   P.fromSession = (item) => {
     const f = item.fields || {};
     return { app: f.App || "", user: f.UserName || P.who(item.createdBy), started: f.StartedAt ? new Date(f.StartedAt) : null,
-             lastSeen: new Date(f.LastSeen || item.lastModifiedDateTime), views: f.PageViews || 0, screens: f.Screens || "",
+             lastSeen: new Date(f.LastSeen || item.lastModifiedDateTime), lastActive: f.LastActive ? new Date(f.LastActive) : null,
+             views: f.PageViews || 0, screens: f.Screens || "",
              errors: f.ErrorCount || 0, throttles: f.Throttles || 0, build: f.Build || "", loadMs: f.LoadMs || null, device: f.Device || "" };
   };
   P.fromError = (item) => {

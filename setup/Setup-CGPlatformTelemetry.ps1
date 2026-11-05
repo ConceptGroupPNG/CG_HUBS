@@ -85,6 +85,7 @@ Ensure-Field $S "UserName"   "Text"
 Ensure-Field $S "UserEmail"  "Text"
 Ensure-Field $S "StartedAt"  "DateTime"
 Ensure-Field $S "LastSeen"   "DateTime" -Indexed
+Ensure-Field $S "LastActive" "DateTime"
 Ensure-Field $S "PageViews"  "Number"
 Ensure-Field $S "Screens"    "Note"
 Ensure-Field $S "ErrorCount" "Number"
@@ -113,7 +114,8 @@ else { Skip "  index on Created" }
 Pause-Step "STEP 4 of 5 - Make both lists private (own rows only) and hide them from search"
 foreach ($l in @($S, $E)) {
     # People read and change only their own rows
-    Set-PnPList -Identity $l -ReadSecurity AllUsersReadAccessOnItemsTheyCreate -WriteSecurity WriteOnlyMyItems -NoCrawl:$true | Out-Null
+    # No version history: each visit's row is updated every 2 minutes
+    Set-PnPList -Identity $l -ReadSecurity AllUsersReadAccessOnItemsTheyCreate -WriteSecurity WriteOnlyMyItems -NoCrawl:$true -EnableVersioning $false | Out-Null
     Ok "$l - own rows only, not in search"
 }
 
