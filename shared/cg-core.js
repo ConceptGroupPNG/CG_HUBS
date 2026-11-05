@@ -609,7 +609,7 @@
        CG.telemetry.screen("Invoices")            - a screen was opened
        CG.telemetry.error("save", message, detail) - an error worth seeing
      ----------------------------------------------------------------- */
-  const T = { on: false, sid: "", app: "", item: null, started: null, views: 0, screens: [], errors: 0,
+  const T = { on: false, sid: "", app: "", item: null, started: null, views: 0, screens: [], errors: 0, lastActive: 0, drop: new Set(),
               errorsSent: 0, throttles: 0, fails: 0, last: 0, timer: null, recent: {}, queue: Promise.resolve() };
   const tcfg = () => (typeof CG_TELEMETRY !== "undefined" && CG_TELEMETRY && CG_TELEMETRY.enabled !== false) ? CG_TELEMETRY : null;
   const canWrite = () => scopes.some(sc => /^Sites\.(ReadWrite|Manage|FullControl)\.All$/i.test(sc));
@@ -655,13 +655,30 @@
     });
     return T.queue;
   }
+  // Save to a telemetry list; a column the list doesn't have yet (e.g. a new
+  // one before its set-up step has been run) is left out instead of failing.
+  async function tsave(method, url, fields, wrap) {
+    for (let i = 0; i < 5; i++) {
+      const f = Object.assign({}, fields);
+      T.drop.forEach(k => delete f[k]);
+      try { return await tg(method, url, wrap ? { fields: f } : f); }
+      catch (e) {
+        const m = /Field '([^']+)' is not recognized/i.exec((e && e.message) || "");
+        if (m && !T.drop.has(m[1])) { T.drop.add(m[1]); continue; }
+        throw e;
+      }
+    }
+    throw new Error("Telemetry: too many unknown columns");
+  }
+  // Every few minutes while the Hub is OPEN (on screen or not), so Mission
+  // Control knows who has it open. LastActive says when the person last
+  // clicked, typed or scrolled in it, so "open" and "active" can be told apart.
   function beat() {
     if (!T.on || !T.item) return;
-    if (global.document && document.visibilityState === "hidden") return;   // only count time on screen
     T.last = Date.now();
-    return tq(async () => tg("PATCH", `${await tUrl(tcfg().sessions)}/${T.item}/fields`, {
-      LastSeen: new Date().toISOString(), PageViews: T.views, Screens: T.screens.join(", "),
-      ErrorCount: T.errors, Throttles: T.throttles, LoadMs: loadMs()
+    return tq(async () => tsave("PATCH", `${await tUrl(tcfg().sessions)}/${T.item}/fields`, {
+      LastSeen: new Date().toISOString(), LastActive: new Date(T.lastActive || Date.now()).toISOString(),
+      PageViews: T.views, Screens: T.screens.join(", "), ErrorCount: T.errors, Throttles: T.throttles, LoadMs: loadMs()
     }));
   }
   function cleanup() {
@@ -685,28 +702,34 @@
     start(app) {
       try {
         if (T.on || !global.document || !tcfg() || !canWrite()) return;
-        T.on = true; T.app = app || "unknown"; T.started = new Date(); T.views = 1;
+        T.on = true; T.app = app || "unknown"; T.started = new Date(); T.views = 1; T.lastActive = Date.now();
         T.sid = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
         noteScreen(global.location && global.location.hash);
         const acct = CG.auth.account() || {};
         tq(async () => {
           const now = new Date().toISOString();
-          const r = await tg("POST", await tUrl(tcfg().sessions), { fields: {
+          const r = await tsave("POST", await tUrl(tcfg().sessions), {
             Title: T.sid, App: T.app, UserName: cut(acct.name || acct.username, 255), UserEmail: CG.auth.email(),
-            StartedAt: now, LastSeen: now, PageViews: 1, Screens: T.screens.join(", "), ErrorCount: T.errors,
+            StartedAt: now, LastSeen: now, LastActive: now, PageViews: 1, Screens: T.screens.join(", "), ErrorCount: T.errors,
             Throttles: T.throttles, Build: cut(buildText(), 255), LoadMs: loadMs(),
             Device: CG.isPhone() ? "Phone" : "Desktop", Browser: cut(browserName(), 255)
-          } });
+          }, true);
           T.item = r && r.id;
           T.last = Date.now();
         });
         cleanup();
-        const every = Math.max(1, Number(tcfg().heartbeatMinutes) || 5) * 60000;
+        const every = Math.max(1, Number(tcfg().heartbeatMinutes) || 2) * 60000;
         T.timer = setInterval(beat, every);
         global.addEventListener("hashchange", () => { T.views++; noteScreen(global.location.hash); });
-        // Back on screen after a while away: say so straight away.
+        // Using the Hub: a click, key, scroll or touch makes the person "active".
+        const touched = () => { T.lastActive = Date.now(); };
+        ["pointerdown", "keydown", "wheel", "touchstart"].forEach(t =>
+          global.addEventListener(t, touched, { capture: true, passive: true }));
+        // Back on screen after a while away: active again, and say so straight away.
         document.addEventListener("visibilitychange", () => {
-          if (document.visibilityState === "visible" && Date.now() - T.last > 60000) beat();
+          if (document.visibilityState !== "visible") return;
+          touched();
+          if (Date.now() - T.last > 60000) beat();
         });
         global.addEventListener("error", e => {
           const msg = e && e.message ? e.message : "";
@@ -752,8 +775,9 @@
       T.timer = null;
     },
 
-    // For tests: wait for queued telemetry work to finish.
+    // For tests: wait for queued telemetry work to finish; send a heartbeat now.
     _flush: () => T.queue,
+    _beat: () => beat(),
     _state: () => Object.assign({}, T)
   };
 
@@ -832,7 +856,7 @@
     _state: () => Object.assign({}, U)
   };
 
-  CG.VERSION = "1.8.0";
+  CG.VERSION = "1.9.0";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {

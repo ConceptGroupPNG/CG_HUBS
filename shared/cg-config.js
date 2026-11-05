@@ -79,7 +79,8 @@ const CG_APPS = [
    Telemetry - how the Hubs report usage and errors to Mission Control.
 
    Every Hub that writes to SharePoint adds one row per visit to
-   `sessions` (refreshed every `heartbeatMinutes` while on screen) and one
+   `sessions` (refreshed every `heartbeatMinutes` while the Hub is open,
+   with LastActive = when the person last clicked or typed in it) and one
    row per error to `errors`, on the CG_Platform site. People can only see
    their own rows; rows older than `keepDays` are removed automatically.
    The lists are created by setup/Setup-CGPlatformTelemetry.ps1.
@@ -93,7 +94,7 @@ const CG_TELEMETRY = {
   // One row per background service (e.g. the ZKTeco bridge), refreshed
   // every few minutes by the service itself - see CG_ALERTS.bridge
   heartbeats: "CG_Heartbeats",
-  heartbeatMinutes: 5,
+  heartbeatMinutes: 2,
   keepDays: 90,
   maxErrorsPerSession: 20
 };

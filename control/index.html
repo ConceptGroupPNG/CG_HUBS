@@ -103,6 +103,8 @@
   .relrow .b { font-size:12px; color:var(--cyan); }
   .relrow .ok { color:var(--green); } .relrow .warn { color:var(--amber); }
   .on { color:var(--green); }
+  .idle { color:var(--muted); }
+  .hub .big em.act { font-style:normal; color:var(--green); }
   .tag.old { color:var(--amber); border-color:#5A4520; }
   .note.warn { color:var(--soft); border:1px solid #5A4520; background:rgba(242,169,59,.06); padding:8px 10px; border-radius:4px; }
   .note.warn b { font-family:var(--mono); color:var(--amber); margin-right:6px; }
@@ -295,7 +297,7 @@
           <div class="head">
             <h2 class="ttl">Activity today · SharePoint writes per hour</h2>
             <div class="kpis">
-              ${tele ? `<span><span>ONLINE NOW</span> <b style="color:var(--green)">${s.totals.online}</b></span>` : ""}
+              ${tele ? `<span><span>OPEN NOW</span> <b style="color:var(--green)">${s.totals.online}</b></span><span><span>ACTIVE</span> <b style="color:var(--green)">${s.totals.active}</b></span>` : ""}
               <span><span>PEOPLE TODAY</span> ${s.totals.peopleToday}</span>
               <span><span>WRITES TODAY</span> ${s.totals.writesToday}</span>
               ${tele ? `<span><span>ERRORS 24H</span> <b style="color:${s.totals.errors24h ? "var(--amber)" : "inherit"}">${s.totals.errors24h}</b></span>` : ""}
@@ -355,13 +357,13 @@
   function hubTile(h, tele) {
     const issues = h.errors.length;
     const big = tele ? h.online : h.people;
-    const bigLabel = tele ? "online now" : (h.people === 1 ? "person today" : "people today");
+    const bigLabel = tele ? `open now · <em class="act">${h.active} active</em>` : (h.people === 1 ? "person today" : "people today");
     const more = issues ? `${issues} list${issues > 1 ? "s" : ""} can't be read →`
                : (tele && h.errors24h) ? `${h.errors24h} error${h.errors24h > 1 ? "s" : ""} in 24h →` : "Users &amp; errors →";
     const row = tele
       ? `<span>TODAY <em>${h.people}</em></span><span>ERR 24H <em style="color:${h.errors24h ? "var(--amber)" : "inherit"}">${h.errors24h}</em></span><span>LOAD <em>${esc(P.seconds(h.loadMs))}</em></span>`
       : `<span>WRITES <em>${h.writesToday}</em></span><span>LAST <em>${esc(h.age)}</em></span><span>LISTS <em>${h.lists.length}</em></span>`;
-    return `<button class="hub ${h.status}" type="button" data-app="${esc(h.app)}" style="--c:${COLORS[h.status]}" aria-label="${esc(h.name)}: ${STATUS_TEXT[h.status]}, ${big} ${bigLabel}. Open details">
+    return `<button class="hub ${h.status}" type="button" data-app="${esc(h.app)}" style="--c:${COLORS[h.status]}" aria-label="${esc(h.name)}: ${STATUS_TEXT[h.status]}, ${tele ? `${h.online} open now, ${h.active} active` : `${big} ${bigLabel}`}. Open details">
       <div class="top"><span class="nm" title="${esc(h.name)}">${esc(SHORT[h.app] || h.name)}</span><span class="st"><i></i>${STATUS_TEXT[h.status]}</span></div>
       <div class="big"><b${tele && h.online ? ' style="color:var(--green)"' : ""}>${big}</b><span>${bigLabel}</span></div>
       <div class="row">${row}</div>
@@ -425,13 +427,13 @@
       $("drillBody").innerHTML = people.length ? `
         <table><thead><tr><th>PERSON</th>${tele ? '<th class="n">VISITS</th><th>LAST SEEN</th>' : ""}<th class="n">WRITES TODAY</th><th class="n">${WINDOW_DAYS}-DAY WRITES</th><th>LAST WRITE</th><th>LISTS</th></tr></thead>
         <tbody>${people.map(u => `<tr>
-          <td>${u.online ? '<span class="on" title="Online now">●</span> ' : ""}${esc(u.name)}${u.isApp ? ' <span class="tag">PROGRAM</span>' : ""}${u.device === "Phone" ? ' <span class="tag">PHONE</span>' : ""}${u.oldCopy ? ' <span class="tag old" title="Wrote today, but their copy of the Hub is not reporting - opened before the last update. Ask them to refresh (Ctrl+F5).">OLD COPY</span>' : ""}</td>
+          <td>${u.active ? '<span class="on" title="Active: using it in the last 10 minutes">●</span> ' : u.online ? `<span class="idle" title="Open, idle since ${esc(u.lastActive ? P.clock(u.lastActive) : "?")}">○</span> ` : ""}${esc(u.name)}${u.online && !u.active && u.lastActive ? ` <span class="tag">IDLE ${esc(P.ageText(now - u.lastActive))}</span>` : ""}${u.isApp ? ' <span class="tag">PROGRAM</span>' : ""}${u.device === "Phone" ? ' <span class="tag">PHONE</span>' : ""}${u.oldCopy ? ' <span class="tag old" title="Wrote today, but their copy of the Hub is not reporting - opened before the last update. Ask them to refresh (Ctrl+F5).">OLD COPY</span>' : ""}</td>
           ${tele ? `<td class="n">${u.sessions || 0}</td><td class="mono" style="font-size:12px">${when(u.lastSeen)}</td>` : ""}
           <td class="n">${u.today}</td><td class="n">${u.writes}</td>
           <td class="mono" style="font-size:12px">${when(u.last)}</td>
           <td style="color:var(--soft)">${u.lists.map(esc).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>
         ${h.oldCopy && h.oldCopy.length ? `<p class="note warn"><b>OLD COPY</b> ${h.oldCopy.map(esc).join(", ")} ${h.oldCopy.length > 1 ? "are" : "is"} working in a copy of ${esc(h.name)} opened before the last update, so it doesn't report visits or errors. Ask them to refresh it (Ctrl+F5).</p>` : ""}
-        <p class="note">Visits and last seen come from the Hub itself${tele ? "" : " (once telemetry is on)"}; writes are added or changed items in the watched lists. Anyone who wrote in the last few minutes counts as online. Programs such as the ZKTeco bridge are listed but not counted as people.</p>`
+        <p class="note">Visits and last seen come from the Hub itself${tele ? "" : " (once telemetry is on)"}; writes are added or changed items in the watched lists. <span class="on">●</span> active: used it in the last 10 minutes · <span class="idle">○</span> open but idle. Anyone who wrote in the last few minutes counts as active. Programs such as the ZKTeco bridge are listed but not counted as people.</p>`
         : `<p class="empty">Nobody has used ${esc(h.name)} in the last ${WINDOW_DAYS} days.</p>`;
     } else {
       const notes = h.lists.filter(l => l.note);

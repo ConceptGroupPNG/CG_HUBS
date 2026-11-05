@@ -231,3 +231,23 @@ test("old copies: wrote today with no visit today is flagged; recent writers cou
   assert.deepEqual(psp.behind, ["Gloria Boku", "Jacinta Kodana"]);
   assert.equal(s.totals.online, 2);
 });
+
+test("open vs active: open in the background counts as open, not active", () => {
+  const s = P.summarise([], NOW, { hubs: [{ app: "psp", name: "PSP HUB" }] });
+  const sess = (user, lastSeen, lastActive) => ({ app: "psp", user, started: at(4, 8, 0), lastSeen, lastActive, build: "b", device: "Desktop" });
+  P.withTelemetry(s, { ok: true, errors: [], sessions: [
+    sess("Carlos Atalou", at(4, 14, 16), at(4, 14, 15)),     // open and using it
+    sess("Gloria Boku", at(4, 14, 16), at(4, 13, 40)),       // open, idle 37 min (on Excel)
+    sess("Owen Boku", at(4, 13, 0), at(4, 12, 59)),          // closed an hour ago
+    sess("Miriam Here", at(4, 14, 14), null)                 // older core: only reported while on screen
+  ] }, NOW);
+  const h = s.hubs[0];
+  assert.deepEqual(h.onlineNames, ["Carlos Atalou", "Gloria Boku", "Miriam Here"]);
+  assert.deepEqual(h.activeNames, ["Carlos Atalou", "Miriam Here"]);
+  assert.equal(h.online, 3); assert.equal(h.active, 2);
+  assert.equal(s.totals.online, 3); assert.equal(s.totals.active, 2);
+  const g = h.userList.find(u => u.name === "Gloria Boku");
+  assert.equal(g.online, true); assert.equal(!!g.active, false);
+  assert.equal(g.lastActive.getTime(), at(4, 13, 40).getTime());
+  assert.deepEqual(h.userList.map(u => u.name).slice(0, 3), ["Carlos Atalou", "Miriam Here", "Gloria Boku"]);   // active first
+});
