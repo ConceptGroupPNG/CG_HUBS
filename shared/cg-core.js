@@ -72,6 +72,29 @@
     return CG.ATTENDANCE_METHODS.find(m => m.toLowerCase() === s) || CG.ATTENDANCE_METHOD_DEFAULT;
   };
 
+  /* -----------------------------------------------------------------
+     What a Time Entry Save should do with one grid row (one Employee,
+     one day). Every save stamps EntrySource "Manual", and the ZKTeco
+     bridge never touches a Manual row - so writing a row nobody changed
+     silently stops that person's later device punches being recorded.
+       changed     - the user altered something on this row
+       hasExisting - a CG_EmployeeTimeRecords row is already on file
+       hasAnyData  - the row has any time/shift/override in it
+       method      - the Employee's T&A method (see attendanceMethod)
+     Returns "update", "create" or "skip".
+     An untouched blank day that only shows the Default Shift is still
+     created for Manual employees (supervisors accept the defaults by
+     saving), but never for Biometric/Mobile ones, whose punches fill it.
+     ----------------------------------------------------------------- */
+  CG.timeEntryRowAction = ({ changed, hasExisting, hasAnyData, method }) => {
+    if (changed) {
+      if (hasExisting) return "update";
+      return hasAnyData ? "create" : "skip";
+    }
+    if (hasExisting) return "skip";
+    return (hasAnyData && CG.attendanceMethod(method) === "Manual") ? "create" : "skip";
+  };
+
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const store = {
     get(k) { try { return global.sessionStorage.getItem(k); } catch (e) { return null; } },

@@ -4351,8 +4351,64 @@ function renderEmployeeTimeEntryBody(){
     row.querySelectorAll(".time-field").forEach(attachTimeFieldValidation);
   });
   recompute();
+  snapshotTimeEntryRows(rows);
 
   document.getElementById("teSaveBtn").addEventListener("click", () => saveEmployeeTimeEntries(employee, period, rows));
+}
+
+// ---- Save only what changed ----
+// Every Time Entry save stamps EntrySource "Manual", and the ZKTeco bridge
+// never overwrites a Manual row. Saving rows nobody touched (the whole Pay
+// Period in By Employee, the whole team in By Day) therefore locked those
+// days against later device punches — e.g. correcting yesterday's missed
+// clock out stopped today's clock out syncing (Nov 2026). Each row now
+// remembers what it showed when rendered, and Save writes only the rows
+// that differ (see CG.timeEntryRowAction for the full rule).
+function timeEntryRowValues(row){
+  return {
+    timeIn: row.querySelector(".te-in").value,
+    timeOut: row.querySelector(".te-out").value,
+    bStart: row.querySelector(".te-bstart").value,
+    bEnd: row.querySelector(".te-bend").value,
+    override: row.querySelector(".te-boverride").value,
+    shiftName: row.querySelector(".te-shift").value,
+  };
+}
+function snapshotTimeEntryRows(rows){
+  rows.forEach(row => { row.dataset.initial = JSON.stringify(timeEntryRowValues(row)); });
+}
+function timeEntryRowChanged(row){
+  return row.dataset.initial !== JSON.stringify(timeEntryRowValues(row));
+}
+function timeEntryRowHasData(v){
+  return !!(v.timeIn || v.timeOut || v.bStart || v.bEnd || v.override !== "" || v.shiftName);
+}
+// Works out which rows to write. Returns [{ row, employee, dateStr, values }].
+function timeEntryRowsToSave(items){
+  return items.filter(it => {
+    const action = CG.timeEntryRowAction({
+      changed: timeEntryRowChanged(it.row),
+      hasExisting: !!findTimeRecord(it.employee.fields.EmployeeNumber, it.dateStr),
+      hasAnyData: timeEntryRowHasData(it.values),
+      method: it.employee.fields,
+    });
+    return action !== "skip";
+  });
+}
+// Editing today's still-open row for a scanner/phone user makes it Manual,
+// so their clock out later today won't arrive by itself. Ask first.
+function confirmOpenDayEdits(toSave){
+  const today = todayStr();
+  const names = toSave.filter(it =>
+    it.dateStr === today && !it.values.timeOut &&
+    CG.attendanceMethod(it.employee.fields) !== "Manual"
+  ).map(it => it.employee.fields.Title || it.employee.fields.EmployeeNumber);
+  if(!names.length) return true;
+  return window.confirm(
+    `You're editing today's open record for ${names.join(", ")}.\n\n` +
+    `Once saved it becomes a Manual entry, and their clock out from the device or phone later today will NOT be recorded automatically — you'll need to enter it by hand.\n\n` +
+    `Tip: corrections for today are best made after they've clocked out.\n\nSave anyway?`
+  );
 }
 
 // Shared write path for a single Employee+day time record — used by both
@@ -4387,23 +4443,25 @@ async function saveEmployeeTimeEntries(employee, period, rows){
     reportRowMsg(msgEl, `${badRow} has an incomplete or invalid time (expected 24-hour HH:MM, e.g. 08:00) — fix it before saving.`, true);
     return;
   }
+  const toSave = timeEntryRowsToSave(rows.map(row => ({
+    row, employee, dateStr: row.getAttribute("data-date"), values: timeEntryRowValues(row),
+  })));
+  if(!toSave.length){
+    reportRowMsg(msgEl, "Nothing changed — nothing to save.", false);
+    return;
+  }
+  if(!confirmOpenDayEdits(toSave)) return;
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
   try{
-    for(const row of rows){
-      const dateStr = row.getAttribute("data-date");
-      const timeIn = row.querySelector(".te-in").value;
-      const timeOut = row.querySelector(".te-out").value;
-      const bStart = row.querySelector(".te-bstart").value;
-      const bEnd = row.querySelector(".te-bend").value;
-      const override = row.querySelector(".te-boverride").value;
-      const shiftName = row.querySelector(".te-shift").value;
-      await saveOneTimeRecord(employee.fields.EmployeeNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, shiftName, enteredBy);
+    for(const it of toSave){
+      const v = it.values;
+      await saveOneTimeRecord(employee.fields.EmployeeNumber, it.dateStr, period.fields.PayNumber, v.timeIn, v.timeOut, v.bStart, v.bEnd, v.override, v.shiftName, enteredBy);
     }
     allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
     renderEmployeeTimeEntryBody();
-    reportRowMsg(document.getElementById("teSaveMsg"), "Saved.", false);
+    reportRowMsg(document.getElementById("teSaveMsg"), `Saved ${toSave.length} day${toSave.length===1?"":"s"}.`, false);
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
@@ -4492,7 +4550,7 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     </div>
     <div class="panel">
       <div class="te-save-bar">
-        <button class="admin-submit" id="teDaySaveBtn">Save Day for All Employees</button>
+        <button class="admin-submit" id="teDaySaveBtn">Save Changes</button>
         <span id="teDaySaveMsg" style="font-size:11.5px;"></span>
       </div>
       <div style="overflow-x:auto;">
@@ -4540,6 +4598,7 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
     row.querySelectorAll(".time-field").forEach(attachTimeFieldValidation);
   });
   recompute();
+  snapshotTimeEntryRows(rows);
 
   document.getElementById("teDaySaveBtn").addEventListener("click", () => saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmployees));
 }
@@ -4555,23 +4614,26 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
     reportRowMsg(msgEl, `${badRow} has an incomplete or invalid time (expected 24-hour HH:MM, e.g. 08:00) — fix it before saving.`, true);
     return;
   }
+  const toSave = timeEntryRowsToSave(rows.map(row => {
+    const empNumber = row.getAttribute("data-emp-number");
+    return { row, employee: allEmployees.find(e => e.fields.EmployeeNumber === empNumber), dateStr, values: timeEntryRowValues(row) };
+  }).filter(it => it.employee));
+  if(!toSave.length){
+    reportRowMsg(msgEl, "Nothing changed — nothing to save.", false);
+    return;
+  }
+  if(!confirmOpenDayEdits(toSave)) return;
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
   try{
-    for(const row of rows){
-      const empNumber = row.getAttribute("data-emp-number");
-      const timeIn = row.querySelector(".te-in").value;
-      const timeOut = row.querySelector(".te-out").value;
-      const bStart = row.querySelector(".te-bstart").value;
-      const bEnd = row.querySelector(".te-bend").value;
-      const override = row.querySelector(".te-boverride").value;
-      const shiftName = row.querySelector(".te-shift").value;
-      await saveOneTimeRecord(empNumber, dateStr, period.fields.PayNumber, timeIn, timeOut, bStart, bEnd, override, shiftName, enteredBy);
+    for(const it of toSave){
+      const v = it.values;
+      await saveOneTimeRecord(it.employee.fields.EmployeeNumber, dateStr, period.fields.PayNumber, v.timeIn, v.timeOut, v.bStart, v.bEnd, v.override, v.shiftName, enteredBy);
     }
     allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
     renderEmployeeTimeEntryByDayGrid(activeEmployees);
-    reportRowMsg(document.getElementById("teDaySaveMsg"), "Saved.", false);
+    reportRowMsg(document.getElementById("teDaySaveMsg"), `Saved ${toSave.length} employee${toSave.length===1?"":"s"}.`, false);
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
