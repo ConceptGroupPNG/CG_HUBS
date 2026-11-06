@@ -710,7 +710,7 @@
           const now = new Date().toISOString();
           const r = await tsave("POST", await tUrl(tcfg().sessions), {
             Title: T.sid, App: T.app, UserName: cut(acct.name || acct.username, 255), UserEmail: CG.auth.email(),
-            StartedAt: now, LastSeen: now, LastActive: now, PageViews: 1, Screens: T.screens.join(", "), ErrorCount: T.errors,
+            StartedAt: now, LastSeen: now, LastActive: new Date(T.lastActive).toISOString(), PageViews: 1, Screens: T.screens.join(", "), ErrorCount: T.errors,
             Throttles: T.throttles, Build: cut(buildText(), 255), LoadMs: loadMs(),
             Device: CG.isPhone() ? "Phone" : "Desktop", Browser: cut(browserName(), 255)
           }, true);
