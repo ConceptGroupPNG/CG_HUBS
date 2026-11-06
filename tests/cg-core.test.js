@@ -91,6 +91,26 @@ test("attendance method: blank or unknown means Biometric; known values tidied",
   assert.equal(CG.attendanceMethod({ AttendanceMethod: "Biometric" }), "Biometric");
 });
 
+/* ---------------- time entry save: only changed rows ---------------- */
+test("time entry save: untouched rows are never rewritten as Manual", () => {
+  const { CG } = load();
+  const act = o => CG.timeEntryRowAction(o);
+  // The Nov 2026 bug: correcting one day re-saved every other day too.
+  assert.equal(act({ changed: false, hasExisting: true, hasAnyData: true, method: { AttendanceMethod: "Biometric" } }), "skip");
+  assert.equal(act({ changed: false, hasExisting: true, hasAnyData: true, method: { AttendanceMethod: "Manual" } }), "skip");
+  // Edited rows are written.
+  assert.equal(act({ changed: true, hasExisting: true, hasAnyData: true, method: {} }), "update");
+  assert.equal(act({ changed: true, hasExisting: true, hasAnyData: false, method: {} }), "update"); // clearing a day
+  assert.equal(act({ changed: true, hasExisting: false, hasAnyData: true, method: {} }), "create");
+  assert.equal(act({ changed: true, hasExisting: false, hasAnyData: false, method: {} }), "skip");
+  // Blank day showing only the Default Shift: created for Manual staff, not for scanner/phone staff.
+  assert.equal(act({ changed: false, hasExisting: false, hasAnyData: true, method: { AttendanceMethod: "Manual" } }), "create");
+  assert.equal(act({ changed: false, hasExisting: false, hasAnyData: true, method: { AttendanceMethod: "Biometric" } }), "skip");
+  assert.equal(act({ changed: false, hasExisting: false, hasAnyData: true, method: { AttendanceMethod: "Mobile" } }), "skip");
+  assert.equal(act({ changed: false, hasExisting: false, hasAnyData: true, method: {} }), "skip"); // blank method = Biometric
+  assert.equal(act({ changed: false, hasExisting: false, hasAnyData: false, method: { AttendanceMethod: "Manual" } }), "skip");
+});
+
 /* ---------------- app switches ---------------- */
 test("on / off / preview switches", () => {
   const { CG } = load();
