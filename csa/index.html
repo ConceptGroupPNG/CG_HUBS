@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 <script src="../shared/cg-config.js"></script>
 <script src="../shared/cg-core.js"></script>
+<script src="pdf-import.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 <style>
@@ -207,6 +208,16 @@
     background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:600;
   }
   .btn-row{display:flex;gap:10px;}
+  .import-banner{
+    background:#f0fdf8;border:1px solid #a7e3c9;border-left:4px solid var(--teal);border-radius:8px;
+    padding:12px 16px;margin:0 0 16px;font-size:13px;color:var(--text);line-height:1.5;
+  }
+  .import-banner b{font-weight:700;}
+  .import-banner .import-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .import-banner select{border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12.5px;font-family:inherit;background:var(--card);color:var(--text);max-width:100%;}
+  .import-banner .btn-secondary{padding:5px 12px;font-size:12px;}
+  .import-banner ul{margin:6px 0 0 18px;padding:0;color:#92400e;}
+  .import-banner .import-warn{color:#92400e;}
   .billable-select{
     border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;
     font-family:inherit;background:var(--card);color:var(--text);cursor:pointer;
@@ -351,6 +362,8 @@
               <option>Completed</option>
               <option>Cancelled</option>
             </select>
+            <button class="btn-secondary" id="importAgreementBtn" title="Read a signed or draft CSA PDF and fill in a new agreement for you to check">Import from PDF</button>
+            <input type="file" id="importAgreementFile" accept="application/pdf,.pdf" style="display:none">
             <button class="btn-primary" id="newAgreementBtn">+ New Agreement</button>
           </div>
         </div>
@@ -559,7 +572,11 @@
             <div class="page-title">Proposals</div>
             <div class="page-sub">Pre-agreement proposals, engagement letters, and client contracts</div>
           </div>
-          <button class="btn-primary" id="newProposalBtn">+ New Proposal</button>
+          <div class="btn-row">
+            <button class="btn-secondary" id="importProposalBtn" title="Read a proposal letter PDF and fill in a new proposal for you to check">Import from PDF</button>
+            <input type="file" id="importProposalFile" accept="application/pdf,.pdf" style="display:none">
+            <button class="btn-primary" id="newProposalBtn">+ New Proposal</button>
+          </div>
         </div>
         <div class="table-toolbar">
           <input type="text" class="search-box" id="proposalSearch" placeholder="Search by proposal number, client, or project…">
@@ -2523,10 +2540,12 @@ let editProposalId = null;
 let editProposalFeeLines = [];
 let editProposalPaymentTerms = [];
 let cloneSourceProposalId = null;
+let proposalImport = null;   // { result, clientId, fileName } while a PDF import is being checked
 
 function enterProposalEditMode(itemId){
   editProposalId = itemId || null;
   cloneSourceProposalId = null;
+  proposalImport = null;
 
   if(editProposalId){
     editProposalFeeLines = allProposalFeeLineItems
@@ -2558,6 +2577,7 @@ function cloneProposal(itemId){
   if(!source) return;
   editProposalId = null; // creating a new record
   cloneSourceProposalId = itemId;
+  proposalImport = null;
 
   editProposalFeeLines = allProposalFeeLineItems
     .filter(x => x.fields.ParentProposalLookupId === itemId)
@@ -2582,13 +2602,14 @@ function cloneProposal(itemId){
 function renderProposalEditForm(){
   const isNew = !editProposalId;
   const source = cloneSourceProposalId ? proposalMap[cloneSourceProposalId] : (isNew ? null : proposalMap[editProposalId]);
-  const f = source ? source.fields : {};
+  const f = source ? source.fields
+    : (proposalImport ? Object.assign({ ClientOrgLookupId: proposalImport.clientId }, proposalImport.result.fields) : {});
 
   document.getElementById("proposalDetailContent").innerHTML = `
     <div class="detail-header">
       <div>
         <div class="detail-title-row">
-          <div class="detail-title">${isNew ? (cloneSourceProposalId ? "Clone of " + esc(f.Title) : "New Proposal") : esc(f.Title)}</div>
+          <div class="detail-title">${isNew ? (cloneSourceProposalId ? "Clone of " + esc(f.Title) : (proposalImport ? "New Proposal (imported)" : "New Proposal")) : esc(f.Title)}</div>
         </div>
         <div class="detail-sub">${isNew ? "Proposal number will be assigned automatically on save" : "Editing " + esc(f.Title)}</div>
       </div>
@@ -2597,6 +2618,7 @@ function renderProposalEditForm(){
         <button class="btn-primary" onclick="saveProposal()">${isNew ? "Create Proposal" : "Save Changes"}</button>
       </div>
     </div>
+    ${isNew && proposalImport ? importBannerHtml("proposal") : ""}
 
     <div class="detail-grid">
       <div>
@@ -2647,7 +2669,7 @@ function renderProposalEditForm(){
             </div>
             <div class="form-field">
               <label>Proposal Date</label>
-              <input type="text" id="editProposalDate" placeholder="YYYY-MM-DD" value="${esc(isNew && !cloneSourceProposalId ? "" : f.ProposalDate)}">
+              <input type="text" id="editProposalDate" placeholder="YYYY-MM-DD" value="${esc(isNew && !cloneSourceProposalId && !proposalImport ? "" : f.ProposalDate)}">
             </div>
             <div class="form-field">
               <label>Fee Basis</label>
@@ -2764,6 +2786,7 @@ function recalcProposalTotals(){
 }
 
 function cancelProposalEdit(){
+  proposalImport = null;
   if(editProposalId){
     showProposalDetail(editProposalId);
   } else if(cloneSourceProposalId){
@@ -2846,6 +2869,7 @@ async function saveProposal(){
     }
 
     await syncActiveEntity("Proposal", fields.Title || proposalMap[targetId]?.fields.Title, fields.Description, fields.IsActive);
+    proposalImport = null;
 
     await loadAllData();
     renderProposalsTable();
@@ -4473,6 +4497,7 @@ let editAgreementId = null;   // null = creating a new agreement
 let editFeeLines = [];        // [{description, amount}]
 let editMilestones = [];      // [{description, percentage, fee, gst, deliveryDate, status}]
 let cloneSourceAgreementId = null;
+let agreementImport = null;  // { result, clientId, sourceProposalId, fileName } while a PDF import is being checked
 
 async function getNextCsaNumber(){
   const items = await fetchAllListItems("CSA_Counter");
@@ -4485,6 +4510,7 @@ async function getNextCsaNumber(){
 function enterEditMode(itemId){
   editAgreementId = itemId || null;
   cloneSourceAgreementId = null;
+  agreementImport = null;
 
   if(editAgreementId){
     const a = agreementMap[editAgreementId];
@@ -4518,6 +4544,7 @@ function cloneAgreement(itemId){
   if(!source) return;
   editAgreementId = null; // creating a new record
   cloneSourceAgreementId = itemId;
+  agreementImport = null;
 
   editFeeLines = allFeeLineItems
     .filter(x => x.fields.ParentCSALookupId === itemId)
@@ -4559,13 +4586,14 @@ function choiceOptions(list, selected){
 function renderEditForm(){
   const isNew = !editAgreementId;
   const a = cloneSourceAgreementId ? agreementMap[cloneSourceAgreementId] : (isNew ? null : agreementMap[editAgreementId]);
-  const f = a ? a.fields : {};
+  const f = a ? a.fields
+    : (agreementImport ? Object.assign({ ClientOrgLookupId: agreementImport.clientId }, agreementImport.result.fields) : {});
 
   document.getElementById("agreementDetailContent").innerHTML = `
     <div class="detail-header">
       <div>
         <div class="detail-title-row">
-          <div class="detail-title">${isNew ? (cloneSourceAgreementId ? "Clone of " + esc(f.Title) : "New Agreement") : esc(f.Title)}</div>
+          <div class="detail-title">${isNew ? (cloneSourceAgreementId ? "Clone of " + esc(f.Title) : (agreementImport ? "New Agreement (imported)" : "New Agreement")) : esc(f.Title)}</div>
         </div>
         <div class="detail-sub">${isNew ? "CSA number will be assigned automatically on save" : "Editing " + esc(f.Title)}</div>
       </div>
@@ -4574,6 +4602,7 @@ function renderEditForm(){
         <button class="btn-primary" onclick="saveAgreement()">${isNew ? "Create Agreement" : "Save Changes"}</button>
       </div>
     </div>
+    ${isNew && agreementImport ? importBannerHtml("csa") : ""}
 
     <div class="detail-grid">
       <div>
@@ -4751,6 +4780,7 @@ function recalcTotals(){
 }
 
 function cancelEdit(){
+  agreementImport = null;
   if(editAgreementId){
     showAgreementDetail(editAgreementId);
   } else if(cloneSourceAgreementId){
@@ -4844,6 +4874,12 @@ async function saveAgreement(){
 
     await syncActiveEntity("CSA", fields.Title || agreementMap[targetId]?.fields.Title, fields.Description, fields.IsActive);
 
+    // Imported from a PDF and linked to the proposal it came from
+    if(!editAgreementId && agreementImport && agreementImport.sourceProposalId){
+      await linkCsaToProposal(targetId, fields.Title, agreementImport.sourceProposalId);
+    }
+    agreementImport = null;
+
     await loadAllData();
     renderDashboard();
     renderAgreementsTable();
@@ -4857,6 +4893,194 @@ async function saveAgreement(){
     saveBtn.disabled = false;
   }
 }
+
+/* ============================================================
+   IMPORT FROM PDF
+   ------------------------------------------------------------
+   Reads a Proposal letter or CSA PDF in the browser (pdf.js),
+   parses it with pdf-import.js, and opens the normal New
+   Proposal / New Agreement form already filled in. Nothing is
+   saved until the person clicks Create. CSA HUB numbering is
+   always used; the number on the PDF is shown for reference.
+   ============================================================ */
+const PDFJS_VERSION = "4.10.38";
+let pdfjsLibPromise = null;
+function loadPdfJs(){
+  if(!pdfjsLibPromise){
+    const base = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/`;
+    pdfjsLibPromise = import(base + "pdf.min.mjs").then(lib => {
+      lib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.mjs";
+      return lib;
+    }).catch(err => { pdfjsLibPromise = null; throw err; });
+  }
+  return pdfjsLibPromise;
+}
+
+const IMPORT_LABEL = { proposal: "Proposal", csa: "CSA" };
+
+async function importFromPdf(expectedType, file, btn){
+  const originalText = btn.textContent;
+  btn.textContent = "Reading PDF…";
+  btn.disabled = true;
+  try{
+    const lib = await loadPdfJs();
+    const text = await CSAImport.textFromPdf(lib, new Uint8Array(await file.arrayBuffer()));
+    if(!text.replace(/\s/g, "")){
+      alert("This PDF has no readable text - it looks like a scanned image. Please enter it by hand, or import the original Word/PDF export instead.");
+      return;
+    }
+    let type = expectedType;
+    const detected = CSAImport.detectType(text);
+    if(detected && detected !== expectedType){
+      if(!confirm(`This looks like a ${IMPORT_LABEL[detected]}, not a ${IMPORT_LABEL[expectedType]}. Import it as a ${IMPORT_LABEL[detected]} instead?`)) return;
+      type = detected;
+    } else if(!detected){
+      if(!confirm(`This doesn't look like a BHC ${IMPORT_LABEL[expectedType]}, so only some fields may be filled. Carry on?`)) return;
+    }
+
+    const result = CSAImport.parse(text, type);
+    await refreshAllData();
+    const client = CSAImport.matchClient(result.client, allClients);
+    const clientId = client ? client.id : "";
+    CG.telemetry && CG.telemetry.screen && CG.telemetry.screen("Import " + IMPORT_LABEL[type]);
+
+    if(type === "proposal") startProposalImport(result, clientId, file.name);
+    else startAgreementImport(result, clientId, file.name);
+  }catch(err){
+    console.error(err);
+    alert("Couldn't read the PDF: " + err.message);
+  }finally{
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+function startProposalImport(result, clientId, fileName){
+  enterProposalEditMode(null);           // resets state and shows the view
+  proposalImport = { result, clientId, fileName };
+  editProposalFeeLines = result.feeLines.map(l => ({ description: l.description, amount: l.amount }));
+  editProposalPaymentTerms = result.paymentTerms.map(t => ({ ...t }));
+  renderProposalEditForm();
+  window.scrollTo(0, 0);
+}
+
+function startAgreementImport(result, clientId, fileName){
+  enterEditMode(null);
+  agreementImport = { result, clientId, fileName, sourceProposalId: guessSourceProposal(result, clientId) };
+  editFeeLines = result.feeLines.map(l => ({ description: l.description, amount: l.amount }));
+  editMilestones = result.milestones.map(m => ({ ...m }));
+  renderEditForm();
+  window.scrollTo(0, 0);
+}
+
+// The proposal this CSA most likely came from: same client, not yet converted,
+// and (if several) the one with the same fee total.
+function proposalsForClient(clientId){
+  if(!clientId) return [];
+  return allProposals
+    .filter(p => String(p.fields.ClientOrgLookupId) === String(clientId))
+    .sort((a,b)=> (b.fields.ProposalDate||"").localeCompare(a.fields.ProposalDate||""));
+}
+function guessSourceProposal(result, clientId){
+  const open = proposalsForClient(clientId).filter(p => !p.fields.ConvertedToCSA);
+  const sameFee = open.filter(p => Math.abs((parseFloat(p.fields.TotalFeeExclGST)||0) - (result.fields.TotalFeeExclGST||0)) < 0.5);
+  if(sameFee.length === 1) return sameFee[0].id;
+  if(open.length === 1) return open[0].id;
+  return "";
+}
+
+function importClientRowHtml(kind){
+  const imp = kind === "proposal" ? proposalImport : agreementImport;
+  const pc = imp.result.client || {};
+  if(imp.clientId){
+    const c = allClients.find(x => String(x.id) === String(imp.clientId));
+    return `<div>Client matched: <b>${esc(c ? c.fields.Title : "")}</b></div>`;
+  }
+  if(!pc.suggestedTitle) return `<div class="import-warn">Couldn't read the client - please pick it from the Client list.</div>`;
+  return `
+    <div class="import-row import-warn">
+      <span><b>${esc(pc.suggestedTitle)}</b> isn't in CSA HUB yet.</span>
+      <button class="btn-secondary" onclick="addImportedClient('${kind}', this)">Add this client</button>
+      <span style="color:var(--text-muted)">or pick an existing one from the Client list.</span>
+    </div>`;
+}
+
+function importProposalLinkHtml(){
+  const opts = proposalsForClient(agreementImport.clientId);
+  return `
+    <div class="import-row">
+      <span>Came from proposal:</span>
+      <select id="importSourceProposal" onchange="agreementImport.sourceProposalId = this.value">
+        <option value="">— None / not in CSA HUB —</option>
+        ${opts.map(p => `<option value="${p.id}" ${String(p.id)===String(agreementImport.sourceProposalId)?"selected":""}>${esc(p.fields.Title)} — ${esc(p.fields.ProjectName||"")}${p.fields.ConvertedToCSA ? " (already converted to " + esc(p.fields.ConvertedToCSA) + ")" : ""}</option>`).join("")}
+      </select>
+      <span style="color:var(--text-muted)">Linking marks the proposal "Converted to CSA".</span>
+    </div>`;
+}
+
+function importBannerHtml(kind){
+  const imp = kind === "proposal" ? proposalImport : agreementImport;
+  const r = imp.result;
+  const create = kind === "proposal" ? "Create Proposal" : "Create Agreement";
+  return `
+    <div class="import-banner" id="importBanner">
+      <div>Filled in from <b>${esc(imp.fileName)}</b>. Please check every field, then click <b>${create}</b> - nothing is saved until you do.</div>
+      ${r.originalNumber ? `<div>Number on the PDF: <b>${esc(r.originalNumber)}</b> - this agreement will get the next CSA HUB number.</div>` : ""}
+      <div id="importClientRow">${importClientRowHtml(kind)}</div>
+      ${kind === "csa" ? `<div id="importProposalRow">${importProposalLinkHtml()}</div>` : ""}
+      ${r.warnings.length ? `<ul>${r.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+    </div>`;
+}
+
+async function addImportedClient(kind, btn){
+  const imp = kind === "proposal" ? proposalImport : agreementImport;
+  const pc = imp.result.client;
+  const clash = allClients.find(c => (c.fields.Title||"").trim().toLowerCase() === pc.suggestedTitle.trim().toLowerCase());
+  btn.textContent = "Adding…";
+  btn.disabled = true;
+  try{
+    let id = clash ? clash.id : null;
+    if(!id){
+      const fields = { Title: pc.suggestedTitle, ContactName: pc.contact || "", Address: pc.address || "" };
+      id = await saveClientWithFallback(null, fields);
+      allClients.push({ id: String(id), fields });
+      clientMap[id] = fields;
+      renderClientsTable();
+    }
+    imp.clientId = String(id);
+    // Refresh just the client list and banner rows so nothing typed in the form is lost
+    const selectId = kind === "proposal" ? "editProposalClientOrg" : "editClientOrg";
+    document.getElementById(selectId).innerHTML = `<option value="">— Select client —</option>${clientOptions(id)}`;
+    document.getElementById("importClientRow").innerHTML = importClientRowHtml(kind);
+    if(kind === "csa"){
+      agreementImport.sourceProposalId = guessSourceProposal(agreementImport.result, id);
+      document.getElementById("importProposalRow").innerHTML = importProposalLinkHtml();
+    }
+  }catch(err){
+    console.error(err);
+    alert("Couldn't add the client: " + err.message);
+    btn.textContent = "Add this client";
+    btn.disabled = false;
+  }
+}
+
+async function linkCsaToProposal(csaId, csaNumber, proposalId){
+  try{
+    await graphUpdateItem("CSA_List", csaId, { SourceProposalLookupId: proposalId });
+    await graphUpdateItem("CSA_Proposals", proposalId, { Status: "Converted to CSA", ConvertedToCSA: csaNumber });
+  }catch(err){
+    console.error(err);
+    alert(`${csaNumber} was created, but linking it to the proposal failed: ${err.message}`);
+  }
+}
+
+function wireImportButton(btnId, inputId, type){
+  const btn = document.getElementById(btnId), input = document.getElementById(inputId);
+  btn.addEventListener("click", () => { input.value = ""; input.click(); });
+  input.addEventListener("change", () => { if(input.files[0]) importFromPdf(type, input.files[0], btn); });
+}
+wireImportButton("importProposalBtn", "importProposalFile", "proposal");
+wireImportButton("importAgreementBtn", "importAgreementFile", "csa");
 
 document.getElementById("newAgreementBtn").addEventListener("click", async () => {
   await refreshAllData();
