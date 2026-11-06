@@ -379,6 +379,7 @@
             <div class="page-title">Clients</div>
             <div class="page-sub">Client organisations</div>
           </div>
+          <button class="btn-primary" id="newClientBtn">+ New Client</button>
         </div>
         <table>
           <thead>
@@ -594,6 +595,12 @@
       <div class="view" id="view-proposal-detail">
         <div class="back-link" id="backToProposals">&#8592; Back to Proposals</div>
         <div id="proposalDetailContent"><div class="loader">Loading…</div></div>
+      </div>
+
+      <!-- CLIENT DETAIL -->
+      <div class="view" id="view-client-detail">
+        <div class="back-link" id="backToClients">&#8592; Back to Clients</div>
+        <div id="clientDetailContent"><div class="loader">Loading…</div></div>
       </div>
 
       <!-- RESOURCE DETAIL -->
@@ -1209,7 +1216,7 @@ document.getElementById("statusFilter").addEventListener("change", renderAgreeme
 function renderClientsTable(){
   if(allClients.length === 0){
     document.getElementById("clientsTableBody").innerHTML =
-      `<tr><td colspan="4"><div class="empty-state">No clients yet.</div></td></tr>`;
+      `<tr><td colspan="4"><div class="empty-state">No clients yet. Click "+ New Client" to add one.</div></td></tr>`;
     return;
   }
   const rows = allClients.slice().sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
@@ -1217,15 +1224,246 @@ function renderClientsTable(){
     const f = c.fields;
     const count = agreementCounts[c.id] || 0;
     return `
-      <tr>
-        <td><strong>${f.Title || "—"}</strong></td>
-        <td>${f.ContactName || "—"}</td>
-        <td>${f.Address || "—"}</td>
+      <tr onclick="openClientDetail('${c.id}')">
+        <td><strong>${esc(f.Title) || "—"}</strong></td>
+        <td>${esc(f.ContactName) || "—"}</td>
+        <td>${esc(f.Address) || "—"}</td>
         <td style="text-align:right">${count}</td>
       </tr>
     `;
   }).join("");
 }
+
+/* ============================================================
+   CLIENT DETAIL / ADD / EDIT
+   ------------------------------------------------------------
+   CSA_Clients columns used: Title (client name), ContactName, Address.
+   The client's short name in generated CSAs comes from a trailing
+   "(ABBR)" in the name, e.g. "Bank South Pacific (BSP)" -> "BSP".
+   Saves skip any column the list doesn't have and retry
+   (saveWithFieldFallback behaviour).
+   ============================================================ */
+let editClientId = null;
+
+function showClientsList(){
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-clients").classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelector('.nav-item[data-view="clients"]').classList.add("active");
+}
+
+function showClientView(){
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-client-detail").classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+  document.querySelector('.nav-item[data-view="clients"]').classList.add("active");
+}
+
+async function openClientDetail(itemId){
+  await refreshAllData();
+  showClientDetail(itemId);
+}
+
+function showClientDetail(itemId){
+  const c = allClients.find(x => String(x.id) === String(itemId));
+  if(!c) return;
+  const f = c.fields;
+  showClientView();
+
+  const agreements = allAgreements
+    .filter(a => String(a.fields.ClientOrgLookupId) === String(itemId))
+    .sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+  const proposals = allProposals
+    .filter(p => String(p.fields.ClientOrgLookupId) === String(itemId))
+    .sort((a,b)=> (a.fields.Title||"").localeCompare(b.fields.Title||""));
+
+  const agreementsHtml = agreements.length ? `
+    <table class="mini-table">
+      <thead><tr><th>CSA</th><th>Project</th><th>Status</th></tr></thead>
+      <tbody>
+        ${agreements.map(a => `
+          <tr style="cursor:pointer" onclick="openAgreementDetail('${a.id}')">
+            <td>${esc(a.fields.Title)}</td>
+            <td>${esc(a.fields.ProjectName) || "—"}</td>
+            <td><span class="badge ${statusBadgeClass(a.fields.Status)}">${esc(a.fields.Status || "Draft")}</span></td>
+          </tr>`).join("")}
+      </tbody>
+    </table>` : `<div class="empty-state">No agreements for this client yet.</div>`;
+
+  const proposalsHtml = proposals.length ? `
+    <table class="mini-table">
+      <thead><tr><th>Proposal</th><th>Project</th><th>Status</th></tr></thead>
+      <tbody>
+        ${proposals.map(p => `
+          <tr style="cursor:pointer" onclick="openProposalDetail('${p.id}')">
+            <td>${esc(p.fields.Title)}</td>
+            <td>${esc(p.fields.ProjectName) || "—"}</td>
+            <td><span class="badge ${proposalStatusBadgeClass(p.fields.Status)}">${esc(p.fields.Status || "Draft")}</span></td>
+          </tr>`).join("")}
+      </tbody>
+    </table>` : `<div class="empty-state">No proposals for this client yet.</div>`;
+
+  document.getElementById("clientDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${esc(f.Title)}</div>
+        </div>
+        <div class="detail-sub">${agreements.length} agreement${agreements.length===1?"":"s"} · ${proposals.length} proposal${proposals.length===1?"":"s"}</div>
+      </div>
+      <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
+        <button class="btn-secondary" onclick="enterClientEditMode('${c.id}')">Edit</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Client Details</h3>
+          <div class="field-grid">
+            <div class="field-item"><div class="field-label">Client Name</div><div class="field-value">${esc(f.Title) || "—"}</div></div>
+            <div class="field-item"><div class="field-label">Short Name on Documents</div><div class="field-value">${esc(getClientAbbreviation(f.Title))}</div></div>
+            <div class="field-item"><div class="field-label">Contact</div><div class="field-value">${esc(f.ContactName) || "—"}</div></div>
+            <div class="field-item"><div class="field-label">Address</div><div class="field-value">${esc(f.Address) || "—"}</div></div>
+          </div>
+        </div>
+        <div class="section-card card-milestones">
+          <h3>Agreements</h3>
+          ${agreementsHtml}
+        </div>
+      </div>
+      <div>
+        <div class="section-card card-time">
+          <h3>Proposals</h3>
+          ${proposalsHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function enterClientEditMode(itemId){
+  editClientId = itemId || null;
+  showClientView();
+  renderClientEditForm();
+}
+
+function renderClientEditForm(){
+  const isNew = !editClientId;
+  const c = isNew ? null : allClients.find(x => String(x.id) === String(editClientId));
+  const f = c ? c.fields : {};
+
+  document.getElementById("clientDetailContent").innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title-row">
+          <div class="detail-title">${isNew ? "New Client" : esc(f.Title)}</div>
+        </div>
+        <div class="detail-sub">${isNew ? "Add a client organisation" : "Editing " + esc(f.Title)}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="cancelClientEdit()">Cancel</button>
+        <button class="btn-primary" onclick="saveClient(event)">${isNew ? "Create Client" : "Save Changes"}</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <div class="section-card card-details">
+          <h3>Client Details</h3>
+          <div class="form-grid-2">
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Client Name <span style="text-transform:none;font-weight:400;">— end with the short name in brackets to use it on documents, e.g. Bank South Pacific (BSP)</span></label>
+              <input type="text" id="editClientTitle" maxlength="255" placeholder="e.g. Bank South Pacific (BSP)" value="${esc(f.Title)}">
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Contact</label>
+              <input type="text" id="editClientContact" maxlength="255" placeholder="Main contact person" value="${esc(f.ContactName)}">
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label>Address <span style="text-transform:none;font-weight:400;">— printed on CSAs and proposals</span></label>
+              <input type="text" id="editClientAddress" maxlength="255" placeholder="e.g. PO Box 78, Port Moresby, NCD" value="${esc(f.Address)}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("editClientTitle").focus();
+}
+
+function cancelClientEdit(){
+  if(editClientId) showClientDetail(editClientId);
+  else showClientsList();
+}
+
+// Create or update, dropping any column SharePoint doesn't recognise and retrying.
+async function saveClientWithFallback(itemId, fields){
+  const f = Object.assign({}, fields);
+  for(let attempt = 0; attempt < 10; attempt++){
+    try{
+      if(itemId){ await graphUpdateItem("CSA_Clients", itemId, f); return itemId; }
+      const created = await graphCreateItem("CSA_Clients", f);
+      return created.id;
+    }catch(err){
+      const m = /Field '([^']+)' is not recognized/i.exec(err.message || "");
+      if(m && Object.prototype.hasOwnProperty.call(f, m[1]) && m[1] !== "Title"){
+        console.warn(`CSA_Clients: column '${m[1]}' not on the list, skipped`);
+        delete f[m[1]];
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("CSA_Clients: too many unrecognised columns - save abandoned.");
+}
+
+async function saveClient(evt){
+  const saveBtn = evt.target;
+  const originalText = saveBtn.textContent;
+
+  const title = document.getElementById("editClientTitle").value.trim();
+  if(!title){
+    alert("Please enter the client name.");
+    return;
+  }
+  const clash = allClients.find(c =>
+    String(c.id) !== String(editClientId) &&
+    (c.fields.Title || "").trim().toLowerCase() === title.toLowerCase());
+  if(clash){
+    alert(`A client called "${clash.fields.Title}" already exists.`);
+    return;
+  }
+
+  saveBtn.textContent = "Saving…";
+  saveBtn.disabled = true;
+  try{
+    const fields = {
+      Title: title,
+      ContactName: document.getElementById("editClientContact").value.trim(),
+      Address: document.getElementById("editClientAddress").value.trim()
+    };
+    const targetId = await saveClientWithFallback(editClientId, fields);
+    editClientId = null;
+    await refreshAllData();
+    showClientDetail(targetId);
+  }catch(err){
+    console.error(err);
+    alert("Couldn't save: " + err.message);
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+document.getElementById("backToClients").addEventListener("click", async () => {
+  showClientsList();
+  await refreshAllData();
+});
+
+document.getElementById("newClientBtn").addEventListener("click", async () => {
+  await refreshAllData();
+  enterClientEditMode(null);
+});
 
 /* ============================================================
    RENDER: RESOURCES TABLE
