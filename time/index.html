@@ -2069,7 +2069,7 @@ function goToTimeEntryFromDashboard(x){
     return;
   }
   etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
-  etFilters.payNumber = String(period.fields.PayNumber);
+  etFilters.periodKey = periodKey(period);
   etMode = "employee";
   employeesActiveTab = "time-entry";
   document.querySelector('.nav-item[data-view="employees"]').click();
@@ -3575,11 +3575,27 @@ async function toggleLocationAssignment(employeeNumber, locationTitle, checked, 
    days, Pay Date = new PPE End + 3 days, matching the source
    workbook's own PPE+3 convention).
    ============================================================ */
+// Pay Period helpers — a Pay # restarts at 1 each year, so periods are
+// identified by Pay # + PPE End year (CG.payPeriod.key) and always ordered
+// by date, never by Pay # (Nov 2026: 2027 Pay #1 sorted before 2026's).
+function periodKey(p){ return CG.payPeriod.key(p); }
+function periodLabel(p){ return CG.payPeriod.label(p); }
+function periodsNewestFirst(){ return CG.payPeriod.sortByDate(allPayPeriods, true); }
+function findPeriodByKey(key){ return allPayPeriods.find(p => periodKey(p) === String(key)) || null; }
+// Default pick for a period drop-down: the one covering today, else the latest.
+function defaultPeriodKey(periods){
+  const p = findPayPeriodForDate(todayStr()) || periods[0];
+  return p ? periodKey(p) : "";
+}
+function periodOptionsHtml(periods){
+  return periods.map(p => `<option value="${esc(periodKey(p))}">${esc(periodLabel(p))} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
+}
+
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function renderEmployeeCalendarTab(){
   const container = document.getElementById("empTabContent");
-  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(a.fields.PayNumber)||0) - (parseFloat(b.fields.PayNumber)||0));
+  const sorted = CG.payPeriod.sortByDate(allPayPeriods);
   const today = todayStr();
 
   // Group into month buckets keyed off PPE Start, in chronological order.
@@ -3605,7 +3621,7 @@ function renderEmployeeCalendarTab(){
       const isCurrent = start && end && today >= start && today <= end;
       return `
         <div class="cal-card ${isCurrent?'current':''}">
-          <div class="cal-card-num">Pay #${esc(f.PayNumber||f.Title||"—")}${isCurrent?' <span class="cal-badge">Current</span>':''}</div>
+          <div class="cal-card-num">Pay #${esc(f.PayNumber||f.Title||"—")}${CG.payPeriod.year(p) && String(CG.payPeriod.year(p)) !== g.key.slice(0,4) ? ` <span style="font-weight:400;color:var(--ink-muted);">(${CG.payPeriod.year(p)})</span>` : ""}${isCurrent?' <span class="cal-badge">Current</span>':''}</div>
           <div class="cal-card-range">${esc(fmtDateDMY(start))} – ${esc(fmtDateDMY(end))}</div>
           <div class="cal-card-pay">Pay date: ${esc(fmtDateDMY((f.PayDate||"").slice(0,10))) || "—"}</div>
         </div>
@@ -3635,7 +3651,7 @@ function renderEmployeeCalendarTab(){
       <div id="ppAddMsg" style="font-size:11.5px;margin-top:8px;min-height:14px;"></div>
     </div>
     <div class="panel">
-      <div class="panel-sub" style="margin-bottom:10px;">${latest ? `Latest on file: Pay #${esc(latest.fields.PayNumber)}, PPE ending ${esc(fmtDateDMY(latest.fields.PPEEnd))}.` : "No periods on file yet — add the first one above before generating the next."}</div>
+      <div class="panel-sub" style="margin-bottom:10px;">${latest ? `Latest on file: ${esc(periodLabel(latest))}, PPE ending ${esc(fmtDateDMY(latest.fields.PPEEnd))}.` : "No periods on file yet — add the first one above before generating the next."}</div>
       <button class="print-btn" id="ppGenerateBtn" ${latest ? "" : "disabled"}>Generate next period</button>
     </div>
   `;
@@ -3654,8 +3670,19 @@ async function addPayPeriod(){
     reportRowMsg(msgEl, "Pay #, PPE Start, and PPE End are required.", true);
     return;
   }
-  if(allPayPeriods.some(p => String(p.fields.PayNumber) === String(num))){
-    reportRowMsg(msgEl, `Pay #${num} already exists.`, true);
+  if(end < start){
+    reportRowMsg(msgEl, "PPE End can't be before PPE Start.", true);
+    return;
+  }
+  const candidate = { PayNumber: num, PPEStart: start, PPEEnd: end };
+  const sameKey = allPayPeriods.find(p => periodKey(p) === CG.payPeriod.key(candidate));
+  if(sameKey){
+    reportRowMsg(msgEl, `${periodLabel(candidate)} already exists.`, true);
+    return;
+  }
+  const clash = allPayPeriods.find(p => CG.payPeriod.overlaps(p, candidate));
+  if(clash){
+    reportRowMsg(msgEl, `Those dates overlap ${periodLabel(clash)} (${fmtDateDMY(clash.fields.PPEStart)} – ${fmtDateDMY(clash.fields.PPEEnd)}).`, true);
     return;
   }
   try{
@@ -3675,15 +3702,14 @@ async function addPayPeriod(){
 
 async function generateNextPayPeriod(){
   const msgEl = document.getElementById("ppAddMsg");
-  const sorted = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
-  const latest = sorted[0];
+  const latest = periodsNewestFirst()[0];
   if(!latest) return;
   try{
     const prevEnd = new Date(latest.fields.PPEEnd);
     const nextEnd = new Date(prevEnd); nextEnd.setUTCDate(nextEnd.getUTCDate() + 14);
     const nextStart = new Date(nextEnd); nextStart.setUTCDate(nextStart.getUTCDate() - 13);
     const nextPayDate = new Date(nextEnd); nextPayDate.setUTCDate(nextPayDate.getUTCDate() + 3);
-    const nextNum = (parseFloat(latest.fields.PayNumber)||0) + 1;
+    const nextNum = CG.payPeriod.nextNumber(latest, nextEnd.toISOString());
     await graphCreateItem("CG_PayPeriods", {
       Title: String(nextNum), PayNumber: nextNum,
       PPEStart: nextStart.toISOString(), PPEEnd: nextEnd.toISOString(), PayDate: nextPayDate.toISOString(),
@@ -3711,11 +3737,11 @@ let employeesActiveTab = "employees"; // "employees" | "time-entry" | "payroll" 
 // One entry per Employees-hub Tab that actually carries filter state;
 // the Employees/Shifts/Calendar/Pay Groups tabs have none to reset.
 const EMPLOYEES_TAB_FILTER_RESETS = {
-  "time-entry": () => { etFilters = { employeeNumber: "", payNumber: "" }; etDayFilters = { workDate: "" }; etMode = "employee"; },
+  "time-entry": () => { etFilters = { employeeNumber: "", periodKey: "" }; etDayFilters = { workDate: "" }; etMode = "employee"; },
   "daily-report": () => { dailyReportFilters = { workDate: "" }; },
-  "attendance": () => { attFilters = { payNumber: "" }; },
-  "time-exceptions": () => { timeExFilters = { payNumber: "all" }; timeExTypeFilter = "all"; },
-  "payroll": () => { payFilters = { payNumber: "" }; },
+  "attendance": () => { attFilters = { periodKey: "" }; },
+  "time-exceptions": () => { timeExFilters = { periodKey: "all" }; timeExTypeFilter = "all"; },
+  "payroll": () => { payFilters = { periodKey: "" }; },
   "locations": () => { locFilters = { employeeSearch: "" }; editingLocationId = null; confirmDeleteLocationId = null; },
 };
 function resetEmployeesTabFilters(tabKey){
@@ -4146,7 +4172,7 @@ function findTimeRecord(employeeNumber, dateStr){
   return timeRecordIndex().get((employeeNumber||"").toLowerCase() + "|" + dateStr) || null;
 }
 
-let etFilters = { employeeNumber: "", payNumber: "" };
+let etFilters = { employeeNumber: "", periodKey: "" };
 
 // Which Time Entry mode is showing — "employee" is the original
 // one-employee/one-period grid; "day" is the bulk "everyone, one day"
@@ -4187,7 +4213,7 @@ function renderEmployeeTimeEntryTab(){
   const container = document.getElementById("empTabContent");
   const activeEmployees = allEmployees.filter(e => e.fields.IsActive !== false)
     .slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""));
-  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const periods = periodsNewestFirst();
 
   container.innerHTML = `
     <div class="subtabs" style="margin-bottom:14px;">
@@ -4203,7 +4229,7 @@ function renderEmployeeTimeEntryTab(){
         // Same "leaving a Tab clears its filters" rule, one level down —
         // By Employee and By Day are their own Tab-styled toggle inside
         // the Time Entry Tab.
-        if(etMode === "employee") etFilters = { employeeNumber: "", payNumber: "" };
+        if(etMode === "employee") etFilters = { employeeNumber: "", periodKey: "" };
         else etDayFilters = { workDate: "" };
       }
       etMode = nextMode;
@@ -4226,10 +4252,10 @@ function renderEmployeeTimeEntryTab(){
   }
 
   if(!etFilters.employeeNumber) etFilters.employeeNumber = activeEmployees[0].fields.EmployeeNumber;
-  if(!etFilters.payNumber) etFilters.payNumber = String(periods[0].fields.PayNumber);
+  if(!etFilters.periodKey || !findPeriodByKey(etFilters.periodKey)) etFilters.periodKey = defaultPeriodKey(periods);
 
   const employeeOptions = activeEmployees.map(e => `<option value="${esc(e.fields.EmployeeNumber)}">${esc(e.fields.Title)} (${esc(e.fields.EmployeeNumber)})</option>`).join("");
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
+  const periodOptions = periodOptionsHtml(periods);
 
   document.getElementById("teModeBody").innerHTML = `
     <div class="filter-bar">
@@ -4243,9 +4269,9 @@ function renderEmployeeTimeEntryTab(){
     <div id="teBody"></div>
   `;
   document.getElementById("teEmployee").value = etFilters.employeeNumber;
-  document.getElementById("tePeriod").value = etFilters.payNumber;
+  document.getElementById("tePeriod").value = etFilters.periodKey;
   document.getElementById("teEmployee").addEventListener("change", e => { etFilters.employeeNumber = e.target.value; renderEmployeeTimeEntryBody(); });
-  document.getElementById("tePeriod").addEventListener("change", e => { etFilters.payNumber = e.target.value; renderEmployeeTimeEntryBody(); });
+  document.getElementById("tePeriod").addEventListener("change", e => { etFilters.periodKey = e.target.value; renderEmployeeTimeEntryBody(); });
 
   renderEmployeeTimeEntryBody();
 }
@@ -4254,7 +4280,7 @@ function renderEmployeeTimeEntryBody(){
   const body = document.getElementById("teBody");
   if(!body) return;
   const employee = allEmployees.find(e => e.fields.EmployeeNumber === etFilters.employeeNumber);
-  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(etFilters.payNumber));
+  const period = findPeriodByKey(etFilters.periodKey);
   if(!employee || !period){
     body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select an employee and a pay period.</div></div>`;
     return;
@@ -4301,7 +4327,7 @@ function renderEmployeeTimeEntryBody(){
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#9200;</span>${esc(employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(employee.fields.EmployeeNumber)})</span></h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; ${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &middot; T&amp;A Method ${esc(ATT_METHOD_LABELS[CG.attendanceMethod(employee.fields)])} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
+      <div class="panel-sub">${esc(periodLabel(period))} &middot; ${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; ${esc(employee.fields.PayGroup||"—")} &middot; Default Shift ${employee.fields.DefaultShift ? esc(employee.fields.DefaultShift) : "not set"} &middot; T&amp;A Method ${esc(ATT_METHOD_LABELS[CG.attendanceMethod(employee.fields)])} &mdash; entered by a supervisor, per Employee, per day. Picking a Shift for a day fills Time In/Out from it (still editable) and uses that Shift's own Break Length; leave it as "manual" to enter everything by hand. A Time Out earlier than Time In is treated as an overnight shift ending the next day (e.g. 17:00 in, 08:00 out = 15 hours), not a data error.</div>
     </div>
     <div class="panel">
       <div class="te-save-bar">
@@ -4545,7 +4571,7 @@ function renderEmployeeTimeEntryByDayGrid(activeEmployees){
   grid.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
       <h3><span>&#128203;</span>${esc(dayLabel)}</h3>
-      <div class="panel-sub">Pay #${esc(period.fields.PayNumber)} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set (except on a public holiday, which starts blank), still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
+      <div class="panel-sub">${esc(periodLabel(period))} &middot; enter every active Employee's Time In/Out and Break for this one day, then Save once for the whole team. Rows already on file for this day are pre-filled; a blank day starts from each Employee's own Default Shift where one's set (except on a public holiday, which starts blank), still fully editable. A Time Out earlier than Time In is treated as an overnight shift ending the next day.</div>
       ${holidayBannerHtml(holidaysOnDateFor(dateStr, activeEmployees))}
     </div>
     <div class="panel">
@@ -4951,7 +4977,7 @@ function attendanceExceptionsAcrossPeriods(periods){
   const all = [];
   periods.forEach(period => {
     attendanceExceptionsForPeriod(period).forEach(x => {
-      all.push({ ...x, payNumber: period.fields.PayNumber, period });
+      all.push({ ...x, payNumber: period.fields.PayNumber, payYear: CG.payPeriod.year(period), period });
     });
   });
   return all.sort((a,b)=> b.dateStr === a.dateStr
@@ -4959,21 +4985,21 @@ function attendanceExceptionsAcrossPeriods(periods){
     : b.dateStr.localeCompare(a.dateStr));
 }
 
-let attFilters = { payNumber: "" };
+let attFilters = { periodKey: "" };
 
 function renderAttendanceTab(){
   const container = document.getElementById("empTabContent");
-  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const periods = periodsNewestFirst();
   if(!periods.length){
     container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
     return;
   }
   const today = todayStr();
-  if(!attFilters.payNumber || !periods.some(p => String(p.fields.PayNumber) === String(attFilters.payNumber))){
+  if(!attFilters.periodKey || !periods.some(p => periodKey(p) === attFilters.periodKey)){
     const current = periods.find(p => (p.fields.PPEStart||"").slice(0,10) <= today && today <= (p.fields.PPEEnd||"").slice(0,10));
-    attFilters.payNumber = String((current || periods[0]).fields.PayNumber);
+    attFilters.periodKey = periodKey(current || periods[0]);
   }
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
+  const periodOptions = periodOptionsHtml(periods);
   container.innerHTML = `
     <div class="filter-bar">
       <div class="filter-field"><label>Pay Period</label>
@@ -4982,15 +5008,15 @@ function renderAttendanceTab(){
     </div>
     <div id="attBody"></div>
   `;
-  document.getElementById("attPeriod").value = attFilters.payNumber;
-  document.getElementById("attPeriod").addEventListener("change", e => { attFilters.payNumber = e.target.value; renderAttendanceBody(); });
+  document.getElementById("attPeriod").value = attFilters.periodKey;
+  document.getElementById("attPeriod").addEventListener("change", e => { attFilters.periodKey = e.target.value; renderAttendanceBody(); });
   renderAttendanceBody();
 }
 
 function renderAttendanceBody(){
   const body = document.getElementById("attBody");
   if(!body) return;
-  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(attFilters.payNumber));
+  const period = findPeriodByKey(attFilters.periodKey);
   if(!period){
     body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a Pay Period.</div></div>`;
     return;
@@ -5033,7 +5059,7 @@ function renderAttendanceBody(){
 
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#128203;</span>Attendance — Pay #${esc(period.fields.PayNumber)}</h3>
+      <h3><span>&#128203;</span>Attendance — ${esc(periodLabel(period))}</h3>
       <div class="panel-sub">${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; built from CG_EmployeeTimeRecords (biometric + manual) against each Employee's Shift (Employees whose T&amp;A Method is N/A are left out). <b>P</b> Present &middot; <b>L</b> Late (clocked in more than ${ATT_LATE_GRACE_MINUTES} min after Shift start) &middot; <b>A</b> Absent (no punch on a day their Shift runs) &middot; <b>–</b> not a Work Day for their Shift &middot; <b>?</b> no Shift on file to judge by &middot; <b>H</b> Public Holiday for their Pay Group's country (from PSP HUB) with no punch &mdash; never counted as Absent. A day still in the future shows blank. Hover a cell for detail. Missed clock-outs and break-punch issues now live on the Time Exceptions tab.</div>
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-swatch att-present"></span>Present ${totalPresent}</span>
@@ -5065,21 +5091,21 @@ function renderAttendanceBody(){
    Clicking a row deep-links into Time Entry with that Employee/
    Pay Period/day pre-loaded and scrolled into view.
    ============================================================ */
-let timeExFilters = { payNumber: "all" };
+let timeExFilters = { periodKey: "all" };
 let timeExTypeFilter = "all"; // "all" | one of TIME_EX_TYPES
 
 const TIME_EX_TYPES = ["Absent", "Late", "Missed clock-out", "Break not closed", "Break punch out of order"];
 
 function renderTimeExceptionsTab(){
   const container = document.getElementById("empTabContent");
-  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const periods = periodsNewestFirst();
   if(!periods.length){
     container.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
     return;
   }
-  if(!periods.some(p => String(p.fields.PayNumber) === String(timeExFilters.payNumber))) timeExFilters.payNumber = "all";
+  if(!periods.some(p => periodKey(p) === timeExFilters.periodKey)) timeExFilters.periodKey = "all";
   const periodOptions = `<option value="all">All periods (outstanding)</option>` +
-    periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
+    periodOptionsHtml(periods);
   container.innerHTML = `
     <div class="filter-bar">
       <div class="filter-field"><label>Pay Period</label>
@@ -5088,27 +5114,27 @@ function renderTimeExceptionsTab(){
     </div>
     <div id="texBody"></div>
   `;
-  document.getElementById("texPeriod").value = timeExFilters.payNumber;
-  document.getElementById("texPeriod").addEventListener("change", e => { timeExFilters.payNumber = e.target.value; renderTimeExceptionsBody(); });
+  document.getElementById("texPeriod").value = timeExFilters.periodKey;
+  document.getElementById("texPeriod").addEventListener("change", e => { timeExFilters.periodKey = e.target.value; renderTimeExceptionsBody(); });
   renderTimeExceptionsBody();
 }
 
 function renderTimeExceptionsBody(){
   const body = document.getElementById("texBody");
   if(!body) return;
-  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
+  const periods = periodsNewestFirst();
   let exceptions, scopeLabel;
-  if(timeExFilters.payNumber === "all"){
+  if(timeExFilters.periodKey === "all"){
     exceptions = attendanceExceptionsAcrossPeriods(periods);
     scopeLabel = "All Pay Periods (outstanding)";
   }else{
-    const period = periods.find(p => String(p.fields.PayNumber) === String(timeExFilters.payNumber));
+    const period = periods.find(p => periodKey(p) === timeExFilters.periodKey);
     if(!period){
       body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a Pay Period.</div></div>`;
       return;
     }
-    exceptions = attendanceExceptionsForPeriod(period).map(x => ({ ...x, payNumber: period.fields.PayNumber, period }));
-    scopeLabel = `Pay #${period.fields.PayNumber}`;
+    exceptions = attendanceExceptionsForPeriod(period).map(x => ({ ...x, payNumber: period.fields.PayNumber, payYear: CG.payPeriod.year(period), period }));
+    scopeLabel = periodLabel(period);
   }
 
   body.innerHTML = `
@@ -5164,7 +5190,7 @@ function renderTimeExceptionsList(exceptions){
     <div class="ex-item ex-item-link" data-tex-idx="${i}" style="cursor:pointer;">
       <div class="ex-icon" style="color:${COLOR[x.type]||'var(--status-warning)'};">${ICON[x.type]||'&#8226;'}</div>
       <div class="ex-body">
-        <div class="ex-title">${esc(x.employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(x.employee.fields.EmployeeNumber)})</span>${x.payNumber!=null?` <span style="font-weight:400;color:var(--ink-muted);">&middot; Pay #${esc(x.payNumber)}</span>`:''}</div>
+        <div class="ex-title">${esc(x.employee.fields.Title)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(x.employee.fields.EmployeeNumber)})</span>${x.payNumber!=null?` <span style="font-weight:400;color:var(--ink-muted);">&middot; Pay #${esc(x.payNumber)} (${esc(x.payYear)})</span>`:''}</div>
         <div class="ex-meta">${esc(x.type)} &middot; ${esc(fmtDateDMY(x.dateStr))} &middot; ${esc(x.detail)}</div>
       </div>
     </div>
@@ -5190,7 +5216,7 @@ function buildTimeExceptionsReportDocHtml(scopeLabel, exceptions){
     <tr>
       <td>${esc(fmtDateDMY(x.dateStr))}</td>
       <td>${esc(x.employee.fields.Title)} (${esc(x.employee.fields.EmployeeNumber)})</td>
-      <td>${x.payNumber!=null ? esc(x.payNumber) : ""}</td>
+      <td>${x.payNumber!=null ? `${esc(x.payNumber)} (${esc(x.payYear)})` : ""}</td>
       <td>${esc(x.type)}</td>
       <td>${esc(x.detail)}</td>
     </tr>
@@ -5244,7 +5270,7 @@ ${typeLabels.length ? `
 
 function downloadTimeExceptionsCsv(scopeLabel, exceptions){
   const list = exceptions.slice().sort((a,b)=> b.dateStr.localeCompare(a.dateStr));
-  const headers = ["Date","EmployeeNumber","EmployeeName","PayNumber","Type","Detail"];
+  const headers = ["Date","EmployeeNumber","EmployeeName","PayNumber","PayYear","Type","Detail"];
   const lines = [headers.join(",")];
   list.forEach(x => {
     lines.push([
@@ -5252,6 +5278,7 @@ function downloadTimeExceptionsCsv(scopeLabel, exceptions){
       x.employee.fields.EmployeeNumber || "",
       x.employee.fields.Title || "",
       x.payNumber!=null ? x.payNumber : "",
+      x.payYear!=null ? x.payYear : "",
       x.type,
       x.detail,
     ].map(csvEscape).join(","));
@@ -5279,7 +5306,7 @@ function goToTimeEntryFromException(x){
     return;
   }
   etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
-  etFilters.payNumber = String(period.fields.PayNumber);
+  etFilters.periodKey = periodKey(period);
   etMode = "employee";
   employeesActiveTab = "time-entry";
   renderEmployeesHub();
@@ -5304,12 +5331,19 @@ function goToTimeEntryFromException(x){
    hours belong to, so this is a simplification worth checking with
    Payroll before relying on it for someone who holds more than one.
    ============================================================ */
-let payFilters = { payNumber: "" };
+let payFilters = { periodKey: "" };
 
-function payrollSummaryForPeriod(payNumber){
-  const period = allPayPeriods.find(p => String(p.fields.PayNumber) === String(payNumber));
+function payrollSummaryForPeriod(key){
+  const period = findPeriodByKey(key);
   if(!period) return { period: null, rows: [], grandTotal: 0 };
-  const records = allEmployeeTimeRecords.filter(r => String(r.fields.PayNumber) === String(payNumber));
+  // By date, not by the PayNumber stamped on each record: Pay #s repeat
+  // every year, so the same number would pull in last year's days too.
+  const ppStart = (period.fields.PPEStart||"").slice(0,10);
+  const ppEnd = (period.fields.PPEEnd||"").slice(0,10);
+  const records = allEmployeeTimeRecords.filter(r => {
+    const d = (r.fields.WorkDate||"").slice(0,10);
+    return d && d >= ppStart && d <= ppEnd;
+  });
   const rows = allEmployees.slice().sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||"")).map(emp => {
     const empRecords = records.filter(r => (r.fields.EmployeeNumber||"").toLowerCase() === (emp.fields.EmployeeNumber||"").toLowerCase());
     let hours = 0;
@@ -5331,9 +5365,9 @@ function payrollSummaryForPeriod(payNumber){
 
 function renderEmployeePayrollTab(){
   const container = document.getElementById("empTabContent");
-  const periods = allPayPeriods.slice().sort((a,b)=> (parseFloat(b.fields.PayNumber)||0) - (parseFloat(a.fields.PayNumber)||0));
-  if(!payFilters.payNumber && periods.length) payFilters.payNumber = String(periods[0].fields.PayNumber);
-  const periodOptions = periods.map(p => `<option value="${esc(p.fields.PayNumber)}">Pay #${esc(p.fields.PayNumber)} — PPE ${esc(fmtDateDMY(p.fields.PPEEnd))}</option>`).join("");
+  const periods = periodsNewestFirst();
+  if((!payFilters.periodKey || !findPeriodByKey(payFilters.periodKey)) && periods.length) payFilters.periodKey = defaultPeriodKey(periods);
+  const periodOptions = periodOptionsHtml(periods);
 
   container.innerHTML = `
     <div class="filter-bar">
@@ -5350,15 +5384,15 @@ function renderEmployeePayrollTab(){
     document.getElementById("payBody").innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">No Pay Periods on file yet — add one from the Calendar tab first.</div></div>`;
     return;
   }
-  document.getElementById("payPeriod").value = payFilters.payNumber;
-  document.getElementById("payPeriod").addEventListener("change", e => { payFilters.payNumber = e.target.value; renderEmployeePayrollBody(); });
+  document.getElementById("payPeriod").value = payFilters.periodKey;
+  document.getElementById("payPeriod").addEventListener("change", e => { payFilters.periodKey = e.target.value; renderEmployeePayrollBody(); });
   document.getElementById("payReportBtn").addEventListener("click", () => {
-    const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.payNumber);
+    const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.periodKey);
     if(!period) return;
     openDocInNewTab(buildPayrollSummaryDocHtml(period, rows, grandTotal));
   });
   document.getElementById("payCsvBtn").addEventListener("click", () => {
-    const { period, rows } = payrollSummaryForPeriod(payFilters.payNumber);
+    const { period, rows } = payrollSummaryForPeriod(payFilters.periodKey);
     if(!period) return;
     const batch = document.getElementById("payBatch").value.trim();
     if(!batch){ alert("Please enter a Batch # before exporting — Payroll uses this to identify the upload."); return; }
@@ -5371,7 +5405,7 @@ function renderEmployeePayrollTab(){
 function renderEmployeePayrollBody(){
   const body = document.getElementById("payBody");
   if(!body) return;
-  const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.payNumber);
+  const { period, rows, grandTotal } = payrollSummaryForPeriod(payFilters.periodKey);
   if(!period){
     body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--ink-muted);">Select a pay period.</div></div>`;
     return;
@@ -5386,7 +5420,7 @@ function renderEmployeePayrollBody(){
   `).join("");
   body.innerHTML = `
     <div class="panel" style="margin-bottom:16px;">
-      <h3><span>&#128176;</span>Pay #${esc(period.fields.PayNumber)}</h3>
+      <h3><span>&#128176;</span>${esc(periodLabel(period))}</h3>
       <div class="panel-sub">${esc(fmtDateDMY(period.fields.PPEStart))} to ${esc(fmtDateDMY(period.fields.PPEEnd))} &middot; ${rows.length} employee${rows.length===1?"":"s"} &middot; ${grandTotal.toFixed(2)} total hours to pay</div>
     </div>
     <div class="panel">
@@ -6598,7 +6632,7 @@ function buildPayrollSummaryDocHtml(period, rows, grandTotal){
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Payroll Summary — Pay #${esc(period.fields.PayNumber)}</title>
+<title>Payroll Summary — ${esc(periodLabel(period))}</title>
 <style>${DOC_STYLE}</style>
 </head>
 <body>
@@ -6606,7 +6640,7 @@ function buildPayrollSummaryDocHtml(period, rows, grandTotal){
 
 <img class="doc-logo" src="${CG_REPORT_LOGO}" alt="CG Time">
 <div class="doc-header">Payroll Summary</div>
-<div class="doc-sub">Pay #${esc(period.fields.PayNumber)}</div>
+<div class="doc-sub">${esc(periodLabel(period))}</div>
 
 <div class="meta-row">
   <div><b>Pay Period:</b> ${esc(fmtDateDMY((period.fields.PPEStart||"").slice(0,10)))} to ${esc(fmtDateDMY((period.fields.PPEEnd||"").slice(0,10)))}</div>
@@ -6650,7 +6684,7 @@ function downloadPayrollCsv(period, rows, batchNumber){
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `CG_Time_Payroll_Pay${period.fields.PayNumber}_${todayStr()}.csv`;
+  a.download = `CG_Time_Payroll_Pay${period.fields.PayNumber}-${CG.payPeriod.year(period)}_${todayStr()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

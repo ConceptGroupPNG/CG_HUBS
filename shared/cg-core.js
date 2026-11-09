@@ -86,7 +86,39 @@
      created for Manual employees (supervisors accept the defaults by
      saving), but never for Biometric/Mobile ones, whose punches fill it.
      ----------------------------------------------------------------- */
-  CG.timeEntryRowAction = ({ changed, hasExisting, hasAnyData, method }) => {
+  /* -----------------------------------------------------------------
+     Pay Periods (CG_PayPeriods). Pay numbers restart at 1 each year,
+     so a Pay # alone is not unique: a period is identified by its Pay #
+     plus the year its PPE End falls in (e.g. 21-12-2026 to 03-01-2027
+     is 2027 Pay #1). Order is always by date, never by Pay #.
+     Each helper accepts a list item or its fields.
+     ----------------------------------------------------------------- */
+  const ppFields = p => (p && p.fields) ? p.fields : (p || {});
+  const ppDay = v => String(v || "").slice(0, 10);
+  CG.payPeriod = {
+    number: p => parseFloat(ppFields(p).PayNumber) || 0,
+    year: p => parseInt(ppDay(ppFields(p).PPEEnd).slice(0, 4), 10) || 0,
+    key: p => `${CG.payPeriod.year(p)}-${CG.payPeriod.number(p)}`,
+    label: p => `Pay #${CG.payPeriod.number(p)} (${CG.payPeriod.year(p)})`,
+    // Oldest first; pass true for newest first.
+    sortByDate: (items, newestFirst) => items.slice().sort((a, b) => {
+      const c = ppDay(ppFields(a).PPEEnd).localeCompare(ppDay(ppFields(b).PPEEnd));
+      return newestFirst ? -c : c;
+    }),
+    // Pay # for a new period ending on newEnd, following `prev`:
+    // restarts at 1 when the PPE End moves into a new year.
+    nextNumber: (prev, newEnd) => {
+      const newYear = parseInt(ppDay(newEnd).slice(0, 4), 10);
+      return newYear > CG.payPeriod.year(prev) ? 1 : CG.payPeriod.number(prev) + 1;
+    },
+    // True when two periods share any day.
+    overlaps: (a, b) => {
+      const A = ppFields(a), B = ppFields(b);
+      return ppDay(A.PPEStart) <= ppDay(B.PPEEnd) && ppDay(B.PPEStart) <= ppDay(A.PPEEnd);
+    },
+  };
+
+  CG.timeEntryRowAction =({ changed, hasExisting, hasAnyData, method }) => {
     if (changed) {
       if (hasExisting) return "update";
       return hasAnyData ? "create" : "skip";

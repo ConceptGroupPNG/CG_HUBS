@@ -91,6 +91,41 @@ test("attendance method: blank or unknown means Biometric; known values tidied",
   assert.equal(CG.attendanceMethod({ AttendanceMethod: "Biometric" }), "Biometric");
 });
 
+/* ---------------- pay periods: year rollover ---------------- */
+test("pay periods: identified by Pay # + PPE End year, ordered by date", () => {
+  const { CG } = load();
+  const pp = (n, s, e) => ({ fields: { PayNumber: n, PPEStart: s + "T00:00:00Z", PPEEnd: e + "T00:00:00Z" } });
+  const p17 = pp(17, "2026-08-03", "2026-08-16");
+  const p26 = pp(26, "2026-12-07", "2026-12-20");
+  const p1  = pp(1,  "2026-12-21", "2027-01-03"); // last period of 2026 is 2027's Pay #1
+  assert.equal(CG.payPeriod.year(p1), 2027);
+  assert.equal(CG.payPeriod.year(p26), 2026);
+  assert.equal(CG.payPeriod.key(p1), "2027-1");
+  assert.equal(CG.payPeriod.label(p1), "Pay #1 (2027)");
+  assert.notEqual(CG.payPeriod.key(p17), CG.payPeriod.key(pp(17, "2027-08-02", "2027-08-15")));
+  // By date, not by number (the Nov 2026 bug put Pay #1 first).
+  assert.deepEqual(CG.payPeriod.sortByDate([p1, p17, p26]).map(p => p.fields.PayNumber), [17, 26, 1]);
+  assert.deepEqual(CG.payPeriod.sortByDate([p17, p1, p26], true).map(p => p.fields.PayNumber), [1, 26, 17]);
+});
+
+test("pay periods: next number restarts at 1 when PPE End enters a new year", () => {
+  const { CG } = load();
+  const p25 = { PayNumber: 25, PPEStart: "2026-11-23", PPEEnd: "2026-12-06" };
+  const p26 = { PayNumber: 26, PPEStart: "2026-12-07", PPEEnd: "2026-12-20" };
+  const p1  = { PayNumber: 1,  PPEStart: "2026-12-21", PPEEnd: "2027-01-03" };
+  assert.equal(CG.payPeriod.nextNumber(p25, "2026-12-20T00:00:00.000Z"), 26);
+  assert.equal(CG.payPeriod.nextNumber(p26, "2027-01-03T00:00:00.000Z"), 1);
+  assert.equal(CG.payPeriod.nextNumber(p1, "2027-01-17T00:00:00.000Z"), 2);
+});
+
+test("pay periods: overlapping dates are detected", () => {
+  const { CG } = load();
+  const p26 = { PPEStart: "2026-12-07", PPEEnd: "2026-12-20" };
+  assert.equal(CG.payPeriod.overlaps(p26, { PPEStart: "2026-12-21", PPEEnd: "2027-01-03" }), false);
+  assert.equal(CG.payPeriod.overlaps(p26, { PPEStart: "2026-12-20", PPEEnd: "2027-01-02" }), true);
+  assert.equal(CG.payPeriod.overlaps(p26, { PPEStart: "2026-12-01", PPEEnd: "2026-12-31" }), true);
+});
+
 /* ---------------- time entry save: only changed rows ---------------- */
 test("time entry save: untouched rows are never rewritten as Manual", () => {
   const { CG } = load();
