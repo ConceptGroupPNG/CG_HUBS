@@ -5888,6 +5888,12 @@ function updateGenerateButton() {
 }
 
 let invNumberManuallySet = false; // true only when confirmInvoiceNo() was explicitly used to override the auto-suggested number
+// The manually-typed number (if any) behind the invoice currently in preview.
+// Set by generateInvoice(), read by markAsBilled() when it's exported.
+// (markAsBilled used to read generateInvoice's local manualInvNo, which
+// threw "manualInvNo is not defined" after every export — Nov 2026.)
+let previewInvoiceManualNo = '';
+let invoiceExportInProgress = false;
 
 function confirmInvoiceNo() {
   const current = document.getElementById('inv-number').value;
@@ -5981,6 +5987,7 @@ async function generateInvoice() {
   if (!nominatedRecords.length) { showToast('Please nominate at least one pay run', 'error'); return; }
 
   const manualInvNo = invNumberManuallySet ? document.getElementById('inv-number').value : '';
+  previewInvoiceManualNo = manualInvNo;
   let invNo;
   if (manualInvNo) {
     // Explicit manual override — use as-is, no reservation needed since this
@@ -6100,19 +6107,32 @@ function buildInvoiceCSV() {
   return { csv, fileName };
 }
 
-function exportInvoiceCSV() {
-  if (!invoiceLines.length) return;
+async function exportInvoiceCSV() {
+  if (!invoiceLines.length || invoiceExportInProgress) return;
+  // One export per preview: a second click would save a duplicate
+  // PSP_Invoices row and send the CSV email again.
+  invoiceExportInProgress = true;
+  const exportBtn = document.getElementById('btn-export-inv');
+  if (exportBtn) exportBtn.style.display = 'none';
   const { csv, fileName } = buildInvoiceCSV();
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = fileName;
   a.click();
-  markAsBilled();
+  try {
+    await markAsBilled();
+  } catch(e) {
+    console.error(e);
+    showToast('Invoice exported, but finishing up failed: ' + e.message + ' — check PSP_Invoices before exporting it again.', 'error');
+  } finally {
+    invoiceExportInProgress = false;
+  }
 }
 
 async function markAsBilled() {
   const invNo = invoiceLines[0]?.InvoiceNumber;
+  const manualInvNo = previewInvoiceManualNo;
   const total = invoiceLines.reduce((s,l) => s + (l.SubTotal||0), 0);
   const taxTotal = invoiceLines.reduce((s,l) => s + (l.TaxAmount||0), 0);
   const grandTotal = total + taxTotal;
@@ -6226,6 +6246,10 @@ async function markAsBilled() {
       } catch(e) { console.warn('Could not update last invoice no:', e); }
     }
   }
+  // A manual number applies to this one invoice only; the next one is
+  // auto-numbered (reserved) again unless the user overrides it again.
+  previewInvoiceManualNo = '';
+  invNumberManuallySet = false;
 
   cache.billing = await getItems('billing');
   cache.invoices = await getItems('invoices');
