@@ -151,6 +151,12 @@
   }
   .back-link:hover{color:var(--teal);}
   .detail-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;}
+  /* Add / edit forms: keep the title and Cancel / Create / Save buttons in view while scrolling */
+  .detail-header.edit-header{
+    position:sticky;top:0;z-index:20;background:var(--bg);
+    margin:0 -34px 22px;padding:14px 34px;border-bottom:1px solid var(--border);
+    box-shadow:0 4px 10px -8px rgba(26,39,68,.25);
+  }
   .detail-title-row{display:flex;align-items:center;gap:12px;}
   .detail-title{font-size:24px;font-weight:700;color:var(--navy);}
   .detail-sub{font-size:13px;color:var(--text-muted);margin-top:4px;}
@@ -1371,7 +1377,7 @@ function renderClientEditForm(){
   const f = c ? c.fields : {};
 
   document.getElementById("clientDetailContent").innerHTML = `
-    <div class="detail-header">
+    <div class="detail-header edit-header">
       <div>
         <div class="detail-title-row">
           <div class="detail-title">${isNew ? "New Client" : esc(f.Title)}</div>
@@ -2606,7 +2612,7 @@ function renderProposalEditForm(){
     : (proposalImport ? Object.assign({ ClientOrgLookupId: proposalImport.clientId }, proposalImport.result.fields) : {});
 
   document.getElementById("proposalDetailContent").innerHTML = `
-    <div class="detail-header">
+    <div class="detail-header edit-header">
       <div>
         <div class="detail-title-row">
           <div class="detail-title">${isNew ? (cloneSourceProposalId ? "Clone of " + esc(f.Title) : (proposalImport ? "New Proposal (imported)" : "New Proposal")) : esc(f.Title)}</div>
@@ -3495,7 +3501,7 @@ function renderResourceEditForm(){
   const f = isNew ? {} : r.fields;
 
   document.getElementById("resourceDetailContent").innerHTML = `
-    <div class="detail-header">
+    <div class="detail-header edit-header">
       <div>
         <div class="detail-title-row">
           <div class="detail-title">${isNew ? "New Resource" : esc(f.Title)}</div>
@@ -4590,7 +4596,7 @@ function renderEditForm(){
     : (agreementImport ? Object.assign({ ClientOrgLookupId: agreementImport.clientId }, agreementImport.result.fields) : {});
 
   document.getElementById("agreementDetailContent").innerHTML = `
-    <div class="detail-header">
+    <div class="detail-header edit-header">
       <div>
         <div class="detail-title-row">
           <div class="detail-title">${isNew ? (cloneSourceAgreementId ? "Clone of " + esc(f.Title) : (agreementImport ? "New Agreement (imported)" : "New Agreement")) : esc(f.Title)}</div>
