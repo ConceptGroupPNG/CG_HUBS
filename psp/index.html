@@ -324,6 +324,7 @@
     --red-dark: #a8181e;
     --red-light: #fce8ea;
     --teal: #0e9f6e;
+    --cg-dlg-accent: #0e9f6e; /* CG.alert/confirm/prompt pop-ups */
     --teal-dark: #0b7a54;
     --teal-light: #d1fae5;
     --white: #ffffff;
@@ -5895,9 +5896,9 @@ let invNumberManuallySet = false; // true only when confirmInvoiceNo() was expli
 let previewInvoiceManualNo = '';
 let invoiceExportInProgress = false;
 
-function confirmInvoiceNo() {
+async function confirmInvoiceNo() {
   const current = document.getElementById('inv-number').value;
-  const newNo = prompt('Edit Invoice Number:', current);
+  const newNo = await CG.prompt('Edit Invoice Number:', current, { okLabel: 'Save' });
   if (newNo && newNo.trim()) {
     document.getElementById('inv-number').value = newNo.trim();
     invNumberManuallySet = true;

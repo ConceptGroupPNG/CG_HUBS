@@ -267,6 +267,87 @@
   };
 
   /* -----------------------------------------------------------------
+     The Hubs' own pop-ups, used instead of the browser's alert(),
+     confirm() and prompt() - those are headed "conceptgrouppng.github.io
+     says" and can't be styled.
+       await CG.alert("Saved.")                    -> resolves when closed
+       if (!(await CG.confirm("Delete it?"))) ...  -> true = OK
+       const v = await CG.prompt("Invoice #", "INV-1") -> text, or null
+     Options (second argument): title (default: the Hub's name), okLabel,
+     cancelLabel, danger (red OK button). The message is plain text; line
+     breaks show as line breaks. Enter = OK, Esc / click outside = Cancel.
+     Colour: a Hub sets --cg-dlg-accent in its CSS (default Concept navy).
+     ----------------------------------------------------------------- */
+  const DLG_CSS =
+    ".cg-dlg-overlay{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:20px}" +
+    ".cg-dlg{background:#fff;color:#1a2744;border-top:4px solid var(--cg-dlg-accent,#1a2744);border-radius:12px;box-shadow:0 18px 50px rgba(15,23,42,.3);" +
+    "width:min(480px,100%);max-height:85vh;overflow:auto;padding:20px 22px 16px;box-sizing:border-box;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;text-align:left}" +
+    ".cg-dlg-title{font-size:15px;font-weight:700;margin:0 0 10px}" +
+    ".cg-dlg-body{font-size:13.5px;line-height:1.55;white-space:pre-line;color:#334155}" +
+    ".cg-dlg-input{display:block;width:100%;box-sizing:border-box;margin-top:12px;border:1px solid #cbd5e1;border-radius:7px;padding:8px 10px;font:inherit;font-size:13.5px;color:#1a2744}" +
+    ".cg-dlg-input:focus{outline:2px solid var(--cg-dlg-accent,#1a2744);outline-offset:0;border-color:transparent}" +
+    ".cg-dlg-btns{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}" +
+    ".cg-dlg-btns button{font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:8px 18px;cursor:pointer}" +
+    ".cg-dlg-cancel{background:#fff;border:1px solid #cbd5e1;color:#475569}.cg-dlg-cancel:hover{border-color:#94a3b8;color:#1a2744}" +
+    ".cg-dlg-ok{background:var(--cg-dlg-accent,#1a2744);border:1px solid var(--cg-dlg-accent,#1a2744);color:#fff}.cg-dlg-ok:hover{filter:brightness(1.1)}" +
+    ".cg-dlg-ok.danger{background:#dc2626;border-color:#dc2626}";
+
+  CG.dialog = (opts = {}) => new Promise(resolve => {
+    if (!global.document || !document.body) { resolve(opts.input != null ? null : !opts.cancelLabel); return; }
+    if (!document.getElementById("cg-dlg-style")) {
+      const st = document.createElement("style");
+      st.id = "cg-dlg-style";
+      st.textContent = DLG_CSS;
+      document.head.appendChild(st);
+    }
+    const app = CG.currentApp();
+    const title = opts.title || (app ? app.name : "CG HUBS");
+    const hasInput = opts.input != null;
+    const prevFocus = document.activeElement;
+    const overlay = document.createElement("div");
+    overlay.className = "cg-dlg-overlay";
+    overlay.innerHTML =
+      '<div class="cg-dlg" role="' + (opts.cancelLabel ? "alertdialog" : "dialog") + '" aria-modal="true" aria-label="' + CG.esc(title) + '">' +
+      '<div class="cg-dlg-title">' + CG.esc(title) + "</div>" +
+      '<div class="cg-dlg-body">' + CG.esc(opts.message) + "</div>" +
+      (hasInput ? '<input type="text" class="cg-dlg-input">' : "") +
+      '<div class="cg-dlg-btns">' +
+      (opts.cancelLabel ? '<button type="button" class="cg-dlg-cancel">' + CG.esc(opts.cancelLabel) + "</button>" : "") +
+      '<button type="button" class="cg-dlg-ok' + (opts.danger ? " danger" : "") + '">' + CG.esc(opts.okLabel || "OK") + "</button>" +
+      "</div></div>";
+    const input = overlay.querySelector(".cg-dlg-input");
+    if (input) input.value = String(opts.input);
+    const close = ok => {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      try { if (prevFocus && prevFocus.focus) prevFocus.focus(); } catch (e) { /* gone */ }
+      resolve(hasInput ? (ok ? input.value : null) : (opts.cancelLabel ? ok : true));
+    };
+    const onKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); close(false); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        close(!(document.activeElement && document.activeElement.classList.contains("cg-dlg-cancel")));
+      } else if (e.key === "Tab") { // keep focus inside the pop-up
+        const els = Array.from(overlay.querySelectorAll("input,button"));
+        const i = els.indexOf(document.activeElement);
+        e.preventDefault();
+        els[(i + (e.shiftKey ? els.length - 1 : 1)) % els.length].focus();
+      }
+    };
+    overlay.querySelector(".cg-dlg-ok").addEventListener("click", () => close(true));
+    const cancel = overlay.querySelector(".cg-dlg-cancel");
+    if (cancel) cancel.addEventListener("click", () => close(false));
+    overlay.addEventListener("mousedown", e => { if (e.target === overlay) close(false); });
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    if (input) { input.focus(); input.select(); } else overlay.querySelector(".cg-dlg-ok").focus();
+  });
+  CG.alert = (message, opts) => CG.dialog(Object.assign({ message }, opts));
+  CG.confirm = (message, opts) => CG.dialog(Object.assign({ message, cancelLabel: "Cancel" }, opts));
+  CG.prompt = (message, value, opts) => CG.dialog(Object.assign({ message, input: value == null ? "" : value, cancelLabel: "Cancel" }, opts));
+
+  /* -----------------------------------------------------------------
      Sign-in (MSAL Browser 3.x, PKCE, full-page redirects only)
      ----------------------------------------------------------------- */
   let msalApp = null, scopes = DEFAULT_SCOPES, appKey = "", keepAliveTimer = null;
@@ -483,7 +564,7 @@
         "justify-content:center;padding:10px 16px;background:#B03030;color:#fff;font:14px 'Segoe UI',Calibri,Arial,sans-serif";
       b.innerHTML = 'Your session has expired - please sign in again to continue. ' +
         '<button type="button" style="background:#fff;color:#B03030;border:0;border-radius:4px;padding:6px 14px;font-weight:600;cursor:pointer">Sign in</button>';
-      b.querySelector("button").onclick = () => CG.auth.signIn().catch(e => alert(e.message));
+      b.querySelector("button").onclick = () => CG.auth.signIn().catch(e => CG.alert(e.message));
       document.body.appendChild(b);
     }
     b.style.display = "flex";
