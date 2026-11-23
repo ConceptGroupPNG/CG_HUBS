@@ -20,6 +20,7 @@
     --navy:#1a2744;
     --navy-light:#243458;
     --teal:#0e9f6e;
+    --cg-dlg-accent:#0e9f6e; /* CG.alert/confirm pop-ups */
     --teal-light:#12b880;
     --bg:#f4f6f9;
     --card:#ffffff;
@@ -672,7 +673,7 @@ async function initAuth(){
   }catch(e){
     console.error(e);
     document.getElementById("loginScreen").style.display = "flex";
-    alert(e.message);
+    CG.alert(e.message);
     return;
   }
   if(!account){
@@ -681,7 +682,7 @@ async function initAuth(){
   }
   if(!CG.appAllowed("csa", CG.auth.email())){
     document.getElementById("loginScreen").style.display = "flex";
-    alert(CG.appDeniedMessage("csa", CG.auth.email()));
+    CG.alert(CG.appDeniedMessage("csa", CG.auth.email()));
     return;
   }
   await acquireToken();
@@ -689,7 +690,7 @@ async function initAuth(){
 }
 
 document.getElementById("loginBtn").addEventListener("click", ()=>{
-  CG.auth.signIn().catch(e => alert(e.message));
+  CG.auth.signIn().catch(e => CG.alert(e.message));
 });
 
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
@@ -1014,7 +1015,7 @@ async function updateEntryBillable(entryId, value){
     await refreshAllData();
   }catch(err){
     console.error(err);
-    alert("Couldn't update billable status: " + err.message);
+    CG.alert("Couldn't update billable status: " + err.message);
   }
 }
 
@@ -1447,14 +1448,14 @@ async function saveClient(evt){
 
   const title = document.getElementById("editClientTitle").value.trim();
   if(!title){
-    alert("Please enter the client name.");
+    CG.alert("Please enter the client name.");
     return;
   }
   const clash = allClients.find(c =>
     String(c.id) !== String(editClientId) &&
     (c.fields.Title || "").trim().toLowerCase() === title.toLowerCase());
   if(clash){
-    alert(`A client called "${clash.fields.Title}" already exists.`);
+    CG.alert(`A client called "${clash.fields.Title}" already exists.`);
     return;
   }
 
@@ -1472,7 +1473,7 @@ async function saveClient(evt){
     showClientDetail(targetId);
   }catch(err){
     console.error(err);
-    alert("Couldn't save: " + err.message);
+    CG.alert("Couldn't save: " + err.message);
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
   }
@@ -1687,7 +1688,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
   const activityDetail = document.getElementById("logTimeActivityDetail").value;
 
   if(!resourceId || !csaValue || !date || hours <= 0){
-    alert("Please select a resource, a CSA or Proposal, a date, and enter hours greater than 0.");
+    CG.alert("Please select a resource, a CSA or Proposal, a date, and enter hours greater than 0.");
     return;
   }
 
@@ -1697,7 +1698,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
     : (agreementMap[rawId] ? agreementMap[rawId].fields.Title : null);
 
   if(!entryTitle){
-    alert("Couldn't resolve the selected CSA or Proposal — please try again.");
+    CG.alert("Couldn't resolve the selected CSA or Proposal — please try again.");
     return;
   }
 
@@ -1725,7 +1726,7 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
     document.getElementById("logTimeActivityDetail").value = "";
   }catch(err){
     console.error(err);
-    alert("Couldn't save entry: " + err.message);
+    CG.alert("Couldn't save entry: " + err.message);
   }finally{
     btn.textContent = originalText;
     btn.disabled = false;
@@ -1733,14 +1734,14 @@ document.getElementById("saveLogTimeBtn").addEventListener("click", async () => 
 });
 
 async function deleteTimeEntry(itemId){
-  if(!confirm("Delete this time entry? This can't be undone.")) return;
+  if(!(await CG.confirm("Delete this time entry? This can't be undone.", { okLabel: "Delete", danger: true }))) return;
   try{
     await graphDeleteItem("CSA_TimeEntries", itemId);
     await loadAllData();
     renderTimesheetsTable();
   }catch(err){
     console.error(err);
-    alert("Couldn't delete entry: " + err.message);
+    CG.alert("Couldn't delete entry: " + err.message);
   }
 }
 
@@ -1759,7 +1760,7 @@ async function updateActivityDetail(itemId, inputEl){
     if(entry) entry.fields.ActivityDetail = newValue;
   }catch(err){
     console.error(err);
-    alert("Couldn't save activity detail: " + err.message);
+    CG.alert("Couldn't save activity detail: " + err.message);
     inputEl.value = originalValue;
   }finally{
     inputEl.disabled = false;
@@ -1788,7 +1789,7 @@ document.getElementById("generateTimesheetBtn").addEventListener("click", () => 
   const start = document.getElementById("genTimesheetStart").value;
   const end = document.getElementById("genTimesheetEnd").value;
   if(!resourceId || !start || !end){
-    alert("Please select a resource, start date, and end date.");
+    CG.alert("Please select a resource, start date, and end date.");
     return;
   }
   generateTimesheetDocument(resourceId, start, end);
@@ -1962,7 +1963,7 @@ ${gridHtml}
 
   const win = window.open("", "_blank");
   if(!win){
-    alert("Please allow pop-ups for this site to generate the timesheet.");
+    CG.alert("Please allow pop-ups for this site to generate the timesheet.");
     return;
   }
   win.document.open();
@@ -1980,7 +1981,7 @@ document.getElementById("generateReportBtn").addEventListener("click", () => {
   const end = document.getElementById("reportEnd").value;
   const billableFilter = document.getElementById("reportBillable").value;
   if(!resourceId){
-    alert("Please select a resource.");
+    CG.alert("Please select a resource.");
     return;
   }
   generateTimeEntriesReport(resourceId, csaFilter, start, end, billableFilter);
@@ -2157,7 +2158,7 @@ ${csaLabels.length > 1 ? `
 
   const win = window.open("", "_blank");
   if(!win){
-    alert("Please allow pop-ups for this site to generate the report.");
+    CG.alert("Please allow pop-ups for this site to generate the report.");
     return;
   }
   win.document.open();
@@ -2883,7 +2884,7 @@ async function saveProposal(){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't save: " + err.message);
+    CG.alert("Couldn't save: " + err.message);
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
   }
@@ -3051,7 +3052,7 @@ async function handleCsaFileUpload(agreementId, inputEl){
 
 /* ---------- Convert to CSA ---------- */
 async function convertProposalToCSA(proposalId){
-  if(!confirm("Convert this proposal into a live CSA? This will create a new agreement pre-filled from the proposal.")) return;
+  if(!(await CG.confirm("Convert this proposal into a live CSA? This will create a new agreement pre-filled from the proposal.", { okLabel: "Convert" }))) return;
 
   try{
     const p = proposalMap[proposalId];
@@ -3117,7 +3118,7 @@ async function convertProposalToCSA(proposalId){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't convert to CSA: " + err.message);
+    CG.alert("Couldn't convert to CSA: " + err.message);
   }
 }
 
@@ -3264,7 +3265,7 @@ ${paymentTerms.length ? `
 
   const win = window.open("", "_blank");
   if(!win){
-    alert("Please allow pop-ups for this site to generate the document.");
+    CG.alert("Please allow pop-ups for this site to generate the document.");
     return;
   }
   win.document.open();
@@ -3369,7 +3370,7 @@ async function generateProposalWordDocument(proposalId){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't generate Word document: " + err.message);
+    CG.alert("Couldn't generate Word document: " + err.message);
   }finally{
     btn.textContent = originalText;
     btn.disabled = false;
@@ -3653,7 +3654,7 @@ async function saveResource(){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't save: " + err.message);
+    CG.alert("Couldn't save: " + err.message);
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
   }
@@ -4124,7 +4125,7 @@ ${termsHtml}
 
   const win = window.open("", "_blank");
   if(!win){
-    alert("Please allow pop-ups for this site to generate the document.");
+    CG.alert("Please allow pop-ups for this site to generate the document.");
     return;
   }
   win.document.open();
@@ -4489,7 +4490,7 @@ async function generateCsaWordDocument(itemId){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't generate Word document: " + err.message);
+    CG.alert("Couldn't generate Word document: " + err.message);
   }finally{
     btn.textContent = originalText;
     btn.disabled = false;
@@ -4894,7 +4895,7 @@ async function saveAgreement(){
 
   }catch(err){
     console.error(err);
-    alert("Couldn't save: " + err.message);
+    CG.alert("Couldn't save: " + err.message);
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
   }
@@ -4932,16 +4933,16 @@ async function importFromPdf(expectedType, file, btn){
     const lib = await loadPdfJs();
     const text = await CSAImport.textFromPdf(lib, new Uint8Array(await file.arrayBuffer()));
     if(!text.replace(/\s/g, "")){
-      alert("This PDF has no readable text - it looks like a scanned image. Please enter it by hand, or import the original Word/PDF export instead.");
+      CG.alert("This PDF has no readable text - it looks like a scanned image. Please enter it by hand, or import the original Word/PDF export instead.");
       return;
     }
     let type = expectedType;
     const detected = CSAImport.detectType(text);
     if(detected && detected !== expectedType){
-      if(!confirm(`This looks like a ${IMPORT_LABEL[detected]}, not a ${IMPORT_LABEL[expectedType]}. Import it as a ${IMPORT_LABEL[detected]} instead?`)) return;
+      if(!(await CG.confirm(`This looks like a ${IMPORT_LABEL[detected]}, not a ${IMPORT_LABEL[expectedType]}. Import it as a ${IMPORT_LABEL[detected]} instead?`, { okLabel: `Import as ${IMPORT_LABEL[detected]}` }))) return;
       type = detected;
     } else if(!detected){
-      if(!confirm(`This doesn't look like a BHC ${IMPORT_LABEL[expectedType]}, so only some fields may be filled. Carry on?`)) return;
+      if(!(await CG.confirm(`This doesn't look like a BHC ${IMPORT_LABEL[expectedType]}, so only some fields may be filled. Carry on?`, { okLabel: "Carry on" }))) return;
     }
 
     const result = CSAImport.parse(text, type);
@@ -4954,7 +4955,7 @@ async function importFromPdf(expectedType, file, btn){
     else startAgreementImport(result, clientId, file.name);
   }catch(err){
     console.error(err);
-    alert("Couldn't read the PDF: " + err.message);
+    CG.alert("Couldn't read the PDF: " + err.message);
   }finally{
     btn.textContent = originalText;
     btn.disabled = false;
@@ -5064,7 +5065,7 @@ async function addImportedClient(kind, btn){
     }
   }catch(err){
     console.error(err);
-    alert("Couldn't add the client: " + err.message);
+    CG.alert("Couldn't add the client: " + err.message);
     btn.textContent = "Add this client";
     btn.disabled = false;
   }
@@ -5076,7 +5077,7 @@ async function linkCsaToProposal(csaId, csaNumber, proposalId){
     await graphUpdateItem("CSA_Proposals", proposalId, { Status: "Converted to CSA", ConvertedToCSA: csaNumber });
   }catch(err){
     console.error(err);
-    alert(`${csaNumber} was created, but linking it to the proposal failed: ${err.message}`);
+    CG.alert(`${csaNumber} was created, but linking it to the proposal failed: ${err.message}`);
   }
 }
 
