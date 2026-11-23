@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 <script src="../shared/cg-config.js"></script>
 <script src="../shared/cg-core.js"></script>
+<script src="timesheet-import.js"></script>
 <script>
   // Phone view (Nov 2026): on a phone CG Time shows just the two Dashboard
   // tabs, in a one-column layout. Set here, before the page is drawn.
@@ -527,6 +528,9 @@
   .te-table tr.weekend td{background:var(--surface-card-2);}
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
   .te-save-bar{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .tsu-table td.hrs{text-align:right;}
+  .tsu-table input[type="text"], .tsu-table select{font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 7px;background:var(--surface-card);color:var(--ink-primary);font-family:inherit;}
+  .admin-submit:disabled{opacity:.5;cursor:default;}
   .te-table td.te-day-name{white-space:nowrap;font-size:12.5px;}
   .te-table .te-day-num{display:block;font-size:10.5px;color:var(--ink-muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
   /* Time Entry anomaly tags — "warn" is a genuine past-date exception
@@ -3738,6 +3742,7 @@ let employeesActiveTab = "employees"; // "employees" | "time-entry" | "payroll" 
 // the Employees/Shifts/Calendar/Pay Groups tabs have none to reset.
 const EMPLOYEES_TAB_FILTER_RESETS = {
   "time-entry": () => { etFilters = { employeeNumber: "", periodKey: "" }; etDayFilters = { workDate: "" }; etMode = "employee"; },
+  "timesheet-upload": () => { tsUpload = null; },
   "daily-report": () => { dailyReportFilters = { workDate: "" }; },
   "attendance": () => { attFilters = { periodKey: "" }; },
   "time-exceptions": () => { timeExFilters = { periodKey: "all" }; timeExTypeFilter = "all"; },
@@ -3754,6 +3759,7 @@ const EMPLOYEES_TABS = [
   { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
   { key: "locations", label: "Locations", render: () => renderLocationsTab() },
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
+  { key: "timesheet-upload", label: "Upload Timesheets", render: () => renderTimesheetUploadTab() },
   { key: "daily-report", label: "Daily Report", render: () => renderDailyReportTab() },
   { key: "attendance", label: "Attendance", render: () => renderAttendanceTab() },
   { key: "time-exceptions", label: "Time Exceptions", render: () => renderTimeExceptionsTab() },
@@ -4663,6 +4669,348 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
   }catch(err){
     console.error(err);
     reportRowMsg(msgEl, `Couldn't save — ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   UPLOAD TIMESHEETS TAB — import an Excel timesheet (one row per
+   Employee per day, e.g. the G4S "times PPE" sheets) straight into
+   CG_EmployeeTimeRecords. Reading the file and working out what
+   would happen live in timesheet-import.js (tested in tests/);
+   this is the page around it:
+     1. pick a file -> SheetJS reads the first sheet in the browser
+        (nothing is uploaded anywhere but SharePoint, and only on Import)
+     2. a preview shows every row and what Import will do with it —
+        new day, replace a day on file, unchanged, blank (skipped) or a
+        problem to fix — plus CG Time's own Hours to Pay beside the
+        sheet's, so a sheet that disagrees stands out
+     3. Employee#s not yet in CG Time are listed with an Add tick
+        (Name, Pay Group, T&A Method) and are created first on Import
+     4. Import writes only the new/changed days, through the same
+        saveOneTimeRecord path Time Entry uses (EntrySource "Manual",
+        so the ZKTeco bridge never overwrites them). EnteredBy records
+        who uploaded which file.
+   Break: Break Start/End from the sheet are stored as-is (12:00 to
+   12:00 = no break). If a worked day has no Break Start/End but the
+   sheet gives Break Hours, that's stored as the day's break override,
+   so CG Time pays what the sheet pays rather than the 20-minute default.
+   Days with no Time In/Out are skipped — an existing record is never
+   deleted by an upload.
+   ============================================================ */
+const XLSX_LIB_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; // same copy CG Training uses
+let _xlsxLoading = null;
+function ensureXlsxLib(){
+  if(window.XLSX) return Promise.resolve();
+  if(_xlsxLoading) return _xlsxLoading;
+  _xlsxLoading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = XLSX_LIB_URL;
+    s.onload = () => window.XLSX ? resolve() : reject(new Error("the Excel reader didn't load"));
+    s.onerror = () => { _xlsxLoading = null; reject(new Error("couldn't load the Excel reader — check the internet connection and try again")); };
+    document.head.appendChild(s);
+  });
+  return _xlsxLoading;
+}
+
+// State for the file currently loaded on this Tab (cleared on leaving it).
+//   fileName, parsed (TimesheetImport.parseSheet result),
+//   newEmps: { [Employee#]: { add, name, payGroup, method, job } },
+//   overwrite, busy
+let tsUpload = null;
+
+function renderTimesheetUploadTab(){
+  const container = document.getElementById("empTabContent");
+  container.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128228;</span>Upload Timesheets</h3>
+      <div class="panel-sub">Import an Excel timesheet with one row per Employee per day — columns <b>Employee#, Job#, Name, Date, Time In, Time Out, Total Hours, Break Start, Break End, Break Hours, Hours to pay</b> (any order; only Employee# and Date are required). Dates are read day first (09/11/2026 = 9 November), times as 24-hour. Nothing is saved until you click Import: you'll see every row first, with CG Time's own Hours to Pay beside the sheet's. Days with no Time In/Out are skipped, and an upload never deletes a record already on file.</div>
+      <div class="filter-bar" style="margin-bottom:0;">
+        <div class="filter-field"><label>Timesheet file (.xlsx, .xls, .csv)</label><input type="file" id="tsuFile" accept=".xlsx,.xls,.csv"></div>
+        <button class="print-btn" id="tsuTemplateBtn">Download blank template</button>
+        ${tsUpload ? `<button class="print-btn" id="tsuClearBtn">Clear</button>` : ""}
+      </div>
+      <div id="tsuLoadMsg" style="font-size:11.5px;margin-top:8px;"></div>
+    </div>
+    <div id="tsuBody"></div>
+  `;
+  document.getElementById("tsuFile").addEventListener("change", e => {
+    const file = e.target.files && e.target.files[0];
+    if(file) loadTimesheetFile(file);
+  });
+  document.getElementById("tsuTemplateBtn").addEventListener("click", downloadTimesheetTemplate);
+  const clearBtn = document.getElementById("tsuClearBtn");
+  if(clearBtn) clearBtn.addEventListener("click", () => { tsUpload = null; renderTimesheetUploadTab(); });
+  renderTimesheetUploadBody();
+}
+
+async function loadTimesheetFile(file){
+  const msgEl = document.getElementById("tsuLoadMsg");
+  msgEl.style.color = "var(--ink-muted)";
+  msgEl.textContent = `Reading ${file.name}…`;
+  try{
+    await ensureXlsxLib();
+    const buf = await file.arrayBuffer();
+    // raw cells (Excel serials, not Date objects) — timesheet-import.js
+    // turns them into dates/times itself, with no time-zone shifting.
+    const wb = XLSX.read(buf, { type: "array", cellDates: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+    const parsed = TimesheetImport.parseSheet(aoa);
+    tsUpload = { fileName: file.name, sheetName: wb.SheetNames[0], parsed, newEmps: {}, overwrite: true, busy: false };
+    renderTimesheetUploadTab();
+  }catch(err){
+    console.error(err);
+    reportRowMsg(msgEl, `Couldn't read ${file.name} — ${err.message}`, true);
+  }
+}
+
+async function downloadTimesheetTemplate(){
+  try{
+    await ensureXlsxLib();
+    const ws = XLSX.utils.aoa_to_sheet([TimesheetImport.TEMPLATE_HEADERS]);
+    ws["!cols"] = TimesheetImport.TEMPLATE_HEADERS.map(h => ({ wch: Math.max(11, h.length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Timesheet");
+    XLSX.writeFile(wb, "CG_Time_Timesheet_Template.xlsx");
+  }catch(err){
+    reportRowMsg(document.getElementById("tsuLoadMsg"), `Couldn't make the template — ${err.message}`, true);
+  }
+}
+
+// Works out the plan against what's on file right now.
+function timesheetUploadPlan(){
+  const willCreate = new Set(Object.keys(tsUpload.newEmps).filter(k => tsUpload.newEmps[k].add));
+  return TimesheetImport.plan(tsUpload.parsed, {
+    employees: allEmployees,
+    findRecord: findTimeRecord,
+    findPeriod: findPayPeriodForDate,
+    newEmployees: willCreate,
+    overwrite: tsUpload.overwrite,
+  });
+}
+
+// CG Time's own figure for an imported row — exactly what Time Entry,
+// Daily Report and Payroll will show once it's saved.
+function timesheetRowHours(row){
+  const emp = row.employee || { fields: {} };
+  return computeHoursForDay(emp, row.timeIn, row.timeOut, row.breakStart, row.breakEnd, row.override, null);
+}
+
+const TSU_ACTION_LABELS = {
+  create: ["New", "var(--status-good)"],
+  update: ["Replaces day on file", "var(--brass-deep)"],
+  unchanged: ["Already on file", "var(--ink-muted)"],
+  "skip-existing": ["Skipped — day on file", "var(--ink-muted)"],
+  blank: ["No times — skipped", "var(--ink-muted)"],
+  error: ["Problem", "var(--status-critical)"],
+};
+
+function renderTimesheetUploadBody(){
+  const body = document.getElementById("tsuBody");
+  if(!body) return;
+  if(!tsUpload){ body.innerHTML = ""; return; }
+  const { parsed, fileName } = tsUpload;
+  if(parsed.problems.length && !parsed.rows.length){
+    body.innerHTML = `<div class="panel"><div style="font-size:12px;color:var(--status-critical);">${parsed.problems.map(esc).join("<br>")}</div>
+      <div style="font-size:11.5px;color:var(--ink-muted);margin-top:6px;">Expected a header row naming at least <b>Employee#</b> and <b>Date</b> — use "Download blank template" for the layout.</div></div>`;
+    return;
+  }
+  let p = timesheetUploadPlan();
+  // Defaults for each Employee# not yet in CG Time (kept as the person edits them).
+  // Ticked to Add by default — the Import confirmation lists them by name first.
+  const firstPayGroup = (allPayGroups.filter(g => g.fields.IsActive !== false)
+    .sort((a,b)=>(a.fields.Title||"").localeCompare(b.fields.Title||""))[0] || { fields: {} }).fields.Title || "";
+  let addedDefaults = false;
+  p.unknownEmployees.forEach(u => {
+    if(!tsUpload.newEmps[u.employeeNumber]){
+      tsUpload.newEmps[u.employeeNumber] = { add: true, name: u.name || "", payGroup: firstPayGroup, method: "Manual", job: u.job || "" };
+      addedDefaults = true;
+    }
+  });
+  if(addedDefaults) p = timesheetUploadPlan();
+  const c = p.counts;
+  const toWrite = c.create + c.update;
+  const toAdd = p.unknownEmployees.filter(u => tsUpload.newEmps[u.employeeNumber].add).length;
+  const empCount = new Set(parsed.rows.map(r => r.employeeNumber).filter(Boolean)).size;
+  const dates = parsed.rows.map(r => r.date).filter(Boolean).sort();
+  const range = dates.length ? `${fmtDateDMY(dates[0])} to ${fmtDateDMY(dates[dates.length-1])}` : "—";
+
+  const newEmpHtml = p.unknownEmployees.length ? `
+    <div class="panel" style="margin-bottom:16px;border-left:3px solid var(--status-warning);">
+      <h3><span>&#128100;</span>Employees not in CG Time (${p.unknownEmployees.length})</h3>
+      <div class="panel-sub">These Employee#s aren't on the Employees tab, so their days can't be imported yet. Tick <b>Add</b> to create them on Import (check the Name, Pay Group and T&amp;A Method first — Manual suits people whose time comes in on a timesheet), or add them on the Employees tab yourself and load the file again. Check the Employee# carefully — a typo here creates a duplicate person.</div>
+      <div style="overflow-x:auto;">
+        <table class="te-table tsu-table">
+          <thead><tr><th>Add</th><th>Employee#</th><th>Name</th><th>Job#</th><th>Pay Group</th><th>T&amp;A Method</th><th>Days with times</th></tr></thead>
+          <tbody>${p.unknownEmployees.map(u => {
+            const ne = tsUpload.newEmps[u.employeeNumber];
+            return `<tr data-new-emp="${esc(u.employeeNumber)}">
+              <td><input type="checkbox" class="tsu-ne-add" ${ne.add?"checked":""}></td>
+              <td class="entity">${esc(u.employeeNumber)}</td>
+              <td><input type="text" class="tsu-ne-name" value="${esc(ne.name)}" style="min-width:160px;"></td>
+              <td><input type="text" class="tsu-ne-job" value="${esc(ne.job)}" style="width:70px;"></td>
+              <td><select class="tsu-ne-pg">${payGroupOptionsHtml(ne.payGroup)}</select></td>
+              <td><select class="tsu-ne-method">${attendanceMethodOptionsHtml(ne.method)}</select></td>
+              <td>${u.days}</td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>
+    </div>` : "";
+
+  // Group the preview by Employee, in sheet order.
+  const groups = [];
+  const gIdx = new Map();
+  p.rows.forEach(r => {
+    const k = r.employeeNumber || `(row ${r.line})`;
+    if(!gIdx.has(k)){ gIdx.set(k, groups.length); groups.push({ key: k, rows: [] }); }
+    groups[gIdx.get(k)].rows.push(r);
+  });
+  const WEEKDAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const previewHtml = groups.map(g => {
+    const first = g.rows[0];
+    const emp = first.employee;
+    const name = emp ? emp.fields.Title : (tsUpload.newEmps[g.key] ? tsUpload.newEmps[g.key].name : first.name);
+    let cgTotal = 0, sheetTotal = 0;
+    const rowsHtml = g.rows.map(r => {
+      const counted = r.action === "create" || r.action === "update" || r.action === "unchanged" || r.action === "skip-existing";
+      const h = r.hasTimes ? timesheetRowHours(r) : { hoursToPay: 0, breakHours: 0 };
+      if(counted) cgTotal += h.hoursToPay;
+      if(r.sheetHoursToPay != null) sheetTotal += r.sheetHoursToPay;
+      const notes = r.errors.concat(r.warnings);
+      if(r.hasTimes && r.sheetHoursToPay != null && Math.abs(h.hoursToPay - r.sheetHoursToPay) > 0.02){
+        notes.push(`Sheet says ${r.sheetHoursToPay.toFixed(2)} hours to pay; CG Time works out ${h.hoursToPay.toFixed(2)}.`);
+      }
+      const [label, color] = TSU_ACTION_LABELS[r.action] || ["", ""];
+      const dayLabel = r.date ? `${WEEKDAY[new Date(r.date + "T00:00:00").getDay()]} ${fmtDateDMY(r.date)}` : "—";
+      const dim = r.action === "blank" ? "opacity:.55;" : "";
+      const breakCell = (r.breakStart || r.breakEnd) ? `${esc(r.breakStart)}–${esc(r.breakEnd)}` : (r.override !== "" ? `${esc(r.override)} min` : (r.hasTimes ? "default" : "—"));
+      return `<tr style="${dim}">
+        <td style="white-space:nowrap;">${esc(dayLabel)}<div style="font-size:10px;color:var(--ink-muted);">row ${r.line}</div></td>
+        <td>${esc(r.timeIn) || "—"}</td>
+        <td>${esc(r.timeOut) || "—"}</td>
+        <td style="white-space:nowrap;">${breakCell}</td>
+        <td class="hrs">${r.hasTimes ? h.hoursToPay.toFixed(2) : "—"}</td>
+        <td class="hrs" style="color:var(--ink-muted);">${r.sheetHoursToPay != null ? r.sheetHoursToPay.toFixed(2) : "—"}</td>
+        <td><span style="font-weight:700;color:${color};white-space:nowrap;">${esc(label)}</span>${notes.length ? `<div style="font-size:10.5px;color:${r.errors.length?"var(--status-critical)":"var(--status-warning)"};">${notes.map(esc).join("<br>")}</div>` : ""}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <div class="panel" style="margin-bottom:12px;">
+        <h3 style="margin-bottom:8px;"><span>&#9200;</span>${esc(name || g.key)} <span style="font-weight:400;color:var(--ink-muted);">(${esc(g.key)}${first.job ? ` &middot; Job# ${esc(first.job)}` : ""})</span>${emp ? "" : ` <span style="font-size:11px;font-weight:700;color:var(--status-warning);">not in CG Time</span>`}</h3>
+        <div style="overflow-x:auto;">
+          <table class="te-table tsu-table">
+            <thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th>Break</th><th style="text-align:right;">Hours to Pay (CG Time)</th><th style="text-align:right;">Sheet</th><th>Import will…</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot><tr style="font-weight:700;border-top:1px solid var(--hairline);"><td colspan="4" style="padding:8px 10px;">Total</td><td class="hrs" style="padding:8px 10px;">${cgTotal.toFixed(2)}</td><td class="hrs" style="padding:8px 10px;color:var(--ink-muted);">${sheetTotal.toFixed(2)}</td><td></td></tr></tfoot>
+          </table>
+        </div>
+      </div>`;
+  }).join("");
+
+  const summaryBits = [
+    `<b>${toWrite}</b> day${toWrite===1?"":"s"} to save (${c.create} new, ${c.update} replacing a day on file)`,
+    c.unchanged ? `${c.unchanged} already on file` : "",
+    c["skip-existing"] ? `${c["skip-existing"]} skipped (day on file)` : "",
+    c.blank ? `${c.blank} with no times (skipped)` : "",
+    c.error ? `<span style="color:var(--status-critical);font-weight:700;">${c.error} with a problem (not imported)</span>` : "",
+  ].filter(Boolean).join(" &middot; ");
+
+  body.innerHTML = `
+    <div class="panel" style="margin-bottom:16px;">
+      <h3><span>&#128196;</span>${esc(fileName)}</h3>
+      <div class="panel-sub" style="margin-bottom:8px;">Sheet "${esc(tsUpload.sheetName)}" &middot; ${parsed.rows.length} row${parsed.rows.length===1?"":"s"} &middot; ${empCount} Employee${empCount===1?"":"s"} &middot; ${esc(range)}${parsed.problems.length ? ` &middot; <span style="color:var(--status-warning);">${parsed.problems.map(esc).join(" ")}</span>` : ""}</div>
+      <div style="font-size:12px;margin-bottom:10px;">${summaryBits}</div>
+      <div class="te-save-bar" style="flex-wrap:wrap;gap:12px;">
+        <button class="admin-submit" id="tsuImportBtn" ${(toWrite || toAdd) && !tsUpload.busy ? "" : "disabled"}>Import ${toWrite} day${toWrite===1?"":"s"}${toAdd ? ` + add ${toAdd} Employee${toAdd===1?"":"s"}` : ""}</button>
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="tsuOverwrite" ${tsUpload.overwrite?"checked":""}> Replace days already on file</label>
+        <span id="tsuImportMsg" style="font-size:11.5px;"></span>
+      </div>
+    </div>
+    ${newEmpHtml}
+    ${previewHtml}
+  `;
+
+  document.getElementById("tsuOverwrite").addEventListener("change", e => { tsUpload.overwrite = e.target.checked; renderTimesheetUploadBody(); });
+  body.querySelectorAll("[data-new-emp]").forEach(tr => {
+    const ne = tsUpload.newEmps[tr.getAttribute("data-new-emp")];
+    tr.querySelector(".tsu-ne-add").addEventListener("change", e => { ne.add = e.target.checked; renderTimesheetUploadBody(); });
+    tr.querySelector(".tsu-ne-name").addEventListener("input", e => { ne.name = e.target.value; });
+    tr.querySelector(".tsu-ne-job").addEventListener("input", e => { ne.job = e.target.value; });
+    tr.querySelector(".tsu-ne-pg").addEventListener("change", e => { ne.payGroup = e.target.value; });
+    tr.querySelector(".tsu-ne-method").addEventListener("change", e => { ne.method = e.target.value; });
+  });
+  document.getElementById("tsuImportBtn").addEventListener("click", importTimesheetUpload);
+}
+
+async function importTimesheetUpload(){
+  const msgEl = document.getElementById("tsuImportMsg");
+  const plan0 = timesheetUploadPlan();
+  const adds = plan0.unknownEmployees.filter(u => tsUpload.newEmps[u.employeeNumber].add)
+    .map(u => Object.assign({ employeeNumber: u.employeeNumber }, tsUpload.newEmps[u.employeeNumber]));
+  const missingName = adds.find(a => !a.name.trim());
+  if(missingName){ reportRowMsg(msgEl, `Give ${missingName.employeeNumber} a Name before importing.`, true); return; }
+  const missingPg = adds.find(a => !a.payGroup);
+  if(missingPg){ reportRowMsg(msgEl, `Pick a Pay Group for ${missingPg.employeeNumber} before importing.`, true); return; }
+  const writes = plan0.rows.filter(r => r.action === "create" || r.action === "update");
+  const replacing = writes.filter(r => r.action === "update").length;
+  const ok = window.confirm(
+    `Import from ${tsUpload.fileName}:\n\n` +
+    (adds.length ? `• add ${adds.length} Employee${adds.length===1?"":"s"}: ${adds.map(a => `${a.name.trim()} (${a.employeeNumber})`).join(", ")}\n` : "") +
+    `• save ${writes.length} day${writes.length===1?"":"s"}` + (replacing ? ` — ${replacing} of them replacing what's on file` : "") + `\n\n` +
+    (plan0.counts.error ? `${plan0.counts.error} row${plan0.counts.error===1?"":"s"} with a problem will be left out.\n\n` : "") +
+    `Go ahead?`
+  );
+  if(!ok) return;
+
+  tsUpload.busy = true;
+  document.getElementById("tsuImportBtn").disabled = true;
+  msgEl.style.color = "var(--ink-muted)";
+  const enteredBy = `${currentUserLabel()} (Excel upload: ${tsUpload.fileName})`.slice(0, 250);
+  let added = 0, saved = 0;
+  try{
+    // 1. Employees first — their days need them on file.
+    for(const a of adds){
+      msgEl.textContent = `Adding ${a.name.trim()}…`;
+      const fields = {
+        Title: a.name.trim(), EmployeeNumber: a.employeeNumber, PayGroup: a.payGroup, JobAssignments: a.job.trim(),
+        DefaultShift: "", DefaultBreakMinutes: DEFAULT_BREAK_MINUTES, IsActive: true,
+      };
+      const method = CG.attendanceMethod(a.method);
+      if(method !== CG.ATTENDANCE_METHOD_DEFAULT) fields.AttendanceMethod = method;
+      try{
+        await graphCreateItem("CG_Employees", fields);
+      }catch(err){ throw new Error(`adding ${a.employeeNumber}: ${employeeSaveError(err)}`); }
+      added++;
+    }
+    if(added){
+      allEmployees = await fetchAllListItems("CG_Employees");
+      adds.forEach(a => { delete tsUpload.newEmps[a.employeeNumber]; });
+    }
+    // 2. Re-plan now those Employees exist, then write the days.
+    const p = timesheetUploadPlan();
+    const toSave = p.rows.filter(r => r.action === "create" || r.action === "update");
+    for(const r of toSave){
+      msgEl.textContent = `Saving ${saved + 1} of ${toSave.length}…`;
+      await saveOneTimeRecord(r.employee.fields.EmployeeNumber, r.date, r.period.fields.PayNumber,
+        r.timeIn, r.timeOut, r.breakStart, r.breakEnd, r.override, "", enteredBy);
+      saved++;
+    }
+    allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
+    tsUpload.busy = false;
+    renderTimesheetUploadBody();
+    reportRowMsg(document.getElementById("tsuImportMsg"),
+      `Done — ${added ? `added ${added} Employee${added===1?"":"s"}, ` : ""}saved ${saved} day${saved===1?"":"s"}. They're now in Time Entry, Attendance and Payroll.`, false);
+  }catch(err){
+    console.error(err);
+    tsUpload.busy = false;
+    try{
+      if(added) allEmployees = await fetchAllListItems("CG_Employees");
+      allEmployeeTimeRecords = await fetchAllListItems("CG_EmployeeTimeRecords");
+    }catch(e){ /* keep what we have */ }
+    renderTimesheetUploadBody();
+    reportRowMsg(document.getElementById("tsuImportMsg"),
+      `Stopped after ${added ? `adding ${added} Employee${added===1?"":"s"} and ` : ""}saving ${saved} day${saved===1?"":"s"} — ${err.message}. Fix it and click Import again; days already saved show as "Already on file".`, true);
   }
 }
 
