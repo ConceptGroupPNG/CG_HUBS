@@ -529,6 +529,22 @@
   .te-table tr.te-total td{font-weight:700;border-top:1px solid var(--hairline);background:var(--surface-card-2);}
   .te-save-bar{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
   .tsu-table td.hrs{text-align:right;}
+
+  /* ---------- CG Time's own pop-up (replaces the browser's alert/confirm,
+     which show "conceptgrouppng.github.io says" instead of CG Time) ---------- */
+  .cg-dlg-overlay{position:fixed;inset:0;z-index:100000;background:rgba(36,26,16,.45);display:flex;align-items:center;justify-content:center;padding:20px;}
+  .cg-dlg{background:var(--surface-card);color:var(--ink-primary);border:1px solid var(--hairline);border-top:4px solid var(--brass);border-radius:12px;
+    box-shadow:0 18px 50px rgba(36,26,16,.35);width:min(480px,100%);max-height:85vh;overflow:auto;padding:20px 22px 16px;font-family:inherit;}
+  .cg-dlg-title{font-size:15px;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .cg-dlg-title .cg-dlg-ic{font-size:18px;}
+  .cg-dlg-body{font-size:13px;line-height:1.55;white-space:pre-line;color:var(--ink-primary);}
+  .cg-dlg-btns{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+  .cg-dlg-btns button{font-size:12.5px;border-radius:7px;padding:8px 18px;cursor:pointer;font-weight:700;font-family:inherit;}
+  .cg-dlg-cancel{background:transparent;border:1px solid var(--hairline);color:var(--ink-muted);}
+  .cg-dlg-cancel:hover{color:var(--ink-primary);border-color:var(--brass);}
+  .cg-dlg-ok{background:var(--brass);border:1px solid var(--brass);color:#fff8e8;}
+  .cg-dlg-ok:hover{background:var(--brass-deep);}
+  .cg-dlg-ok.danger{background:var(--status-critical);border-color:var(--status-critical);}
   .tsu-table input[type="text"], .tsu-table select{font-size:12px;border:1px solid var(--hairline);border-radius:6px;padding:5px 7px;background:var(--surface-card);color:var(--ink-primary);font-family:inherit;}
   .admin-submit:disabled{opacity:.5;cursor:default;}
   .te-table td.te-day-name{white-space:nowrap;font-size:12.5px;}
@@ -883,7 +899,7 @@ function startSignInRedirect(){
 }
 document.getElementById("loginBtn").addEventListener("click", startSignInRedirect);
 document.getElementById("signoutBtn").addEventListener("click", ()=>{
-  CG.auth.signOut().catch(err => { console.error(err); alert(describeAuthError(err)); });
+  CG.auth.signOut().catch(err => { console.error(err); cgAlert(describeAuthError(err)); });
 });
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
@@ -990,7 +1006,7 @@ function hideSessionExpiredBanner(){
 // CG Time keeps its own banner; the shared core calls these instead of showing its own.
 CG.onSessionExpired = { show: showSessionExpiredBanner, hide: hideSessionExpiredBanner };
 document.getElementById("sessionBannerBtn")?.addEventListener("click", ()=>{
-  CG.auth.signIn().catch(err => { console.error(err); alert(describeAuthError(err)); });
+  CG.auth.signIn().catch(err => { console.error(err); cgAlert(describeAuthError(err)); });
 });
 
 /* ============================================================
@@ -1443,6 +1459,55 @@ async function refreshAllData(){
 }
 
 /* ---------- small helpers ---------- */
+
+// CG Time's own pop-up, used instead of the browser's cgAlert()/confirm()
+// (those are headed "conceptgrouppng.github.io says" and can't be styled).
+// Returns a Promise: cgConfirm -> true (OK) / false (Cancel, Esc, click
+// outside); cgAlert -> resolves when closed. Message is plain text;
+// line breaks show as line breaks.
+function cgDialog({ title = "CG Time", message = "", icon = "", okLabel = "OK", cancelLabel = "", danger = false } = {}){
+  return new Promise(resolve => {
+    const prevFocus = document.activeElement;
+    const overlay = document.createElement("div");
+    overlay.className = "cg-dlg-overlay";
+    overlay.innerHTML = `
+      <div class="cg-dlg" role="${cancelLabel ? "alertdialog" : "dialog"}" aria-modal="true" aria-labelledby="cgDlgTitle">
+        <div class="cg-dlg-title" id="cgDlgTitle">${icon ? `<span class="cg-dlg-ic">${icon}</span>` : ""}${esc(title)}</div>
+        <div class="cg-dlg-body">${esc(message)}</div>
+        <div class="cg-dlg-btns">
+          ${cancelLabel ? `<button type="button" class="cg-dlg-cancel">${esc(cancelLabel)}</button>` : ""}
+          <button type="button" class="cg-dlg-ok${danger ? " danger" : ""}">${esc(okLabel)}</button>
+        </div>
+      </div>`;
+    const close = result => {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      if(prevFocus && prevFocus.focus) try{ prevFocus.focus(); }catch(e){}
+      resolve(result);
+    };
+    const onKey = e => {
+      if(e.key === "Escape"){ e.preventDefault(); close(false); }
+      else if(e.key === "Enter" && document.activeElement && document.activeElement.classList.contains("cg-dlg-cancel")){ e.preventDefault(); close(false); }
+      else if(e.key === "Enter"){ e.preventDefault(); close(true); }
+      else if(e.key === "Tab"){ // keep focus inside the pop-up
+        const btns = Array.from(overlay.querySelectorAll("button"));
+        const i = btns.indexOf(document.activeElement);
+        e.preventDefault();
+        btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus();
+      }
+    };
+    overlay.querySelector(".cg-dlg-ok").addEventListener("click", () => close(true));
+    const cancelBtn = overlay.querySelector(".cg-dlg-cancel");
+    if(cancelBtn) cancelBtn.addEventListener("click", () => close(false));
+    overlay.addEventListener("mousedown", e => { if(e.target === overlay) close(false); });
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    overlay.querySelector(".cg-dlg-ok").focus();
+  });
+}
+function cgAlert(message, opts){ return cgDialog(Object.assign({ message, icon: "&#9888;&#65039;" }, opts)); }
+function cgConfirm(message, opts){ return cgDialog(Object.assign({ message, icon: "&#10067;", okLabel: "OK", cancelLabel: "Cancel" }, opts)); }
+
 function esc(s){
   return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -2069,7 +2134,7 @@ function incompletePunchesForDay(employees, day){
 function goToTimeEntryFromDashboard(x){
   const period = findPayPeriodForDate(x.dateStr);
   if(!period){
-    alert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
+    cgAlert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
     return;
   }
   etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
@@ -4429,17 +4494,18 @@ function timeEntryRowsToSave(items){
 }
 // Editing today's still-open row for a scanner/phone user makes it Manual,
 // so their clock out later today won't arrive by itself. Ask first.
-function confirmOpenDayEdits(toSave){
+async function confirmOpenDayEdits(toSave){
   const today = todayStr();
   const names = toSave.filter(it =>
     it.dateStr === today && !it.values.timeOut &&
     CG.attendanceMethod(it.employee.fields) !== "Manual"
   ).map(it => it.employee.fields.Title || it.employee.fields.EmployeeNumber);
   if(!names.length) return true;
-  return window.confirm(
+  return cgConfirm(
     `You're editing today's open record for ${names.join(", ")}.\n\n` +
     `Once saved it becomes a Manual entry, and their clock out from the device or phone later today will NOT be recorded automatically — you'll need to enter it by hand.\n\n` +
-    `Tip: corrections for today are best made after they've clocked out.\n\nSave anyway?`
+    `Tip: corrections for today are best made after they've clocked out.`,
+    { title: "Today's record is still open", okLabel: "Save anyway" }
   );
 }
 
@@ -4482,7 +4548,7 @@ async function saveEmployeeTimeEntries(employee, period, rows){
     reportRowMsg(msgEl, "Nothing changed — nothing to save.", false);
     return;
   }
-  if(!confirmOpenDayEdits(toSave)) return;
+  if(!(await confirmOpenDayEdits(toSave))) return;
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
@@ -4654,7 +4720,7 @@ async function saveEmployeeTimeEntriesByDay(dateStr, period, rows, activeEmploye
     reportRowMsg(msgEl, "Nothing changed — nothing to save.", false);
     return;
   }
-  if(!confirmOpenDayEdits(toSave)) return;
+  if(!(await confirmOpenDayEdits(toSave))) return;
   msgEl.style.color = "var(--ink-muted)";
   msgEl.textContent = "Saving…";
   const enteredBy = currentUserLabel();
@@ -4964,12 +5030,13 @@ async function importTimesheetUpload(){
   if(missingPg){ reportRowMsg(msgEl, `Pick a Pay Group for ${missingPg.employeeNumber} before importing.`, true); return; }
   const writes = plan0.rows.filter(r => r.action === "create" || r.action === "update");
   const replacing = writes.filter(r => r.action === "update").length;
-  const ok = window.confirm(
+  const ok = await cgConfirm(
     `Import from ${tsUpload.fileName}:\n\n` +
     (adds.length ? `• add ${adds.length} Employee${adds.length===1?"":"s"}: ${adds.map(a => `${a.name.trim()} (${a.employeeNumber})`).join(", ")}\n` : "") +
     `• save ${writes.length} day${writes.length===1?"":"s"}` + (replacing ? ` — ${replacing} of them replacing what's on file` : "") + `\n\n` +
     (plan0.counts.error ? `${plan0.counts.error} row${plan0.counts.error===1?"":"s"} with a problem will be left out.\n\n` : "") +
-    `Go ahead?`
+    `Go ahead?`,
+    { title: "Import timesheet", okLabel: "Import" }
   );
   if(!ok) return;
 
@@ -5660,7 +5727,7 @@ function downloadTimeExceptionsCsv(scopeLabel, exceptions){
 function goToTimeEntryFromException(x){
   const period = x.period || findPayPeriodForDate(x.dateStr);
   if(!period){
-    alert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
+    cgAlert("Couldn't find a Pay Period covering this date — add it from the Calendar tab first.");
     return;
   }
   etFilters.employeeNumber = x.employee.fields.EmployeeNumber;
@@ -5753,7 +5820,7 @@ function renderEmployeePayrollTab(){
     const { period, rows } = payrollSummaryForPeriod(payFilters.periodKey);
     if(!period) return;
     const batch = document.getElementById("payBatch").value.trim();
-    if(!batch){ alert("Please enter a Batch # before exporting — Payroll uses this to identify the upload."); return; }
+    if(!batch){ cgAlert("Please enter a Batch # before exporting — Payroll uses this to identify the upload."); return; }
     downloadPayrollCsv(period, rows, batch);
   });
 
@@ -6301,7 +6368,7 @@ function renderTimesheetReportTab(){
     renderTimesheetReportBody();
   });
   document.getElementById("tsrPrintBtn").addEventListener("click", () => {
-    if(!tsReportFilters.resourceEmail){ alert("Please select a resource first."); return; }
+    if(!tsReportFilters.resourceEmail){ cgAlert("Please select a resource first."); return; }
     if(tsReportFilters.resourceEmail === ALL_RESOURCES){
       openDocInNewTab(buildTimeEntriesReportDocHtml(null, tsReportFilters.csa, tsReportFilters.start, tsReportFilters.end, tsReportFilters.billable));
       return;
@@ -6421,7 +6488,7 @@ function renderTimesheetTab(){
   document.getElementById("tsFrom").addEventListener("change", e => { tsFilters.start = e.target.value; renderTimesheetBody(); });
   document.getElementById("tsTo").addEventListener("change", e => { tsFilters.end = e.target.value; renderTimesheetBody(); });
   document.getElementById("tsPrintBtn").addEventListener("click", () => {
-    if(!tsFilters.resourceEmail){ alert("Please select a resource first."); return; }
+    if(!tsFilters.resourceEmail){ cgAlert("Please select a resource first."); return; }
     const resource = allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === tsFilters.resourceEmail);
     if(!resource) return;
     openDocInNewTab(buildTimesheetDocHtml(resource, tsFilters.start, tsFilters.end));
@@ -6530,7 +6597,7 @@ function dateRangeArray(start, end){
 function openDocInNewTab(html){
   const win = window.open("", "_blank");
   if(!win){
-    alert("Please allow pop-ups for this site to open the document.");
+    cgAlert("Please allow pop-ups for this site to open the document.");
     return;
   }
   win.document.open();
@@ -7106,7 +7173,7 @@ function renderReportsView(){
   document.getElementById("rptTo").addEventListener("change", e => reportFilters.to = e.target.value);
   document.getElementById("rptBillable").addEventListener("change", e => reportFilters.billable = e.target.value);
   document.getElementById("rptGenerateBtn").addEventListener("click", () => {
-    if(!reportFilters.resourceEmail){ alert("Please select a resource."); return; }
+    if(!reportFilters.resourceEmail){ cgAlert("Please select a resource."); return; }
     const resource = allResources.find(r => (r.fields.MatchEmail||"").toLowerCase().trim() === reportFilters.resourceEmail);
     if(!resource) return;
     openDocInNewTab(buildTimeEntriesReportDocHtml(resource, reportFilters.csa, reportFilters.from, reportFilters.to, reportFilters.billable));
