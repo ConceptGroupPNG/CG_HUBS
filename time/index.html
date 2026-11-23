@@ -4725,7 +4725,13 @@ function renderTimesheetUploadTab(){
       <h3><span>&#128228;</span>Upload Timesheets</h3>
       <div class="panel-sub">Import an Excel timesheet with one row per Employee per day — columns <b>Employee#, Job#, Name, Date, Time In, Time Out, Total Hours, Break Start, Break End, Break Hours, Hours to pay</b> (any order; only Employee# and Date are required). Dates are read day first (09/11/2026 = 9 November), times as 24-hour. Nothing is saved until you click Import: you'll see every row first, with CG Time's own Hours to Pay beside the sheet's. Days with no Time In/Out are skipped, and an upload never deletes a record already on file.</div>
       <div class="filter-bar" style="margin-bottom:0;">
-        <div class="filter-field"><label>Timesheet file (.xlsx, .xls, .csv)</label><input type="file" id="tsuFile" accept=".xlsx,.xls,.csv"></div>
+        <div class="filter-field"><label>Timesheet file (.xlsx, .xls, .csv)</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="file" id="tsuFile" accept=".xlsx,.xls,.csv" style="display:none;">
+            <button class="print-btn" id="tsuChooseBtn">${tsUpload ? "Choose another file…" : "Choose file…"}</button>
+            <span style="font-size:12px;${tsUpload ? "font-weight:600;color:var(--ink-primary);" : "color:var(--ink-muted);"}">${tsUpload ? esc(tsUpload.fileName) : "No file chosen"}</span>
+          </div>
+        </div>
         <button class="print-btn" id="tsuTemplateBtn">Download blank template</button>
         ${tsUpload ? `<button class="print-btn" id="tsuClearBtn">Clear</button>` : ""}
       </div>
@@ -4733,6 +4739,10 @@ function renderTimesheetUploadTab(){
     </div>
     <div id="tsuBody"></div>
   `;
+  // The browser's own file box is hidden: this Tab redraws after reading
+  // the file, which would reset it to "No file chosen" while a file is
+  // in fact loaded. The label beside the button shows the loaded file.
+  document.getElementById("tsuChooseBtn").addEventListener("click", () => document.getElementById("tsuFile").click());
   document.getElementById("tsuFile").addEventListener("change", e => {
     const file = e.target.files && e.target.files[0];
     if(file) loadTimesheetFile(file);
