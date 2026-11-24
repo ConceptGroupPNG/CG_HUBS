@@ -659,22 +659,21 @@
     <div class="nav-group">Overview</div>
     <div class="nav-item active" data-view="dashboard"><span class="ic">&#9632;</span>Dashboard</div>
 
-    <div class="nav-group">Collect</div>
+    <div class="nav-group">Consulting Time</div>
     <div class="nav-item" data-view="time-entries"><span class="ic">&#9998;</span>Time Entries</div>
     <div class="nav-item" data-view="timesheets"><span class="ic">&#128337;</span>Timesheets <span style="margin-left:auto;background:var(--status-warning);color:#2a1c00;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;" id="navExceptionsBadge">·</span></div>
 
-    <div class="nav-group">Coordinate</div>
-    <div class="nav-item" data-view="resources"><span class="ic">&#9733;</span>Resources</div>
 
-    <div class="nav-group">Employees</div>
+    <div class="nav-group">Employee Time</div>
     <div class="nav-item" data-view="employees"><span class="ic">&#128100;</span>Employees</div>
+    <div class="nav-item" data-view="settings"><span class="ic">&#9881;</span>Settings</div>
 
     <div class="nav-group">Report</div>
     <div class="nav-item" data-view="reports"><span class="ic">&#9776;</span>Reports</div>
 
     <div class="nav-group">Admin</div>
-    <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs</div>
-    <div class="nav-item"><span class="ic">&#9881;</span>Integrations</div>
+    <div class="nav-item" data-view="hubs"><span class="ic">&#127760;</span>HUBs &amp; Resources</div>
+    <div class="nav-item"><span class="ic">&#128279;</span>Integrations</div>
 
     <div class="sidebar-foot">
       Signed in as<br><b style="color:#e5d9bd;" id="signedInName">…</b>
@@ -830,7 +829,6 @@
     <div class="phone-only phone-foot">On a phone, CG Time shows the Dashboards only. Use a computer for Time Entry, Timesheets, Payroll and the other screens.</div>
     </div>
 
-    <div class="view" id="view-resources"></div>
 
     <div class="view" id="view-employees"></div>
 
@@ -840,7 +838,18 @@
 
     <div class="view" id="view-reports"></div>
 
-    <div class="view" id="view-hubs"></div>
+    <div class="view" id="view-settings"></div>
+
+    <!-- HUBs & Resources: one Admin page, two Tabs. renderHubsView() and
+         renderResourcesView() still draw into #view-hubs / #view-resources. -->
+    <div class="view" id="view-hubs-resources">
+      <div class="subtabs" id="hubsResTabs">
+        <button class="subtab active" data-hr-tab="hubs">HUBs</button>
+        <button class="subtab" data-hr-tab="resources">Resources</button>
+      </div>
+      <div id="view-hubs"></div>
+      <div id="view-resources" style="display:none;"></div>
+    </div>
 
   </main>
 </div>
@@ -923,20 +932,20 @@ document.getElementById("signoutBtn").addEventListener("click", ()=>{
 });
 const VIEW_TITLES = {
   "dashboard": "Dashboard",
-  "resources": "Resources",
   "employees": "Employees",
+  "settings": "Settings",
   "time-entries": "Time Entries",
   "timesheets": "Timesheets",
   "reports": "Reports",
-  "hubs": "HUBs",
+  "hubs": "HUBs & Resources",
 };
 const VIEW_RENDERERS = {
-  "resources": renderResourcesView,
   "employees": renderEmployeesHub,
+  "settings": renderSettingsHub,
   "time-entries": renderTimeEntriesView,
   "timesheets": renderTimesheetsView,
   "reports": renderReportsView,
-  "hubs": renderHubsView,
+  "hubs": renderHubsResourcesView,
 };
 let currentNavView = "dashboard";
 document.querySelectorAll(".nav-item[data-view]").forEach(item => {
@@ -950,13 +959,14 @@ document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     // whole script has run.)
     if(viewName !== currentNavView){
       if(currentNavView === "employees") resetEmployeesTabFilters(employeesActiveTab);
+      else if(currentNavView === "settings") resetEmployeesTabFilters(settingsActiveTab);
       else if(currentNavView === "timesheets") resetTimesheetsTabFilters(tsActiveTab);
     }
     currentNavView = viewName;
     document.querySelectorAll(".nav-item[data-view]").forEach(i => i.classList.remove("active"));
     item.classList.add("active");
     document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-    document.getElementById(`view-${viewName}`).classList.add("active");
+    document.getElementById(viewName === "hubs" ? "view-hubs-resources" : `view-${viewName}`).classList.add("active");
     document.getElementById("viewTitle").textContent = VIEW_TITLES[viewName] || viewName;
     if(viewName === "dashboard"){
       // Show what's already loaded straight away, then fetch the latest.
@@ -3842,19 +3852,61 @@ function resetEmployeesTabFilters(tabKey){
 
 const EMPLOYEES_TABS = [
   { key: "employees", label: "Employees", render: () => renderEmployeesTab() },
-  { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
-  { key: "locations", label: "Locations", render: () => renderLocationsTab() },
   { key: "time-entry", label: "Time Entry", render: () => renderEmployeeTimeEntryTab() },
   { key: "timesheet-upload", label: "Upload Timesheets", render: () => renderTimesheetUploadTab() },
   { key: "daily-report", label: "Daily Report", render: () => renderDailyReportTab() },
   { key: "attendance", label: "Attendance", render: () => renderAttendanceTab() },
   { key: "time-exceptions", label: "Time Exceptions", render: () => renderTimeExceptionsTab() },
   { key: "payroll", label: "Payroll", render: () => renderEmployeePayrollTab() },
-  { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
   { key: "pay-groups", label: "Pay Groups", render: () => renderPayGroupsTab() },
 ];
 
+// Settings (sidebar, under Employee Time): the set-up Tabs moved off the
+// Employees page. They draw into #empTabContent like every Employees Tab,
+// so only one of the two pages holds that element at a time — each page
+// empties the other when it opens.
+const SETTINGS_TABS = [
+  { key: "shifts", label: "Shifts", render: () => renderShiftsTab() },
+  { key: "locations", label: "Locations", render: () => renderLocationsTab() },
+  { key: "calendar", label: "Calendar", render: () => renderEmployeeCalendarTab() },
+];
+let settingsActiveTab = "shifts";
+
+function renderSettingsHub(){
+  document.getElementById("view-employees").innerHTML = "";
+  const container = document.getElementById("view-settings");
+  container.innerHTML = `
+    <div class="subtabs">
+      ${SETTINGS_TABS.map(t => `<button class="subtab ${settingsActiveTab===t.key?'active':''}" data-set-tab="${t.key}">${esc(t.label)}</button>`).join("")}
+    </div>
+    <div id="empTabContent"></div>
+  `;
+  container.querySelectorAll("[data-set-tab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const nextTab = btn.getAttribute("data-set-tab");
+      if(nextTab !== settingsActiveTab) resetEmployeesTabFilters(settingsActiveTab);
+      settingsActiveTab = nextTab;
+      renderSettingsHub();
+    });
+  });
+  const active = SETTINGS_TABS.find(t => t.key === settingsActiveTab) || SETTINGS_TABS[0];
+  active.render();
+}
+
+// HUBs & Resources (Admin): HUBs and Resources as two Tabs of one page.
+let hubsResActiveTab = "hubs";
+function renderHubsResourcesView(){
+  document.querySelectorAll("#hubsResTabs [data-hr-tab]").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-hr-tab") === hubsResActiveTab);
+    btn.onclick = () => { hubsResActiveTab = btn.getAttribute("data-hr-tab"); renderHubsResourcesView(); };
+  });
+  document.getElementById("view-hubs").style.display = hubsResActiveTab === "hubs" ? "" : "none";
+  document.getElementById("view-resources").style.display = hubsResActiveTab === "resources" ? "" : "none";
+  if(hubsResActiveTab === "hubs") renderHubsView(); else renderResourcesView();
+}
+
 function renderEmployeesHub(){
+  document.getElementById("view-settings").innerHTML = "";
   const container = document.getElementById("view-employees");
   container.innerHTML = `
     <div class="subtabs">
