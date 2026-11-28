@@ -927,13 +927,37 @@
      page or the shared files have changed since it loaded. If so it shows a
      small bar with a Refresh button. It never reloads by itself - there may
      be unsaved work. "Later" hides it for 2 hours.
+     Two steps, so the bar only appears for a real change: the cheap check
+     is the ETag/Last-Modified headers, but GitHub Pages' servers can hand
+     out different header values for the very same file. So when the
+     headers differ, the core downloads the three files and compares their
+     contents with a copy taken a minute after the page opened; the bar
+     shows only if the contents differ. (Before core 1.9.1 the headers
+     alone decided, and the bar came up with nothing new published.)
      Only on the real site (https), so tests and local copies never ask.
      ----------------------------------------------------------------- */
   const UPD_EVERY_MS = 15 * 60 * 1000, UPD_SNOOZE_MS = 2 * 60 * 60 * 1000;
-  const U = { on: false, base: null, last: 0, shown: false, snoozeUntil: 0, timer: null };
+  const U = { on: false, base: null, content: null, last: 0, shown: false, snoozeUntil: 0, timer: null };
+  const versionUrls = () => [String(global.location.href).split(/[?#]/)[0], SHARED_URL + "cg-core.js", SHARED_URL + "cg-config.js"];
+
+  // FNV-1a: a quick fingerprint of a file's text (change detection only).
+  function fingerprint(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return text.length + ":" + h.toString(16);
+  }
+
+  async function contentTag() {
+    const parts = await Promise.all(versionUrls().map(async u => {
+      const r = await global.fetch(u, { method: "GET", cache: "no-store" });
+      if (!r.ok) throw new Error(`GET ${r.status}`);
+      return fingerprint(await r.text());
+    }));
+    return parts.join("|");
+  }
 
   async function versionTag() {
-    const urls = [String(global.location.href).split(/[?#]/)[0], SHARED_URL + "cg-core.js", SHARED_URL + "cg-config.js"];
+    const urls = versionUrls();
     const tags = await Promise.all(urls.map(async u => {
       const r = await global.fetch(u, { method: "HEAD", cache: "no-store" });
       if (!r.ok) throw new Error(`HEAD ${r.status}`);
@@ -973,6 +997,8 @@
         U.on = true;
         U.last = Date.now();
         versionTag().then(t => { U.base = t; }, () => { U.on = false; });
+        // The contents to compare against - a minute in, so it doesn't compete with the page loading.
+        global.setTimeout(() => { contentTag().then(c => { U.content = c; }, () => { /* try again at the next check */ }); }, 60 * 1000);
         U.timer = setInterval(CG.updates.check, UPD_EVERY_MS);
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "visible" && Date.now() - U.last > UPD_EVERY_MS) CG.updates.check();
@@ -985,14 +1011,18 @@
       U.last = Date.now();
       try {
         const t = await versionTag();
-        if (t && t !== U.base) { showUpdateBar(); return true; }
+        if (!t || t === U.base) return false;
+        // Headers differ - only a change in the files themselves counts.
+        if (!U.content) { U.content = await contentTag(); return false; }   // no copy yet: take one now
+        if (await contentTag() !== U.content) { showUpdateBar(); return true; }
+        U.base = t;                                                          // same files, new headers: stay quiet
       } catch (e) { /* offline or busy - try again next time */ }
       return false;
     },
     _state: () => Object.assign({}, U)
   };
 
-  CG.VERSION = "1.9.0";
+  CG.VERSION = "1.9.1";
   global.CG = CG;
   // Run the phone check as soon as the page has a body.
   if (global.document && global.location) {
