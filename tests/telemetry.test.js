@@ -202,22 +202,47 @@ test("old rows are cleaned up at most once a day, using the indexed columns", as
 
 /* ---------------- "A new version is available" bar ---------------- */
 test("new version bar: shown when the page or shared files change, never on a local copy", async () => {
-  let version = "v1";
-  const head = (m, url) => m === "HEAD" ? { status: 200, ok: true, headers: { get: k => (k === "ETag" ? `"${version}-${url.split("/").pop()}"` : null) }, json: async () => ({}) } : null;
-  const live = load({ protocol: "https:", route: head });
+  let version = "v1", content = "build 1";
+  const site = (m, url) => {
+    if (m === "HEAD") return { status: 200, ok: true, headers: { get: k => (k === "ETag" ? `"${version}-${url.split("/").pop()}"` : null) }, json: async () => ({}) };
+    if (m === "GET" && /(\/CG_HUBS\/psp\/|cg-core\.js|cg-config\.js)$/.test(url)) return { status: 200, ok: true, headers: { get: () => null }, text: async () => content + " " + url };
+    return null;
+  };
+  const live = load({ protocol: "https:", route: site });
   await live.start();
-  await new Promise(r => setImmediate(r));                  // baseline taken
+  await new Promise(r => setImmediate(r));                  // baseline headers and contents taken
+  assert.ok(live.CG.updates._state().content);
   assert.equal(await live.CG.updates.check(), false);      // nothing new yet
-  version = "v2";                                           // an update is published
+  version = "v2"; content = "build 2";                      // an update is published
   assert.equal(await live.CG.updates.check(), true);
   assert.equal(live.CG.updates._state().shown, true);
   assert.equal(await live.CG.updates.check(), false);      // shown once, not stacked
   assert.equal(live.calls.filter(c => c.method === "HEAD").length, 9);   // baseline + 2 checks, 3 files each; none once shown
 
-  const local = load({ route: head });                      // no https: tests / file copies
+  const local = load({ route: site });                      // no https: tests / file copies
   await local.start();
   assert.equal(local.CG.updates._state().on, false);
   assert.equal(local.calls.filter(c => c.method === "HEAD").length, 0);
+});
+
+test("new version bar: different headers for the same files don't show it", async () => {
+  let version = "v1";
+  const site = (m, url) => {
+    if (m === "HEAD") return { status: 200, ok: true, headers: { get: k => (k === "ETag" ? `"${version}"` : null) }, json: async () => ({}) };
+    if (m === "GET" && /(\/CG_HUBS\/psp\/|cg-core\.js|cg-config\.js)$/.test(url)) return { status: 200, ok: true, headers: { get: () => null }, text: async () => "unchanged " + url };
+    return null;
+  };
+  const live = load({ protocol: "https:", route: site });
+  await live.start();
+  await new Promise(r => setImmediate(r));
+  const fileGets = () => live.calls.filter(c => c.method === "GET" && /(\/CG_HUBS\/psp\/|cg-core\.js|cg-config\.js)$/.test(c.url)).length;
+  assert.equal(fileGets(), 3);                              // the copy taken after opening
+  version = "other-server";                                 // a different server, same files
+  assert.equal(await live.CG.updates.check(), false);
+  assert.equal(live.CG.updates._state().shown, false);
+  assert.equal(fileGets(), 6);                              // contents compared once...
+  assert.equal(await live.CG.updates.check(), false);
+  assert.equal(fileGets(), 6);                              // ...then the new headers are taken as normal
 });
 
 /* ---------------- open vs active (core 1.9) ---------------- */
